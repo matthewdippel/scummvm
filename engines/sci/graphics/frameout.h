@@ -339,6 +339,7 @@ private:
 	 * upper-left corner of every frame as a debug aid.
 	 */
 	bool _showRoomNumberOverlay;
+	Common::Rect _lastRoomOverlayRect;
 	void drawRoomNumberOverlay();
 
 	/**

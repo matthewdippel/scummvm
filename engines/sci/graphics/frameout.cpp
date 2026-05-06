@@ -1202,7 +1202,13 @@ void GfxFrameout::alterVmap(const Palette &palette1, const Palette &palette2, co
 }
 
 void GfxFrameout::drawRoomNumberOverlay() {
-	if (!_showRoomNumberOverlay) return;
+	if (!_showRoomNumberOverlay) {
+		if (!_lastRoomOverlayRect.isEmpty()) {
+			directFrameOut(_lastRoomOverlayRect);
+			_lastRoomOverlayRect = Common::Rect();
+		}
+		return;
+	}
 	const uint16 roomNo = g_sci->getEngineState()->variables[VAR_GLOBAL][kGlobalVarCurrentRoomNo].toUint16();
 	const Common::String text = Common::String::format("Room %u", roomNo);
 	const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kConsoleFont);
@@ -1215,6 +1221,7 @@ void GfxFrameout::drawRoomNumberOverlay() {
 	font->drawString(&surf, text, 2, 1, w - 4, red);
 	g_system->copyRectToScreen(surf.getPixels(), surf.pitch, 4, 4, w, h);
 	surf.free();
+	_lastRoomOverlayRect = Common::Rect(4, 4, 4 + w, 4 + h);
 }
 
 void GfxFrameout::updateScreen(const int delta) {
