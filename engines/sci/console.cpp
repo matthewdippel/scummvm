@@ -126,6 +126,7 @@ Console::Console(SciEngine *engine) : GUI::Debugger(),
 	registerCmd("restart_game",		WRAP_METHOD(Console, cmdRestartGame));
 	registerCmd("version",			WRAP_METHOD(Console, cmdGetVersion));
 	registerCmd("room",				WRAP_METHOD(Console, cmdRoomNumber));
+	registerCmd("show_room",		WRAP_METHOD(Console, cmdShowRoom));
 	registerCmd("quit",				WRAP_METHOD(Console, cmdQuit));
 	registerCmd("list_saves",			WRAP_METHOD(Console, cmdListSaves));
 	// Graphics
@@ -368,6 +369,7 @@ bool Console::cmdHelp(int argc, const char **argv) {
 	debugPrintf(" restart_game - Restarts the game\n");
 	debugPrintf(" version - Shows the resource and interpreter versions\n");
 	debugPrintf(" room - Gets or sets the current room number\n");
+	debugPrintf(" show_room - Toggles a debug overlay showing the current room number (SCI32 only)\n");
 	debugPrintf(" quit - Quits the game\n");
 	debugPrintf("\n");
 	debugPrintf("Graphics:\n");
@@ -1166,6 +1168,18 @@ bool Console::cmdRoomNumber(int argc, const char **argv) {
 		debugPrintf("Room number changed to %d (%x in hex)\n", roomNumber, roomNumber);
 	}
 
+	return true;
+}
+
+bool Console::cmdShowRoom(int argc, const char **argv) {
+#ifdef ENABLE_SCI32
+	if (_engine->_gfxFrameout) {
+		const bool enabled = _engine->_gfxFrameout->toggleRoomNumberOverlay();
+		debugPrintf("Room number overlay: %s\n", enabled ? "on" : "off");
+		return true;
+	}
+#endif
+	debugPrintf("Room number overlay is only supported in SCI32 games\n");
 	return true;
 }
 

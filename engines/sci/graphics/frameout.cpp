@@ -70,7 +70,8 @@ GfxFrameout::GfxFrameout(SegManager *segMan, GfxPalette32 *palette, GfxTransitio
 	_overdrawThreshold(0),
 	_throttleKernelFrameOut(true),
 	_palMorphIsOn(false),
-	_lastScreenUpdateTick(0) {
+	_lastScreenUpdateTick(0),
+	_showRoomNumberOverlay(false) {
 
 	if (g_sci->getGameId() == GID_PHANTASMAGORIA) {
 		_currentBuffer.create(630, 450, Graphics::PixelFormat::createFormatCLUT8());

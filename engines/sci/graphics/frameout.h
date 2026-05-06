@@ -304,6 +304,11 @@ public:
 
 	Plane *getTopVisiblePlane();
 
+	/**
+	 * Flips the debug room-number overlay on or off and returns the new state.
+	 */
+	bool toggleRoomNumberOverlay() { return _showRoomNumberOverlay = !_showRoomNumberOverlay; }
+
 private:
 	/**
 	 * The last time the hardware screen was updated.
@@ -328,6 +333,12 @@ private:
 	 * screen items with remap data need to be redrawn.
 	 */
 	bool _remapOccurred;
+
+	/**
+	 * When true, GfxFrameout stamps the current room number into the
+	 * upper-left corner of every frame as a debug aid.
+	 */
+	bool _showRoomNumberOverlay;
 
 	/**
 	 * A list of rectangles, in screen coordinates, that represent portions of
