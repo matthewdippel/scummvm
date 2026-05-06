@@ -29,6 +29,8 @@
 #include "common/textconsole.h"
 #include "engines/engine.h"
 #include "engines/util.h"
+#include "graphics/font.h"
+#include "graphics/fontman.h"
 #include "graphics/paletteman.h"
 #include "graphics/surface.h"
 
@@ -1199,6 +1201,22 @@ void GfxFrameout::alterVmap(const Palette &palette1, const Palette &palette2, co
 	}
 }
 
+void GfxFrameout::drawRoomNumberOverlay() {
+	if (!_showRoomNumberOverlay) return;
+	const uint16 roomNo = g_sci->getEngineState()->variables[VAR_GLOBAL][kGlobalVarCurrentRoomNo].toUint16();
+	const Common::String text = Common::String::format("Room %u", roomNo);
+	const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kConsoleFont);
+	const Graphics::PixelFormat fmt = g_system->getScreenFormat();
+	const int w = font->getStringWidth(text) + 4;
+	const int h = font->getFontHeight() + 2;
+	Graphics::Surface surf;
+	surf.create(w, h, fmt);
+	const uint32 red = fmt.isCLUT8() ? (uint32)_palette->matchColor(255, 0, 0) : fmt.RGBToColor(255, 0, 0);
+	font->drawString(&surf, text, 2, 1, w - 4, red);
+	g_system->copyRectToScreen(surf.getPixels(), surf.pitch, 4, 4, w, h);
+	surf.free();
+}
+
 void GfxFrameout::updateScreen(const int delta) {
 	// Using OSystem::getMillis instead of Sci::getTickCount here because these
 	// values need to be monotonically increasing for the duration of the
@@ -1209,6 +1227,7 @@ void GfxFrameout::updateScreen(const int delta) {
 	}
 
 	_lastScreenUpdateTick = now;
+	drawRoomNumberOverlay();
 	g_system->updateScreen();
 	g_sci->getSciDebugger()->onFrame();
 }

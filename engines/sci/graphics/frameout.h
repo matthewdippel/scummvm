@@ -339,6 +339,7 @@ private:
 	 * upper-left corner of every frame as a debug aid.
 	 */
 	bool _showRoomNumberOverlay;
+	void drawRoomNumberOverlay();
 
 	/**
 	 * A list of rectangles, in screen coordinates, that represent portions of
