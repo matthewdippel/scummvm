@@ -1156,6 +1156,12 @@ bool Console::cmdRoomNumber(int argc, const char **argv) {
 	} else {
 		Common::String roomNumberStr = argv[1];
 		int roomNumber = strtol(roomNumberStr.c_str(), nullptr, roomNumberStr.hasSuffix("h") ? 16 : 10);
+		// Refuse the change if no script exists, otherwise the game's room
+		// dispatcher will fatally error from kScriptID after the debugger exits.
+		if (!_engine->getResMan()->testResource(ResourceId(kResourceTypeScript, roomNumber))) {
+			debugPrintf("No script exists for room %d (%x in hex); room not changed\n", roomNumber, roomNumber);
+			return true;
+		}
 		_engine->_gamestate->setRoomNumber(roomNumber);
 		debugPrintf("Room number changed to %d (%x in hex)\n", roomNumber, roomNumber);
 	}
