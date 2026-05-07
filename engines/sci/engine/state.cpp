@@ -83,6 +83,7 @@ void EngineState::reset(bool isRestoring) {
 		_memorySegmentSize = 0;
 		_fileHandles.resize(5);
 		abortScriptProcessing = kAbortNone;
+		_debuggerTainted = false;
 	} else {
 		g_sci->_guestAdditions->reset();
 	}

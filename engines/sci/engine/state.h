@@ -168,6 +168,7 @@ struct EngineState : public Common::Serializable {
 	int variablesMax[4];		///< Max. values for all variables
 
 	AbortGameState abortScriptProcessing;
+	bool _debuggerTainted; ///< Set by debugger commands that put gamestate into conditions normal play never produces.
 	int16 gameIsRestarting; // is set when restarting (=1) or restoring the game (=2)
 
 	int scriptStepCounter; // Counts the number of steps executed

@@ -998,8 +998,19 @@ CelObjView::CelObjView(const GuiResourceId viewId, const int16 loopNo, const int
 
 	const Resource *const resource = g_sci->getResMan()->findResource(ResourceId(kResourceTypeView, viewId), false);
 
-	// SSCI just silently returns here
 	if (!resource) {
+		// SSCI silently returned here; we stay strict so genuine missing-asset
+		// bugs surface, but degrade gracefully when the debugger has put the
+		// engine into a state it would never reach during normal play.
+		if (g_sci->getEngineState()->_debuggerTainted) {
+			warning("View resource %d not found; rendering empty cel", viewId);
+			_xResolution = _yResolution = 1;
+			_width = _height = 0;
+			_skipColor = 0;
+			_celHeaderOffset = _hunkPaletteOffset = 0;
+			_remap = false;
+			return;
+		}
 		error("View resource %d not found", viewId);
 	}
 

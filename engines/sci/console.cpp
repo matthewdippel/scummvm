@@ -1165,6 +1165,7 @@ bool Console::cmdRoomNumber(int argc, const char **argv) {
 			return true;
 		}
 		_engine->_gamestate->setRoomNumber(roomNumber);
+		_engine->_gamestate->_debuggerTainted = true;
 		debugPrintf("Room number changed to %d (%x in hex)\n", roomNumber, roomNumber);
 	}
 
