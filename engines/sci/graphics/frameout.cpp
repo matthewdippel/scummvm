@@ -73,7 +73,8 @@ GfxFrameout::GfxFrameout(SegManager *segMan, GfxPalette32 *palette, GfxTransitio
 	_throttleKernelFrameOut(true),
 	_palMorphIsOn(false),
 	_lastScreenUpdateTick(0),
-	_showRoomNumberOverlay(false) {
+	_showRoomNumberOverlay(false),
+	_showHotspotsOverlay(false) {
 
 	if (g_sci->getGameId() == GID_PHANTASMAGORIA) {
 		_currentBuffer.create(630, 450, Graphics::PixelFormat::createFormatCLUT8());
@@ -1201,6 +1202,107 @@ void GfxFrameout::alterVmap(const Palette &palette1, const Palette &palette2, co
 	}
 }
 
+void GfxFrameout::drawHotspotsOverlay() {
+	for (uint i = 0; i < _lastHotspotRects.size(); ++i) {
+		directFrameOut(_lastHotspotRects[i]);
+	}
+	_lastHotspotRects.clear();
+	if (!_showHotspotsOverlay) return;
+	// Walk every live clone for ExitFeature instances. The "cursorCel" selector is
+	// the ExitFeature-specific signal; nsRect holds the click region in a coord
+	// space shifted (-27, -7) from the script-space mouse (see ExitFeature::doit
+	// in Shivers's Main.sc). Skip uninitialized features (nsLeft == -999).
+	if (g_sci->getGameId() != GID_SHIVERS) return;
+	const int cursorCelSel = g_sci->getKernel()->findSelector("cursorCel");
+	const int onMeCheckSel = g_sci->getKernel()->findSelector("onMeCheck");
+	const int pointsSel = g_sci->getKernel()->findSelector("points");
+	const int sizeSel = g_sci->getKernel()->findSelector("size");
+	if (cursorCelSel < 0) return;
+	const Graphics::PixelFormat fmt = g_system->getScreenFormat();
+	const uint32 red = fmt.isCLUT8() ? (uint32)_palette->matchColor(255, 0, 0) : fmt.RGBToColor(255, 0, 0);
+	Graphics::Surface *screen = g_system->lockScreen();
+	const Common::Array<SegmentObj *> &segs = _segMan->getSegments();
+	for (uint segId = 0; segId < segs.size(); ++segId) {
+		if (!segs[segId]) continue;
+		const SegmentType segType = segs[segId]->getType();
+		Common::Array<reg_t> objs;
+		if (segType == SEG_TYPE_SCRIPT) {
+			const ObjMap &objMap = ((Script *)segs[segId])->getObjectMap();
+			for (ObjMap::const_iterator it = objMap.begin(); it != objMap.end(); ++it) {
+				objs.push_back(make_reg(segId, it->_key));
+			}
+		} else if (segType == SEG_TYPE_CLONES) {
+			objs = segs[segId]->listAllDeallocatable(segId);
+		} else {
+			continue;
+		}
+		for (uint i = 0; i < objs.size(); ++i) {
+			const reg_t obj = objs[i];
+			const Object *o = _segMan->getObject(obj);
+			if (!o || o->isClass()) continue;
+			if (lookupSelector(_segMan, obj, cursorCelSel, nullptr, nullptr) != kSelectorVariable) continue;
+			// Polygon override: Feature::onMeCheck holds a Polygon when the script
+			// called createPoly or setPolygon. Take that path before nsRect.
+			reg_t onMeCheck = NULL_REG;
+			if (onMeCheckSel >= 0 && lookupSelector(_segMan, obj, onMeCheckSel, nullptr, nullptr) == kSelectorVariable) {
+				onMeCheck = readSelector(_segMan, obj, onMeCheckSel);
+			}
+			if (!onMeCheck.isNull() && pointsSel >= 0 && sizeSel >= 0 &&
+				lookupSelector(_segMan, onMeCheck, pointsSel, nullptr, nullptr) == kSelectorVariable &&
+				lookupSelector(_segMan, onMeCheck, sizeSel, nullptr, nullptr) == kSelectorVariable) {
+				const int16 polySize = (int16)readSelectorValue(_segMan, onMeCheck, sizeSel);
+				const reg_t pointsObj = readSelector(_segMan, onMeCheck, pointsSel);
+				// points is an IntArray *instance*; the raw buffer lives on its data selector.
+				if (lookupSelector(_segMan, pointsObj, SELECTOR(data), nullptr, nullptr) != kSelectorVariable) continue;
+				const reg_t dataReg = readSelector(_segMan, pointsObj, SELECTOR(data));
+				if (!_segMan->isValidAddr(dataReg, SEG_TYPE_ARRAY)) continue;
+				SciArray *points = _segMan->lookupArray(dataReg);
+				if (points && polySize >= 2) {
+					int bbL = INT_MAX, bbT = INT_MAX, bbR = INT_MIN, bbB = INT_MIN;
+					for (int v = 0; v < polySize; ++v) {
+						const int x0 = ((int)points->getAsInt16(v * 2)         + 27) * _currentBuffer.w / _scriptWidth;
+						const int y0 = ((int)points->getAsInt16(v * 2 + 1)     + 7)  * _currentBuffer.h / _scriptHeight;
+						const int nv = (v + 1) % polySize;
+						const int x1 = ((int)points->getAsInt16(nv * 2)        + 27) * _currentBuffer.w / _scriptWidth;
+						const int y1 = ((int)points->getAsInt16(nv * 2 + 1)    + 7)  * _currentBuffer.h / _scriptHeight;
+						screen->drawLine(x0, y0, x1, y1, red);
+						bbL = MIN(bbL, MIN(x0, x1));
+						bbT = MIN(bbT, MIN(y0, y1));
+						bbR = MAX(bbR, MAX(x0, x1) + 1);
+						bbB = MAX(bbB, MAX(y0, y1) + 1);
+					}
+					Common::Rect bbox(bbL, bbT, bbR, bbB);
+					bbox.clip(Common::Rect(_currentBuffer.w, _currentBuffer.h));
+					if (!bbox.isEmpty()) _lastHotspotRects.push_back(bbox);
+				}
+				continue;
+			}
+			// nsRect fallback
+			if (lookupSelector(_segMan, obj, SELECTOR(nsLeft), nullptr, nullptr) != kSelectorVariable) continue;
+			const int16 nsLeft = (int16)readSelectorValue(_segMan, obj, SELECTOR(nsLeft));
+			if (nsLeft == -999) continue;
+			const int16 nsTop    = (int16)readSelectorValue(_segMan, obj, SELECTOR(nsTop));
+			const int16 nsRight  = (int16)readSelectorValue(_segMan, obj, SELECTOR(nsRight));
+			const int16 nsBottom = (int16)readSelectorValue(_segMan, obj, SELECTOR(nsBottom));
+			if (nsLeft >= nsRight || nsTop >= nsBottom) continue;
+			Common::Rect r;
+			r.left   = (int)(nsLeft   + 27) * _currentBuffer.w / _scriptWidth;
+			r.right  = (int)(nsRight  + 27) * _currentBuffer.w / _scriptWidth;
+			r.top    = (int)(nsTop    + 7)  * _currentBuffer.h / _scriptHeight;
+			r.bottom = (int)(nsBottom + 7)  * _currentBuffer.h / _scriptHeight;
+			if (!r.isValidRect() || r.isEmpty()) continue;
+			r.clip(Common::Rect(_currentBuffer.w, _currentBuffer.h));
+			if (r.isEmpty()) continue;
+			_lastHotspotRects.push_back(r);
+			screen->drawLine(r.left,      r.top,        r.right - 1, r.top,        red);
+			screen->drawLine(r.left,      r.bottom - 1, r.right - 1, r.bottom - 1, red);
+			screen->drawLine(r.left,      r.top,        r.left,      r.bottom - 1, red);
+			screen->drawLine(r.right - 1, r.top,        r.right - 1, r.bottom - 1, red);
+		}
+	}
+	g_system->unlockScreen();
+}
+
 void GfxFrameout::drawRoomNumberOverlay() {
 	if (!_showRoomNumberOverlay) {
 		if (!_lastRoomOverlayRect.isEmpty()) {
@@ -1234,6 +1336,7 @@ void GfxFrameout::updateScreen(const int delta) {
 	}
 
 	_lastScreenUpdateTick = now;
+	drawHotspotsOverlay();
 	drawRoomNumberOverlay();
 	g_system->updateScreen();
 	g_sci->getSciDebugger()->onFrame();

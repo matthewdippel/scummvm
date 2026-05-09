@@ -167,6 +167,7 @@ public:
 	void setHotRectanglesActive(const bool active);
 	void setHotRectangles(const Common::Array<Common::Rect> &rects);
 	void checkHotRectangles(const Common::Point &mousePosition);
+	const Common::Array<Common::Rect> &getHotRectangles() const { return _hotRects; }
 
 private:
 	bool _hotRectanglesActive;

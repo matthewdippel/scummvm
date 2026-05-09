@@ -309,6 +309,11 @@ public:
 	 */
 	bool toggleRoomNumberOverlay() { return _showRoomNumberOverlay = !_showRoomNumberOverlay; }
 
+	/**
+	 * Flips the debug hotspot-box overlay on or off and returns the new state.
+	 */
+	bool toggleHotspotsOverlay() { return _showHotspotsOverlay = !_showHotspotsOverlay; }
+
 private:
 	/**
 	 * The last time the hardware screen was updated.
@@ -341,6 +346,10 @@ private:
 	bool _showRoomNumberOverlay;
 	Common::Rect _lastRoomOverlayRect;
 	void drawRoomNumberOverlay();
+
+	bool _showHotspotsOverlay;
+	Common::Array<Common::Rect> _lastHotspotRects;
+	void drawHotspotsOverlay();
 
 	/**
 	 * A list of rectangles, in screen coordinates, that represent portions of
