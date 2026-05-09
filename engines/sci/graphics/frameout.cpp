@@ -36,6 +36,7 @@
 
 #include "sci/sci.h"
 #include "sci/console.h"
+#include "sci/mcp/server.h"
 #include "sci/event.h"
 #include "sci/engine/features.h"
 #include "sci/engine/kernel.h"
@@ -1340,6 +1341,8 @@ void GfxFrameout::updateScreen(const int delta) {
 	drawRoomNumberOverlay();
 	g_system->updateScreen();
 	g_sci->getSciDebugger()->onFrame();
+	if (g_sci->_mcp)
+		g_sci->_mcp->onFrame();
 }
 
 void GfxFrameout::kernelFrameOut(const bool shouldShowBits) {

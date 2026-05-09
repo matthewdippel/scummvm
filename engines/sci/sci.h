@@ -332,6 +332,7 @@ public:
 
 	AudioPlayer *_audio;
 	Sync *_sync;
+	McpServer *_mcp;
 	SoundCommandParser *_soundCmd;
 	GameFeatures *_features;
 	GuestAdditions *_guestAdditions;
@@ -416,7 +417,6 @@ private:
 	EventManager *_eventMan;
 	reg_t _gameObjectAddress; /**< Pointer to the game object */
 	Console *_console;
-	McpServer *_mcp;
 	Common::RandomSource _rng;
 	Common::MacResManager _macExecutable;
 	bool _useHiresGraphics; // user-option for GK1, KQ6, PQ4

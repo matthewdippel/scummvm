@@ -52,7 +52,9 @@ static const char *kServerName = "scummvm-shivers-mcp";
 static const char *kServerVersion = "0.1";
 
 McpServer::McpServer(SciEngine *engine) :
-	_engine(engine), _realStdoutFd(-1), _running(false), _threadHandle(nullptr) {}
+	_engine(engine), _realStdoutFd(-1), _running(false),
+	_threadHandle(nullptr), _stepMutex(nullptr), _stepCond(nullptr),
+	_stepFramesRemaining(0) {}
 
 McpServer::~McpServer() {
 	stop();
@@ -72,6 +74,13 @@ void McpServer::start() {
 		warning("McpServer: real stdout fd not captured; protocol output disabled");
 		return;
 	}
+
+	pthread_mutex_t *mutex = new pthread_mutex_t;
+	pthread_cond_t *cond = new pthread_cond_t;
+	pthread_mutex_init(mutex, nullptr);
+	pthread_cond_init(cond, nullptr);
+	_stepMutex = mutex;
+	_stepCond = cond;
 
 	_running = true;
 	pthread_t *thread = new pthread_t;
@@ -96,8 +105,33 @@ void McpServer::stop() {
 		delete thread;
 		_threadHandle = nullptr;
 	}
+	if (_stepMutex) {
+		pthread_mutex_t *mutex = static_cast<pthread_mutex_t *>(_stepMutex);
+		pthread_mutex_destroy(mutex);
+		delete mutex;
+		_stepMutex = nullptr;
+	}
+	if (_stepCond) {
+		pthread_cond_t *cond = static_cast<pthread_cond_t *>(_stepCond);
+		pthread_cond_destroy(cond);
+		delete cond;
+		_stepCond = nullptr;
+	}
 	// _realStdoutFd is owned by scummvm_main (g_mcpRealStdoutFd); don't close.
 	_realStdoutFd = -1;
+}
+
+void McpServer::onFrame() {
+	if (!_stepMutex || !_stepCond)
+		return;
+	pthread_mutex_t *mutex = static_cast<pthread_mutex_t *>(_stepMutex);
+	pthread_cond_t *cond = static_cast<pthread_cond_t *>(_stepCond);
+	pthread_mutex_lock(mutex);
+	if (_stepFramesRemaining > 0) {
+		if (--_stepFramesRemaining == 0)
+			pthread_cond_signal(cond);
+	}
+	pthread_mutex_unlock(mutex);
 }
 
 void McpServer::readerLoop() {
@@ -143,6 +177,27 @@ static Common::JSONValue *makeNoArgToolDef(const char *name, const char *desc) {
 	Common::JSONObject tool;
 	tool["name"] = new Common::JSONValue(Common::String(name));
 	tool["description"] = new Common::JSONValue(Common::String(desc));
+	tool["inputSchema"] = new Common::JSONValue(schema);
+	return new Common::JSONValue(tool);
+}
+
+// Build the `step` tool definition with a single integer "frames" property.
+static Common::JSONValue *makeStepToolDef() {
+	Common::JSONObject framesProp;
+	framesProp["type"] = new Common::JSONValue(Common::String("integer"));
+	framesProp["minimum"] = new Common::JSONValue((long long int)0);
+	framesProp["description"] = new Common::JSONValue(Common::String("Number of frames to advance (default 1; 0 is a no-op)."));
+	Common::JSONObject properties;
+	properties["frames"] = new Common::JSONValue(framesProp);
+	Common::JSONObject schema;
+	schema["type"] = new Common::JSONValue(Common::String("object"));
+	schema["properties"] = new Common::JSONValue(properties);
+	schema["required"] = new Common::JSONValue(Common::JSONArray());
+	Common::JSONObject tool;
+	tool["name"] = new Common::JSONValue(Common::String("step"));
+	tool["description"] = new Common::JSONValue(Common::String(
+		"Advance the engine N frames synchronously. Engine must be paused; "
+		"errors otherwise. Result is JSON-encoded text {\"frames_advanced\": N}."));
 	tool["inputSchema"] = new Common::JSONValue(schema);
 	return new Common::JSONValue(tool);
 }
@@ -267,6 +322,7 @@ void McpServer::handleRequest(const Common::String &line) {
 			"Capture the current OSystem screen as a PNG and return it as "
 			"base64 in MCP image content. Reflects exactly what the user "
 			"sees, including cursor and any debug overlays."));
+		tools.push_back(makeStepToolDef());
 		Common::JSONObject result;
 		result["tools"] = new Common::JSONValue(tools);
 		Common::JSONValue resultVal(result);
@@ -313,6 +369,48 @@ void McpServer::handleRequest(const Common::String &line) {
 				sendResponse(buildOk(idVal, result));
 				delete result;
 			}
+		} else if (toolName == "step") {
+			int frames = 1;
+			if (params && params->contains("arguments") && (*params)["arguments"]->isObject()) {
+				const Common::JSONObject &toolArgs = (*params)["arguments"]->asObject();
+				if (toolArgs.contains("frames")) {
+					if (toolArgs["frames"]->isIntegerNumber())
+						frames = (int)toolArgs["frames"]->asIntegerNumber();
+					else if (toolArgs["frames"]->isNumber())
+						frames = (int)toolArgs["frames"]->asNumber();
+				}
+			}
+			if (frames < 0) {
+				Common::JSONValue *result = makeTextResult("frames must be >= 0", true);
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			} else if (frames == 0) {
+				Common::JSONValue *result = makeTextResult("{\"frames_advanced\": 0}");
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			} else if (!_pauseToken.isActive()) {
+				Common::JSONValue *result = makeTextResult("step requires pause", true);
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			} else if (!_stepMutex || !_stepCond) {
+				Common::JSONValue *result = makeTextResult("step synchronization not initialized", true);
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			} else {
+				pthread_mutex_t *mutex = static_cast<pthread_mutex_t *>(_stepMutex);
+				pthread_cond_t *cond = static_cast<pthread_cond_t *>(_stepCond);
+				pthread_mutex_lock(mutex);
+				_stepFramesRemaining = frames;
+				_pauseToken.clear();          // engine resumes
+				while (_stepFramesRemaining > 0) {
+					pthread_cond_wait(cond, mutex);
+				}
+				_pauseToken = _engine->pauseEngine(); // re-pause while we still hold the mutex
+				pthread_mutex_unlock(mutex);
+				Common::JSONValue *result = makeTextResult(Common::String::format("{\"frames_advanced\": %d}", frames));
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			}
 		} else {
 			sendResponse(buildError(idVal, -32601, Common::String::format("Unknown tool: %s", toolName.c_str())));
 		}
@@ -336,7 +434,9 @@ void McpServer::sendResponse(const Common::String &json) {
 #else // !POSIX
 
 McpServer::McpServer(SciEngine *engine) :
-	_engine(engine), _realStdoutFd(-1), _running(false), _threadHandle(nullptr) {}
+	_engine(engine), _realStdoutFd(-1), _running(false),
+	_threadHandle(nullptr), _stepMutex(nullptr), _stepCond(nullptr),
+	_stepFramesRemaining(0) {}
 
 McpServer::~McpServer() {}
 
@@ -345,6 +445,7 @@ void McpServer::start() {
 }
 
 void McpServer::stop() {}
+void McpServer::onFrame() {}
 void McpServer::readerLoop() {}
 void McpServer::handleRequest(const Common::String &) {}
 void McpServer::sendResponse(const Common::String &) {}

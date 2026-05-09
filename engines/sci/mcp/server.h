@@ -46,11 +46,21 @@ public:
 	/** Signal the reader thread to exit and join. */
 	void stop();
 
+	/**
+	 * Called from the engine main thread once per displayed frame. Used by
+	 * the `step` tool to count down frames advanced while the engine was
+	 * temporarily resumed.
+	 */
+	void onFrame();
+
 private:
 	SciEngine *_engine;
 	int _realStdoutFd;
 	bool _running;
 	void *_threadHandle;       // pthread_t cast to void* to avoid the dep in headers
+	void *_stepMutex;          // pthread_mutex_t *, owns _stepFramesRemaining
+	void *_stepCond;           // pthread_cond_t *, signaled when remaining hits 0
+	int _stepFramesRemaining;  // protected by _stepMutex
 	PauseToken _pauseToken;    // active while pause tool has been called without a matching unpause
 
 	void readerLoop();

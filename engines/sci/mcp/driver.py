@@ -166,11 +166,10 @@ class McpDriver:
 
     def step(self, frames: int = 1) -> int:
         result = self.call_tool("step", {"frames": frames})
+        if result.get("isError"):
+            raise McpError(-32000, f"step: {self._content_text(result)}")
         text = self._content_text(result)
-        try:
-            return int(json.loads(text).get("frames_advanced", 0))
-        except (ValueError, AttributeError):
-            return 0
+        return int(json.loads(text)["frames_advanced"])
 
     def screenshot(self, save_path: Optional[str] = None) -> bytes:
         result = self.call_tool("screenshot")
@@ -290,6 +289,48 @@ def cmd_smoke(args: argparse.Namespace) -> int:
                 print("  unpaused-changes WARN (two screenshots ~500ms apart were identical; engine may not be running)")
             else:
                 print("  unpaused-changes OK (frames differ)")
+        if "step" in names:
+            # step(0) — no-op while paused.
+            d.pause()
+            time.sleep(0.3)
+            n = d.step(0)
+            if n != 0:
+                print(f"  step(0)        FAIL (expected 0, got {n})")
+                return 1
+            print("  step(0)        OK")
+            # step while unpaused must error.
+            d.unpause()
+            try:
+                d.step(1)
+                print("  step-needs-pause FAIL (expected error)")
+                return 1
+            except McpError as e:
+                print(f"  step-needs-pause OK (rejected: {e})")
+            # Step advances the game: snapshots before/after must differ.
+            d.pause()
+            time.sleep(0.3)
+            a = d.screenshot()
+            t0 = time.time()
+            n = d.step(60)
+            elapsed = time.time() - t0
+            b = d.screenshot()
+            if n != 60:
+                print(f"  step(60)       FAIL (advanced {n})")
+                return 1
+            if a == b:
+                print("  step-advances  FAIL (frames identical after step)")
+                return 1
+            timing = "OK" if 0.5 <= elapsed <= 5.0 else "WARN"
+            print(f"  step(60)       {timing} ({elapsed*1000:.0f}ms, frames differ)")
+            # Repeated stepping continues to make progress.
+            f = d.screenshot()
+            d.step(60)
+            g = d.screenshot()
+            if f == g:
+                print("  step-repeat    FAIL (no progress on second step)")
+                return 1
+            print("  step-repeat    OK")
+            d.unpause()
     print("Smoke test passed.")
     return 0
 
