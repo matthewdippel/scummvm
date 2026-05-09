@@ -25,8 +25,14 @@
 
 #include "sci/mcp/server.h"
 
+#include "common/base64.h"
 #include "common/formats/json.h"
+#include "common/memstream.h"
+#include "common/system.h"
 #include "common/textconsole.h"
+#include "graphics/paletteman.h"
+#include "graphics/surface.h"
+#include "image/png.h"
 #include "sci/sci.h"
 
 #ifdef POSIX
@@ -141,6 +147,49 @@ static Common::JSONValue *makeNoArgToolDef(const char *name, const char *desc) {
 	return new Common::JSONValue(tool);
 }
 
+// Build an MCP image content result:
+//   {"content": [{"type": "image", "mimeType": "image/png", "data": <base64>}], "isError": false}
+static Common::JSONValue *makeImageResult(const Common::String &base64Png) {
+	Common::JSONObject contentItem;
+	contentItem["type"] = new Common::JSONValue(Common::String("image"));
+	contentItem["mimeType"] = new Common::JSONValue(Common::String("image/png"));
+	contentItem["data"] = new Common::JSONValue(base64Png);
+	Common::JSONArray content;
+	content.push_back(new Common::JSONValue(contentItem));
+	Common::JSONObject result;
+	result["content"] = new Common::JSONValue(content);
+	result["isError"] = new Common::JSONValue(false);
+	return new Common::JSONValue(result);
+}
+
+// Capture the current OSystem screen, encode as PNG, and base64. Returns an
+// empty string on failure. Caller must own the strings going in/out.
+static Common::String captureScreenshotBase64() {
+	Graphics::Surface *screen = g_system->lockScreen();
+	if (!screen) {
+		warning("McpServer: lockScreen returned null");
+		return Common::String();
+	}
+	Common::MemoryWriteStreamDynamic out(DisposeAfterUse::NO);
+	bool ok;
+	if (g_system->getScreenFormat().isCLUT8()) {
+		byte palette[256 * 3];
+		g_system->getPaletteManager()->grabPalette(palette, 0, 256);
+		ok = Image::writePNG(out, *screen, palette, 256);
+	} else {
+		ok = Image::writePNG(out, *screen);
+	}
+	g_system->unlockScreen();
+	if (!ok) {
+		warning("McpServer: writePNG failed");
+		free(out.getData());
+		return Common::String();
+	}
+	Common::String b64 = Common::b64EncodeData(out.getData(), out.size());
+	free(out.getData());
+	return b64;
+}
+
 // Build an MCP-compliant tools/call result with a single text content item:
 //   {"content": [{"type": "text", "text": <text>}], "isError": <isError>}
 static Common::JSONValue *makeTextResult(const Common::String &text, bool isError = false) {
@@ -214,6 +263,10 @@ void McpServer::handleRequest(const Common::String &line) {
 		tools.push_back(makeNoArgToolDef("unpause",
 			"Resume the SCI engine at native speed (returning interactive "
 			"control to the human player). Step calls error while unpaused."));
+		tools.push_back(makeNoArgToolDef("screenshot",
+			"Capture the current OSystem screen as a PNG and return it as "
+			"base64 in MCP image content. Reflects exactly what the user "
+			"sees, including cursor and any debug overlays."));
 		Common::JSONObject result;
 		result["tools"] = new Common::JSONValue(tools);
 		Common::JSONValue resultVal(result);
@@ -249,6 +302,17 @@ void McpServer::handleRequest(const Common::String &line) {
 			Common::JSONValue *result = makeTextResult("unpaused");
 			sendResponse(buildOk(idVal, result));
 			delete result;
+		} else if (toolName == "screenshot") {
+			Common::String b64 = captureScreenshotBase64();
+			if (b64.empty()) {
+				Common::JSONValue *result = makeTextResult("screenshot capture failed", true);
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			} else {
+				Common::JSONValue *result = makeImageResult(b64);
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			}
 		} else {
 			sendResponse(buildError(idVal, -32601, Common::String::format("Unknown tool: %s", toolName.c_str())));
 		}

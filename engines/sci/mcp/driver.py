@@ -148,6 +148,14 @@ class McpDriver:
                 return item.get("text", "")
         return ""
 
+    @staticmethod
+    def _content_image_bytes(result: dict) -> bytes:
+        """Extract the first image content item (base64-decoded) from an MCP tool result."""
+        for item in result.get("content", []):
+            if item.get("type") == "image":
+                return base64.b64decode(item.get("data", ""))
+        return b""
+
     # ── High-level wrappers (added as the engine side grows) ───────────────
 
     def pause(self) -> str:
@@ -166,7 +174,9 @@ class McpDriver:
 
     def screenshot(self, save_path: Optional[str] = None) -> bytes:
         result = self.call_tool("screenshot")
-        png = base64.b64decode(result["png_base64"])
+        png = self._content_image_bytes(result)
+        if not png:
+            raise McpError(-32000, "screenshot returned no image content")
         if save_path:
             with open(save_path, "wb") as f:
                 f.write(png)
@@ -250,7 +260,50 @@ def cmd_smoke(args: argparse.Namespace) -> int:
             print(f"  pause (idem)   OK ({d.pause()!r})")
             print(f"  unpause        OK ({d.unpause()!r})")
             print(f"  unpause (idem) OK ({d.unpause()!r})")
+        if "screenshot" in names:
+            # Let the engine boot past splash transitions before sampling.
+            time.sleep(2.0)
+            png = d.screenshot()
+            if png[:8] != b"\x89PNG\r\n\x1a\n":
+                print(f"  screenshot     FAIL (no PNG magic, got first 8: {png[:8]!r})")
+                return 1
+            # Parse IHDR (bytes 16..24): width, height as big-endian uint32
+            w = int.from_bytes(png[16:20], "big")
+            h = int.from_bytes(png[20:24], "big")
+            print(f"  screenshot     OK ({len(png)} B, {w}x{h})")
+            # Pause-determinism: pauseEngine may take a frame to fully settle,
+            # so we wait, then compare two snapshots.
+            d.pause()
+            time.sleep(0.3)
+            a = d.screenshot()
+            b = d.screenshot()
+            d.unpause()
+            if a != b:
+                print(f"  paused-deterministic FAIL ({len(a)} B vs {len(b)} B differ)")
+                return 1
+            print(f"  paused-deterministic OK (both {len(a)} B, identical)")
+            # Liveness: with engine running, screenshots over time should differ.
+            c = d.screenshot()
+            time.sleep(0.5)
+            e = d.screenshot()
+            if c == e:
+                print("  unpaused-changes WARN (two screenshots ~500ms apart were identical; engine may not be running)")
+            else:
+                print("  unpaused-changes OK (frames differ)")
     print("Smoke test passed.")
+    return 0
+
+
+def cmd_screenshot(args: argparse.Namespace) -> int:
+    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose) as d:
+        if args.pause:
+            d.pause()
+        if args.delay > 0:
+            time.sleep(args.delay)
+        png = d.screenshot(args.out)
+        if args.pause:
+            d.unpause()
+    print(f"Wrote {len(png)} bytes to {args.out}")
     return 0
 
 
@@ -323,6 +376,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     raw = sub.add_parser("raw", help="send a single raw JSON-RPC request and exit")
     raw.add_argument("json", help="JSON-RPC request as a string")
     raw.set_defaults(func=cmd_raw)
+    shot = sub.add_parser("screenshot", help="take a screenshot and save it to a file")
+    shot.add_argument("--out", default="/tmp/scummvm-mcp-shot.png", help="output PNG path (default: /tmp/scummvm-mcp-shot.png)")
+    shot.add_argument("--delay", type=float, default=0.0, help="seconds to wait after spawn before capturing")
+    shot.add_argument("--pause", action="store_true", help="pause the engine before capturing")
+    shot.set_defaults(func=cmd_screenshot)
 
     ns = p.parse_args(argv)
     return ns.func(ns)
