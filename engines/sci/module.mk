@@ -8,6 +8,7 @@ MODULE_OBJS := \
 	metaengine.o \
 	sci.o \
 	util.o \
+	mcp/server.o \
 	engine/features.o \
 	engine/file.o \
 	engine/gc.o \

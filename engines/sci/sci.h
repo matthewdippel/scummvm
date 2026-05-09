@@ -51,6 +51,7 @@ class Kernel;
 class GameFeatures;
 class GuestAdditions;
 class Console;
+class McpServer;
 class AudioPlayer;
 class SoundCommandParser;
 class EventManager;
@@ -415,6 +416,7 @@ private:
 	EventManager *_eventMan;
 	reg_t _gameObjectAddress; /**< Pointer to the game object */
 	Console *_console;
+	McpServer *_mcp;
 	Common::RandomSource _rng;
 	Common::MacResManager _macExecutable;
 	bool _useHiresGraphics; // user-option for GK1, KQ6, PQ4

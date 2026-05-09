@@ -177,6 +177,7 @@ static const char HELP_STRING4[] =
 	"  --native-mt32            True Roland MT-32 (disable GM emulation)\n"
 	"  --dump-midi              Dumps MIDI events to 'dump.mid', until quitting from game\n"
 	"                           (if file already exists, it will be overwritten)\n"
+	"  --mcp                    Run a JSON-RPC MCP server on stdio (SCI Shivers; experimental)\n"
 	"  --enable-gs              Enable Roland GS mode for MIDI playback\n"
 	"  --output-channels=CHANNELS Select output channel count (e.g. 2 for stereo)\n"
 	"  --output-rate=RATE       Select output sample rate in Hz (e.g. 22050)\n"
@@ -924,6 +925,9 @@ Common::String parseCommandLine(Common::StringMap &settings, int argc, const cha
 			END_OPTION
 
 			DO_LONG_OPTION_BOOL("dump-midi")
+			END_OPTION
+
+			DO_LONG_OPTION_BOOL("mcp")
 			END_OPTION
 
 			DO_LONG_OPTION_BOOL("enable-gs")

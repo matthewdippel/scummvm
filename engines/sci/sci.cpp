@@ -30,6 +30,7 @@
 #include "sci/sci.h"
 #include "sci/debug.h"
 #include "sci/console.h"
+#include "sci/mcp/server.h"
 #include "sci/event.h"
 
 #include "sci/engine/features.h"
@@ -134,6 +135,7 @@ SciEngine::SciEngine(OSystem *syst, const ADGameDescription *desc, SciGameId gam
 	_eventMan(nullptr),
 	_gameObjectAddress(),
 	_console(nullptr),
+	_mcp(nullptr),
 	_tts(nullptr),
 	_rng("sci"),
 	_useHiresGraphics(false),
@@ -458,7 +460,18 @@ Common::Error SciEngine::run() {
 		warning("Fan made script patch detected");
 	}
 
+	if (ConfMan.hasKey("mcp") && ConfMan.getBool("mcp")) {
+		_mcp = new McpServer(this);
+		_mcp->start();
+	}
+
 	runGame();
+
+	if (_mcp) {
+		_mcp->stop();
+		delete _mcp;
+		_mcp = nullptr;
+	}
 
 	ConfMan.flushToDisk();
 

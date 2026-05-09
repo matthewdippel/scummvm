@@ -30,6 +30,10 @@
 // FIXME: Avoid using printf
 #define FORBIDDEN_SYMBOL_EXCEPTION_printf
 
+#ifdef POSIX
+#include <unistd.h>
+#endif
+
 #include "engines/engine.h"
 #include "engines/metaengine.h"
 #include "base/commandLine.h"
@@ -410,6 +414,13 @@ static void setupKeymapper(OSystem &system) {
 	}
 }
 
+#ifdef POSIX
+// Saved real stdout fd, populated during scummvm_main when --mcp is parsed and
+// before any other output goes to fd 1. Used by Sci::McpServer to send
+// JSON-RPC responses without colliding with regular scummvm logging on stdout.
+int g_mcpRealStdoutFd = -1;
+#endif
+
 extern "C" int scummvm_main(int argc, const char * const argv[]) {
 	Common::String specialDebug;
 	Common::String command;
@@ -425,6 +436,18 @@ extern "C" int scummvm_main(int argc, const char * const argv[]) {
 	// Parse the command line
 	Common::StringMap settings;
 	command = Base::parseCommandLine(settings, argc, argv);
+
+#ifdef POSIX
+	// If --mcp is on, redirect stdout to stderr immediately so that any
+	// startup printf/debug() output doesn't corrupt the JSON-RPC stream
+	// the SCI MCP server speaks on stdout. The original fd is saved here
+	// for the SCI engine's McpServer to find later.
+	extern int g_mcpRealStdoutFd; // defined below in this file
+	if (settings.contains("mcp") && settings["mcp"] == "true") {
+		g_mcpRealStdoutFd = dup(STDOUT_FILENO);
+		dup2(STDERR_FILENO, STDOUT_FILENO);
+	}
+#endif
 
 	// Check for backend start settings
 	Common::String executable;
