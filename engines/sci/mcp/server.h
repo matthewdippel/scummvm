@@ -24,6 +24,7 @@
 
 #include "common/scummsys.h"
 #include "common/str.h"
+#include "engines/engine.h" // for PauseToken
 
 namespace Sci {
 
@@ -50,6 +51,7 @@ private:
 	int _realStdoutFd;
 	bool _running;
 	void *_threadHandle;       // pthread_t cast to void* to avoid the dep in headers
+	PauseToken _pauseToken;    // active while pause tool has been called without a matching unpause
 
 	void readerLoop();
 	void handleRequest(const Common::String &line);

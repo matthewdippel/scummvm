@@ -139,17 +139,30 @@ class McpDriver:
         """Returns whatever the tool's `result` is. Raises McpError on failure."""
         return self._send_request("tools/call", {"name": name, "arguments": arguments or {}})
 
+    @staticmethod
+    def _content_text(result: dict) -> str:
+        """Extract the first text content item from an MCP tool result."""
+        items = result.get("content", [])
+        for item in items:
+            if item.get("type") == "text":
+                return item.get("text", "")
+        return ""
+
     # ── High-level wrappers (added as the engine side grows) ───────────────
 
-    def pause(self) -> None:
-        self.call_tool("pause")
+    def pause(self) -> str:
+        return self._content_text(self.call_tool("pause"))
 
-    def unpause(self) -> None:
-        self.call_tool("unpause")
+    def unpause(self) -> str:
+        return self._content_text(self.call_tool("unpause"))
 
     def step(self, frames: int = 1) -> int:
         result = self.call_tool("step", {"frames": frames})
-        return int(result.get("frames_advanced", 0))
+        text = self._content_text(result)
+        try:
+            return int(json.loads(text).get("frames_advanced", 0))
+        except (ValueError, AttributeError):
+            return 0
 
     def screenshot(self, save_path: Optional[str] = None) -> bytes:
         result = self.call_tool("screenshot")
@@ -223,7 +236,8 @@ def cmd_smoke(args: argparse.Namespace) -> int:
     with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose) as d:
         print(f"  initialize     OK ({(time.time()-t0)*1000:.0f}ms)")
         tools = d.list_tools()
-        print(f"  tools/list     {len(tools)} tools: {[t['name'] for t in tools]}")
+        names = [t["name"] for t in tools]
+        print(f"  tools/list     {len(tools)} tools: {names}")
         # Sanity: calling a nonexistent tool should yield an MCP error.
         try:
             d.call_tool("definitely_not_a_real_tool")
@@ -231,6 +245,11 @@ def cmd_smoke(args: argparse.Namespace) -> int:
             return 1
         except McpError as e:
             print(f"  unknown tool   OK (rejected: {e})")
+        if "pause" in names and "unpause" in names:
+            print(f"  pause          OK ({d.pause()!r})")
+            print(f"  pause (idem)   OK ({d.pause()!r})")
+            print(f"  unpause        OK ({d.unpause()!r})")
+            print(f"  unpause (idem) OK ({d.unpause()!r})")
     print("Smoke test passed.")
     return 0
 
