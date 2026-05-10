@@ -19,9 +19,11 @@ Library usage:
 from __future__ import annotations
 
 import argparse
+import atexit
 import base64
 import json
 import os
+import readline
 import shlex
 import subprocess
 import sys
@@ -37,6 +39,56 @@ CLIENT_VERSION = "0.1"
 # Default scummvm binary lives at the repo root, two levels up from this file.
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SCUMMVM = os.path.normpath(os.path.join(_THIS_DIR, "..", "..", "..", "scummvm"))
+
+HISTORY_FILE = os.path.expanduser("~/.scummvm-mcp-history")
+
+
+def _coerce_value(v: str) -> Any:
+    """Coerce a CLI-style value to int/float/bool/str for tool arguments."""
+    if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+        return v[1:-1]
+    if v in ("true", "True"):
+        return True
+    if v in ("false", "False"):
+        return False
+    try:
+        return int(v)
+    except ValueError:
+        pass
+    try:
+        return float(v)
+    except ValueError:
+        pass
+    return v
+
+
+def _parse_kwargs(parts: list[str]) -> dict:
+    """Parse a list of "key=value" tokens into a dict, with type inference."""
+    result: dict[str, Any] = {}
+    for part in parts:
+        if "=" not in part:
+            raise ValueError(f"expected key=value, got {part!r}")
+        k, v = part.split("=", 1)
+        result[k] = _coerce_value(v)
+    return result
+
+
+def _format_result(result: dict) -> str:
+    """Pretty-print a tool result, summarizing huge image content instead of dumping base64."""
+    if "content" in result:
+        lines = []
+        for item in result.get("content", []):
+            t = item.get("type")
+            if t == "image":
+                lines.append(f"  [image {item.get('mimeType', '?')}, {len(item.get('data', ''))} bytes base64]")
+            elif t == "text":
+                lines.append(f"  [text] {item.get('text', '')}")
+            else:
+                lines.append(f"  [{t}] {json.dumps({k: v for k, v in item.items() if k != 'type'})}")
+        if result.get("isError"):
+            lines.append("  isError: true")
+        return "\n".join(lines) if lines else "  (empty result)"
+    return json.dumps(result, indent=2)
 
 
 class McpError(RuntimeError):
@@ -350,10 +402,21 @@ def cmd_screenshot(args: argparse.Namespace) -> int:
 
 def cmd_shell(args: argparse.Namespace) -> int:
     print("Interactive shell. Commands:")
-    print("  list                       — show registered tools")
-    print("  call <name> [json args]    — invoke a tool")
-    print("  raw <json>                 — send a raw JSON-RPC request")
-    print("  quit                       — exit")
+    print("  list                              — show registered tools")
+    print("  call <name> [key=value ...]       — invoke a tool (CLI-style kwargs)")
+    print("  raw <json>                        — send a raw JSON-RPC request")
+    print("  quit                              — exit")
+    print("(↑/↓ navigate history; history persists at ~/.scummvm-mcp-history)")
+
+    # Wire up readline history. Importing readline already enables line editing
+    # and arrow-key history within input(); we just persist it across sessions.
+    try:
+        readline.read_history_file(HISTORY_FILE)
+    except (FileNotFoundError, OSError):
+        pass
+    readline.set_history_length(1000)
+    atexit.register(lambda: _safe_write_history())
+
     with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose) as d:
         while True:
             try:
@@ -364,34 +427,54 @@ def cmd_shell(args: argparse.Namespace) -> int:
             if not line or line in ("quit", "exit"):
                 break
             try:
-                if line == "list":
+                tokens = shlex.split(line)
+            except ValueError as e:
+                print(f"parse error: {e}")
+                continue
+            if not tokens:
+                continue
+            cmd = tokens[0]
+            try:
+                if cmd == "list":
                     for t in d.list_tools():
                         print(f"  {t['name']:24s} {t.get('description', '')}")
-                elif line.startswith("call "):
-                    parts = line[len("call "):].split(None, 1)
-                    name = parts[0]
-                    arg_dict = json.loads(parts[1]) if len(parts) > 1 else {}
-                    result = d.call_tool(name, arg_dict)
-                    print(json.dumps(result, indent=2))
-                elif line.startswith("raw "):
+                elif cmd == "call":
+                    if len(tokens) < 2:
+                        print("usage: call <name> [key=value ...]")
+                        continue
+                    name = tokens[1]
+                    try:
+                        kw = _parse_kwargs(tokens[2:])
+                    except ValueError as e:
+                        print(f"args error: {e}")
+                        continue
+                    result = d.call_tool(name, kw)
+                    print(_format_result(result))
+                elif cmd == "raw":
                     payload = json.loads(line[len("raw "):])
                     if "id" not in payload:
-                        result = d._send_notification(payload["method"], payload.get("params"))
+                        d._send_notification(payload["method"], payload.get("params"))
                         print("(notification sent)")
                     else:
-                        # bypass the per-call lock & response-shape parser
                         with d._lock:
                             assert d.proc.stdin and d.proc.stdout
                             d.proc.stdin.write((json.dumps(payload) + "\n").encode("utf-8"))
                             d.proc.stdin.flush()
                             print(d.proc.stdout.readline().decode("utf-8").strip())
                 else:
-                    print("(unknown command; try 'list', 'call <name>', or 'quit')")
+                    print(f"(unknown command {cmd!r}; try 'list', 'call', 'raw', 'quit')")
             except McpError as e:
                 print(f"error: {e}")
             except Exception as e:
                 print(f"client error: {e}")
     return 0
+
+
+def _safe_write_history() -> None:
+    try:
+        readline.write_history_file(HISTORY_FILE)
+    except OSError:
+        pass
 
 
 def cmd_raw(args: argparse.Namespace) -> int:
