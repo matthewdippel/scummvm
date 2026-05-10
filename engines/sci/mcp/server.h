@@ -79,6 +79,22 @@ private:
 	// waits; onFrame consumes it and signals back via _stepCond.
 	Common::Array<byte> _pendingRestoreData; // protected by _stepMutex
 
+	// Script playback. Populated by play_script and consumed on the engine
+	// thread in onFrame, advancing one frame per onFrame call and firing
+	// scheduled clicks at the right absolute frame. The engine runs at native
+	// speed throughout — there is no pause/step cycling.
+	struct PlaybackAction {
+		int frame;   // absolute frame at which to fire (0 = first onFrame)
+		int x, y;
+		int button;  // 1 = left, 2 = right, 3 = middle
+	};
+	bool _playbackActive;       // protected by _stepMutex
+	bool _playbackPrevPaused;   // remember pause state across playback
+	int _playbackFrame;
+	int _playbackEndFrame;
+	uint _playbackIndex;
+	Common::Array<PlaybackAction> _playbackQueue;
+
 	void flushPendingInputs(); // assumes _stepMutex is held
 
 	void readerLoop();

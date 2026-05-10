@@ -73,6 +73,53 @@ def _parse_kwargs(parts: list[str]) -> dict:
     return result
 
 
+def parse_script(text: str) -> list[dict]:
+    """Parse a TAS script (one command per line) into an actions list.
+
+    Recognized commands:
+        click X Y [button]   — left, right, or middle; defaults to left
+        wait N               — wait N in-game frames
+
+    Lines starting with `#` and inline `# comment` tails are stripped. Blank
+    lines are ignored. Raises ValueError on malformed input, with the offending
+    line number.
+    """
+    actions: list[dict] = []
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        # Strip inline comments
+        if "#" in raw:
+            raw = raw.split("#", 1)[0]
+        parts = raw.split()
+        if not parts:
+            continue
+        op = parts[0]
+        if op == "click":
+            if len(parts) not in (3, 4):
+                raise ValueError(f"line {lineno}: click expects 'click X Y [button]'")
+            try:
+                x = int(parts[1])
+                y = int(parts[2])
+            except ValueError:
+                raise ValueError(f"line {lineno}: click X/Y must be integers")
+            button = parts[3] if len(parts) == 4 else "left"
+            if button not in ("left", "right", "middle"):
+                raise ValueError(f"line {lineno}: unknown button {button!r}")
+            actions.append({"type": "click", "x": x, "y": y, "button": button})
+        elif op == "wait":
+            if len(parts) != 2:
+                raise ValueError(f"line {lineno}: wait expects 'wait N'")
+            try:
+                n = int(parts[1])
+            except ValueError:
+                raise ValueError(f"line {lineno}: wait N must be an integer")
+            if n < 0:
+                raise ValueError(f"line {lineno}: wait N must be >= 0")
+            actions.append({"type": "wait", "frames": n})
+        else:
+            raise ValueError(f"line {lineno}: unknown command {op!r}")
+    return actions
+
+
 def _diff_bbox(png_a: bytes, png_b: bytes) -> Optional[tuple]:
     """Bounding box of differing pixels between two PNGs, or None if PIL is unavailable.
 
@@ -296,6 +343,17 @@ class McpDriver:
         if result.get("isError"):
             raise McpError(-32000, f"drop_snapshot: {self._content_text(result)}")
         return self._content_text(result)
+
+    def play_script(self, actions: list[dict]) -> dict:
+        """Run a list of click/wait actions on the engine at native speed.
+
+        Blocks until the engine has played the entire script. Returns
+        {"actions_played": N, "frames": M}.
+        """
+        result = self.call_tool("play_script", {"actions": actions})
+        if result.get("isError"):
+            raise McpError(-32000, f"play_script: {self._content_text(result)}")
+        return json.loads(self._content_text(result))
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
 
@@ -525,6 +583,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
     print("Interactive shell. Anything not recognized below is treated as a tool name.")
     print("  list                              — show registered tools")
     print("  snapshot [name]                   — pause+snapshot+unpause; auto-names if no arg")
+    print("  play <file>                       — play a TAS script (click/wait commands)")
     print("  raw <json>                        — send a raw JSON-RPC request")
     print("  help                              — show this help")
     print("  quit                              — exit")
@@ -565,6 +624,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
                 if cmd in ("help", "?"):
                     print("  list                              — show registered tools")
                     print("  snapshot [name]                   — pause+snapshot+unpause (auto-names if no arg)")
+                    print("  play <file>                       — play a TAS script (click/wait commands)")
                     print("  raw <json>                        — send a raw JSON-RPC request")
                     print("  help                              — show this help")
                     print("  quit                              — exit")
@@ -582,6 +642,19 @@ def cmd_shell(args: argparse.Namespace) -> int:
                     info = d.snapshot(name)
                     d.unpause()
                     print(f"snapshot {name} OK ({info.get('bytes', '?')} bytes)")
+                elif cmd == "play":
+                    if len(tokens) != 2:
+                        print("usage: play <file>")
+                        continue
+                    path = os.path.expanduser(tokens[1])
+                    try:
+                        with open(path, "r") as f:
+                            actions = parse_script(f.read())
+                    except (OSError, ValueError) as e:
+                        print(f"play: {e}")
+                        continue
+                    info = d.play_script(actions)
+                    print(f"play {path} OK ({info['actions_played']} actions, {info['frames']} frames)")
                 elif cmd == "raw":
                     payload = json.loads(line[len("raw "):])
                     if "id" not in payload:

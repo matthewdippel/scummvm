@@ -61,7 +61,9 @@ static const char *kServerVersion = "0.1";
 McpServer::McpServer(SciEngine *engine) :
 	_engine(engine), _realStdoutFd(-1), _running(false),
 	_threadHandle(nullptr), _stepMutex(nullptr), _stepCond(nullptr),
-	_stepFramesRemaining(0) {}
+	_stepFramesRemaining(0),
+	_playbackActive(false), _playbackPrevPaused(false),
+	_playbackFrame(0), _playbackEndFrame(0), _playbackIndex(0) {}
 
 McpServer::~McpServer() {
 	stop();
@@ -170,6 +172,36 @@ void McpServer::onFrame() {
 	if (_stepFramesRemaining > 0) {
 		if (--_stepFramesRemaining == 0)
 			pthread_cond_signal(cond);
+	}
+	// Script playback runs once per displayed frame; we fire any scheduled
+	// clicks whose frame has arrived, then advance the playback frame counter.
+	// When everything has fired and the trailing wait has elapsed, signal the
+	// reader thread that the play_script call can return.
+	if (_playbackActive) {
+		Common::EventManager *em = g_system->getEventManager();
+		while (_playbackIndex < _playbackQueue.size() &&
+		       _playbackQueue[_playbackIndex].frame <= _playbackFrame) {
+			const PlaybackAction &a = _playbackQueue[_playbackIndex];
+			g_system->warpMouse(a.x, a.y);
+			Common::EventType down = Common::EVENT_LBUTTONDOWN, up = Common::EVENT_LBUTTONUP;
+			if (a.button == 2) { down = Common::EVENT_RBUTTONDOWN; up = Common::EVENT_RBUTTONUP; }
+			else if (a.button == 3) { down = Common::EVENT_MBUTTONDOWN; up = Common::EVENT_MBUTTONUP; }
+			Common::Event d;
+			d.type = down;
+			d.mouse = Common::Point(a.x, a.y);
+			em->pushEvent(d);
+			Common::Event u;
+			u.type = up;
+			u.mouse = Common::Point(a.x, a.y);
+			em->pushEvent(u);
+			_playbackIndex++;
+		}
+		if (_playbackIndex >= _playbackQueue.size() && _playbackFrame >= _playbackEndFrame) {
+			_playbackActive = false;
+			pthread_cond_signal(cond);
+		} else {
+			_playbackFrame++;
+		}
 	}
 	pthread_mutex_unlock(mutex);
 }
@@ -326,6 +358,33 @@ static Common::JSONValue *makeStepToolDef() {
 	return new Common::JSONValue(tool);
 }
 
+// Build the `play_script` tool definition. Takes an `actions` array of
+// {type: "click", x, y, button?} or {type: "wait", frames}.
+static Common::JSONValue *makePlayScriptToolDef() {
+	Common::JSONObject actionsArr;
+	actionsArr["type"] = new Common::JSONValue(Common::String("array"));
+	actionsArr["description"] = new Common::JSONValue(Common::String(
+		"Ordered list of {type:\"click\", x, y, button?} or {type:\"wait\", frames}."));
+	Common::JSONObject properties;
+	properties["actions"] = new Common::JSONValue(actionsArr);
+	Common::JSONArray required;
+	required.push_back(new Common::JSONValue(Common::String("actions")));
+	Common::JSONObject schema;
+	schema["type"] = new Common::JSONValue(Common::String("object"));
+	schema["properties"] = new Common::JSONValue(properties);
+	schema["required"] = new Common::JSONValue(required);
+	Common::JSONObject tool;
+	tool["name"] = new Common::JSONValue(Common::String("play_script"));
+	tool["description"] = new Common::JSONValue(Common::String(
+		"Play a script of click/wait actions at native engine speed. Blocks "
+		"until the script completes. Clicks fire at their scheduled frame "
+		"(determined by preceding `wait` durations). Engine runs unpaused "
+		"throughout; pause state is restored on return. Result is JSON-encoded "
+		"text {\"actions_played\": N, \"frames\": M}."));
+	tool["inputSchema"] = new Common::JSONValue(schema);
+	return new Common::JSONValue(tool);
+}
+
 // Build an MCP image content result:
 //   {"content": [{"type": "image", "mimeType": "image/png", "data": <base64>}], "isError": false}
 static Common::JSONValue *makeImageResult(const Common::String &base64Png) {
@@ -461,6 +520,7 @@ void McpServer::handleRequest(const Common::String &line) {
 			"Return [{name, bytes, created_ms_since_engine_start}] for all snapshots in memory."));
 		tools.push_back(makeNamedToolDef("drop_snapshot",
 			"Free the in-memory snapshot with the given name. No-op if absent."));
+		tools.push_back(makePlayScriptToolDef());
 		Common::JSONObject result;
 		result["tools"] = new Common::JSONValue(tools);
 		Common::JSONValue resultVal(result);
@@ -727,6 +787,99 @@ void McpServer::handleRequest(const Common::String &line) {
 				sendResponse(buildOk(idVal, result));
 				delete result;
 			}
+		} else if (toolName == "play_script") {
+			// Parse actions into a flat queue of clicks with absolute frame
+			// numbers. `wait` actions only advance a cursor; the trailing wait
+			// determines the playback end frame.
+			Common::Array<PlaybackAction> queue;
+			int cursorFrame = 0;
+			bool parseOk = true;
+			Common::String parseErr;
+			if (params && params->contains("arguments") && (*params)["arguments"]->isObject()) {
+				const Common::JSONObject &a = (*params)["arguments"]->asObject();
+				if (a.contains("actions") && a["actions"]->isArray()) {
+					const Common::JSONArray &actions = a["actions"]->asArray();
+					for (uint i = 0; i < actions.size(); ++i) {
+						if (!actions[i]->isObject()) { parseOk = false; parseErr = "action must be an object"; break; }
+						const Common::JSONObject &ao = actions[i]->asObject();
+						if (!ao.contains("type") || !ao["type"]->isString()) { parseOk = false; parseErr = "action missing type"; break; }
+						const Common::String &type = ao["type"]->asString();
+						if (type == "click") {
+							int x = 0, y = 0, btn = 1;
+							bool haveX = false, haveY = false;
+							if (ao.contains("x")) {
+								if (ao["x"]->isIntegerNumber()) { x = (int)ao["x"]->asIntegerNumber(); haveX = true; }
+								else if (ao["x"]->isNumber()) { x = (int)ao["x"]->asNumber(); haveX = true; }
+							}
+							if (ao.contains("y")) {
+								if (ao["y"]->isIntegerNumber()) { y = (int)ao["y"]->asIntegerNumber(); haveY = true; }
+								else if (ao["y"]->isNumber()) { y = (int)ao["y"]->asNumber(); haveY = true; }
+							}
+							if (!haveX || !haveY) { parseOk = false; parseErr = "click action missing x or y"; break; }
+							if (ao.contains("button") && ao["button"]->isString()) {
+								const Common::String &b = ao["button"]->asString();
+								if (b == "left") btn = 1;
+								else if (b == "right") btn = 2;
+								else if (b == "middle") btn = 3;
+								else { parseOk = false; parseErr = Common::String::format("unknown button: %s", b.c_str()); break; }
+							}
+							PlaybackAction pa;
+							pa.frame = cursorFrame;
+							pa.x = x; pa.y = y; pa.button = btn;
+							queue.push_back(pa);
+						} else if (type == "wait") {
+							int frames = 0;
+							bool haveFrames = false;
+							if (ao.contains("frames")) {
+								if (ao["frames"]->isIntegerNumber()) { frames = (int)ao["frames"]->asIntegerNumber(); haveFrames = true; }
+								else if (ao["frames"]->isNumber()) { frames = (int)ao["frames"]->asNumber(); haveFrames = true; }
+							}
+							if (!haveFrames) { parseOk = false; parseErr = "wait action missing frames"; break; }
+							if (frames < 0) { parseOk = false; parseErr = "wait frames must be >= 0"; break; }
+							cursorFrame += frames;
+						} else {
+							parseOk = false; parseErr = Common::String::format("unknown action type: %s", type.c_str()); break;
+						}
+					}
+				} else {
+					parseOk = false; parseErr = "arguments.actions array required";
+				}
+			} else {
+				parseOk = false; parseErr = "arguments object required";
+			}
+			if (!parseOk) {
+				Common::JSONValue *result = makeTextResult(parseErr, true);
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			} else if (!_stepMutex || !_stepCond) {
+				Common::JSONValue *result = makeTextResult("playback synchronization not initialized", true);
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			} else {
+				pthread_mutex_t *mutex = static_cast<pthread_mutex_t *>(_stepMutex);
+				pthread_cond_t *cond = static_cast<pthread_cond_t *>(_stepCond);
+				pthread_mutex_lock(mutex);
+				flushPendingInputs();
+				_playbackQueue.swap(queue);
+				_playbackEndFrame = cursorFrame;
+				_playbackFrame = 0;
+				_playbackIndex = 0;
+				_playbackActive = true;
+				_playbackPrevPaused = _pauseToken.isActive();
+				if (_playbackPrevPaused)
+					_pauseToken.clear();
+				while (_playbackActive)
+					pthread_cond_wait(cond, mutex);
+				uint actionsPlayed = _playbackQueue.size();
+				int endFrame = _playbackEndFrame;
+				if (_playbackPrevPaused)
+					_pauseToken = _engine->pauseEngine();
+				pthread_mutex_unlock(mutex);
+				Common::JSONValue *result = makeTextResult(Common::String::format(
+					"{\"actions_played\": %u, \"frames\": %d}", actionsPlayed, endFrame));
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			}
 		} else if (toolName == "list_snapshots") {
 			Common::JSONArray arr;
 			for (Common::HashMap<Common::String, Common::Array<byte> >::const_iterator it = _snapshotData.begin();
@@ -768,7 +921,9 @@ void McpServer::sendResponse(const Common::String &json) {
 McpServer::McpServer(SciEngine *engine) :
 	_engine(engine), _realStdoutFd(-1), _running(false),
 	_threadHandle(nullptr), _stepMutex(nullptr), _stepCond(nullptr),
-	_stepFramesRemaining(0) {}
+	_stepFramesRemaining(0),
+	_playbackActive(false), _playbackPrevPaused(false),
+	_playbackFrame(0), _playbackEndFrame(0), _playbackIndex(0) {}
 
 McpServer::~McpServer() {}
 
