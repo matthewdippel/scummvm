@@ -270,15 +270,32 @@ class McpDriver:
             raise McpError(-32000, f"move_cursor: {self._content_text(result)}")
         return self._content_text(result)
 
-    def save(self, slot: int, name: str) -> None:
-        self.call_tool("save", {"slot": slot, "name": name})
+    def snapshot(self, name: str) -> dict:
+        result = self.call_tool("snapshot", {"name": name})
+        if result.get("isError"):
+            raise McpError(-32000, f"snapshot: {self._content_text(result)}")
+        return json.loads(self._content_text(result))
 
-    def restore(self, slot: int) -> None:
-        self.call_tool("restore", {"slot": slot})
+    def restore_snapshot(self, name: str) -> str:
+        result = self.call_tool("restore_snapshot", {"name": name})
+        if result.get("isError"):
+            raise McpError(-32000, f"restore_snapshot: {self._content_text(result)}")
+        return self._content_text(result)
 
-    def list_saves(self) -> list[dict]:
-        result = self.call_tool("list_saves")
-        return result.get("saves", [])
+    def list_snapshots(self) -> list[dict]:
+        result = self.call_tool("list_snapshots")
+        if result.get("isError"):
+            raise McpError(-32000, f"list_snapshots: {self._content_text(result)}")
+        try:
+            return json.loads(self._content_text(result))
+        except (ValueError, AttributeError):
+            return []
+
+    def drop_snapshot(self, name: str) -> str:
+        result = self.call_tool("drop_snapshot", {"name": name})
+        if result.get("isError"):
+            raise McpError(-32000, f"drop_snapshot: {self._content_text(result)}")
+        return self._content_text(result)
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
 
@@ -443,6 +460,50 @@ def cmd_smoke(args: argparse.Namespace) -> int:
             except McpError as e:
                 print(f"  click bad-button OK (rejected: {e})")
             d.unpause()
+        if "snapshot" in names and "restore_snapshot" in names:
+            d.pause()
+            time.sleep(0.3)
+            # Snapshot, advance, restore, advance same amount, screenshots should match.
+            info = d.snapshot("smoke-a")
+            print(f"  snapshot       OK (name=smoke-a, {info['bytes']} B)")
+            # snapshot requires pause: try while unpaused
+            d.unpause()
+            try:
+                d.snapshot("smoke-b")
+                print("  snapshot-needs-pause FAIL (expected error)")
+                return 1
+            except McpError as e:
+                print(f"  snapshot-needs-pause OK (rejected: {e})")
+            d.pause()
+            time.sleep(0.3)
+            # list_snapshots should include smoke-a.
+            snaps = d.list_snapshots()
+            if not any(s["name"] == "smoke-a" for s in snaps):
+                print(f"  list_snapshots FAIL (smoke-a not listed: {snaps})")
+                return 1
+            print(f"  list_snapshots OK ({len(snaps)} entries)")
+            # advance, restore, observe
+            d.step(60)
+            after = d.screenshot()
+            d.restore_snapshot("smoke-a")
+            d.step(10)  # let SCI VM finish processing the load
+            restored = d.screenshot()
+            # After restore + 10 frames, state should be near where snapshot was
+            # taken (post-snapshot animation). It won't be byte-identical to the
+            # pre-step snapshot screenshot, but it should *differ* from `after`
+            # — restore did something. Liberal check.
+            if restored == after:
+                print("  restore        WARN (post-restore screen identical to pre-restore; restore may not have taken effect)")
+            else:
+                print("  restore        OK (post-restore screen differs from pre-restore)")
+            # drop_snapshot
+            d.drop_snapshot("smoke-a")
+            snaps = d.list_snapshots()
+            if any(s["name"] == "smoke-a" for s in snaps):
+                print(f"  drop_snapshot  FAIL (still listed: {snaps})")
+                return 1
+            print(f"  drop_snapshot  OK ({len(snaps)} remain)")
+            d.unpause()
     print("Smoke test passed.")
     return 0
 
@@ -461,11 +522,13 @@ def cmd_screenshot(args: argparse.Namespace) -> int:
 
 
 def cmd_shell(args: argparse.Namespace) -> int:
-    print("Interactive shell. Commands:")
+    print("Interactive shell. Anything not recognized below is treated as a tool name.")
     print("  list                              — show registered tools")
-    print("  call <name> [key=value ...]       — invoke a tool (CLI-style kwargs)")
+    print("  snapshot [name]                   — pause+snapshot+unpause; auto-names if no arg")
     print("  raw <json>                        — send a raw JSON-RPC request")
+    print("  help                              — show this help")
     print("  quit                              — exit")
+    print("  <tool> [key=value ...]            — invoke an MCP tool (e.g. `step frames=60`)")
     print("(↑/↓ navigate history; history persists at ~/.scummvm-mcp-history)")
 
     # Wire up readline history. Importing readline already enables line editing
@@ -477,6 +540,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
     readline.set_history_length(1000)
     atexit.register(lambda: _safe_write_history())
 
+    snap_counter = 0
     with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose) as d:
         while True:
             try:
@@ -493,23 +557,31 @@ def cmd_shell(args: argparse.Namespace) -> int:
                 continue
             if not tokens:
                 continue
+            # Allow `call <tool>` for muscle memory but it's no longer required.
+            if tokens[0] == "call" and len(tokens) >= 2:
+                tokens = tokens[1:]
             cmd = tokens[0]
             try:
-                if cmd == "list":
+                if cmd in ("help", "?"):
+                    print("  list                              — show registered tools")
+                    print("  snapshot [name]                   — pause+snapshot+unpause (auto-names if no arg)")
+                    print("  raw <json>                        — send a raw JSON-RPC request")
+                    print("  help                              — show this help")
+                    print("  quit                              — exit")
+                    print("  <tool> [key=value ...]            — invoke an MCP tool (e.g. `step frames=60`)")
+                elif cmd == "list":
                     for t in d.list_tools():
                         print(f"  {t['name']:24s} {t.get('description', '')}")
-                elif cmd == "call":
-                    if len(tokens) < 2:
-                        print("usage: call <name> [key=value ...]")
-                        continue
-                    name = tokens[1]
-                    try:
-                        kw = _parse_kwargs(tokens[2:])
-                    except ValueError as e:
-                        print(f"args error: {e}")
-                        continue
-                    result = d.call_tool(name, kw)
-                    print(_format_result(result))
+                elif cmd == "snapshot":
+                    if len(tokens) >= 2 and "=" not in tokens[1]:
+                        name = tokens[1]
+                    else:
+                        snap_counter += 1
+                        name = f"snap{snap_counter}"
+                    d.pause()
+                    info = d.snapshot(name)
+                    d.unpause()
+                    print(f"snapshot {name} OK ({info.get('bytes', '?')} bytes)")
                 elif cmd == "raw":
                     payload = json.loads(line[len("raw "):])
                     if "id" not in payload:
@@ -522,7 +594,14 @@ def cmd_shell(args: argparse.Namespace) -> int:
                             d.proc.stdin.flush()
                             print(d.proc.stdout.readline().decode("utf-8").strip())
                 else:
-                    print(f"(unknown command {cmd!r}; try 'list', 'call', 'raw', 'quit')")
+                    # Treat the first token as a tool name; remaining are key=value args.
+                    try:
+                        kw = _parse_kwargs(tokens[1:])
+                    except ValueError as e:
+                        print(f"args error: {e}")
+                        continue
+                    result = d.call_tool(cmd, kw)
+                    print(_format_result(result))
             except McpError as e:
                 print(f"error: {e}")
             except Exception as e:

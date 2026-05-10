@@ -24,6 +24,8 @@
 
 #include "common/array.h"
 #include "common/events.h"
+#include "common/hash-str.h"
+#include "common/hashmap.h"
 #include "common/scummsys.h"
 #include "common/str.h"
 #include "engines/engine.h" // for PauseToken
@@ -65,6 +67,17 @@ private:
 	int _stepFramesRemaining;  // protected by _stepMutex
 	PauseToken _pauseToken;    // active while pause tool has been called without a matching unpause
 	Common::Array<Common::Event> _pendingInputs; // buffered while paused; protected by _stepMutex
+
+	// Named save-states, in-memory only, keyed by user string. Each entry holds
+	// the bytes of a gamestate_save and the millis at which it was created.
+	Common::HashMap<Common::String, Common::Array<byte> > _snapshotData;
+	Common::HashMap<Common::String, uint32> _snapshotCreatedMs;
+
+	// Pending restore: gamestate_restore must run on the engine thread between
+	// frames (so the SCI VM is at a kernel-call boundary, the same place
+	// kRestoreGame would invoke it from). The reader thread fills this and
+	// waits; onFrame consumes it and signals back via _stepCond.
+	Common::Array<byte> _pendingRestoreData; // protected by _stepMutex
 
 	void flushPendingInputs(); // assumes _stepMutex is held
 

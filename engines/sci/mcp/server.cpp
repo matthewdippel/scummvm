@@ -29,16 +29,22 @@
 #include "common/events.h"
 #include "common/formats/json.h"
 #include "common/memstream.h"
+#include "common/serializer.h"
 #include "common/system.h"
 #include "common/textconsole.h"
 #include "graphics/paletteman.h"
 #include "graphics/surface.h"
 #include "image/png.h"
+#include "sci/engine/savegame.h"
+#include "sci/engine/state.h"
+#include "sci/graphics/frameout.h"
 #include "sci/sci.h"
 
 #ifdef POSIX
+#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <time.h>
 #include <unistd.h>
 
 extern int g_mcpRealStdoutFd; // global, defined in base/main.cpp
@@ -144,6 +150,23 @@ void McpServer::onFrame() {
 	pthread_mutex_t *mutex = static_cast<pthread_mutex_t *>(_stepMutex);
 	pthread_cond_t *cond = static_cast<pthread_cond_t *>(_stepCond);
 	pthread_mutex_lock(mutex);
+	// Drain any pending snapshot restore on this thread first; we're at a
+	// kernel-call boundary (kFrameOut), which is the SCI-safe place to do it.
+	if (!_pendingRestoreData.empty()) {
+		Common::MemoryReadStream in(_pendingRestoreData.data(), _pendingRestoreData.size());
+		gamestate_restore(_engine->getEngineState(), &in);
+		_pendingRestoreData.clear();
+		// SCI32 save/restore doesn't sync GfxFrameout's plane list; the game's
+		// replay handler is supposed to teardown+re-add. For mid-game restores
+		// (especially across rooms) leftover state shows up as ghost sprites.
+		// Force-clear here so replay rebuilds from scratch. Note: don't call
+		// resetHardware — its setPalette asserts when scummvm is in a
+		// non-paletted screen mode (videos, hi-res transitions).
+		if (_engine->_gfxFrameout) {
+			_engine->_gfxFrameout->clear();
+			_engine->_gfxFrameout->run(); // re-create the background fill plane
+		}
+	}
 	if (_stepFramesRemaining > 0) {
 		if (--_stepFramesRemaining == 0)
 			pthread_cond_signal(cond);
@@ -157,7 +180,14 @@ void McpServer::readerLoop() {
 	while (_running) {
 		ssize_t n = read(STDIN_FILENO, chunk, sizeof(chunk));
 		if (n <= 0) {
-			// EOF or error — graceful shutdown.
+			// EOF or error — graceful shutdown. Don't leave scummvm orphaned
+			// if the MCP client process disappeared: drop our pause and push
+			// a QUIT event so the engine exits cleanly.
+			if (_pauseToken.isActive())
+				_pauseToken.clear();
+			Common::Event quit;
+			quit.type = Common::EVENT_QUIT;
+			g_system->getEventManager()->pushEvent(quit);
 			break;
 		}
 		buffer += Common::String(chunk, (uint32)n);
@@ -251,6 +281,26 @@ static Common::JSONValue *makeMoveCursorToolDef() {
 	tool["name"] = new Common::JSONValue(Common::String("move_cursor"));
 	tool["description"] = new Common::JSONValue(Common::String(
 		"Move the cursor to (x,y) without clicking. Buffer coords."));
+	tool["inputSchema"] = new Common::JSONValue(schema);
+	return new Common::JSONValue(tool);
+}
+
+// Build a tool definition that takes a single required string "name" property.
+static Common::JSONValue *makeNamedToolDef(const char *name, const char *desc) {
+	Common::JSONObject nameProp;
+	nameProp["type"] = new Common::JSONValue(Common::String("string"));
+	nameProp["description"] = new Common::JSONValue(Common::String("User-chosen identifier for the snapshot."));
+	Common::JSONObject properties;
+	properties["name"] = new Common::JSONValue(nameProp);
+	Common::JSONArray required;
+	required.push_back(new Common::JSONValue(Common::String("name")));
+	Common::JSONObject schema;
+	schema["type"] = new Common::JSONValue(Common::String("object"));
+	schema["properties"] = new Common::JSONValue(properties);
+	schema["required"] = new Common::JSONValue(required);
+	Common::JSONObject tool;
+	tool["name"] = new Common::JSONValue(Common::String(name));
+	tool["description"] = new Common::JSONValue(Common::String(desc));
 	tool["inputSchema"] = new Common::JSONValue(schema);
 	return new Common::JSONValue(tool);
 }
@@ -399,6 +449,18 @@ void McpServer::handleRequest(const Common::String &line) {
 		tools.push_back(makeStepToolDef());
 		tools.push_back(makeClickToolDef());
 		tools.push_back(makeMoveCursorToolDef());
+		tools.push_back(makeNamedToolDef("snapshot",
+			"Save the current engine state to a named in-memory snapshot. "
+			"Engine must be paused. Names overwrite. Snapshots are not "
+			"persisted across scummvm exit and are not visible in the save menu."));
+		tools.push_back(makeNamedToolDef("restore_snapshot",
+			"Restore the engine to a previously-taken named snapshot. Engine "
+			"must be paused. After restore, you'll usually need to step a few "
+			"frames for the SCI VM to finish processing the load."));
+		tools.push_back(makeNoArgToolDef("list_snapshots",
+			"Return [{name, bytes, created_ms_since_engine_start}] for all snapshots in memory."));
+		tools.push_back(makeNamedToolDef("drop_snapshot",
+			"Free the in-memory snapshot with the given name. No-op if absent."));
 		Common::JSONObject result;
 		result["tools"] = new Common::JSONValue(tools);
 		Common::JSONValue resultVal(result);
@@ -569,6 +631,118 @@ void McpServer::handleRequest(const Common::String &line) {
 				sendResponse(buildOk(idVal, result));
 				delete result;
 			}
+		} else if (toolName == "snapshot" || toolName == "restore_snapshot" || toolName == "drop_snapshot") {
+			Common::String snapName;
+			if (params && params->contains("arguments") && (*params)["arguments"]->isObject()) {
+				const Common::JSONObject &a = (*params)["arguments"]->asObject();
+				if (a.contains("name") && a["name"]->isString())
+					snapName = a["name"]->asString();
+			}
+			if (snapName.empty()) {
+				Common::JSONValue *result = makeTextResult("name is required and must be non-empty", true);
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			} else if (toolName == "snapshot") {
+				if (!_pauseToken.isActive()) {
+					Common::JSONValue *result = makeTextResult("snapshot requires pause", true);
+					sendResponse(buildOk(idVal, result));
+					delete result;
+				} else {
+					Common::MemoryWriteStreamDynamic out(DisposeAfterUse::NO);
+					bool ok = gamestate_save(_engine->getEngineState(), &out, snapName, "");
+					if (!ok) {
+						free(out.getData());
+						Common::JSONValue *result = makeTextResult("gamestate_save failed", true);
+						sendResponse(buildOk(idVal, result));
+						delete result;
+					} else {
+						Common::Array<byte> data;
+						data.resize(out.size());
+						memcpy(data.data(), out.getData(), out.size());
+						free(out.getData());
+						_snapshotData[snapName].swap(data);
+						_snapshotCreatedMs[snapName] = g_system->getMillis();
+						Common::JSONValue *result = makeTextResult(Common::String::format("{\"name\": \"%s\", \"bytes\": %u}", snapName.c_str(), (uint)_snapshotData[snapName].size()));
+						sendResponse(buildOk(idVal, result));
+						delete result;
+					}
+				}
+			} else if (toolName == "restore_snapshot") {
+				if (!_pauseToken.isActive()) {
+					Common::JSONValue *result = makeTextResult("restore_snapshot requires pause", true);
+					sendResponse(buildOk(idVal, result));
+					delete result;
+				} else if (!_snapshotData.contains(snapName)) {
+					Common::JSONValue *result = makeTextResult(Common::String::format("no snapshot named %s", snapName.c_str()), true);
+					sendResponse(buildOk(idVal, result));
+					delete result;
+				} else if (!_stepMutex || !_stepCond) {
+					Common::JSONValue *result = makeTextResult("restore synchronization not initialized", true);
+					sendResponse(buildOk(idVal, result));
+					delete result;
+				} else {
+					// Queue the restore to happen on the engine thread inside
+					// onFrame (a SCI kernel-call boundary, same as how kRestoreGame
+					// would do it). Then step a generous number of frames so the
+					// abort-and-restart-VM sequence completes — capped by a wall
+					// clock timeout in case the engine doesn't render those frames.
+					pthread_mutex_t *mutex = static_cast<pthread_mutex_t *>(_stepMutex);
+					pthread_cond_t *cond = static_cast<pthread_cond_t *>(_stepCond);
+					pthread_mutex_lock(mutex);
+					Common::Array<byte> &blob = _snapshotData[snapName];
+					_pendingRestoreData.resize(blob.size());
+					memcpy(_pendingRestoreData.data(), blob.data(), blob.size());
+					flushPendingInputs();
+					_stepFramesRemaining = 30;
+					_pauseToken.clear();
+					struct timespec deadline;
+					clock_gettime(CLOCK_REALTIME, &deadline);
+					deadline.tv_sec += 5;
+					bool timedOut = false;
+					while (_stepFramesRemaining > 0) {
+						int rc = pthread_cond_timedwait(cond, mutex, &deadline);
+						if (rc == ETIMEDOUT) { timedOut = true; break; }
+					}
+					_pauseToken = _engine->pauseEngine();
+					int leftover = _stepFramesRemaining;
+					_stepFramesRemaining = 0;
+					pthread_mutex_unlock(mutex);
+					Common::JSONValue *result;
+					if (timedOut) {
+						result = makeTextResult(Common::String::format(
+							"restored %s; timed out waiting for %d more frames "
+							"(engine may be in a non-rendering state — try `step` to advance)",
+							snapName.c_str(), leftover), true);
+					} else {
+						result = makeTextResult(Common::String::format("restored %s", snapName.c_str()));
+					}
+					sendResponse(buildOk(idVal, result));
+					delete result;
+				}
+			} else { // drop_snapshot
+				bool found = _snapshotData.contains(snapName);
+				_snapshotData.erase(snapName);
+				_snapshotCreatedMs.erase(snapName);
+				Common::JSONValue *result = makeTextResult(found ? "dropped" : "(not present)");
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			}
+		} else if (toolName == "list_snapshots") {
+			Common::JSONArray arr;
+			for (Common::HashMap<Common::String, Common::Array<byte> >::const_iterator it = _snapshotData.begin();
+				 it != _snapshotData.end(); ++it) {
+				Common::JSONObject obj;
+				obj["name"] = new Common::JSONValue(it->_key);
+				obj["bytes"] = new Common::JSONValue((long long int)it->_value.size());
+				uint32 created = _snapshotCreatedMs.contains(it->_key) ? _snapshotCreatedMs[it->_key] : 0;
+				obj["created_ms"] = new Common::JSONValue((long long int)created);
+				arr.push_back(new Common::JSONValue(obj));
+			}
+			Common::JSONValue jarr(arr);
+			Common::String text = jarr.stringify();
+			Common::JSONValue *result = makeTextResult(text);
+			sendResponse(buildOk(idVal, result));
+			delete result;
 		} else {
 			sendResponse(buildError(idVal, -32601, Common::String::format("Unknown tool: %s", toolName.c_str())));
 		}
