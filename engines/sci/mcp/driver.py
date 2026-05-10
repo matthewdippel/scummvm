@@ -73,6 +73,31 @@ def _parse_kwargs(parts: list[str]) -> dict:
     return result
 
 
+def _diff_bbox(png_a: bytes, png_b: bytes) -> Optional[tuple]:
+    """Bounding box of differing pixels between two PNGs, or None if PIL is unavailable.
+
+    Handles paletted PNGs (Shivers's screenshots) by diffing palette indices via
+    L-mode conversion of the diff image; ImageChops.difference on a 'P' image
+    yields a 'P' diff that getbbox can't read directly.
+    """
+    try:
+        from PIL import Image, ImageChops
+        from io import BytesIO
+    except ImportError:
+        return None
+    a = Image.open(BytesIO(png_a))
+    b = Image.open(BytesIO(png_b))
+    if a.size != b.size:
+        return None
+    if a.mode != b.mode:
+        a = a.convert("RGBA")
+        b = b.convert("RGBA")
+    diff = ImageChops.difference(a, b)
+    if diff.mode == "P":
+        diff = diff.convert("L")
+    return diff.getbbox()
+
+
 def _format_result(result: dict) -> str:
     """Pretty-print a tool result, summarizing huge image content instead of dumping base64."""
     if "content" in result:
@@ -233,11 +258,17 @@ class McpDriver:
                 f.write(png)
         return png
 
-    def click(self, x: int, y: int, button: str = "left") -> None:
-        self.call_tool("click", {"x": x, "y": y, "button": button})
+    def click(self, x: int, y: int, button: str = "left") -> str:
+        result = self.call_tool("click", {"x": x, "y": y, "button": button})
+        if result.get("isError"):
+            raise McpError(-32000, f"click: {self._content_text(result)}")
+        return self._content_text(result)
 
-    def move_cursor(self, x: int, y: int) -> None:
-        self.call_tool("move_cursor", {"x": x, "y": y})
+    def move_cursor(self, x: int, y: int) -> str:
+        result = self.call_tool("move_cursor", {"x": x, "y": y})
+        if result.get("isError"):
+            raise McpError(-32000, f"move_cursor: {self._content_text(result)}")
+        return self._content_text(result)
 
     def save(self, slot: int, name: str) -> None:
         self.call_tool("save", {"slot": slot, "name": name})
@@ -382,6 +413,35 @@ def cmd_smoke(args: argparse.Namespace) -> int:
                 print("  step-repeat    FAIL (no progress on second step)")
                 return 1
             print("  step-repeat    OK")
+            d.unpause()
+        if "move_cursor" in names:
+            # NB: lockScreen captures the OSystem game surface; the SDL cursor is
+            # composited separately and thus doesn't show in our screenshots.
+            # We can't visually verify the cursor moved, so this just exercises
+            # the round-trip and a few different button combos. Manual REPL is
+            # the only way to confirm the cursor actually warps.
+            d.pause()
+            time.sleep(0.3)
+            d.move_cursor(50, 50)
+            d.move_cursor(320, 240)
+            d.move_cursor(600, 430)
+            d.step(5)
+            print("  move_cursor    OK (3 moves dispatched)")
+            d.unpause()
+        if "click" in names:
+            d.pause()
+            time.sleep(0.3)
+            d.click(5, 5)
+            d.click(5, 5, "right")
+            d.click(5, 5, "middle")
+            d.step(5)
+            print("  click          OK (left/right/middle dispatched)")
+            try:
+                d.click(5, 5, "scroll")
+                print("  click bad-button FAIL (expected error for unknown button)")
+                return 1
+            except McpError as e:
+                print(f"  click bad-button OK (rejected: {e})")
             d.unpause()
     print("Smoke test passed.")
     return 0

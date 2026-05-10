@@ -22,6 +22,8 @@
 #ifndef SCI_MCP_SERVER_H
 #define SCI_MCP_SERVER_H
 
+#include "common/array.h"
+#include "common/events.h"
 #include "common/scummsys.h"
 #include "common/str.h"
 #include "engines/engine.h" // for PauseToken
@@ -62,6 +64,9 @@ private:
 	void *_stepCond;           // pthread_cond_t *, signaled when remaining hits 0
 	int _stepFramesRemaining;  // protected by _stepMutex
 	PauseToken _pauseToken;    // active while pause tool has been called without a matching unpause
+	Common::Array<Common::Event> _pendingInputs; // buffered while paused; protected by _stepMutex
+
+	void flushPendingInputs(); // assumes _stepMutex is held
 
 	void readerLoop();
 	void handleRequest(const Common::String &line);

@@ -26,6 +26,7 @@
 #include "sci/mcp/server.h"
 
 #include "common/base64.h"
+#include "common/events.h"
 #include "common/formats/json.h"
 #include "common/memstream.h"
 #include "common/system.h"
@@ -121,6 +122,22 @@ void McpServer::stop() {
 	_realStdoutFd = -1;
 }
 
+// Send buffered inputs to scummvm in order. For move events we use warpMouse,
+// which moves the OS cursor and synthesizes its own MOUSEMOVE event into the
+// queue; for button events we pushEvent directly. Caller must hold _stepMutex.
+void McpServer::flushPendingInputs() {
+	Common::EventManager *em = g_system->getEventManager();
+	for (uint i = 0; i < _pendingInputs.size(); ++i) {
+		const Common::Event &ev = _pendingInputs[i];
+		if (ev.type == Common::EVENT_MOUSEMOVE) {
+			g_system->warpMouse(ev.mouse.x, ev.mouse.y);
+		} else {
+			em->pushEvent(ev);
+		}
+	}
+	_pendingInputs.clear();
+}
+
 void McpServer::onFrame() {
 	if (!_stepMutex || !_stepCond)
 		return;
@@ -177,6 +194,63 @@ static Common::JSONValue *makeNoArgToolDef(const char *name, const char *desc) {
 	Common::JSONObject tool;
 	tool["name"] = new Common::JSONValue(Common::String(name));
 	tool["description"] = new Common::JSONValue(Common::String(desc));
+	tool["inputSchema"] = new Common::JSONValue(schema);
+	return new Common::JSONValue(tool);
+}
+
+// Build the `click` tool definition.
+static Common::JSONValue *makeClickToolDef() {
+	Common::JSONObject xProp, yProp, buttonProp;
+	xProp["type"] = new Common::JSONValue(Common::String("integer"));
+	xProp["description"] = new Common::JSONValue(Common::String("Buffer-coord X (0-639 in Shivers)."));
+	yProp["type"] = new Common::JSONValue(Common::String("integer"));
+	yProp["description"] = new Common::JSONValue(Common::String("Buffer-coord Y (0-479 in Shivers)."));
+	buttonProp["type"] = new Common::JSONValue(Common::String("string"));
+	Common::JSONArray buttonEnum;
+	buttonEnum.push_back(new Common::JSONValue(Common::String("left")));
+	buttonEnum.push_back(new Common::JSONValue(Common::String("right")));
+	buttonEnum.push_back(new Common::JSONValue(Common::String("middle")));
+	buttonProp["enum"] = new Common::JSONValue(buttonEnum);
+	buttonProp["default"] = new Common::JSONValue(Common::String("left"));
+	Common::JSONObject properties;
+	properties["x"] = new Common::JSONValue(xProp);
+	properties["y"] = new Common::JSONValue(yProp);
+	properties["button"] = new Common::JSONValue(buttonProp);
+	Common::JSONArray required;
+	required.push_back(new Common::JSONValue(Common::String("x")));
+	required.push_back(new Common::JSONValue(Common::String("y")));
+	Common::JSONObject schema;
+	schema["type"] = new Common::JSONValue(Common::String("object"));
+	schema["properties"] = new Common::JSONValue(properties);
+	schema["required"] = new Common::JSONValue(required);
+	Common::JSONObject tool;
+	tool["name"] = new Common::JSONValue(Common::String("click"));
+	tool["description"] = new Common::JSONValue(Common::String(
+		"Click at (x,y) with the given button (left/right/middle, default left). "
+		"Press and release fire on the same frame. Buffer coords (1:1 with screenshot)."));
+	tool["inputSchema"] = new Common::JSONValue(schema);
+	return new Common::JSONValue(tool);
+}
+
+// Build the `move_cursor` tool definition.
+static Common::JSONValue *makeMoveCursorToolDef() {
+	Common::JSONObject xProp, yProp;
+	xProp["type"] = new Common::JSONValue(Common::String("integer"));
+	yProp["type"] = new Common::JSONValue(Common::String("integer"));
+	Common::JSONObject properties;
+	properties["x"] = new Common::JSONValue(xProp);
+	properties["y"] = new Common::JSONValue(yProp);
+	Common::JSONArray required;
+	required.push_back(new Common::JSONValue(Common::String("x")));
+	required.push_back(new Common::JSONValue(Common::String("y")));
+	Common::JSONObject schema;
+	schema["type"] = new Common::JSONValue(Common::String("object"));
+	schema["properties"] = new Common::JSONValue(properties);
+	schema["required"] = new Common::JSONValue(required);
+	Common::JSONObject tool;
+	tool["name"] = new Common::JSONValue(Common::String("move_cursor"));
+	tool["description"] = new Common::JSONValue(Common::String(
+		"Move the cursor to (x,y) without clicking. Buffer coords."));
 	tool["inputSchema"] = new Common::JSONValue(schema);
 	return new Common::JSONValue(tool);
 }
@@ -323,6 +397,8 @@ void McpServer::handleRequest(const Common::String &line) {
 			"base64 in MCP image content. Reflects exactly what the user "
 			"sees, including cursor and any debug overlays."));
 		tools.push_back(makeStepToolDef());
+		tools.push_back(makeClickToolDef());
+		tools.push_back(makeMoveCursorToolDef());
 		Common::JSONObject result;
 		result["tools"] = new Common::JSONValue(tools);
 		Common::JSONValue resultVal(result);
@@ -353,6 +429,10 @@ void McpServer::handleRequest(const Common::String &line) {
 			sendResponse(buildOk(idVal, result));
 			delete result;
 		} else if (toolName == "unpause") {
+			pthread_mutex_t *flushMutex = static_cast<pthread_mutex_t *>(_stepMutex);
+			if (flushMutex) pthread_mutex_lock(flushMutex);
+			flushPendingInputs();
+			if (flushMutex) pthread_mutex_unlock(flushMutex);
 			if (_pauseToken.isActive())
 				_pauseToken.clear();
 			Common::JSONValue *result = makeTextResult("unpaused");
@@ -366,6 +446,83 @@ void McpServer::handleRequest(const Common::String &line) {
 				delete result;
 			} else {
 				Common::JSONValue *result = makeImageResult(b64);
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			}
+		} else if (toolName == "click" || toolName == "move_cursor") {
+			int x = 0, y = 0;
+			Common::String button = "left";
+			bool haveX = false, haveY = false;
+			if (params && params->contains("arguments") && (*params)["arguments"]->isObject()) {
+				const Common::JSONObject &a = (*params)["arguments"]->asObject();
+				if (a.contains("x")) {
+					if (a["x"]->isIntegerNumber()) { x = (int)a["x"]->asIntegerNumber(); haveX = true; }
+					else if (a["x"]->isNumber()) { x = (int)a["x"]->asNumber(); haveX = true; }
+				}
+				if (a.contains("y")) {
+					if (a["y"]->isIntegerNumber()) { y = (int)a["y"]->asIntegerNumber(); haveY = true; }
+					else if (a["y"]->isNumber()) { y = (int)a["y"]->asNumber(); haveY = true; }
+				}
+				if (a.contains("button") && a["button"]->isString())
+					button = a["button"]->asString();
+			}
+			if (!haveX || !haveY) {
+				Common::JSONValue *result = makeTextResult("x and y are required", true);
+				sendResponse(buildOk(idVal, result));
+				delete result;
+			} else {
+				// Build the events we want to deliver. For click, that's a move
+				// followed by button-down and button-up at the same position.
+				Common::Event mv;
+				mv.type = Common::EVENT_MOUSEMOVE;
+				mv.mouse = Common::Point(x, y);
+				Common::Array<Common::Event> events;
+				events.push_back(mv);
+				if (toolName == "click") {
+					Common::EventType down, up;
+					if (button == "left") { down = Common::EVENT_LBUTTONDOWN; up = Common::EVENT_LBUTTONUP; }
+					else if (button == "right") { down = Common::EVENT_RBUTTONDOWN; up = Common::EVENT_RBUTTONUP; }
+					else if (button == "middle") { down = Common::EVENT_MBUTTONDOWN; up = Common::EVENT_MBUTTONUP; }
+					else {
+						Common::JSONValue *result = makeTextResult(Common::String::format("unknown button: %s", button.c_str()), true);
+						sendResponse(buildOk(idVal, result));
+						delete result;
+						delete parsed;
+						return;
+					}
+					Common::Event d;
+					d.type = down;
+					d.mouse = Common::Point(x, y);
+					events.push_back(d);
+					Common::Event u;
+					u.type = up;
+					u.mouse = Common::Point(x, y);
+					events.push_back(u);
+				}
+				// While MCP-paused, buffer rather than fire — the engine's script
+				// VM still drains live events even with pauseEngine in effect, so
+				// we'd advance state immediately. Buffered events are flushed on
+				// step (right before resuming) and on unpause.
+				pthread_mutex_t *mutex = static_cast<pthread_mutex_t *>(_stepMutex);
+				if (_pauseToken.isActive()) {
+					if (mutex) pthread_mutex_lock(mutex);
+					for (uint i = 0; i < events.size(); ++i)
+						_pendingInputs.push_back(events[i]);
+					if (mutex) pthread_mutex_unlock(mutex);
+				} else {
+					Common::EventManager *em = g_system->getEventManager();
+					for (uint i = 0; i < events.size(); ++i) {
+						const Common::Event &ev = events[i];
+						if (ev.type == Common::EVENT_MOUSEMOVE)
+							g_system->warpMouse(ev.mouse.x, ev.mouse.y);
+						else
+							em->pushEvent(ev);
+					}
+				}
+				Common::String msg = (toolName == "click")
+					? Common::String::format("clicked %s at (%d,%d)%s", button.c_str(), x, y, _pauseToken.isActive() ? " (queued)" : "")
+					: Common::String::format("moved to (%d,%d)%s", x, y, _pauseToken.isActive() ? " (queued)" : "");
+				Common::JSONValue *result = makeTextResult(msg);
 				sendResponse(buildOk(idVal, result));
 				delete result;
 			}
@@ -400,6 +557,7 @@ void McpServer::handleRequest(const Common::String &line) {
 				pthread_mutex_t *mutex = static_cast<pthread_mutex_t *>(_stepMutex);
 				pthread_cond_t *cond = static_cast<pthread_cond_t *>(_stepCond);
 				pthread_mutex_lock(mutex);
+				flushPendingInputs();          // deliver buffered click/move events first
 				_stepFramesRemaining = frames;
 				_pauseToken.clear();          // engine resumes
 				while (_stepFramesRemaining > 0) {
