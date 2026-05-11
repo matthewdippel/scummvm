@@ -120,6 +120,23 @@ def parse_script(text: str) -> list[dict]:
     return actions
 
 
+def format_recording(clicks: list[dict]) -> str:
+    """Format recorded clicks (engine-side frame timestamps) as a TAS script.
+
+    Inserts `wait N` between successive clicks for the frame gap.
+    """
+    button_suffix = {1: "", 2: " right", 3: " middle"}
+    lines: list[str] = []
+    last_frame = 0
+    for c in clicks:
+        gap = c["frame"] - last_frame
+        if gap > 0:
+            lines.append(f"wait {gap}")
+        lines.append(f"click {c['x']} {c['y']}{button_suffix.get(c['button'], '')}")
+        last_frame = c["frame"]
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
 def _diff_bbox(png_a: bytes, png_b: bytes) -> Optional[tuple]:
     """Bounding box of differing pixels between two PNGs, or None if PIL is unavailable.
 
@@ -355,6 +372,19 @@ class McpDriver:
             raise McpError(-32000, f"play_script: {self._content_text(result)}")
         return json.loads(self._content_text(result))
 
+    def start_record(self) -> str:
+        result = self.call_tool("start_record")
+        if result.get("isError"):
+            raise McpError(-32000, f"start_record: {self._content_text(result)}")
+        return self._content_text(result)
+
+    def end_record(self) -> list[dict]:
+        """Stop recording and return the raw [{frame, x, y, button}, ...] list."""
+        result = self.call_tool("end_record")
+        if result.get("isError"):
+            raise McpError(-32000, f"end_record: {self._content_text(result)}")
+        return json.loads(self._content_text(result))
+
     # ── Lifecycle ──────────────────────────────────────────────────────────
 
     def shutdown(self) -> None:
@@ -584,6 +614,8 @@ def cmd_shell(args: argparse.Namespace) -> int:
     print("  list                              — show registered tools")
     print("  snapshot [name]                   — pause+snapshot+unpause; auto-names if no arg")
     print("  play <file>                       — play a TAS script (click/wait commands)")
+    print("  start_record                      — begin recording clicks")
+    print("  end_record <file>                 — stop recording and write a TAS script")
     print("  raw <json>                        — send a raw JSON-RPC request")
     print("  help                              — show this help")
     print("  quit                              — exit")
@@ -625,6 +657,8 @@ def cmd_shell(args: argparse.Namespace) -> int:
                     print("  list                              — show registered tools")
                     print("  snapshot [name]                   — pause+snapshot+unpause (auto-names if no arg)")
                     print("  play <file>                       — play a TAS script (click/wait commands)")
+                    print("  start_record                      — begin recording clicks")
+                    print("  end_record <file>                 — stop recording and write a TAS script")
                     print("  raw <json>                        — send a raw JSON-RPC request")
                     print("  help                              — show this help")
                     print("  quit                              — exit")
@@ -655,6 +689,24 @@ def cmd_shell(args: argparse.Namespace) -> int:
                         continue
                     info = d.play_script(actions)
                     print(f"play {path} OK ({info['actions_played']} actions, {info['frames']} frames)")
+                elif cmd == "start_record":
+                    d.start_record()
+                    print("recording — interact with the game window, then `end_record <file>`")
+                elif cmd == "end_record":
+                    if len(tokens) != 2:
+                        print("usage: end_record <file>")
+                        continue
+                    path = os.path.expanduser(tokens[1])
+                    clicks = d.end_record()
+                    script = format_recording(clicks)
+                    try:
+                        with open(path, "w") as f:
+                            f.write(script)
+                    except OSError as e:
+                        print(f"end_record: write failed: {e}")
+                        continue
+                    span = clicks[-1]["frame"] if clicks else 0
+                    print(f"wrote {path} ({len(clicks)} clicks, {span} frames)")
                 elif cmd == "raw":
                     payload = json.loads(line[len("raw "):])
                     if "id" not in payload:

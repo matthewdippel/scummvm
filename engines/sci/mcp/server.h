@@ -95,6 +95,27 @@ private:
 	uint _playbackIndex;
 	Common::Array<PlaybackAction> _playbackQueue;
 
+	// Recording. Active between the start_record and end_record tools. An
+	// EventObserver (registered with the OSystem event dispatcher in start())
+	// observes — without consuming — every dispatched event; clicks while
+	// _recordingActive is true are appended to _recordedClicks with the
+	// recording-mode frame counter as their timestamp.
+	struct RecordedClick {
+		int frame;
+		int x, y;
+		int button;  // 1 = left, 2 = right, 3 = middle
+	};
+	bool _recordingActive;       // protected by _stepMutex
+	int _recordingFrame;         // protected by _stepMutex
+	Common::Array<RecordedClick> _recordedClicks; // protected by _stepMutex
+	void *_observerHandle;       // McpEventObserver *, lifetime owned by McpServer
+
+public:
+	/** Engine thread: called by the registered EventObserver for every dispatched event. */
+	void onObservedEvent(const Common::Event &event);
+
+private:
+
 	void flushPendingInputs(); // assumes _stepMutex is held
 
 	void readerLoop();

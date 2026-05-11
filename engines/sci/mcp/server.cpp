@@ -58,12 +58,27 @@ static const char *kProtocolVersion = "2024-11-05";
 static const char *kServerName = "scummvm-shivers-mcp";
 static const char *kServerVersion = "0.1";
 
+// EventObserver that forwards every dispatched event to the McpServer for
+// recording. Always returns false (doesn't consume) so the event still flows
+// to the game and to other observers.
+class McpEventObserver : public Common::EventObserver {
+public:
+	explicit McpEventObserver(McpServer *srv) : _srv(srv) {}
+	bool notifyEvent(const Common::Event &event) override {
+		_srv->onObservedEvent(event);
+		return false;
+	}
+private:
+	McpServer *_srv;
+};
+
 McpServer::McpServer(SciEngine *engine) :
 	_engine(engine), _realStdoutFd(-1), _running(false),
 	_threadHandle(nullptr), _stepMutex(nullptr), _stepCond(nullptr),
 	_stepFramesRemaining(0),
 	_playbackActive(false), _playbackPrevPaused(false),
-	_playbackFrame(0), _playbackEndFrame(0), _playbackIndex(0) {}
+	_playbackFrame(0), _playbackEndFrame(0), _playbackIndex(0),
+	_recordingActive(false), _recordingFrame(0), _observerHandle(nullptr) {}
 
 McpServer::~McpServer() {
 	stop();
@@ -100,12 +115,26 @@ void McpServer::start() {
 		return;
 	}
 	_threadHandle = thread;
+
+	// Install the event observer for recording. Priority 10 puts us below the
+	// keymapper (999) but above the default engine-event-handler priority (0),
+	// so we see every event the keymapper hasn't already consumed. Returning
+	// false from notifyEvent keeps the event flowing to the game.
+	McpEventObserver *obs = new McpEventObserver(this);
+	g_system->getEventManager()->getEventDispatcher()->registerObserver(obs, 10, false);
+	_observerHandle = obs;
 }
 
 void McpServer::stop() {
 	if (!_running)
 		return;
 	_running = false;
+	if (_observerHandle) {
+		McpEventObserver *obs = static_cast<McpEventObserver *>(_observerHandle);
+		g_system->getEventManager()->getEventDispatcher()->unregisterObserver(obs);
+		delete obs;
+		_observerHandle = nullptr;
+	}
 	if (_threadHandle) {
 		pthread_t *thread = static_cast<pthread_t *>(_threadHandle);
 		// Close stdin so the reader's blocked read returns immediately.
@@ -146,6 +175,33 @@ void McpServer::flushPendingInputs() {
 	_pendingInputs.clear();
 }
 
+// Called from the engine thread by McpEventObserver for every dispatched event
+// (mouse, keyboard, custom action, …). Records mouse-up clicks while recording
+// is active. Note that events injected by our own playback also flow through
+// here — that's expected and means the recorded script reflects whatever the
+// engine actually saw.
+void McpServer::onObservedEvent(const Common::Event &event) {
+	int button = 0;
+	if (event.type == Common::EVENT_LBUTTONUP) button = 1;
+	else if (event.type == Common::EVENT_RBUTTONUP) button = 2;
+	else if (event.type == Common::EVENT_MBUTTONUP) button = 3;
+	else return;
+
+	if (!_stepMutex)
+		return;
+	pthread_mutex_t *mutex = static_cast<pthread_mutex_t *>(_stepMutex);
+	pthread_mutex_lock(mutex);
+	if (_recordingActive) {
+		RecordedClick c;
+		c.frame = _recordingFrame;
+		c.x = event.mouse.x;
+		c.y = event.mouse.y;
+		c.button = button;
+		_recordedClicks.push_back(c);
+	}
+	pthread_mutex_unlock(mutex);
+}
+
 void McpServer::onFrame() {
 	if (!_stepMutex || !_stepCond)
 		return;
@@ -173,6 +229,8 @@ void McpServer::onFrame() {
 		if (--_stepFramesRemaining == 0)
 			pthread_cond_signal(cond);
 	}
+	if (_recordingActive)
+		_recordingFrame++;
 	// Script playback runs once per displayed frame; we fire any scheduled
 	// clicks whose frame has arrived, then advance the playback frame counter.
 	// When everything has fired and the trailing wait has elapsed, signal the
@@ -521,6 +579,16 @@ void McpServer::handleRequest(const Common::String &line) {
 		tools.push_back(makeNamedToolDef("drop_snapshot",
 			"Free the in-memory snapshot with the given name. No-op if absent."));
 		tools.push_back(makePlayScriptToolDef());
+		tools.push_back(makeNoArgToolDef("start_record",
+			"Begin recording clicks for TAS script authoring. Resets the recording "
+			"frame counter and clears any prior recording. The engine continues "
+			"running; clicks observed (left/right/middle mouse-up) are appended to "
+			"the recording with their absolute frame number."));
+		tools.push_back(makeNoArgToolDef("end_record",
+			"Stop recording and return the captured clicks as JSON-encoded text: "
+			"[{\"frame\": N, \"x\": X, \"y\": Y, \"button\": B}, ...] where button "
+			"is 1=left, 2=right, 3=middle. The driver folds the gaps between "
+			"clicks into `wait` lines to produce a runnable script."));
 		Common::JSONObject result;
 		result["tools"] = new Common::JSONValue(tools);
 		Common::JSONValue resultVal(result);
@@ -787,6 +855,36 @@ void McpServer::handleRequest(const Common::String &line) {
 				sendResponse(buildOk(idVal, result));
 				delete result;
 			}
+		} else if (toolName == "start_record") {
+			pthread_mutex_t *mutex = static_cast<pthread_mutex_t *>(_stepMutex);
+			if (mutex) pthread_mutex_lock(mutex);
+			_recordedClicks.clear();
+			_recordingFrame = 0;
+			_recordingActive = true;
+			if (mutex) pthread_mutex_unlock(mutex);
+			Common::JSONValue *result = makeTextResult("recording");
+			sendResponse(buildOk(idVal, result));
+			delete result;
+		} else if (toolName == "end_record") {
+			pthread_mutex_t *mutex = static_cast<pthread_mutex_t *>(_stepMutex);
+			Common::JSONArray arr;
+			if (mutex) pthread_mutex_lock(mutex);
+			_recordingActive = false;
+			for (uint i = 0; i < _recordedClicks.size(); ++i) {
+				const RecordedClick &c = _recordedClicks[i];
+				Common::JSONObject obj;
+				obj["frame"] = new Common::JSONValue((long long int)c.frame);
+				obj["x"] = new Common::JSONValue((long long int)c.x);
+				obj["y"] = new Common::JSONValue((long long int)c.y);
+				obj["button"] = new Common::JSONValue((long long int)c.button);
+				arr.push_back(new Common::JSONValue(obj));
+			}
+			if (mutex) pthread_mutex_unlock(mutex);
+			Common::JSONValue jarr(arr);
+			Common::String text = jarr.stringify();
+			Common::JSONValue *result = makeTextResult(text);
+			sendResponse(buildOk(idVal, result));
+			delete result;
 		} else if (toolName == "play_script") {
 			// Parse actions into a flat queue of clicks with absolute frame
 			// numbers. `wait` actions only advance a cursor; the trailing wait
@@ -923,7 +1021,8 @@ McpServer::McpServer(SciEngine *engine) :
 	_threadHandle(nullptr), _stepMutex(nullptr), _stepCond(nullptr),
 	_stepFramesRemaining(0),
 	_playbackActive(false), _playbackPrevPaused(false),
-	_playbackFrame(0), _playbackEndFrame(0), _playbackIndex(0) {}
+	_playbackFrame(0), _playbackEndFrame(0), _playbackIndex(0),
+	_recordingActive(false), _recordingFrame(0), _observerHandle(nullptr) {}
 
 McpServer::~McpServer() {}
 
@@ -933,6 +1032,7 @@ void McpServer::start() {
 
 void McpServer::stop() {}
 void McpServer::onFrame() {}
+void McpServer::onObservedEvent(const Common::Event &) {}
 void McpServer::readerLoop() {}
 void McpServer::handleRequest(const Common::String &) {}
 void McpServer::sendResponse(const Common::String &) {}
