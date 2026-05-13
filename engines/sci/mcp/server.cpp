@@ -44,10 +44,20 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <signal.h>
 #include <time.h>
 #include <unistd.h>
 
 extern int g_mcpRealStdoutFd; // global, defined in base/main.cpp
+
+// Signal-driven cancellation for in-progress play_script. The Python driver
+// (or any MCP client) sends SIGUSR1 when the user wants to abort playback —
+// e.g. Ctrl+C in the REPL. The handler just flips the flag; onFrame() honors
+// it on its next pass and signals the reader thread that playback is done.
+static volatile sig_atomic_t s_playbackCancelRequested = 0;
+static void mcpSigusr1Handler(int) {
+	s_playbackCancelRequested = 1;
+}
 #endif
 
 namespace Sci {
@@ -76,7 +86,7 @@ McpServer::McpServer(SciEngine *engine) :
 	_engine(engine), _realStdoutFd(-1), _running(false),
 	_threadHandle(nullptr), _stepMutex(nullptr), _stepCond(nullptr),
 	_stepFramesRemaining(0),
-	_playbackActive(false), _playbackPrevPaused(false),
+	_playbackActive(false), _playbackPrevPaused(false), _playbackCancelled(false),
 	_playbackFrame(0), _playbackEndFrame(0), _playbackIndex(0),
 	_recordingActive(false), _recordingFrame(0), _observerHandle(nullptr) {}
 
@@ -123,6 +133,16 @@ void McpServer::start() {
 	McpEventObserver *obs = new McpEventObserver(this);
 	g_system->getEventManager()->getEventDispatcher()->registerObserver(obs, 10, false);
 	_observerHandle = obs;
+
+	// Install the SIGUSR1 handler for play_script cancellation. SIGUSR1 isn't
+	// used by scummvm elsewhere; without a handler the default action is to
+	// terminate the process, which we definitely don't want.
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = mcpSigusr1Handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_RESTART; // don't interrupt the engine's blocking syscalls
+	sigaction(SIGUSR1, &sa, nullptr);
 }
 
 void McpServer::stop() {
@@ -235,6 +255,12 @@ void McpServer::onFrame() {
 	// clicks whose frame has arrived, then advance the playback frame counter.
 	// When everything has fired and the trailing wait has elapsed, signal the
 	// reader thread that the play_script call can return.
+	if (_playbackActive && s_playbackCancelRequested) {
+		s_playbackCancelRequested = 0;
+		_playbackActive = false;
+		_playbackCancelled = true;
+		pthread_cond_signal(cond);
+	}
 	if (_playbackActive) {
 		Common::EventManager *em = g_system->getEventManager();
 		while (_playbackIndex < _playbackQueue.size() &&
@@ -662,12 +688,6 @@ void McpServer::handleRequest(const Common::String &line) {
 				sendResponse(buildOk(idVal, result));
 				delete result;
 			}
-		} else if (toolName == "get_room") {
-			uint16 room = _engine->getEngineState()->currentRoomNumber();
-			Common::JSONValue *result = makeTextResult(Common::String::format(
-				"{\"room\": %u}", (unsigned int)room));
-			sendResponse(buildOk(idVal, result));
-			delete result;
 		} else if (toolName == "click" || toolName == "move_cursor" ||
 		           toolName == "mouse_down" || toolName == "mouse_up") {
 			int x = 0, y = 0;
@@ -897,6 +917,12 @@ void McpServer::handleRequest(const Common::String &line) {
 				sendResponse(buildOk(idVal, result));
 				delete result;
 			}
+		} else if (toolName == "get_room") {
+			uint16 room = _engine->getEngineState()->currentRoomNumber();
+			Common::JSONValue *result = makeTextResult(Common::String::format(
+				"{\"room\": %u}", (unsigned int)room));
+			sendResponse(buildOk(idVal, result));
+			delete result;
 		} else if (toolName == "start_record") {
 			pthread_mutex_t *mutex = static_cast<pthread_mutex_t *>(_stepMutex);
 			if (mutex) pthread_mutex_lock(mutex);
@@ -1007,19 +1033,24 @@ void McpServer::handleRequest(const Common::String &line) {
 				_playbackEndFrame = cursorFrame;
 				_playbackFrame = 0;
 				_playbackIndex = 0;
+				_playbackCancelled = false;
+				// Drop any stale signal that arrived between playbacks.
+				s_playbackCancelRequested = 0;
 				_playbackActive = true;
 				_playbackPrevPaused = _pauseToken.isActive();
 				if (_playbackPrevPaused)
 					_pauseToken.clear();
 				while (_playbackActive)
 					pthread_cond_wait(cond, mutex);
-				uint actionsPlayed = _playbackQueue.size();
-				int endFrame = _playbackEndFrame;
+				uint actionsPlayed = _playbackCancelled ? _playbackIndex : _playbackQueue.size();
+				int endFrame = _playbackCancelled ? _playbackFrame : _playbackEndFrame;
+				bool cancelled = _playbackCancelled;
 				if (_playbackPrevPaused)
 					_pauseToken = _engine->pauseEngine();
 				pthread_mutex_unlock(mutex);
 				Common::JSONValue *result = makeTextResult(Common::String::format(
-					"{\"actions_played\": %u, \"frames\": %d}", actionsPlayed, endFrame));
+					"{\"actions_played\": %u, \"frames\": %d, \"cancelled\": %s}",
+					actionsPlayed, endFrame, cancelled ? "true" : "false"));
 				sendResponse(buildOk(idVal, result));
 				delete result;
 			}
@@ -1065,7 +1096,7 @@ McpServer::McpServer(SciEngine *engine) :
 	_engine(engine), _realStdoutFd(-1), _running(false),
 	_threadHandle(nullptr), _stepMutex(nullptr), _stepCond(nullptr),
 	_stepFramesRemaining(0),
-	_playbackActive(false), _playbackPrevPaused(false),
+	_playbackActive(false), _playbackPrevPaused(false), _playbackCancelled(false),
 	_playbackFrame(0), _playbackEndFrame(0), _playbackIndex(0),
 	_recordingActive(false), _recordingFrame(0), _observerHandle(nullptr) {}
 

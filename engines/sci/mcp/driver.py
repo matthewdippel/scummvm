@@ -25,6 +25,7 @@ import json
 import os
 import readline
 import shlex
+import signal
 import subprocess
 import sys
 import threading
@@ -201,20 +202,45 @@ class McpDriver:
         *,
         extra_args: Optional[list[str]] = None,
         forward_stderr: bool = True,
+        stderr_log: Optional[str] = None,
+        random_seed: Optional[int] = 1,
         startup_timeout: float = 5.0,
     ):
         argv = [scummvm_path, "--mcp"]
+        # Pin the SCI RNG seed at game launch for TAS determinism. scummvm's
+        # Common::RandomSource consults ConfMan["random_seed"] before falling
+        # back to wall-clock derivation, and --random-seed=N sets that key.
+        # Note: seed 0 collapses to 1 in setSeed, so we use 0 as the sentinel
+        # for "don't pin, let scummvm use its time-based default".
+        if random_seed is not None and random_seed != 0:
+            argv.append(f"--random-seed={random_seed}")
         if extra_args:
             argv.extend(extra_args)
         argv.append(target)
+
+        # Pick a stderr sink. `stderr_log` (a path) wins: open it write-truncate
+        # so each session starts clean and the user can `tail -f` it.
+        self._stderr_file = None
+        if stderr_log:
+            self._stderr_file = open(stderr_log, "w")
+            stderr_arg = self._stderr_file
+        elif forward_stderr:
+            stderr_arg = None
+        else:
+            stderr_arg = subprocess.DEVNULL
 
         self._argv = argv
         self.proc = subprocess.Popen(
             argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=None if forward_stderr else subprocess.DEVNULL,
+            stderr=stderr_arg,
             bufsize=0,  # unbuffered binary
+            # Put scummvm in its own session so terminal Ctrl+C (SIGINT) only
+            # reaches us (Python), not the child. We then forward an explicit
+            # SIGUSR1 to the child for in-flight cancellation; killing scummvm
+            # outright would defeat the purpose.
+            start_new_session=True,
         )
         self._next_id = 1
         self._initialized = False
@@ -237,8 +263,33 @@ class McpDriver:
 
             # Read a single line response. (MCP doesn't pipeline notifications
             # back during a request/response in our server, so this is safe.)
+            # If the user hits Ctrl+C during a slow tool (e.g. play_script
+            # mid-script), forward a SIGUSR1 to scummvm — which the McpServer
+            # picks up to cancel an in-flight playback — and keep waiting for
+            # the response. We must read the response no matter what, or the
+            # next request would see the previous response and the protocol
+            # would desync.
             assert self.proc.stdout is not None
-            raw = self.proc.stdout.readline()
+            interrupted = False
+            while True:
+                try:
+                    raw = self.proc.stdout.readline()
+                    break
+                except KeyboardInterrupt:
+                    if not interrupted:
+                        interrupted = True
+                        try:
+                            os.kill(self.proc.pid, signal.SIGUSR1)
+                            sys.stderr.write("\n(interrupt sent to scummvm; waiting for response…)\n")
+                        except (OSError, ProcessLookupError):
+                            sys.stderr.write("\n(could not signal scummvm; it may have exited)\n")
+                            raise
+                    else:
+                        # Repeated Ctrl+C — user really wants out. Re-raise so
+                        # the REPL/caller sees it. Protocol may desync; the
+                        # caller should treat the McpDriver as dead.
+                        sys.stderr.write("\n(repeated Ctrl+C; bailing — driver state may be inconsistent)\n")
+                        raise
             if not raw:
                 rc = self.proc.poll()
                 raise McpError(-32000, f"scummvm closed stdout (returncode={rc})")
@@ -344,12 +395,6 @@ class McpDriver:
             raise McpError(-32000, f"mouse_up: {self._content_text(result)}")
         return self._content_text(result)
 
-    def get_room(self) -> int:
-        result = self.call_tool("get_room")
-        if result.get("isError"):
-            raise McpError(-32000, f"get_room: {self._content_text(result)}")
-        return int(json.loads(self._content_text(result))["room"])
-
     def move_cursor(self, x: int, y: int) -> str:
         result = self.call_tool("move_cursor", {"x": x, "y": y})
         if result.get("isError"):
@@ -394,6 +439,12 @@ class McpDriver:
             raise McpError(-32000, f"play_script: {self._content_text(result)}")
         return json.loads(self._content_text(result))
 
+    def get_room(self) -> int:
+        result = self.call_tool("get_room")
+        if result.get("isError"):
+            raise McpError(-32000, f"get_room: {self._content_text(result)}")
+        return int(json.loads(self._content_text(result))["room"])
+
     def start_record(self) -> str:
         result = self.call_tool("start_record")
         if result.get("isError"):
@@ -419,6 +470,12 @@ class McpDriver:
         if self._closed:
             return
         self._closed = True
+        if self._stderr_file is not None:
+            try:
+                self._stderr_file.close()
+            except Exception:
+                pass
+            self._stderr_file = None
         if self.proc.poll() is None:
             try:
                 self.shutdown()
@@ -452,7 +509,7 @@ class McpDriver:
 def cmd_smoke(args: argparse.Namespace) -> int:
     print(f"Starting: {' '.join(map(shlex.quote, [args.scummvm, '--mcp', args.target]))}")
     t0 = time.time()
-    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose) as d:
+    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose, random_seed=args.seed) as d:
         print(f"  initialize     OK ({(time.time()-t0)*1000:.0f}ms)")
         tools = d.list_tools()
         names = [t["name"] for t in tools]
@@ -619,7 +676,7 @@ def cmd_smoke(args: argparse.Namespace) -> int:
 
 
 def cmd_screenshot(args: argparse.Namespace) -> int:
-    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose) as d:
+    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose, random_seed=args.seed) as d:
         if args.pause:
             d.pause()
         if args.delay > 0:
@@ -632,6 +689,11 @@ def cmd_screenshot(args: argparse.Namespace) -> int:
 
 
 def cmd_shell(args: argparse.Namespace) -> int:
+    log_path = os.path.expanduser(args.log)
+    print(f"scummvm stderr → {log_path}  (run `tail -f {log_path}` in another terminal)")
+    seed_desc = f"pinned to {args.seed}" if args.seed != 0 else "time-based (not pinned)"
+    print(f"SCI random seed: {seed_desc}")
+    print()
     print("Interactive shell. Anything not recognized below is treated as a tool name.")
     print("  list                              — show registered tools")
     print("  snapshot [name]                   — pause+snapshot+unpause; auto-names if no arg")
@@ -654,7 +716,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
     atexit.register(lambda: _safe_write_history())
 
     snap_counter = 0
-    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose) as d:
+    with McpDriver(args.scummvm, args.target, forward_stderr=False, stderr_log=log_path, random_seed=args.seed) as d:
         while True:
             try:
                 line = input("mcp> ").strip()
@@ -710,7 +772,8 @@ def cmd_shell(args: argparse.Namespace) -> int:
                         print(f"play: {e}")
                         continue
                     info = d.play_script(actions)
-                    print(f"play {path} OK ({info['actions_played']} actions, {info['frames']} frames)")
+                    status = "CANCELLED" if info.get("cancelled") else "OK"
+                    print(f"play {path} {status} ({info['actions_played']} actions, {info['frames']} frames)")
                 elif cmd == "start_record":
                     d.start_record()
                     print("recording — interact with the game window, then `end_record <file>`")
@@ -765,7 +828,7 @@ def _safe_write_history() -> None:
 
 def cmd_raw(args: argparse.Namespace) -> int:
     payload = json.loads(args.json)
-    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose) as d:
+    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose, random_seed=args.seed) as d:
         with d._lock:
             assert d.proc.stdin and d.proc.stdout
             d.proc.stdin.write((json.dumps(payload) + "\n").encode("utf-8"))
@@ -779,10 +842,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     p.add_argument("--scummvm", default=DEFAULT_SCUMMVM, help=f"path to scummvm binary (default: {DEFAULT_SCUMMVM})")
     p.add_argument("--target", default="Shivers", help="game target id (default: Shivers)")
     p.add_argument("-v", "--verbose", action="store_true", help="forward scummvm stderr")
+    p.add_argument("--seed", type=int, default=1, help="SCI random seed (default: 1; set to 0 to use scummvm's time-based seed)")
 
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("smoke", help="run the basic protocol smoke test").set_defaults(func=cmd_smoke)
-    sub.add_parser("shell", help="interactive REPL against the server").set_defaults(func=cmd_shell)
+    shell = sub.add_parser("shell", help="interactive REPL against the server")
+    shell.add_argument("--log", default="~/scummvm-mcp.log", help="path to write scummvm stderr (default: ~/scummvm-mcp.log)")
+    shell.set_defaults(func=cmd_shell)
     raw = sub.add_parser("raw", help="send a single raw JSON-RPC request and exit")
     raw.add_argument("json", help="JSON-RPC request as a string")
     raw.set_defaults(func=cmd_raw)

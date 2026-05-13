@@ -96,6 +96,7 @@ private:
 	};
 	bool _playbackActive;       // protected by _stepMutex
 	bool _playbackPrevPaused;   // remember pause state across playback
+	bool _playbackCancelled;    // set by onFrame when a SIGUSR1 cancel landed mid-playback
 	int _playbackFrame;
 	int _playbackEndFrame;
 	uint _playbackIndex;
