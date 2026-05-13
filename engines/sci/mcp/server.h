@@ -83,8 +83,14 @@ private:
 	// thread in onFrame, advancing one frame per onFrame call and firing
 	// scheduled clicks at the right absolute frame. The engine runs at native
 	// speed throughout — there is no pause/step cycling.
+	enum PlaybackKind {
+		kPlaybackClick = 0,      // press + release on the same frame
+		kPlaybackMouseDown = 1,  // press only (puzzle drag/hold)
+		kPlaybackMouseUp = 2,    // release only
+	};
 	struct PlaybackAction {
 		int frame;   // absolute frame at which to fire (0 = first onFrame)
+		PlaybackKind kind;
 		int x, y;
 		int button;  // 1 = left, 2 = right, 3 = middle
 	};

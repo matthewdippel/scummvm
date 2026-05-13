@@ -77,8 +77,12 @@ def parse_script(text: str) -> list[dict]:
     """Parse a TAS script (one command per line) into an actions list.
 
     Recognized commands:
-        click X Y [button]   — left, right, or middle; defaults to left
-        wait N               — wait N in-game frames
+        click X Y [button]       — press + release on the same frame
+        mouse_down X Y [button]  — press only (start of a hold/drag)
+        mouse_up X Y [button]    — release only (end of a hold/drag)
+        wait N                   — wait N in-game frames
+
+    Button is left, right, or middle; defaults to left.
 
     Lines starting with `#` and inline `# comment` tails are stripped. Blank
     lines are ignored. Raises ValueError on malformed input, with the offending
@@ -93,18 +97,18 @@ def parse_script(text: str) -> list[dict]:
         if not parts:
             continue
         op = parts[0]
-        if op == "click":
+        if op in ("click", "mouse_down", "mouse_up"):
             if len(parts) not in (3, 4):
-                raise ValueError(f"line {lineno}: click expects 'click X Y [button]'")
+                raise ValueError(f"line {lineno}: {op} expects '{op} X Y [button]'")
             try:
                 x = int(parts[1])
                 y = int(parts[2])
             except ValueError:
-                raise ValueError(f"line {lineno}: click X/Y must be integers")
+                raise ValueError(f"line {lineno}: {op} X/Y must be integers")
             button = parts[3] if len(parts) == 4 else "left"
             if button not in ("left", "right", "middle"):
                 raise ValueError(f"line {lineno}: unknown button {button!r}")
-            actions.append({"type": "click", "x": x, "y": y, "button": button})
+            actions.append({"type": op, "x": x, "y": y, "button": button})
         elif op == "wait":
             if len(parts) != 2:
                 raise ValueError(f"line {lineno}: wait expects 'wait N'")
@@ -327,6 +331,24 @@ class McpDriver:
         if result.get("isError"):
             raise McpError(-32000, f"click: {self._content_text(result)}")
         return self._content_text(result)
+
+    def mouse_down(self, x: int, y: int, button: str = "left") -> str:
+        result = self.call_tool("mouse_down", {"x": x, "y": y, "button": button})
+        if result.get("isError"):
+            raise McpError(-32000, f"mouse_down: {self._content_text(result)}")
+        return self._content_text(result)
+
+    def mouse_up(self, x: int, y: int, button: str = "left") -> str:
+        result = self.call_tool("mouse_up", {"x": x, "y": y, "button": button})
+        if result.get("isError"):
+            raise McpError(-32000, f"mouse_up: {self._content_text(result)}")
+        return self._content_text(result)
+
+    def get_room(self) -> int:
+        result = self.call_tool("get_room")
+        if result.get("isError"):
+            raise McpError(-32000, f"get_room: {self._content_text(result)}")
+        return int(json.loads(self._content_text(result))["room"])
 
     def move_cursor(self, x: int, y: int) -> str:
         result = self.call_tool("move_cursor", {"x": x, "y": y})

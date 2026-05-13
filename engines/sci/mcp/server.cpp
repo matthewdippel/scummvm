@@ -244,14 +244,18 @@ void McpServer::onFrame() {
 			Common::EventType down = Common::EVENT_LBUTTONDOWN, up = Common::EVENT_LBUTTONUP;
 			if (a.button == 2) { down = Common::EVENT_RBUTTONDOWN; up = Common::EVENT_RBUTTONUP; }
 			else if (a.button == 3) { down = Common::EVENT_MBUTTONDOWN; up = Common::EVENT_MBUTTONUP; }
-			Common::Event d;
-			d.type = down;
-			d.mouse = Common::Point(a.x, a.y);
-			em->pushEvent(d);
-			Common::Event u;
-			u.type = up;
-			u.mouse = Common::Point(a.x, a.y);
-			em->pushEvent(u);
+			if (a.kind != kPlaybackMouseUp) {
+				Common::Event d;
+				d.type = down;
+				d.mouse = Common::Point(a.x, a.y);
+				em->pushEvent(d);
+			}
+			if (a.kind != kPlaybackMouseDown) {
+				Common::Event u;
+				u.type = up;
+				u.mouse = Common::Point(a.x, a.y);
+				em->pushEvent(u);
+			}
 			_playbackIndex++;
 		}
 		if (_playbackIndex >= _playbackQueue.size() && _playbackFrame >= _playbackEndFrame) {
@@ -318,8 +322,9 @@ static Common::JSONValue *makeNoArgToolDef(const char *name, const char *desc) {
 	return new Common::JSONValue(tool);
 }
 
-// Build the `click` tool definition.
-static Common::JSONValue *makeClickToolDef() {
+// Build a tool definition with the same x/y/button schema as click. Used for
+// click, mouse_down, and mouse_up.
+static Common::JSONValue *makeXYButtonToolDef(const char *name, const char *desc) {
 	Common::JSONObject xProp, yProp, buttonProp;
 	xProp["type"] = new Common::JSONValue(Common::String("integer"));
 	xProp["description"] = new Common::JSONValue(Common::String("Buffer-coord X (0-639 in Shivers)."));
@@ -344,10 +349,8 @@ static Common::JSONValue *makeClickToolDef() {
 	schema["properties"] = new Common::JSONValue(properties);
 	schema["required"] = new Common::JSONValue(required);
 	Common::JSONObject tool;
-	tool["name"] = new Common::JSONValue(Common::String("click"));
-	tool["description"] = new Common::JSONValue(Common::String(
-		"Click at (x,y) with the given button (left/right/middle, default left). "
-		"Press and release fire on the same frame. Buffer coords (1:1 with screenshot)."));
+	tool["name"] = new Common::JSONValue(Common::String(name));
+	tool["description"] = new Common::JSONValue(Common::String(desc));
 	tool["inputSchema"] = new Common::JSONValue(schema);
 	return new Common::JSONValue(tool);
 }
@@ -422,7 +425,11 @@ static Common::JSONValue *makePlayScriptToolDef() {
 	Common::JSONObject actionsArr;
 	actionsArr["type"] = new Common::JSONValue(Common::String("array"));
 	actionsArr["description"] = new Common::JSONValue(Common::String(
-		"Ordered list of {type:\"click\", x, y, button?} or {type:\"wait\", frames}."));
+		"Ordered list of action objects. Types: "
+		"{type:\"click\", x, y, button?} (press+release on the same frame), "
+		"{type:\"mouse_down\", x, y, button?} (press only — hold), "
+		"{type:\"mouse_up\", x, y, button?} (release only — completes a hold), "
+		"{type:\"wait\", frames}."));
 	Common::JSONObject properties;
 	properties["actions"] = new Common::JSONValue(actionsArr);
 	Common::JSONArray required;
@@ -564,7 +571,17 @@ void McpServer::handleRequest(const Common::String &line) {
 			"base64 in MCP image content. Reflects exactly what the user "
 			"sees, including cursor and any debug overlays."));
 		tools.push_back(makeStepToolDef());
-		tools.push_back(makeClickToolDef());
+		tools.push_back(makeXYButtonToolDef("click",
+			"Click at (x,y) with the given button (left/right/middle, default left). "
+			"Press and release fire on the same frame. Buffer coords (1:1 with screenshot)."));
+		tools.push_back(makeXYButtonToolDef("mouse_down",
+			"Press the given button at (x,y) without releasing. Used for puzzles "
+			"that require holding (drag, sustained press). Pair with mouse_up to "
+			"release. Buffer coords."));
+		tools.push_back(makeXYButtonToolDef("mouse_up",
+			"Release the given button at (x,y). Use after mouse_down to complete "
+			"a hold/drag. The release coord can differ from the press coord (e.g. "
+			"for drag-and-drop). Buffer coords."));
 		tools.push_back(makeMoveCursorToolDef());
 		tools.push_back(makeNamedToolDef("snapshot",
 			"Save the current engine state to a named in-memory snapshot. "
@@ -584,6 +601,12 @@ void McpServer::handleRequest(const Common::String &line) {
 			"frame counter and clears any prior recording. The engine continues "
 			"running; clicks observed (left/right/middle mouse-up) are appended to "
 			"the recording with their absolute frame number."));
+		tools.push_back(makeNoArgToolDef("get_room",
+			"Return the current SCI room number as JSON-encoded text "
+			"{\"room\": N}. For Shivers, this is the global variable that "
+			"identifies the current scene/screen; cross-reference it with the "
+			"decompiled SCI script source to find click hotspots and game "
+			"logic for the room."));
 		tools.push_back(makeNoArgToolDef("end_record",
 			"Stop recording and return the captured clicks as JSON-encoded text: "
 			"[{\"frame\": N, \"x\": X, \"y\": Y, \"button\": B}, ...] where button "
@@ -639,7 +662,14 @@ void McpServer::handleRequest(const Common::String &line) {
 				sendResponse(buildOk(idVal, result));
 				delete result;
 			}
-		} else if (toolName == "click" || toolName == "move_cursor") {
+		} else if (toolName == "get_room") {
+			uint16 room = _engine->getEngineState()->currentRoomNumber();
+			Common::JSONValue *result = makeTextResult(Common::String::format(
+				"{\"room\": %u}", (unsigned int)room));
+			sendResponse(buildOk(idVal, result));
+			delete result;
+		} else if (toolName == "click" || toolName == "move_cursor" ||
+		           toolName == "mouse_down" || toolName == "mouse_up") {
 			int x = 0, y = 0;
 			Common::String button = "left";
 			bool haveX = false, haveY = false;
@@ -661,14 +691,15 @@ void McpServer::handleRequest(const Common::String &line) {
 				sendResponse(buildOk(idVal, result));
 				delete result;
 			} else {
-				// Build the events we want to deliver. For click, that's a move
-				// followed by button-down and button-up at the same position.
+				// Build the events we want to deliver. All of click/mouse_down/
+				// mouse_up start with a move; click adds down+up; mouse_down
+				// adds down only; mouse_up adds up only; move_cursor adds nothing.
 				Common::Event mv;
 				mv.type = Common::EVENT_MOUSEMOVE;
 				mv.mouse = Common::Point(x, y);
 				Common::Array<Common::Event> events;
 				events.push_back(mv);
-				if (toolName == "click") {
+				if (toolName != "move_cursor") {
 					Common::EventType down, up;
 					if (button == "left") { down = Common::EVENT_LBUTTONDOWN; up = Common::EVENT_LBUTTONUP; }
 					else if (button == "right") { down = Common::EVENT_RBUTTONDOWN; up = Common::EVENT_RBUTTONUP; }
@@ -680,14 +711,18 @@ void McpServer::handleRequest(const Common::String &line) {
 						delete parsed;
 						return;
 					}
-					Common::Event d;
-					d.type = down;
-					d.mouse = Common::Point(x, y);
-					events.push_back(d);
-					Common::Event u;
-					u.type = up;
-					u.mouse = Common::Point(x, y);
-					events.push_back(u);
+					if (toolName == "click" || toolName == "mouse_down") {
+						Common::Event d;
+						d.type = down;
+						d.mouse = Common::Point(x, y);
+						events.push_back(d);
+					}
+					if (toolName == "click" || toolName == "mouse_up") {
+						Common::Event u;
+						u.type = up;
+						u.mouse = Common::Point(x, y);
+						events.push_back(u);
+					}
 				}
 				// While MCP-paused, buffer rather than fire — the engine's script
 				// VM still drains live events even with pauseEngine in effect, so
@@ -709,9 +744,16 @@ void McpServer::handleRequest(const Common::String &line) {
 							em->pushEvent(ev);
 					}
 				}
-				Common::String msg = (toolName == "click")
-					? Common::String::format("clicked %s at (%d,%d)%s", button.c_str(), x, y, _pauseToken.isActive() ? " (queued)" : "")
-					: Common::String::format("moved to (%d,%d)%s", x, y, _pauseToken.isActive() ? " (queued)" : "");
+				const char *suffix = _pauseToken.isActive() ? " (queued)" : "";
+				Common::String msg;
+				if (toolName == "click")
+					msg = Common::String::format("clicked %s at (%d,%d)%s", button.c_str(), x, y, suffix);
+				else if (toolName == "mouse_down")
+					msg = Common::String::format("pressed %s at (%d,%d)%s", button.c_str(), x, y, suffix);
+				else if (toolName == "mouse_up")
+					msg = Common::String::format("released %s at (%d,%d)%s", button.c_str(), x, y, suffix);
+				else
+					msg = Common::String::format("moved to (%d,%d)%s", x, y, suffix);
 				Common::JSONValue *result = makeTextResult(msg);
 				sendResponse(buildOk(idVal, result));
 				delete result;
@@ -902,7 +944,7 @@ void McpServer::handleRequest(const Common::String &line) {
 						const Common::JSONObject &ao = actions[i]->asObject();
 						if (!ao.contains("type") || !ao["type"]->isString()) { parseOk = false; parseErr = "action missing type"; break; }
 						const Common::String &type = ao["type"]->asString();
-						if (type == "click") {
+						if (type == "click" || type == "mouse_down" || type == "mouse_up") {
 							int x = 0, y = 0, btn = 1;
 							bool haveX = false, haveY = false;
 							if (ao.contains("x")) {
@@ -913,7 +955,7 @@ void McpServer::handleRequest(const Common::String &line) {
 								if (ao["y"]->isIntegerNumber()) { y = (int)ao["y"]->asIntegerNumber(); haveY = true; }
 								else if (ao["y"]->isNumber()) { y = (int)ao["y"]->asNumber(); haveY = true; }
 							}
-							if (!haveX || !haveY) { parseOk = false; parseErr = "click action missing x or y"; break; }
+							if (!haveX || !haveY) { parseOk = false; parseErr = type + " action missing x or y"; break; }
 							if (ao.contains("button") && ao["button"]->isString()) {
 								const Common::String &b = ao["button"]->asString();
 								if (b == "left") btn = 1;
@@ -923,6 +965,9 @@ void McpServer::handleRequest(const Common::String &line) {
 							}
 							PlaybackAction pa;
 							pa.frame = cursorFrame;
+							pa.kind = (type == "click") ? kPlaybackClick
+							        : (type == "mouse_down") ? kPlaybackMouseDown
+							        : kPlaybackMouseUp;
 							pa.x = x; pa.y = y; pa.button = btn;
 							queue.push_back(pa);
 						} else if (type == "wait") {
