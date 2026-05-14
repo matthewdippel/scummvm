@@ -104,13 +104,16 @@ private:
 
 	// Recording. Active between the start_record and end_record tools. An
 	// EventObserver (registered with the OSystem event dispatcher in start())
-	// observes — without consuming — every dispatched event; clicks while
-	// _recordingActive is true are appended to _recordedClicks with the
-	// recording-mode frame counter as their timestamp.
+	// observes — without consuming — every dispatched event; mouse button
+	// events (down and up, separately) while _recordingActive is true are
+	// appended to _recordedClicks with the recording-mode frame counter as
+	// their timestamp. The driver collapses same-frame down+up pairs into
+	// `click` lines and emits unpaired half-events as `mouse_down`/`mouse_up`.
 	struct RecordedClick {
 		int frame;
+		PlaybackKind kind;  // kPlaybackMouseDown or kPlaybackMouseUp
 		int x, y;
-		int button;  // 1 = left, 2 = right, 3 = middle
+		int button;         // 1 = left, 2 = right, 3 = middle
 	};
 	bool _recordingActive;       // protected by _stepMutex
 	int _recordingFrame;         // protected by _stepMutex

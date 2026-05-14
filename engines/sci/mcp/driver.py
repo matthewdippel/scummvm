@@ -125,20 +125,43 @@ def parse_script(text: str) -> list[dict]:
     return actions
 
 
-def format_recording(clicks: list[dict]) -> str:
-    """Format recorded clicks (engine-side frame timestamps) as a TAS script.
+def format_recording(events: list[dict]) -> str:
+    """Format a recording (engine-side frame timestamps + per-event kind) as a TAS script.
 
-    Inserts `wait N` between successive clicks for the frame gap.
+    Each event is `{frame, kind, x, y, button}` where kind is "mouse_down" or
+    "mouse_up". A same-frame, same-button, same-position down+up pair is
+    collapsed into a single `click` line (matches what a real click looks like
+    when scummvm dispatches both events on the same engine frame). Anything
+    that doesn't pair up cleanly — drags (down at frame A, up at frame B with
+    different coords), unmatched halves — is emitted as bare `mouse_down` /
+    `mouse_up` lines so the run can be replayed faithfully.
     """
     button_suffix = {1: "", 2: " right", 3: " middle"}
     lines: list[str] = []
     last_frame = 0
-    for c in clicks:
-        gap = c["frame"] - last_frame
+    i = 0
+    while i < len(events):
+        ev = events[i]
+        nxt = events[i + 1] if i + 1 < len(events) else None
+        gap = ev["frame"] - last_frame
         if gap > 0:
             lines.append(f"wait {gap}")
-        lines.append(f"click {c['x']} {c['y']}{button_suffix.get(c['button'], '')}")
-        last_frame = c["frame"]
+        # Collapse a same-frame, same-position, same-button down→up into `click`.
+        if (nxt is not None
+                and ev.get("kind") == "mouse_down"
+                and nxt.get("kind") == "mouse_up"
+                and nxt["frame"] == ev["frame"]
+                and nxt["button"] == ev["button"]
+                and nxt["x"] == ev["x"] and nxt["y"] == ev["y"]):
+            lines.append(f"click {ev['x']} {ev['y']}{button_suffix.get(ev['button'], '')}")
+            last_frame = ev["frame"]
+            i += 2
+            continue
+        # Otherwise emit the half-event verbatim.
+        verb = ev.get("kind", "click")  # fallback for legacy recordings without `kind`
+        lines.append(f"{verb} {ev['x']} {ev['y']}{button_suffix.get(ev['button'], '')}")
+        last_frame = ev["frame"]
+        i += 1
     return "\n".join(lines) + ("\n" if lines else "")
 
 

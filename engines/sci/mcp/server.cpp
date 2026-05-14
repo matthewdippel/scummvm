@@ -196,16 +196,24 @@ void McpServer::flushPendingInputs() {
 }
 
 // Called from the engine thread by McpEventObserver for every dispatched event
-// (mouse, keyboard, custom action, …). Records mouse-up clicks while recording
-// is active. Note that events injected by our own playback also flow through
-// here — that's expected and means the recorded script reflects whatever the
-// engine actually saw.
+// (mouse, keyboard, custom action, …). Records mouse button-down and button-up
+// events (separately) while recording is active, so the driver can faithfully
+// reconstruct drags as mouse_down/mouse_up pairs rather than collapsing them
+// into a single click. Same-frame down+up pairs are reconstructed as `click`
+// on the driver side. Events injected by our own playback also flow through
+// here — by design, the recording reflects whatever the engine actually saw.
 void McpServer::onObservedEvent(const Common::Event &event) {
 	int button = 0;
-	if (event.type == Common::EVENT_LBUTTONUP) button = 1;
-	else if (event.type == Common::EVENT_RBUTTONUP) button = 2;
-	else if (event.type == Common::EVENT_MBUTTONUP) button = 3;
-	else return;
+	PlaybackKind kind = kPlaybackMouseDown;
+	switch (event.type) {
+	case Common::EVENT_LBUTTONDOWN: button = 1; kind = kPlaybackMouseDown; break;
+	case Common::EVENT_RBUTTONDOWN: button = 2; kind = kPlaybackMouseDown; break;
+	case Common::EVENT_MBUTTONDOWN: button = 3; kind = kPlaybackMouseDown; break;
+	case Common::EVENT_LBUTTONUP:   button = 1; kind = kPlaybackMouseUp;   break;
+	case Common::EVENT_RBUTTONUP:   button = 2; kind = kPlaybackMouseUp;   break;
+	case Common::EVENT_MBUTTONUP:   button = 3; kind = kPlaybackMouseUp;   break;
+	default: return;
+	}
 
 	if (!_stepMutex)
 		return;
@@ -214,6 +222,7 @@ void McpServer::onObservedEvent(const Common::Event &event) {
 	if (_recordingActive) {
 		RecordedClick c;
 		c.frame = _recordingFrame;
+		c.kind = kind;
 		c.x = event.mouse.x;
 		c.y = event.mouse.y;
 		c.button = button;
@@ -942,6 +951,8 @@ void McpServer::handleRequest(const Common::String &line) {
 				const RecordedClick &c = _recordedClicks[i];
 				Common::JSONObject obj;
 				obj["frame"] = new Common::JSONValue((long long int)c.frame);
+				obj["kind"] = new Common::JSONValue(Common::String(
+					c.kind == kPlaybackMouseDown ? "mouse_down" : "mouse_up"));
 				obj["x"] = new Common::JSONValue((long long int)c.x);
 				obj["y"] = new Common::JSONValue((long long int)c.y);
 				obj["button"] = new Common::JSONValue((long long int)c.button);
