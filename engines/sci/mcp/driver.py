@@ -74,7 +74,7 @@ def _parse_kwargs(parts: list[str]) -> dict:
     return result
 
 
-def parse_script(text: str, base_dir: Optional[str] = None, _include_stack: Optional[list[str]] = None) -> list[dict]:
+def parse_script(text: str, base_dir: Optional[str] = None, _include_stack: Optional[list[str]] = None, _source_file: Optional[str] = None) -> list[dict]:
     """Parse a TAS script (one command per line) into an actions list.
 
     Recognized commands:
@@ -91,12 +91,17 @@ def parse_script(text: str, base_dir: Optional[str] = None, _include_stack: Opti
     sets base_dir from the file's directory automatically. Includes are
     recursive; cycles raise ValueError.
 
+    Each emitted action carries a `source: {file, line}` field — for play
+    display, so the user can see which script-and-line a given action came
+    from (especially across includes).
+
     Lines starting with `#` and inline `# comment` tails are stripped. Blank
     lines are ignored. Raises ValueError on malformed input (with line number)
     or include resolution errors.
     """
     actions: list[dict] = []
     stack = list(_include_stack or [])
+    src_file = _source_file or "<inline>"
     for lineno, raw in enumerate(text.splitlines(), 1):
         # Strip inline comments
         if "#" in raw:
@@ -122,7 +127,7 @@ def parse_script(text: str, base_dir: Optional[str] = None, _include_stack: Opti
                     sub_text = f.read()
             except OSError as e:
                 raise ValueError(f"line {lineno}: include {target!r}: {e}")
-            actions.extend(parse_script(sub_text, base_dir=os.path.dirname(target), _include_stack=stack + [target]))
+            actions.extend(parse_script(sub_text, base_dir=os.path.dirname(target), _include_stack=stack + [target], _source_file=target))
         elif op in ("click", "mouse_down", "mouse_up"):
             if len(parts) not in (3, 4):
                 raise ValueError(f"line {lineno}: {op} expects '{op} X Y [button]'")
@@ -134,7 +139,8 @@ def parse_script(text: str, base_dir: Optional[str] = None, _include_stack: Opti
             button = parts[3] if len(parts) == 4 else "left"
             if button not in ("left", "right", "middle"):
                 raise ValueError(f"line {lineno}: unknown button {button!r}")
-            actions.append({"type": op, "x": x, "y": y, "button": button})
+            actions.append({"type": op, "x": x, "y": y, "button": button,
+                            "source": {"file": src_file, "line": lineno}})
         elif op == "wait":
             if len(parts) != 2:
                 raise ValueError(f"line {lineno}: wait expects 'wait N'")
@@ -144,21 +150,40 @@ def parse_script(text: str, base_dir: Optional[str] = None, _include_stack: Opti
                 raise ValueError(f"line {lineno}: wait N must be an integer")
             if n < 0:
                 raise ValueError(f"line {lineno}: wait N must be >= 0")
-            actions.append({"type": "wait", "frames": n})
+            actions.append({"type": "wait", "frames": n,
+                            "source": {"file": src_file, "line": lineno}})
         else:
             raise ValueError(f"line {lineno}: unknown command {op!r}")
     return actions
+
+
+def render_action(a: dict) -> str:
+    """Format a parsed action as it would appear in a script file."""
+    if a["type"] == "wait":
+        return f"wait {a['frames']}"
+    btn = a.get("button", "left")
+    suffix = "" if btn == "left" else f" {btn}"
+    return f"{a['type']} {a['x']} {a['y']}{suffix}"
+
+
+def _source_suffix(a: dict) -> str:
+    """Return `  (file.tas:N)` for an action that has a source field, else ''."""
+    src = a.get("source") if isinstance(a, dict) else None
+    if not src:
+        return ""
+    return f"  ({os.path.basename(src.get('file', '?'))}:{src.get('line', '?')})"
 
 
 def parse_script_file(path: str) -> list[dict]:
     """Load and parse a TAS script from disk, with includes resolved relative to it.
 
     Convenience wrapper around parse_script() that sets base_dir to the script's
-    directory and seeds the include cycle-detection stack with the file itself.
+    directory, seeds the include cycle-detection stack with the file itself,
+    and stamps each action with its source file + line number for display.
     """
     abspath = os.path.abspath(os.path.expanduser(path))
     with open(abspath, "r") as f:
-        return parse_script(f.read(), base_dir=os.path.dirname(abspath), _include_stack=[abspath])
+        return parse_script(f.read(), base_dir=os.path.dirname(abspath), _include_stack=[abspath], _source_file=abspath)
 
 
 def format_recording(events: list[dict]) -> str:
@@ -829,9 +854,12 @@ def cmd_shell(args: argparse.Namespace) -> int:
                     except (OSError, ValueError) as e:
                         print(f"play: {e}")
                         continue
+                    print(f"play {path} ({len(actions)} actions):")
+                    for i, a in enumerate(actions, 1):
+                        print(f"  [{i}/{len(actions)}] {render_action(a)}{_source_suffix(a)}")
                     info = d.play_script(actions)
                     status = "CANCELLED" if info.get("cancelled") else "OK"
-                    print(f"play {path} {status} ({info['actions_played']} actions, {info['frames']} frames)")
+                    print(f"  → {status} ({info['actions_played']} actions, {info['frames']} frames)")
                 elif cmd == "start_record":
                     d.start_record()
                     print("recording — interact with the game window, then `end_record <file>`")
