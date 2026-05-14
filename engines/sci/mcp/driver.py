@@ -331,6 +331,15 @@ class McpDriver:
         self._closed = False
         self._lock = threading.Lock()
         self._startup_timeout = startup_timeout
+        # When false (default), JSON-RPC notifications from the server are
+        # pretty-printed inline as they arrive — chiefly play_script/progress
+        # per-action lines. Set true from a context (e.g., play_slow's inner
+        # REPL) that has its own display and doesn't want extra noise.
+        self._suppress_progress = False
+        # The action list currently driving a play_script call. Set by the
+        # play_script() wrapper so _handle_notification can look up source
+        # metadata (file/line) for the action being reported on.
+        self._active_actions: Optional[list[dict]] = None
 
     # ── Low-level transport ────────────────────────────────────────────────
 
@@ -345,20 +354,17 @@ class McpDriver:
             self.proc.stdin.write(line)
             self.proc.stdin.flush()
 
-            # Read a single line response. (MCP doesn't pipeline notifications
-            # back during a request/response in our server, so this is safe.)
-            # If the user hits Ctrl+C during a slow tool (e.g. play_script
-            # mid-script), forward a SIGUSR1 to scummvm — which the McpServer
-            # picks up to cancel an in-flight playback — and keep waiting for
-            # the response. We must read the response no matter what, or the
-            # next request would see the previous response and the protocol
-            # would desync.
+            # Read lines until we get the matching response. Lines without an
+            # "id" are JSON-RPC notifications (e.g. play_script/progress) —
+            # dispatch them to the handler and keep reading. On Ctrl+C during
+            # the wait, forward SIGUSR1 to scummvm to cancel an in-flight
+            # play_script, then keep waiting for the response so the protocol
+            # stays in sync.
             assert self.proc.stdout is not None
             interrupted = False
             while True:
                 try:
                     raw = self.proc.stdout.readline()
-                    break
                 except KeyboardInterrupt:
                     if not interrupted:
                         interrupted = True
@@ -369,22 +375,47 @@ class McpDriver:
                             sys.stderr.write("\n(could not signal scummvm; it may have exited)\n")
                             raise
                     else:
-                        # Repeated Ctrl+C — user really wants out. Re-raise so
-                        # the REPL/caller sees it. Protocol may desync; the
-                        # caller should treat the McpDriver as dead.
+                        # Repeated Ctrl+C — user really wants out.
                         sys.stderr.write("\n(repeated Ctrl+C; bailing — driver state may be inconsistent)\n")
                         raise
-            if not raw:
-                rc = self.proc.poll()
-                raise McpError(-32000, f"scummvm closed stdout (returncode={rc})")
-            try:
-                resp = json.loads(raw)
-            except json.JSONDecodeError as e:
-                raise McpError(-32700, f"bad JSON from server: {e}; raw={raw!r}")
+                    continue
+                if not raw:
+                    rc = self.proc.poll()
+                    raise McpError(-32000, f"scummvm closed stdout (returncode={rc})")
+                try:
+                    resp = json.loads(raw)
+                except json.JSONDecodeError as e:
+                    raise McpError(-32700, f"bad JSON from server: {e}; raw={raw!r}")
+                # Notification: no "id" field, has "method".
+                if "method" in resp and "id" not in resp:
+                    self._handle_notification(resp)
+                    continue
+                break
             if "error" in resp:
                 err = resp["error"]
                 raise McpError(err.get("code", -32603), err.get("message", "unknown error"), err.get("data"))
             return resp.get("result", {})
+
+    def _handle_notification(self, note: dict) -> None:
+        """Pretty-print JSON-RPC notifications received during a request wait."""
+        method = note.get("method", "")
+        params = note.get("params", {}) or {}
+        if method == "notifications/play_script/progress":
+            if self._suppress_progress:
+                return
+            idx = params.get("action_index", 0)
+            total = params.get("total", 0)
+            t = params.get("type", "")
+            if t == "wait":
+                line = f"wait {params.get('frames', 0)}"
+            else:
+                btn = params.get("button", "left")
+                suffix = "" if btn == "left" else f" {btn}"
+                line = f"{t} {params.get('x', 0)} {params.get('y', 0)}{suffix}"
+            src = ""
+            if self._active_actions is not None and 1 <= idx <= len(self._active_actions):
+                src = _source_suffix(self._active_actions[idx - 1])
+            print(f"  [{idx}/{total}] {line}{src}", flush=True)
 
     def _send_notification(self, method: str, params: Any = None) -> None:
         with self._lock:
@@ -516,9 +547,17 @@ class McpDriver:
         """Run a list of click/wait actions on the engine at native speed.
 
         Blocks until the engine has played the entire script. Returns
-        {"actions_played": N, "frames": M}.
+        {"actions_played": N, "frames": M, "cancelled": bool}.
+
+        Sets self._active_actions for the duration of the call so that
+        _handle_notification can attach source-file metadata to per-action
+        progress lines.
         """
-        result = self.call_tool("play_script", {"actions": actions})
+        self._active_actions = actions
+        try:
+            result = self.call_tool("play_script", {"actions": actions})
+        finally:
+            self._active_actions = None
         if result.get("isError"):
             raise McpError(-32000, f"play_script: {self._content_text(result)}")
         return json.loads(self._content_text(result))
@@ -855,8 +894,6 @@ def cmd_shell(args: argparse.Namespace) -> int:
                         print(f"play: {e}")
                         continue
                     print(f"play {path} ({len(actions)} actions):")
-                    for i, a in enumerate(actions, 1):
-                        print(f"  [{i}/{len(actions)}] {render_action(a)}{_source_suffix(a)}")
                     info = d.play_script(actions)
                     status = "CANCELLED" if info.get("cancelled") else "OK"
                     print(f"  → {status} ({info['actions_played']} actions, {info['frames']} frames)")

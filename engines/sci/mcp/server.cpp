@@ -87,7 +87,7 @@ McpServer::McpServer(SciEngine *engine) :
 	_threadHandle(nullptr), _stepMutex(nullptr), _stepCond(nullptr),
 	_stepFramesRemaining(0),
 	_playbackActive(false), _playbackPrevPaused(false), _playbackCancelled(false),
-	_playbackFrame(0), _playbackEndFrame(0), _playbackIndex(0),
+	_playbackFrame(0), _playbackEndFrame(0), _playbackTotalActions(0), _playbackIndex(0),
 	_recordingActive(false), _recordingFrame(0), _observerHandle(nullptr) {}
 
 McpServer::~McpServer() {
@@ -231,6 +231,38 @@ void McpServer::onObservedEvent(const Common::Event &event) {
 	pthread_mutex_unlock(mutex);
 }
 
+// Write a JSON-RPC progress notification for one playback action. Called from
+// the engine thread inside onFrame. Notifications are <200 bytes and fit
+// within a single atomic pipe write (PIPE_BUF on Linux is 4096), so no mutex
+// is needed against the reader thread's response writes.
+void McpServer::sendProgressNotification(const PlaybackAction &a) {
+	Common::JSONObject params;
+	params["action_index"] = new Common::JSONValue((long long int)a.origIndex);
+	params["total"] = new Common::JSONValue((long long int)_playbackTotalActions);
+	params["frame"] = new Common::JSONValue((long long int)_playbackFrame);
+	if (a.kind == kPlaybackWait) {
+		params["type"] = new Common::JSONValue(Common::String("wait"));
+		params["frames"] = new Common::JSONValue((long long int)a.waitFrames);
+	} else {
+		const char *typeName =
+			(a.kind == kPlaybackMouseDown) ? "mouse_down" :
+			(a.kind == kPlaybackMouseUp)   ? "mouse_up"   : "click";
+		const char *buttonName =
+			(a.button == 2) ? "right" :
+			(a.button == 3) ? "middle" : "left";
+		params["type"] = new Common::JSONValue(Common::String(typeName));
+		params["x"] = new Common::JSONValue((long long int)a.x);
+		params["y"] = new Common::JSONValue((long long int)a.y);
+		params["button"] = new Common::JSONValue(Common::String(buttonName));
+	}
+	Common::JSONObject note;
+	note["jsonrpc"] = new Common::JSONValue("2.0");
+	note["method"] = new Common::JSONValue(Common::String("notifications/play_script/progress"));
+	note["params"] = new Common::JSONValue(params);
+	Common::JSONValue wrapper(note);
+	sendResponse(wrapper.stringify());
+}
+
 void McpServer::onFrame() {
 	if (!_stepMutex || !_stepCond)
 		return;
@@ -275,21 +307,24 @@ void McpServer::onFrame() {
 		while (_playbackIndex < _playbackQueue.size() &&
 		       _playbackQueue[_playbackIndex].frame <= _playbackFrame) {
 			const PlaybackAction &a = _playbackQueue[_playbackIndex];
-			g_system->warpMouse(a.x, a.y);
-			Common::EventType down = Common::EVENT_LBUTTONDOWN, up = Common::EVENT_LBUTTONUP;
-			if (a.button == 2) { down = Common::EVENT_RBUTTONDOWN; up = Common::EVENT_RBUTTONUP; }
-			else if (a.button == 3) { down = Common::EVENT_MBUTTONDOWN; up = Common::EVENT_MBUTTONUP; }
-			if (a.kind != kPlaybackMouseUp) {
-				Common::Event d;
-				d.type = down;
-				d.mouse = Common::Point(a.x, a.y);
-				em->pushEvent(d);
-			}
-			if (a.kind != kPlaybackMouseDown) {
-				Common::Event u;
-				u.type = up;
-				u.mouse = Common::Point(a.x, a.y);
-				em->pushEvent(u);
+			sendProgressNotification(a);
+			if (a.kind != kPlaybackWait) {
+				g_system->warpMouse(a.x, a.y);
+				Common::EventType down = Common::EVENT_LBUTTONDOWN, up = Common::EVENT_LBUTTONUP;
+				if (a.button == 2) { down = Common::EVENT_RBUTTONDOWN; up = Common::EVENT_RBUTTONUP; }
+				else if (a.button == 3) { down = Common::EVENT_MBUTTONDOWN; up = Common::EVENT_MBUTTONUP; }
+				if (a.kind != kPlaybackMouseUp) {
+					Common::Event d;
+					d.type = down;
+					d.mouse = Common::Point(a.x, a.y);
+					em->pushEvent(d);
+				}
+				if (a.kind != kPlaybackMouseDown) {
+					Common::Event u;
+					u.type = up;
+					u.mouse = Common::Point(a.x, a.y);
+					em->pushEvent(u);
+				}
 			}
 			_playbackIndex++;
 		}
@@ -970,12 +1005,14 @@ void McpServer::handleRequest(const Common::String &line) {
 			// determines the playback end frame.
 			Common::Array<PlaybackAction> queue;
 			int cursorFrame = 0;
+			int totalActions = 0;
 			bool parseOk = true;
 			Common::String parseErr;
 			if (params && params->contains("arguments") && (*params)["arguments"]->isObject()) {
 				const Common::JSONObject &a = (*params)["arguments"]->asObject();
 				if (a.contains("actions") && a["actions"]->isArray()) {
 					const Common::JSONArray &actions = a["actions"]->asArray();
+					totalActions = (int)actions.size();
 					for (uint i = 0; i < actions.size(); ++i) {
 						if (!actions[i]->isObject()) { parseOk = false; parseErr = "action must be an object"; break; }
 						const Common::JSONObject &ao = actions[i]->asObject();
@@ -1006,6 +1043,8 @@ void McpServer::handleRequest(const Common::String &line) {
 							        : (type == "mouse_down") ? kPlaybackMouseDown
 							        : kPlaybackMouseUp;
 							pa.x = x; pa.y = y; pa.button = btn;
+							pa.waitFrames = 0;
+							pa.origIndex = (int)i + 1;
 							queue.push_back(pa);
 						} else if (type == "wait") {
 							int frames = 0;
@@ -1016,6 +1055,13 @@ void McpServer::handleRequest(const Common::String &line) {
 							}
 							if (!haveFrames) { parseOk = false; parseErr = "wait action missing frames"; break; }
 							if (frames < 0) { parseOk = false; parseErr = "wait frames must be >= 0"; break; }
+							PlaybackAction wa;
+							wa.frame = cursorFrame;
+							wa.kind = kPlaybackWait;
+							wa.x = 0; wa.y = 0; wa.button = 0;
+							wa.waitFrames = frames;
+							wa.origIndex = (int)i + 1;
+							queue.push_back(wa);
 							cursorFrame += frames;
 						} else {
 							parseOk = false; parseErr = Common::String::format("unknown action type: %s", type.c_str()); break;
@@ -1044,6 +1090,7 @@ void McpServer::handleRequest(const Common::String &line) {
 				_playbackEndFrame = cursorFrame;
 				_playbackFrame = 0;
 				_playbackIndex = 0;
+				_playbackTotalActions = totalActions;
 				_playbackCancelled = false;
 				// Drop any stale signal that arrived between playbacks.
 				s_playbackCancelRequested = 0;
@@ -1108,7 +1155,7 @@ McpServer::McpServer(SciEngine *engine) :
 	_threadHandle(nullptr), _stepMutex(nullptr), _stepCond(nullptr),
 	_stepFramesRemaining(0),
 	_playbackActive(false), _playbackPrevPaused(false), _playbackCancelled(false),
-	_playbackFrame(0), _playbackEndFrame(0), _playbackIndex(0),
+	_playbackFrame(0), _playbackEndFrame(0), _playbackTotalActions(0), _playbackIndex(0),
 	_recordingActive(false), _recordingFrame(0), _observerHandle(nullptr) {}
 
 McpServer::~McpServer() {}
@@ -1120,6 +1167,7 @@ void McpServer::start() {
 void McpServer::stop() {}
 void McpServer::onFrame() {}
 void McpServer::onObservedEvent(const Common::Event &) {}
+void McpServer::sendProgressNotification(const PlaybackAction &) {}
 void McpServer::readerLoop() {}
 void McpServer::handleRequest(const Common::String &) {}
 void McpServer::sendResponse(const Common::String &) {}

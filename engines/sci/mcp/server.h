@@ -87,20 +87,26 @@ private:
 		kPlaybackClick = 0,      // press + release on the same frame
 		kPlaybackMouseDown = 1,  // press only (puzzle drag/hold)
 		kPlaybackMouseUp = 2,    // release only
+		kPlaybackWait = 3,       // not an event — emits a progress notification only
 	};
 	struct PlaybackAction {
-		int frame;   // absolute frame at which to fire (0 = first onFrame)
+		int frame;       // absolute frame at which the notification fires
 		PlaybackKind kind;
 		int x, y;
-		int button;  // 1 = left, 2 = right, 3 = middle
+		int button;      // 1 = left, 2 = right, 3 = middle
+		int waitFrames;  // valid only for kPlaybackWait
+		int origIndex;   // 1-based index in the original action list (for notifications)
 	};
 	bool _playbackActive;       // protected by _stepMutex
 	bool _playbackPrevPaused;   // remember pause state across playback
 	bool _playbackCancelled;    // set by onFrame when a SIGUSR1 cancel landed mid-playback
 	int _playbackFrame;
 	int _playbackEndFrame;
+	int _playbackTotalActions;  // total count of original actions (waits + clicks) for progress notifications
 	uint _playbackIndex;
 	Common::Array<PlaybackAction> _playbackQueue;
+
+	void sendProgressNotification(const PlaybackAction &a);
 
 	// Recording. Active between the start_record and end_record tools. An
 	// EventObserver (registered with the OSystem event dispatcher in start())
