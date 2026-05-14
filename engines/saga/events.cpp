@@ -303,6 +303,7 @@ int Events::handleOneShot(Event *event) {
 		{
 			Surface *backGroundSurface = _vm->_render->getBackGroundSurface();
 			BGInfo bgInfo;
+			byte black = _vm->iteColorBlack();
 
 			if (!(_vm->_scene->getFlags() & kSceneFlagISO)) {
 				_vm->_scene->getBGInfo(bgInfo);
@@ -320,10 +321,10 @@ int Events::handleOneShot(Event *event) {
 					rect3.moveTo(bgInfo.bounds.right, bgInfo.bounds.top - 2);
 					rect4.moveTo(bgInfo.bounds.left - 2, bgInfo.bounds.bottom);
 
-					backGroundSurface->drawRect(rect1, kITEColorBlack);
-					backGroundSurface->drawRect(rect2, kITEColorBlack);
-					backGroundSurface->drawRect(rect3, kITEColorBlack);
-					backGroundSurface->drawRect(rect4, kITEColorBlack);
+					backGroundSurface->drawRect(rect1, black);
+					backGroundSurface->drawRect(rect2, black);
+					backGroundSurface->drawRect(rect3, black);
+					backGroundSurface->drawRect(rect4, black);
 				}
 
 				if (event->param == kEvPSetPalette) {
@@ -640,11 +641,11 @@ void Events::freeList() {
 void Events::processEventTime(long msec) {
 	uint16 event_count = 0;
 
-	for (EventList::iterator eventi = _eventList.begin(); eventi != _eventList.end(); ++eventi) {
-		eventi->front().time -= msec;
+	for (auto &eventi : _eventList) {
+		eventi.front().time -= msec;
 		event_count++;
 
-		if (eventi->front().type == kEvTImmediate)
+		if (eventi.front().type == kEvTImmediate)
 			break;
 
 		if (event_count > EVENT_WARNINGCOUNT) {

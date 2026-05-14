@@ -30,7 +30,7 @@
 
 #include "common/fs.h"
 #include "common/savefile.h"
-#include "common/zlib.h"
+#include "common/compression/deflate.h"
 #include "sword25/kernel/kernel.h"
 #include "sword25/kernel/persistenceservice.h"
 #include "sword25/kernel/inputpersistenceblock.h"
@@ -180,9 +180,13 @@ struct PersistenceService::Impl {
 	}
 };
 
+PersistenceService *persInstance = nullptr;
+
 PersistenceService &PersistenceService::getInstance() {
-	static PersistenceService instance;
-	return instance;
+	if (!persInstance)
+		persInstance = new PersistenceService;
+
+	return *persInstance;
 }
 
 PersistenceService::PersistenceService() : _impl(new Impl) {
@@ -190,6 +194,9 @@ PersistenceService::PersistenceService() : _impl(new Impl) {
 
 PersistenceService::~PersistenceService() {
 	delete _impl;
+
+	delete persInstance;
+	persInstance = nullptr;
 }
 
 void PersistenceService::reloadSlots() {
@@ -200,8 +207,8 @@ uint PersistenceService::getSlotCount() {
 	return SLOT_COUNT;
 }
 
-Common::String PersistenceService::getSavegameDirectory() {
-	Common::FSNode node(FileSystemUtil::getUserdataDirectory());
+Common::Path PersistenceService::getSavegameDirectory() {
+	Common::FSNode node(FileSystemUtil::getUserdataDirectoryPath());
 	Common::FSNode childNode = node.getChild(SAVEGAME_DIRECTORY);
 
 	// Try and return the path using the savegame subfolder. But if doesn't exist, fall back on the data directory
@@ -391,7 +398,7 @@ bool PersistenceService::loadGame(uint slotID) {
 
 	if (uncompressedBufferSize > curSavegameInfo.gamedataLength) {
 		// Older saved game, where the game data was compressed again.
-		if (!Common::uncompress(reinterpret_cast<byte *>(&uncompressedDataBuffer[0]), &uncompressedBufferSize,
+		if (!Common::inflateZlib(reinterpret_cast<byte *>(&uncompressedDataBuffer[0]), &uncompressedBufferSize,
 					   reinterpret_cast<byte *>(&compressedDataBuffer[0]), curSavegameInfo.gamedataLength)) {
 			error("Unable to decompress the gamedata from savegame file \"%s\".", filename.c_str());
 			delete[] uncompressedDataBuffer;

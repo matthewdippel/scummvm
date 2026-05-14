@@ -43,6 +43,7 @@ public:
 		kPlayCmd = 'PLAY',
 		kOptionsCmd = 'OPTN',
 		kHelpCmd = 'HELP',
+		kMainHelpCmd = 'MHLP',
 		kAboutCmd = 'ABOU',
 		kQuitCmd = 'QUIT',
 		kLauncherCmd = 'LNCR',
@@ -67,8 +68,6 @@ protected:
 	GUI::GraphicsWidget  *_logo;
 
 	GUI::ButtonWidget    *_returnToLauncherButton;
-	GUI::ButtonWidget    *_loadButton;
-	GUI::ButtonWidget    *_saveButton;
 	GUI::ButtonWidget    *_helpButton;
 
 	GUI::Dialog          *_aboutDialog;
@@ -113,8 +112,6 @@ protected:
 
 private:
 	typedef Common::Array<CheckboxWidget *> CheckboxWidgetList;
-
-	static Common::String dialogLayout(const Common::String &domain);
 
 	ExtraGuiOptions _options;
 	CheckboxWidgetList _checkboxes;

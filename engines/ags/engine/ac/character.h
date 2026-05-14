@@ -34,9 +34,15 @@ namespace AGS3 {
 
 // **** CHARACTER: FUNCTIONS ****
 
+bool	is_valid_character(int char_id);
+// Asserts the character ID is valid,
+// if not then prints a warning to the log; returns assertion result
+bool	AssertCharacter(const char *apiname, int char_id);
+
 void    Character_AddInventory(CharacterInfo *chaa, ScriptInvItem *invi, int addIndex);
 void    Character_AddWaypoint(CharacterInfo *chaa, int x, int y);
-void    Character_Animate(CharacterInfo *chaa, int loop, int delay, int repeat, int blocking, int direction);
+void    Character_Animate(CharacterInfo *chaa, int loop, int delay, int repeat, int blocking, int direction, int sframe = 0, int volume = 100);
+void    Character_Animate5(CharacterInfo *chaa, int loop, int delay, int repeat, int blocking, int direction);
 void    Character_ChangeRoomAutoPosition(CharacterInfo *chaa, int room, int newPos);
 void    Character_ChangeRoom(CharacterInfo *chaa, int room, int x, int y);
 void    Character_ChangeRoomSetLoop(CharacterInfo *chaa, int room, int x, int y, int direction);
@@ -70,6 +76,8 @@ ScriptOverlay *Character_SayBackground(CharacterInfo *chaa, const char *texx);
 void    Character_SetAsPlayer(CharacterInfo *chaa);
 void    Character_SetIdleView(CharacterInfo *chaa, int iview, int itime);
 void    Character_SetOption(CharacterInfo *chaa, int flag, int yesorno);
+bool	Character_SetProperty(CharacterInfo *chaa, const char *property, int value);
+bool	Character_SetTextProperty(CharacterInfo *chaa, const char *property, const char *value);
 void    Character_SetSpeed(CharacterInfo *chaa, int xspeed, int yspeed);
 void    Character_StopMoving(CharacterInfo *charp);
 void    Character_Tint(CharacterInfo *chaa, int red, int green, int blue, int opacity, int luminance);
@@ -176,8 +184,8 @@ class Bitmap;
 }
 using namespace AGS; // FIXME later
 
-void animate_character(CharacterInfo *chap, int loopn, int sppd, int rept,
-	int noidleoverride = 0, int direction = 0, int sframe = 0, int volume = 100);
+// Configures and starts character animation.
+void animate_character(CharacterInfo *chap, int loopn, int sppd, int rept, int direction = 0, int sframe = 0, int volume = 100);
 // Clears up animation parameters
 void stop_character_anim(CharacterInfo *chap);
 void walk_character(int chac, int tox, int toy, int ignwal, bool autoWalkAnims);
@@ -197,20 +205,21 @@ int  find_nearest_walkable_area_within(int *xx, int *yy, int range, int step);
 void find_nearest_walkable_area(int *xx, int *yy);
 void FindReasonableLoopForCharacter(CharacterInfo *chap);
 void walk_or_move_character(CharacterInfo *chaa, int x, int y, int blocking, int direct, bool isWalk);
-int  is_valid_character(int newchar);
 int  wantMoveNow(CharacterInfo *chi, CharacterExtras *chex);
 void setup_player_character(int charid);
-void CheckViewFrameForCharacter(CharacterInfo *chi);
-Shared::Bitmap *GetCharacterImage(int charid, int *isFlipped);
+int  GetCharacterFrameVolume(CharacterInfo *chi);
+Shared::Bitmap *GetCharacterImage(int charid, bool *is_original = nullptr);
 CharacterInfo *GetCharacterAtScreen(int xx, int yy);
+// Deduces room object's scale, accounting for both manual scaling and the room region effects;
+// calculates resulting sprite size.
+void update_character_scale(int charid);
 CharacterInfo *GetCharacterAtRoom(int x, int y);
 // Get character ID at the given room coordinates
 int is_pos_on_character(int xx, int yy);
 void get_char_blocking_rect(int charid, int *x1, int *y1, int *width, int *y2);
-// Check whether the source char has walked onto character ww
-int is_char_on_another(int sourceChar, int ww, int *fromxptr, int *cwidptr);
+// Check whether the source char is standing inside otherChar's blocking rectangle
+int is_char_in_blocking_rect(int sourceChar, int otherChar, int *fromxptr, int *cwidptr);
 int my_getpixel(Shared::Bitmap *blk, int x, int y);
-// X and Y co-ordinates must be in 320x200 format
 int check_click_on_character(int xx, int yy, int mood);
 void _DisplaySpeechCore(int chid, const char *displbuf);
 void _DisplayThoughtCore(int chid, const char *displbuf);
@@ -218,6 +227,9 @@ void _displayspeech(const char *texx, int aschar, int xx, int yy, int widd, int 
 int get_character_currently_talking();
 void DisplaySpeech(const char *texx, int aschar);
 int update_lip_sync(int talkview, int talkloop, int *talkframeptr);
+
+// Recalculate dynamic character properties, e.g. after restoring a game save
+void restore_characters();
 
 // Calculates character's bounding box in room coordinates (takes only in-room transform into account)
 // use_frame_0 optionally tells to use frame 0 of current loop instead of current frame.

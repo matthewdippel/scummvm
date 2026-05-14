@@ -19,15 +19,17 @@
  *
  */
 
-#include "ultima/ultima8/misc/pent_include.h"
 #include "ultima/ultima8/world/map.h"
-#include "ultima/ultima8/world/item_factory.h"
+
+#include "common/stack.h"
+#include "ultima/ultima.h"
+#include "ultima/ultima8/games/game_data.h"
+#include "ultima/ultima8/kernel/object_manager.h"
+#include "ultima/ultima8/misc/point3.h"
+#include "ultima/ultima8/ultima8.h"
 #include "ultima/ultima8/world/container.h"
 #include "ultima/ultima8/world/coord_utils.h"
-#include "ultima/ultima8/kernel/object_manager.h"
-#include "ultima/ultima8/ultima8.h"
-#include "ultima/ultima8/games/game_data.h"
-#include "ultima/ultima8/graphics/main_shape_archive.h"
+#include "ultima/ultima8/world/item_factory.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -43,15 +45,13 @@ Map::~Map() {
 }
 
 void Map::clear() {
-	Std::list<Item *>::iterator iter;
-
-	for (iter = _fixedItems.begin(); iter != _fixedItems.end(); ++iter) {
-		delete *iter;
+	for (auto *item : _fixedItems) {
+		delete item;
 	}
 	_fixedItems.clear();
 
-	for (iter = _dynamicItems.begin(); iter != _dynamicItems.end(); ++iter) {
-		delete *iter;
+	for (auto *item : _dynamicItems) {
+		delete item;
 	}
 	_dynamicItems.clear();
 }
@@ -139,16 +139,13 @@ void Map::loadFixed(Common::SeekableReadStream *rs) {
 
 	if (GAME_IS_U8 && _mapNum == 49) {
 		// Map 49 has some water tiles at the wrong z
-		Std::list<Item *>::iterator iter;
-
-		for (iter = _fixedItems.begin(); iter != _fixedItems.end(); ++iter) {
-			if ((*iter)->getShape() == 347 && (*iter)->getZ() == 96) {
-				int32 x, y, z;
-				(*iter)->getLocation(x, y, z);
-				if ((x == 23007 && y == 21343) || (x == 23135 && y == 21471) ||
-				        (x == 23135 && y == 21343)) {
-					shiftCoordsToZ(x, y, z, 40);
-					(*iter)->setLocation(x, y, z);
+		for (auto *item : _fixedItems) {
+			if (item->getShape() == 347 && item->getZ() == 96) {
+				Point3 pt = item->getLocation();
+				if ((pt.x == 23007 && pt.y == 21343) || (pt.x == 23135 && pt.y == 21471) ||
+				        (pt.x == 23135 && pt.y == 21343)) {
+					shiftCoordsToZ(pt.x, pt.y, pt.z, 40);
+					item->setLocation(pt);
 				}
 			}
 		}
@@ -156,17 +153,14 @@ void Map::loadFixed(Common::SeekableReadStream *rs) {
 
 	if (GAME_IS_U8 && _mapNum == 21) {
 		// Map 21 has some ground and wall tiles at the wrong z
-		Std::list<Item *>::iterator iter;
-
-		for (iter = _fixedItems.begin(); iter != _fixedItems.end(); ++iter) {
-			int32 z = (*iter)->getZ();
-			uint32 sh = (*iter)->getShape();
+		for (auto *item : _fixedItems) {
+			int32 z = item->getZ();
+			uint32 sh = item->getShape();
 			if (z == 8 && (sh == 301 || sh == 31 || sh == 32)) {
-				int32 x, y;
-				(*iter)->getLocation(x, y, z);
-				if ((x == 6783 || x == 6655) && (y == 15743 || y == 15615)) {
-					shiftCoordsToZ(x, y, z, 16);
-					(*iter)->setLocation(x, y, z);
+				Point3 pt = item->getLocation();
+				if ((pt.x == 6783 || pt.x == 6655) && (pt.y == 15743 || pt.y == 15615)) {
+					shiftCoordsToZ(pt.x, pt.y, pt.z, 16);
+					item->setLocation(pt);
 				}
 			}
 		}
@@ -174,18 +168,15 @@ void Map::loadFixed(Common::SeekableReadStream *rs) {
 
 	if (GAME_IS_U8 && _mapNum == 5) {
 		// Map 5 has some ground tiles at the wrong z
-		Std::list<Item *>::iterator iter;
-
-		for (iter = _fixedItems.begin(); iter != _fixedItems.end(); ++iter) {
-			if ((*iter)->getShape() == 71 && (*iter)->getFrame() == 8 && (*iter)->getZ() == 0) {
-				int32 x, y, z;
-				(*iter)->getLocation(x, y, z);
-				if ((x == 9151 && y == 24127) || (x == 9279 && y == 23999) ||
-				        (x == 9535 && y == 23615) || (x == 9151 && y == 23487) ||
-				        (x == 10303 && y == 23487) || (x == 9919 && y == 23487) ||
-				        (x == 10559 && y == 23487)) {
-					shiftCoordsToZ(x, y, z, 48);
-					(*iter)->setLocation(x, y, z);
+		for (auto *item : _fixedItems) {
+			if (item->getShape() == 71 && item->getFrame() == 8 && item->getZ() == 0) {
+				Point3 pt = item->getLocation();
+				if ((pt.x == 9151 && pt.y == 24127) || (pt.x == 9279 && pt.y == 23999) ||
+				        (pt.x == 9535 && pt.y == 23615) || (pt.x == 9151 && pt.y == 23487) ||
+				        (pt.x == 10303 && pt.y == 23487) || (pt.x == 9919 && pt.y == 23487) ||
+				        (pt.x == 10559 && pt.y == 23487)) {
+					shiftCoordsToZ(pt.x, pt.y, pt.z, 48);
+					item->setLocation(pt);
 				}
 			}
 		}
@@ -194,15 +185,13 @@ void Map::loadFixed(Common::SeekableReadStream *rs) {
 }
 
 void Map::unloadFixed() {
-	Std::list<Item *>::iterator iter;
-
-	for (iter = _fixedItems.begin(); iter != _fixedItems.end(); ++iter) {
-		delete *iter;
+	for (auto *item : _fixedItems) {
+		delete item;
 	}
 	_fixedItems.clear();
 }
 
-void Map::loadFixedFormatObjects(Std::list<Item *> &itemlist,
+void Map::loadFixedFormatObjects(Common::List<Item *> &itemlist,
 								 Common::SeekableReadStream *rs,
 								 uint32 extendedflags) {
 	if (!rs) return;
@@ -211,7 +200,7 @@ void Map::loadFixedFormatObjects(Std::list<Item *> &itemlist,
 
 	uint32 itemcount = size / 16;
 
-	Std::stack<Container *> cont;
+	Common::Stack<Container *> cont;
 	int contdepth = 0;
 
 	for (uint32 i = 0; i < itemcount; ++i) {
@@ -238,32 +227,21 @@ void Map::loadFixedFormatObjects(Std::list<Item *> &itemlist,
 			cont.pop();
 			contdepth--;
 #ifdef DUMP_ITEMS
-			pout << "---- Ending container ----" << Std::endl;
+			debugC(kDebugObject, "---- Ending container ----");
 #endif
 		}
 
 #ifdef DUMP_ITEMS
-		pout << shape << "," << frame << ":\t(" << x << "," << y << "," << z << "),\t" << ConsoleStream::hex << flags << ConsoleStream::dec << ", " << quality << ", " << npcNum << ", " << mapNum << ", " << next << Std::endl;
+		debugC(kDebugObject, "%u,%u:\t(%d, %d, %d),\t%x, %u, %u, %u, %u",
+			shape , frame, x, y, z, flags, quality, npcNum, mapNum, next);
 #endif
 
 		Item *item = ItemFactory::createItem(shape, frame, quality, flags, npcNum,
 		                                     mapNum, extendedflags, false);
 		if (!item) {
-			pout << shape << "," << frame << ":\t(" << x << "," << y << "," << z << "),\t" << ConsoleStream::hex << flags << ConsoleStream::dec << ", " << quality << ", " << npcNum << ", " << mapNum << ", " << next;
-
-			const ShapeInfo *info = GameData::get_instance()->getMainShapes()->
-			                  getShapeInfo(shape);
-			if (info) pout << ", family = " << info->_family;
-			pout << Std::endl;
-
-			pout << "Couldn't create item" << Std::endl;
+			warning("Couldn't create item: %u,%u:\t(%d, %d, %d),\t%x, %u, %u, %u, %u",
+				shape, frame, x, y, z, flags, quality, npcNum, mapNum, next);
 			continue;
-		} else {
-			const ShapeInfo *info = item->getShapeInfo();
-			assert(info);
-			if (info->_family > 10) {
-				//warning("Created fixed item unknown family %d, shape (%d, %d) at (%d, %d, %d)", info->_family, shape, frame, x, y, z);
-			}
 		}
 		item->setLocation(x, y, z);
 
@@ -279,7 +257,7 @@ void Map::loadFixedFormatObjects(Std::list<Item *> &itemlist,
 			contdepth++;
 			cont.push(c);
 #ifdef DUMP_ITEMS
-			pout << "---- Starting container ----" << Std::endl;
+			debugC(kDebugObject, "---- Starting container ----");
 #endif
 		}
 	}
@@ -289,9 +267,8 @@ void Map::loadFixedFormatObjects(Std::list<Item *> &itemlist,
 void Map::save(Common::WriteStream *ws) {
 	ws->writeUint32LE(static_cast<uint32>(_dynamicItems.size()));
 
-	Std::list<Item *>::iterator iter;
-	for (iter = _dynamicItems.begin(); iter != _dynamicItems.end(); ++iter) {
-		ObjectManager::get_instance()->saveObject(ws, *iter);
+	for (auto *item : _dynamicItems) {
+		ObjectManager::get_instance()->saveObject(ws, item);
 	}
 }
 

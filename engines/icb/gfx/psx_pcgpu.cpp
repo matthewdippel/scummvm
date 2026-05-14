@@ -34,7 +34,7 @@
 namespace ICB {
 
 // Defaults for the OT list
-#define UNLINKED_ADDR (void *)(0xDEADBEAF)
+#define UNLINKED_ADDR (reinterpret_cast<void *>(static_cast<uintptr>(0xDEADBEAF)))
 #define UNLINKED_LEN (0x6666)
 
 // For storing user data in the OT entry e.g. texture pointer
@@ -125,6 +125,8 @@ OT_tag *ClearOTag(OT_tag *ot, uint32 size) {
 	while (i < (size - 1)) {
 		ot[i].addr = (void *)&ot[i + 1];
 		ot[i].len = UNLINKED_LEN;
+
+		i++;
 	}
 	ot[size - 1].addr = UNLINKED_ADDR;
 	ot[size - 1].len = UNLINKED_LEN;

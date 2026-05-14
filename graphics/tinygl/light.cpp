@@ -188,7 +188,7 @@ void GLContext::gl_enable_disable_light(int light, int v) {
 	}
 }
 
-// non optimized lightening model
+// non optimized lightning model
 void GLContext::gl_shade_vertex(GLVertex *v) {
 	float R, G, B, A;
 	GLMaterial *m;
@@ -309,10 +309,10 @@ void GLContext::gl_shade_vertex(GLVertex *v) {
 		B += att * lB;
 	}
 
-	v->color.X = clampf(current_color.X * R, 0, 1);
-	v->color.Y = clampf(current_color.Y * G, 0, 1);
-	v->color.Z = clampf(current_color.Z * B, 0, 1);
-	v->color.W = current_color.W * A;
+	v->color.X = clampf(R, 0, 1);
+	v->color.Y = clampf(G, 0, 1);
+	v->color.Z = clampf(B, 0, 1);
+	v->color.W = A;
 }
 
 } // end of namespace TinyGL

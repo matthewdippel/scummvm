@@ -21,13 +21,15 @@
 
 #include "drascula/drascula.h"
 
+#include "backends/keymapper/keymapper.h"
+
 namespace Drascula {
 
 static const int x_talk_dch[6] = {1, 25, 49, 73, 97, 121};
 static const int x_talk_izq[6] = {145, 169, 193, 217, 241, 265};
 
 void DrasculaEngine::talkInit(const char *filename) {
-	_rnd->setSeed((unsigned int)_system->getMillis() / 2);
+	_rnd->setSeed(Common::RandomSource::generateNewSeed());
 
 	playFile(filename);
 }
@@ -39,14 +41,15 @@ bool DrasculaEngine::isTalkFinished() {
 	}
 
 	Common::KeyCode key = getScan();
-	if (key == Common::KEYCODE_SPACE || key == Common::KEYCODE_PAUSE) {
+	Common::CustomEventType action = getAction();
+	if (action == kActionPauseSpeech) {
 		// Pause speech until space is pressed again
 		// Note: an alternative is to implement a PauseDialog as is done in engines/scumm/dialogs.cpp
 		do {
 			pause(10);
-			key = getScan();
-		} while (key != Common::KEYCODE_SPACE && key != Common::KEYCODE_PAUSE && !shouldQuit());
-	} else if (key != 0)
+			action = getAction();
+		} while (action != kActionPauseSpeech && !shouldQuit());
+	} else if (key != 0 || action != kActionNone)
 		stopSound();
 	if (soundIsActive())
 		return false;
@@ -62,7 +65,7 @@ bool DrasculaEngine::isTalkFinished() {
 // 4: talk_igor_wig
 void DrasculaEngine::talk_igor(int index, int talkerType) {
 	char filename[20];
-	sprintf(filename, "I%i.als", index);
+	Common::sprintf_s(filename, "I%i.als", index);
 	const char *said = _texti[index];
 	static const int x_talk0[8] = {  56,  82, 108, 134, 160, 186, 212, 238 };
 	static const int x_talk1[8] = {  56,  86, 116, 146, 176, 206, 236, 266 };
@@ -145,7 +148,7 @@ void DrasculaEngine::talk_igor(int index, int talkerType) {
 void DrasculaEngine::talk_drascula(int index, int talkerType) {
 	const char *said = _textd[index];
 	char filename[20];
-	sprintf(filename, "d%i.als", index);
+	Common::sprintf_s(filename, "d%i.als", index);
 	int x_talk[8] = { 1, 40, 79, 118, 157, 196, 235, 274 };
 	int face;
 	int offset = (talkerType == 0) ? 0 : 7;
@@ -202,15 +205,19 @@ void DrasculaEngine::talk_drascula(int index, int talkerType) {
 
 void DrasculaEngine::talk_drascula_big(int index) {
 	char filename[20];
-	sprintf(filename, "d%i.als", index);
+	Common::sprintf_s(filename, "d%i.als", index);
 	const char *said = _textd[index];
 	int x_talk[4] = {47, 93, 139, 185};
 	int face;
 	int l = 0;
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
 
 	color_abc(kColorRed);
 
 	talkInit(filename);
+
+	keymapper->getKeymap("game-shortcuts")->setEnabled(false);
+	keymapper->getKeymap("animation")->setEnabled(true);
 
 	do {
 		face = _rnd->getRandomNumber(3);
@@ -229,10 +236,13 @@ void DrasculaEngine::talk_drascula_big(int index) {
 
 		pause(3);
 
-		byte key = getScan();
-		if (key == Common::KEYCODE_ESCAPE)
+		Common::CustomEventType action = getAction();
+		if (action == kActionSkip)
 			term_int = 1;
 	} while (!isTalkFinished());
+
+	keymapper->getKeymap("animation")->setEnabled(false);
+	keymapper->getKeymap("game-shortcuts")->setEnabled(true);
 }
 
 void DrasculaEngine::talk_solo(const char *said, const char *filename) {
@@ -269,14 +279,14 @@ void DrasculaEngine::talk_solo(const char *said, const char *filename) {
 
 void DrasculaEngine::talk_bartender(int index, int talkerType) {
 	char filename[20];
-	sprintf(filename, "t%i.als", index);
+	Common::sprintf_s(filename, "t%i.als", index);
 	const char *said;
 
 	// Line 82 is a special case
 	if (index != 82)
 		said = _textt[index];
 	else {
-		sprintf(filename, "d%i.als", index);
+		Common::sprintf_s(filename, "d%i.als", index);
 		said = _textd[index];
 	}
 
@@ -328,7 +338,7 @@ void DrasculaEngine::talk_bartender(int index, int talkerType) {
 
 void DrasculaEngine::talk_bj(int index) {
 	char filename[20];
-	sprintf(filename, "BJ%i.als", index);
+	Common::sprintf_s(filename, "BJ%i.als", index);
 	const char *said = _textbj[index];
 	int x_talk[5] = { 64, 92, 120, 148, 176 };
 	int face;
@@ -374,7 +384,7 @@ void DrasculaEngine::talk_bj(int index) {
 
 void DrasculaEngine::talk(int index) {
 	char name[20];
-	sprintf(name, "%i.als", index);
+	Common::sprintf_s(name, "%i.als", index);
 	talk(_text[index], name);
 }
 
@@ -514,7 +524,7 @@ void DrasculaEngine::talk(const char *said, const char *filename) {
 
 void DrasculaEngine::talk_pianist(int index) {
 	char filename[20];
-	sprintf(filename, "P%i.als", index);
+	Common::sprintf_s(filename, "P%i.als", index);
 	const char* said = _textp[index];
 	int x_talk[4] = { 97, 145, 193, 241 };
 	int coords[7] = { 139, 228, 112, 47, 60, 221, 128 };
@@ -525,7 +535,7 @@ void DrasculaEngine::talk_pianist(int index) {
 
 void DrasculaEngine::talk_drunk(int index) {
 	char filename[20];
-	sprintf(filename, "B%i.als", index);
+	Common::sprintf_s(filename, "B%i.als", index);
 	const char *said = _textb[index];
 	int x_talk[8] = { 1, 21, 41, 61, 81, 101, 121, 141 };
 	int coords[7] = { 29, 177, 50, 19, 19, 181, 54 };
@@ -562,7 +572,7 @@ void DrasculaEngine::talk_drunk(int index) {
 // 1: KVonBraunDoor
 void DrasculaEngine::talk_vonBraun(int index, int talkerType) {
 	char filename[20];
-	sprintf(filename, "VB%i.als", index);
+	Common::sprintf_s(filename, "VB%i.als", index);
 	const char *said = _textvb[index];
 	int x_talk[6] = {1, 27, 53, 79, 105, 131};
 	int face;
@@ -612,7 +622,7 @@ void DrasculaEngine::talk_blind(int index) {
 	// Also, the blind man's texts in the first array and his
 	// voice files start from 58, not 1
 	char filename[20];
-	sprintf(filename, "d%i.als", index + TEXTD_START - 1);
+	Common::sprintf_s(filename, "d%i.als", index + TEXTD_START - 1);
 	const char *said = _textd[index + TEXTD_START - 1];
 	const char *syncChar = _textd1[index - 1];
 
@@ -660,7 +670,7 @@ void DrasculaEngine::talk_blind(int index) {
 
 void DrasculaEngine::talk_hacker(int index) {
 	char filename[20];
-	sprintf(filename, "d%i.als", index);
+	Common::sprintf_s(filename, "d%i.als", index);
 	const char *said = _textd[index];
 
 	copyBackground();
@@ -681,7 +691,7 @@ void DrasculaEngine::talk_hacker(int index) {
 
 void DrasculaEngine::talk_werewolf(int index) {
 	char filename[20];
-	sprintf(filename, "L%i.als", index);
+	Common::sprintf_s(filename, "L%i.als", index);
 	const char *said = _textl[index];
 	int x_talk[9] = {52, 79, 106, 133, 160, 187, 214, 241, 268};
 	int coords[7] = { 136, 198, 81, 26, 24, 203, 78 };
@@ -692,7 +702,7 @@ void DrasculaEngine::talk_werewolf(int index) {
 
 void DrasculaEngine::talk_mus(int index) {
 	char filename[20];
-	sprintf(filename, "E%i.als", index);
+	Common::sprintf_s(filename, "E%i.als", index);
 	const char *said = _texte[index];
 	int x_talk[8] = { 16, 35, 54, 73, 92, 111, 130, 149};
 	int coords[7] = { 156, 190, 64, 18, 24, 197, 64 };
@@ -755,7 +765,7 @@ void DrasculaEngine::talk_pen(const char *said, const char *filename, int talker
 
 void DrasculaEngine::talk_bj_bed(int index) {
 	char filename[20];
-	sprintf(filename, "BJ%i.als", index);
+	Common::sprintf_s(filename, "BJ%i.als", index);
 	const char *said = _textbj[index];
 	int x_talk[5] = {51, 101, 151, 201, 251};
 	int face;
@@ -791,7 +801,7 @@ void DrasculaEngine::talk_bj_bed(int index) {
 
 void DrasculaEngine::talk_htel(int index) {
 	char filename[20];
-	sprintf(filename, "%i.als", index);
+	Common::sprintf_s(filename, "%i.als", index);
 	const char *said = _text[index];
 	int x_talk[3] = {1, 94, 187};
 	int face, curScreen;
@@ -913,7 +923,7 @@ void DrasculaEngine::talk_sync(const char *said, const char *filename, const cha
 
 void DrasculaEngine::talk_trunk(int index) {
 	char filename[20];
-	sprintf(filename, "d%i.als", index);
+	Common::sprintf_s(filename, "d%i.als", index);
 	const char *said = _text[index];
 	int face = 0, cara_antes;
 

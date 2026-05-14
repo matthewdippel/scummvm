@@ -23,8 +23,8 @@
 #define MUTATIONOFJB_ANIMATIONDECODER_H
 
 #include "common/rect.h"
+#include "common/path.h"
 #include "common/scummsys.h"
-#include "common/str.h"
 
 #include "graphics/surface.h"
 #include "mutationofjb/encryptedfile.h"
@@ -51,8 +51,8 @@ public:
 
 class AnimationDecoder {
 public:
-	AnimationDecoder(const Common::String &fileName);
-	AnimationDecoder(const Common::String &fileName, const Graphics::Surface &outSurface);
+	AnimationDecoder(const Common::Path &fileName);
+	AnimationDecoder(const Common::Path &fileName, const Graphics::Surface &outSurface);
 	~AnimationDecoder();
 	bool decode(AnimationDecoderCallback *callback);
 
@@ -64,14 +64,14 @@ public:
 	 * @param area Output surface will be confined to this area.
 	 * @param threshold Source pixels with color index above this threshold will not be replaced.
 	 */
-	void setPartialMode(int fromFrame, int toFrame, const Common::Rect area = Common::Rect(), uint8 threshold = 0xFF);
+	void setPartialMode(int fromFrame, int toFrame, const Common::Rect &area = Common::Rect(), uint8 threshold = 0xFF);
 
 private:
 	void loadPalette(Common::SeekableReadStream &stream);
 	void loadFullFrame(EncryptedFile &file, uint32 size);
 	void loadDiffFrame(EncryptedFile &file, uint32 size);
 
-	Common::String _fileName;
+	Common::Path _fileName;
 	Graphics::Surface _surface;
 	bool _owningSurface;
 	byte _palette[PALETTE_SIZE];

@@ -33,7 +33,7 @@ namespace AGOS {
 
 void AGOSEngine::uncompressText(byte *ptr) {
 	byte a;
-	while (1) {
+	while (true) {
 		if (_awaitTwoByteToken != 0)
 			a = _awaitTwoByteToken;
 		else
@@ -133,6 +133,12 @@ const byte *AGOSEngine::getStringPtrByID(uint16 stringId, bool upperCase) {
 			stringPtr = getLocalStringByID(stringId);
 		}
 		Common::strlcpy((char *)dst, (const char *)stringPtr, 180);
+	}
+
+	if (_useSimon2LanguageOverlay && *dst) {
+		Common::String translated = translateLanguageOverlay((const char *)dst);
+		if (translated != (const char *)dst)
+			Common::strlcpy((char *)dst, translated.c_str(), 180);
 	}
 
 	// WORKAROUND bug #2780: The French version of Simon 1 and the
@@ -322,10 +328,6 @@ void AGOSEngine::loadTextIntoMem(uint16 stringId) {
 		while (*p)
 			filename += *p++;
 		p++;
-
-		if (getPlatform() == Common::kPlatformAcorn) {
-			filename += ".DAT";
-		}
 
 		baseMax = (p[0] * 256) | p[1];
 		p += 2;
@@ -550,8 +552,8 @@ void AGOSEngine::printScreenText(uint vgaSpriteId, uint color, const char *strin
 		stopAnimate(vgaSpriteId + 199);
 	else
 		stopAnimateSimon2(2, vgaSpriteId);
-
-	if (getPlatform() == Common::kPlatformAmiga) {
+	// Simon II Amiga is built upon the Windows release so should draw subtitles the same way.
+	if (getPlatform() == Common::kPlatformAmiga  && getGameType() != GType_SIMON2) {
 		color = color * 3 + 1;
 		renderStringAmiga(vgaSpriteId, color, width, height, convertedString);
 	} else {
@@ -764,7 +766,7 @@ void AGOSEngine_Feeble::printScreenText(uint vgaSpriteId, uint color, const char
 					*convertedString2++ = ' ';
 					spaces--;
 			}
-			strcpy(convertedString2, string);
+			Common::strcpy_s(convertedString2, sizeof(convertedString) - (convertedString2 - convertedString), string);
 			break;
 		}
 		while (*string2 != ' ') {
@@ -1034,17 +1036,20 @@ uint16 AGOSEngine_Waxworks::checkFit(char *ptr, int width, int lines) {
 }
 
 void AGOSEngine_Waxworks::boxTextMessage(const char *x) {
-	sprintf(_boxBufferPtr, "%s\n", x);
-	_lineCounts[_boxLineCount] += strlen(x);
+	Common::sprintf_s(_boxBufferPtr, sizeof(_boxBuffer) - (_boxBufferPtr - _boxBuffer), "%s\n", x);
+	if (_boxLineCount < ARRAYSIZE(_lineCounts))
+		_lineCounts[_boxLineCount] += strlen(x);
 	_boxBufferPtr += strlen(x) + 1;
 	_boxLineCount++;
-	_linePtrs[_boxLineCount] = _boxBufferPtr;
+	if (_boxLineCount < ARRAYSIZE(_linePtrs))
+		_linePtrs[_boxLineCount] = _boxBufferPtr;
 	_boxCR = 1;
 }
 
 void AGOSEngine_Waxworks::boxTextMsg(const char *x) {
-	sprintf(_boxBufferPtr, "%s", x);
-	_lineCounts[_boxLineCount] += strlen(x);
+	Common::sprintf_s(_boxBufferPtr, sizeof(_boxBuffer) - (_boxBufferPtr - _boxBuffer), "%s", x);
+	if (_boxLineCount < ARRAYSIZE(_lineCounts))
+		_lineCounts[_boxLineCount] += strlen(x);
 	_boxBufferPtr += strlen(x);
 	_boxCR = 0;
 }

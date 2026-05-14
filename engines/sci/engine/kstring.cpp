@@ -53,7 +53,7 @@ reg_t kStrCat(EngineState *s, int argc, reg_t *argv) {
 	}
 
 	s1 += s2;
-	s->_segMan->strcpy(argv[0], s1.c_str());
+	s->_segMan->strcpy_(argv[0], s1.c_str());
 	return argv[0];
 }
 
@@ -61,10 +61,13 @@ reg_t kStrCmp(EngineState *s, int argc, reg_t *argv) {
 	Common::String s1 = s->_segMan->getString(argv[0]);
 	Common::String s2 = s->_segMan->getString(argv[1]);
 
-	if (argc > 2)
-		return make_reg(0, strncmp(s1.c_str(), s2.c_str(), argv[2].toUint16()));
-	else
-		return make_reg(0, strcmp(s1.c_str(), s2.c_str()));
+	int result;
+	if (argc > 2) {
+		result = strncmp(s1.c_str(), s2.c_str(), argv[2].toUint16());
+	} else {
+		result = strcmp(s1.c_str(), s2.c_str());
+	}
+	return make_reg(0, CLIP<int>(result, -32768, 32767));
 }
 
 
@@ -77,7 +80,7 @@ reg_t kStrCpy(EngineState *s, int argc, reg_t *argv) {
 		else
 			s->_segMan->memcpy(argv[0], argv[1], -length);
 	} else {
-		s->_segMan->strcpy(argv[0], argv[1]);
+		s->_segMan->strcpy_(argv[0], argv[1]);
 	}
 
 	return argv[0];
@@ -232,6 +235,7 @@ reg_t kFormat(EngineState *s, int argc, reg_t *argv) {
 	int strLength = 0; /* Used for stuff like "%13s" */
 	bool unsignedVar = false;
 
+	(void)maxsize;
 	if (position.getSegment())
 		startarg = 2;
 	else {
@@ -274,7 +278,7 @@ reg_t kFormat(EngineState *s, int argc, reg_t *argv) {
 
 			/* int writelength; -- unused atm */
 
-			if (xfer && (Common::isDigit(xfer) || xfer == '-' || xfer == '=')) {
+			if (Common::isDigit(xfer) || xfer == '-' || xfer == '=') {
 				char *destp;
 
 				if (xfer == '0')
@@ -338,7 +342,7 @@ reg_t kFormat(EngineState *s, int argc, reg_t *argv) {
 
 				}
 
-				strcpy(target, tempsource.c_str());
+				Common::strcpy_s(target, sizeof(targetbuf) - (target - targetbuf), tempsource.c_str());
 				target += slen;
 
 				switch (align) {
@@ -388,7 +392,7 @@ reg_t kFormat(EngineState *s, int argc, reg_t *argv) {
 				if (!unsignedVar)
 					val = (int16)arguments[paramindex];
 
-				target += sprintf(target, format_string, val);
+				target += Common::sprintf_s(target, sizeof(targetbuf) - (target - targetbuf), format_string, val);
 				paramindex++;
 				assert((target - targetbuf) <= maxsize);
 
@@ -430,7 +434,7 @@ reg_t kFormat(EngineState *s, int argc, reg_t *argv) {
 
 	*target = 0; /* Terminate string */
 
-	s->_segMan->strcpy(dest, targetbuf);
+	s->_segMan->strcpy_(dest, targetbuf);
 
 	return dest; /* Return target addr */
 }
@@ -451,7 +455,7 @@ reg_t kGetFarText(EngineState *s, int argc, reg_t *argv) {
 	if (argv[2] == NULL_REG)
 		s->_segMan->allocDynmem(text.size() + 1, "Mac FarText", &argv[2]);
 
-	s->_segMan->strcpy(argv[2], text.c_str()); // Copy the string and get return value
+	s->_segMan->strcpy_(argv[2], text.c_str()); // Copy the string and get return value
 	return argv[2];
 }
 
@@ -492,7 +496,7 @@ reg_t kMessage(EngineState *s, int argc, reg_t *argv) {
 #endif
 
 //	TODO: Perhaps fix this check, currently doesn't work with PUSH and POP subfunctions
-//	Pepper uses them to to handle the glossary
+//	Pepper uses them to handle the glossary
 //	if ((func != K_MESSAGE_NEXT) && (argc < 2)) {
 //		warning("Message: not enough arguments passed to subfunction %d", func);
 //		return NULL_REG;
@@ -603,7 +607,7 @@ reg_t kStrSplit(EngineState *s, int argc, reg_t *argv) {
 						PRINT_REG(argv[0]), str.size() + 1, str.c_str());
 		return NULL_REG;
 	}
-	s->_segMan->strcpy(argv[0], str.c_str());
+	s->_segMan->strcpy_(argv[0], str.c_str());
 	return argv[0];
 }
 
@@ -819,14 +823,14 @@ reg_t kStringTrim(EngineState *s, int argc, reg_t *argv) {
 reg_t kStringToUpperCase(EngineState *s, int argc, reg_t *argv) {
 	Common::String string = s->_segMan->getString(argv[0]);
 	string.toUppercase();
-	s->_segMan->strcpy(argv[0], string.c_str());
+	s->_segMan->strcpy_(argv[0], string.c_str());
 	return argv[0];
 }
 
 reg_t kStringToLowerCase(EngineState *s, int argc, reg_t *argv) {
 	Common::String string = s->_segMan->getString(argv[0]);
 	string.toLowercase();
-	s->_segMan->strcpy(argv[0], string.c_str());
+	s->_segMan->strcpy_(argv[0], string.c_str());
 	return argv[0];
 }
 

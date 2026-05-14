@@ -34,6 +34,10 @@ void JACLMetaEngine::getSupportedGames(PlainGameList &games) {
 		games.push_back(*pd);
 }
 
+const GlkDetectionEntry* JACLMetaEngine::getDetectionEntries() {
+	return JACL_GAMES;
+}
+
 GameDescriptor JACLMetaEngine::findGame(const char *gameId) {
 	for (const PlainGameDescriptor *pd = JACL_GAME_LIST; pd->gameId; ++pd) {
 		if (!strcmp(gameId, pd->gameId))
@@ -73,7 +77,7 @@ bool JACLMetaEngine::detectGames(const Common::FSList &fslist, DetectedGames &ga
 		} else {
 			// Found a match
 			PlainGameDescriptor gameDesc = findGame(p->_gameId);
-			gameList.push_back(GlkDetectedGame(p->_gameId, gameDesc.description, filename));
+			gameList.push_back(GlkDetectedGame(p->_gameId, gameDesc.description, p->_extra, filename, p->_language));
 		}
 	}
 

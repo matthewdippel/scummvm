@@ -29,7 +29,7 @@
 #include "graphics/thumbnail.h"
 
 static const PlainGameDescriptor gnapGames[] = {
-	{ "gnap", "Gnap" },
+	{ "gnap", "U.F.O.s" },
 	{ nullptr, nullptr }
 };
 
@@ -77,17 +77,17 @@ static const ADGameDescription gameDescriptions[] = {
 
 } // End of namespace Gnap
 
-class GnapMetaEngineDetection : public AdvancedMetaEngineDetection {
+class GnapMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	GnapMetaEngineDetection() : AdvancedMetaEngineDetection(Gnap::gameDescriptions, sizeof(ADGameDescription), gnapGames) {
+	GnapMetaEngineDetection() : AdvancedMetaEngineDetection(Gnap::gameDescriptions, gnapGames) {
 		_maxScanDepth = 3;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "gnap";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Gnap";
 	}
 

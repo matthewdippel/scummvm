@@ -41,9 +41,21 @@
  * Status of this engine: ???
  *
  * Games using this engine:
- * - Touche: The Adventures of the Fifth Musketeer
+ * - Touché: The Adventures of the Fifth Musketeer
  */
 namespace Touche {
+
+enum TOUCHEAction {
+	kToucheActionNone,
+	kToucheActionYes,
+	kToucheActionSkipOrQuit,
+	kToucheActionOpenOptions,
+	kToucheActionEnableFastWalk,
+	kToucheActionDisableFastWalk,
+	kToucheActionToggleFastMode,
+	kToucheActionToggleTalkTextMode,
+	kToucheActionSkipDialogue
+};
 
 struct Area {
 	Common::Rect r;
@@ -286,12 +298,12 @@ struct ProgramConversationData {
 };
 
 enum {
-	kDebugEngine   = 1 << 0,
-	kDebugGraphics = 1 << 1,
-	kDebugResource = 1 << 2,
-	kDebugOpcodes  = 1 << 3,
-	kDebugMenu     = 1 << 4,
-	kDebugCharset  = 1 << 5
+	kDebugEngine = 1,
+	kDebugGraphics,
+	kDebugResource,
+	kDebugOpcodes,
+	kDebugMenu,
+	kDebugCharset,
 };
 
 enum ResourceType {
@@ -619,8 +631,8 @@ protected:
 	void loadGameStateData(Common::ReadStream *stream);
 	Common::Error saveGameState(int num, const Common::String &description, bool isAutosave = false) override;
 	Common::Error loadGameState(int num) override;
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::String getSaveStateName(int slot) const override {
 		return Common::String::format("%s.%d", _targetName.c_str(), slot);
 	}

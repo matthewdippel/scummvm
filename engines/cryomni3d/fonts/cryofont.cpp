@@ -27,11 +27,11 @@
 
 namespace CryOmni3D {
 
-void CryoFont::load(const Common::String &fontFile) {
+void CryoFont::load(const Common::Path &fontFile) {
 	Common::File crf;
 
 	if (!crf.open(fontFile)) {
-		error("can't open file %s", fontFile.c_str());
+		error("can't open file %s", fontFile.toString(Common::Path::kNativeSeparator).c_str());
 	}
 
 	byte magic[8];
@@ -167,7 +167,7 @@ uint32 CryoFont::mapGlyph(uint32 chr) const {
 	return chr;
 }
 
-CryoFont::Glyph::Glyph() : offX(0), offY(0), advance(0), bitmap(nullptr) {
+CryoFont::Glyph::Glyph() : h(0), w(0), offX(0), offY(0), advance(0), bitmap(nullptr) {
 }
 
 CryoFont::Glyph::~Glyph() {

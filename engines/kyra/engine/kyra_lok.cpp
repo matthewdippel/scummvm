@@ -63,6 +63,14 @@ KyraEngine_LoK::KyraEngine_LoK(OSystem *system, const GameFlags &flags)
 	_winterScrollTableSize = _winterScroll1TableSize = _winterScroll2TableSize = 0;
 	_drinkAnimationTable = _brandonToWispTable = _magicAnimationTable = _brandonStoneTable = nullptr;
 	_drinkAnimationTableSize = _brandonToWispTableSize = _magicAnimationTableSize = _brandonStoneTableSize = 0;
+	_seq_Reunion = _amuleteAnim = nullptr;
+	_storyStrings = _homeString = _newGameString = _veryClever = _guiStrings = _configStrings = nullptr;
+	_storyStringsSize = _veryClever_Size = _homeString_Size = _newGameString_Size = _guiStringsSize = _configStringsSize = _roomTableSize = 0;
+
+	_currentCharacter = nullptr;
+	_buttonList = nullptr;
+	_gui = nullptr;
+
 	_specialPalettes = nullptr;
 	_sprites = nullptr;
 	_animator = nullptr;
@@ -83,6 +91,9 @@ KyraEngine_LoK::KyraEngine_LoK(OSystem *system, const GameFlags &flags)
 	_speechPlayTime = 0;
 	_seqPlayerFlag = false;
 
+	memset(&_scriptClickData, 0, sizeof(_scriptClickData));
+	memset(&_kyragemFadingState, 0, sizeof(_kyragemFadingState));
+
 	memset(&_characterFacingZeroCount, 0, sizeof(_characterFacingZeroCount));
 	memset(&_characterFacingFourCount, 0, sizeof(_characterFacingFourCount));
 
@@ -95,8 +106,9 @@ KyraEngine_LoK::KyraEngine_LoK(OSystem *system, const GameFlags &flags)
 
 	_malcolmFrame = 0;
 	_malcolmTimer1 = _malcolmTimer2 = 0;
+
 	_defaultFont = Screen::FID_8_FNT;
-	_noteFont = Screen::FID_6_FNT;
+	_noteFont = (_flags.isTalkie || _flags.platform == Common::kPlatformAmiga) ? _defaultFont : Screen::FID_6_FNT;
 	_defaultLineSpacing = 0;
 
 	switch (_flags.lang) {
@@ -180,12 +192,15 @@ KyraEngine_LoK::~KyraEngine_LoK() {
 }
 
 Common::Error KyraEngine_LoK::init() {
-	if (Common::parseRenderMode(ConfMan.get("render_mode")) == Common::kRenderPC9801)
+	if (Common::parseRenderMode(ConfMan.get("render_mode")) == Common::kRenderPC98_16c)
 		_screen = new Screen_LoK_16(this, _system);
 	else
 		_screen = new Screen_LoK(this, _system);
 	assert(_screen);
-	_screen->setResolution();
+
+	Common::Error err = _screen->setResolution();
+	if (err.getCode() != Common::kNoError)
+		return err;
 
 	setDebugger(new Debugger_LoK(this));
 
@@ -476,7 +491,7 @@ void KyraEngine_LoK::mainLoop() {
 
 		if (_deathHandler != -1) {
 			snd_playWanderScoreViaMap(0, 1);
- 			snd_playSoundEffect(49);
+			snd_playSoundEffect(49);
 			if (_flags.platform == Common::kPlatformMacintosh)
 				_sound->playTrack(15);
 			_screen->setMouseCursor(1, 1, _shapes[0]);

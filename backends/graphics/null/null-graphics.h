@@ -32,6 +32,7 @@ public:
 	void setFeatureState(OSystem::Feature f, bool enable) override {}
 	bool getFeatureState(OSystem::Feature f) const override { return false; }
 
+#ifdef USE_RGB_COLOR
 	Graphics::PixelFormat getScreenFormat() const override {
 		return _format;
 	}
@@ -46,6 +47,7 @@ public:
 		list.push_back(Graphics::PixelFormat::createFormatCLUT8());
 		return list;
 	}
+#endif
 
 	void initSize(uint width, uint height, const Graphics::PixelFormat *format = NULL) override {
 		_width = width;
@@ -66,12 +68,13 @@ public:
 	Graphics::Surface *lockScreen() override { return NULL; }
 	void unlockScreen() override {}
 	void fillScreen(uint32 col) override {}
+	void fillScreen(const Common::Rect &r, uint32 col) override {}
 	void updateScreen() override {}
 	void setShakePos(int shakeXOffset, int shakeYOffset) override {}
 	void setFocusRectangle(const Common::Rect& rect) override {}
 	void clearFocusRectangle() override {}
 
-	void showOverlay() override { _overlayVisible = true; }
+	void showOverlay(bool inGUI) override { _overlayVisible = true; }
 	void hideOverlay() override { _overlayVisible = false; }
 	bool isOverlayVisible() const override { return _overlayVisible; }
 	Graphics::PixelFormat getOverlayFormat() const override { return Graphics::PixelFormat(2, 5, 6, 5, 0, 11, 5, 0, 0); }
@@ -83,7 +86,7 @@ public:
 
 	bool showMouse(bool visible) override { return !visible; }
 	void warpMouse(int x, int y) override {}
-	void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale = false, const Graphics::PixelFormat *format = NULL) override {}
+	void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale = false, const Graphics::PixelFormat *format = NULL, const byte *mask = NULL) override {}
 	void setCursorPalette(const byte *colors, uint start, uint num) override {}
 
 private:

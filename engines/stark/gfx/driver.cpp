@@ -27,7 +27,6 @@
 #include "engines/stark/services/settings.h"
 
 #include "common/config-manager.h"
-#include "common/translation.h"
 
 #include "graphics/renderer.h"
 #include "graphics/surface.h"
@@ -84,11 +83,7 @@ Driver *Driver::create() {
 }
 
 const Graphics::PixelFormat Driver::getRGBAPixelFormat() {
-#ifdef SCUMM_BIG_ENDIAN
-	return Graphics::PixelFormat(4, 8, 8, 8, 8, 24, 16, 8, 0);
-#else
-	return Graphics::PixelFormat(4, 8, 8, 8, 8, 0, 8, 16, 24);
-#endif
+	return Graphics::PixelFormat::createFormatRGBA32();
 }
 
 bool Driver::computeScreenViewport() {

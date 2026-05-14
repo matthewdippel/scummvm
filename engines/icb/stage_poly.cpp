@@ -51,7 +51,7 @@ void _game_session::Stage_draw_poly() {
 	// Get back which mega the actor could interact with
 	int32 sel_id = GetSelectedMegaId();
 
-	// Fill in the actors that need drawing an update thier positions
+	// Fill in the actors that need drawing an update to their positions
 	uint32 actorsToDraw = 0;
 	int32 id;
 	for (uint32 j = 0; j < number_of_voxel_ids; j++) {
@@ -109,7 +109,7 @@ void _game_session::Stage_draw_poly() {
 				}
 				PXmarker_PSX &marker = PXFrameEnOfAnim(f, pAnim)->markers[ORG_POS];
 				float dx, dy, dz;
-				marker.GetXYZ(&dx, &dy, &dz);
+				PXmarker_PSX_Object::GetXYZ(&marker, &dx, &dy, &dz);
 
 				// Make the actors orientation matrix
 				int32 pan;

@@ -49,9 +49,18 @@ class Timestamp;
 class SoundHandle {
 	friend class Channel;
 	friend class MixerImpl;
-	uint32 _val;
+	uint32 _val = 0xffffffff;
+
 public:
-	inline SoundHandle() : _val(0xFFFFFFFF) {}
+	/**
+	 * Determine whether two handles are the same.
+	 */
+	bool  operator==(const SoundHandle &h)    const { return _val == h._val; }
+
+	/**
+	 * Determine whether two handles are not the same.
+	 */
+	bool  operator!=(const SoundHandle &h)    const { return _val != h._val; }
 };
 
 /**
@@ -131,7 +140,7 @@ public:
 
 	/**
 	 * Stop all currently playing sounds.
-	 */
+	*/
 	virtual void stopAll() = 0;
 
 	/**
@@ -255,6 +264,65 @@ public:
 	virtual int8 getChannelBalance(SoundHandle handle) = 0;
 
 	/**
+	 * Set the channel's left fader level for the given handle.
+	 *
+	 * @param handle   The sound to affect.
+	 * @param faderL  The channel's new left fader level, in the range of 0-255.
+	 */
+	virtual void setChannelFaderL(SoundHandle handle, uint8 faderL) = 0;
+
+	/**
+	 * Get the channel's left fader level for the given handle.
+	 *
+	 * @param handle  The sound to affect.
+	 *
+	 * @return The channel's left fader level.
+	 */
+	virtual uint8 getChannelFaderL(SoundHandle handle) = 0;
+
+	/**
+	 * Set the channel's right fader level for the given handle.
+	 *
+	 * @param handle   The sound to affect.
+	 * @param faderR  The channel's new right fader level, in the range of 0-255.
+	 */
+	virtual void setChannelFaderR(SoundHandle handle, uint8 faderR) = 0;
+
+	/**
+	 * Get the channel's right fader level for the given handle.
+	 *
+	 * @param handle  The sound to affect.
+	 *
+	 * @return The channel's right fader level.
+	 */
+	virtual uint8 getChannelFaderR(SoundHandle handle) = 0;
+
+	/**
+	 * Set the sample rate for the given handle.
+	 *
+	 * @param handle 	The sound to affect.
+	 * @param rate		The new sample rate. Must be less than 131072
+	*/
+	virtual void setChannelRate(SoundHandle handle, uint32 rate) = 0;
+
+	/**
+	 * Get the sample rate for the given handle.
+	 *
+	 * @param handle 	The sound to affect.
+	 *
+	 * @return The current sample rate of the channel.
+	*/
+	virtual uint32 getChannelRate(SoundHandle handle) = 0;
+
+	/**
+	 * Reset the sample rate of the channel back to its
+	 * AudioStream's native rate.
+	 *
+	 * @param handle 	The sound to affect.
+	*/
+	virtual void resetChannelRate(SoundHandle handle) = 0;
+
+	/**
 	 * Get an approximation of for how long the channel has been playing.
 	 */
 	virtual uint32 getSoundElapsedTime(SoundHandle handle) = 0;
@@ -306,7 +374,18 @@ public:
 	virtual uint getOutputRate() const = 0;
 
 	/**
+	 * Check whether the output is stereo.
+	 *
+	 * @return true if output is stereo, false if not.
+	 */
+	virtual bool getOutputStereo() const = 0;
+
+	/**
 	 * Return the output sample buffer size of the system.
+	 *
+	 * The return value is measured in frame units instead of bytes. It can be converted
+	 * to bytes by multiplying it with the sample size and the number of channels. For
+	 * example, for 16-bit stereo output it should be multiplied by 4.
 	 *
 	 * @return The number of samples processed at each audio callback.
 	 */

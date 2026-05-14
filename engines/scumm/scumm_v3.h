@@ -32,7 +32,6 @@ namespace Scumm {
 class ScummEngine_v3 : public ScummEngine_v4 {
 public:
 	ScummEngine_v3(OSystem *syst, const DetectorResult &dr);
-	~ScummEngine_v3() override;
 
 	void resetScumm() override;
 
@@ -40,6 +39,7 @@ protected:
 	void setupOpcodes() override;
 
 	void scummLoop_handleSaveLoad() override;
+	void terminateSaveMenuScript() override;
 
 	void readRoomsOffsets() override;
 	void loadCharset(int no) override;

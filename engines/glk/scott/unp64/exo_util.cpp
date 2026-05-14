@@ -20,29 +20,24 @@
  */
 
 /*
- * Copyright (c) 2007 - 2008 Magnus Lind.
+ * Copyright (c) 2002 - 2023 Magnus Lind.
  *
- * This software is provided 'as-is', without any express or implied warranty.
- * In no event will the authors be held liable for any damages arising from
- * the use of this software.
  *
- * Permission is granted to anyone to use this software, alter it and re-
- * distribute it freely for any non-commercial, non-profit purpose subject to
- * the following restrictions:
+ * This software is provided 'as-is', without any express or implied
+ * warranty. In no event will the authors be held liable for any damages
+ * arising from the use of this software.
  *
- *   1. The origin of this software must not be misrepresented; you must not
- *   claim that you wrote the original software. If you use this software in a
- *   product, an acknowledgment in the product documentation would be
- *   appreciated but is not required.
+ * Permission is granted to anyone to use this software for any purpose,
+ * including commercial applications, and to alter it and redistribute it
+ * freely, subject to the following restrictions:
  *
- *   2. Altered source versions must be plainly marked as such, and must not
- *   be misrepresented as being the original software.
- *
- *   3. This notice may not be removed or altered from any distribution.
- *
- *   4. The names of this software and/or it's copyright holders may not be
- *   used to endorse or promote products derived from this software without
- *   specific prior written permission.
+ * 1. The origin of this software must not be misrepresented; you must not
+ * claim that you wrote the original software. If you use this software
+ * in a product, an acknowledgment in the product documentation would be
+ * appreciated but is not required.
+ * 2. Altered source versions must be plainly marked as such, and must not be
+ * misrepresented as being the original software.
+ * 3. This notice may not be removed or altered from any source distribution.
  *
  */
 
@@ -130,7 +125,7 @@ int findSys(const byte *buf, int target) {
 
 static void loadPrgData(byte mem[65536], uint8_t *data, size_t dataLength, LoadInfo *info) {
 	int len = MIN(65536 - info->_start, static_cast<int>(dataLength));
-	memcpy(mem + info->_start, data, len);
+	memcpy(mem + info->_start, data, (size_t)len);
 
 	info->_end = info->_start + len;
 	info->_basicVarStart = -1;
@@ -183,6 +178,57 @@ int strToInt(const char *str, int *value) {
 	} while (0);
 
 	return status;
+}
+
+bool u32eq(const unsigned char *addr, uint32_t val)
+{
+	return addr[3] == (val >> 24) &&
+	addr[2] == ((val >> 16) & 0xff) &&
+	addr[1] == ((val >>	 8) & 0xff) &&
+	addr[0] == (val & 0xff);
+}
+
+bool u32eqmasked(const unsigned char *addr, uint32_t mask, uint32_t val)
+{
+	uint32_t val1 = addr[0] | (addr[1] << 8) | (addr[2] << 16) | (addr[3] << 24);
+	return (val1 & mask) == val;
+}
+
+bool u32eqxored(const unsigned char *addr, uint32_t xormask, uint32_t val)
+{
+	uint32_t val1 = addr[0] | (addr[1] << 8) | (addr[2] << 16) | (addr[3] << 24);
+	return (val1 ^ xormask) == val;
+}
+
+bool u16eqmasked(const unsigned char *addr, uint16_t mask, uint16_t val)
+{
+	uint16_t val1 = addr[0] | (addr[1] << 8);
+	return (val1 & mask) == val;
+}
+
+
+bool u16eq(const unsigned char *addr, uint16_t val)
+{
+	return addr[1] == (val >> 8) &&
+	addr[0] == (val & 0xff);
+}
+
+bool u16noteq(const unsigned char *addr, uint16_t val)
+{
+	return addr[1] != (val >> 8) ||
+	addr[0] != (val & 0xff);
+}
+
+bool u16gteq(const unsigned char *addr, uint16_t val)
+{
+	uint16_t val2 = addr[0] | (addr[1] << 8);
+	return val2 >= val;
+}
+
+bool u16lteq(const unsigned char *addr, uint16_t val)
+{
+	uint16_t val2 = addr[0] | (addr[1] << 8);
+	return val2 <= val;
 }
 
 } // End of namespace Scott

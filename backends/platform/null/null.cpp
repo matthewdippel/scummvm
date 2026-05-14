@@ -47,6 +47,8 @@ typedef void (*sighandler_t)(int);
 #include "common/scummsys.h"
 
 #if defined(USE_NULL_DRIVER)
+#include "common/events.h"
+
 #include "backends/modular-backend.h"
 #include "backends/mutex/null/null-mutex.h"
 #include "base/main.h"
@@ -77,7 +79,7 @@ typedef void (*sighandler_t)(int);
 
 class OSystem_NULL : public ModularMixerBackend, public ModularGraphicsBackend, Common::EventSource {
 public:
-	OSystem_NULL();
+	OSystem_NULL(bool silenceLogs);
 	virtual ~OSystem_NULL();
 
 	virtual void initBackend();
@@ -101,9 +103,11 @@ private:
 #elif defined(WIN32)
 	DWORD _startTime;
 #endif
+	bool _silenceLogs;
 };
 
-OSystem_NULL::OSystem_NULL() {
+OSystem_NULL::OSystem_NULL(bool silenceLogs) :
+	_silenceLogs(silenceLogs) {
 	#if defined(__amigaos4__)
 		_fsFactory = new AmigaOSFilesystemFactory();
 	#elif defined(__MORPHOS__)
@@ -152,9 +156,9 @@ void OSystem_NULL::initBackend() {
 	_mixerManager = new NullMixerManager();
 	// Setup and start mixer
 	_mixerManager->init();
-#endif
 
 	BaseBackend::initBackend();
+#endif
 }
 
 bool OSystem_NULL::pollEvent(Common::Event &event) {
@@ -223,11 +227,16 @@ void OSystem_NULL::getTimeAndDate(TimeDate &td, bool skipRecord) const {
 	td.tm_wday = t.tm_wday;
 }
 
+#ifndef NULL_DRIVER_USE_FOR_TEST
 void OSystem_NULL::quit() {
 	exit(0);
 }
+#endif
 
 void OSystem_NULL::logMessage(LogMessageType::Type type, const char *message) {
+	if (_silenceLogs)
+		return;
+
 	FILE *output = 0;
 
 	if (type == LogMessageType::kInfo || type == LogMessageType::kDebug)
@@ -242,15 +251,18 @@ void OSystem_NULL::logMessage(LogMessageType::Type type, const char *message) {
 void OSystem_NULL::addSysArchivesToSearchSet(Common::SearchSet &s, int priority) {
 	s.add("test/engine-data", new Common::FSDirectory("test/engine-data", 4), priority);
 	s.add("gui/themes", new Common::FSDirectory("gui/themes", 4), priority);
+	// Add the current dir as a very last resort (cf. bug #3984).
+	// TODO: check if it's really needed
+	s.addDirectory(".", ".", priority - 1);
 }
 
-OSystem *OSystem_NULL_create() {
-	return new OSystem_NULL();
+OSystem *OSystem_NULL_create(bool silenceLogs) {
+	return new OSystem_NULL(silenceLogs);
 }
 
 #ifndef NULL_DRIVER_USE_FOR_TEST
 int main(int argc, char *argv[]) {
-	g_system = OSystem_NULL_create();
+	g_system = OSystem_NULL_create(false);
 	assert(g_system);
 
 	// Invoke the actual ScummVM main entry point:
@@ -262,7 +274,8 @@ int main(int argc, char *argv[]) {
 
 #else /* USE_NULL_DRIVER */
 
-OSystem *OSystem_NULL_create() {
+OSystem *OSystem_NULL_create(bool silenceLogs) {
+	(void)silenceLogs;
 	return NULL;
 }
 

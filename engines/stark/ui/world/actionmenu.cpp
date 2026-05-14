@@ -51,14 +51,14 @@ ActionMenu::ActionMenu(Gfx::Driver *gfx, Cursor *cursor) :
 		_itemDescription(nullptr),
 		_item(nullptr),
 		_inventory(nullptr),
-		_activeMenuType(kActionNone),
+		_activeMenuType(kActionNoneM),
 		_autoCloseTimeRemaining(kAutoCloseDisabled) {
 
 	_background = StarkStaticProvider->getUIElement(StaticProvider::kActionMenuBg);
 
 	_itemDescription = new VisualText(gfx);
-	_itemDescription->setColor(Color(0xFF, 0xFF, 0xFF));
-	_itemDescription->setBackgroundColor(Color(0x00, 0x00, 0x00, 0x80));
+	_itemDescription->setColor(Gfx::Color(0xFF, 0xFF, 0xFF));
+	_itemDescription->setBackgroundColor(Gfx::Color(0x00, 0x00, 0x00, 0x80));
 	_itemDescription->setFont(FontProvider::kSmallFont);
 	_itemDescription->setTargetWidth(96);
 
@@ -121,7 +121,7 @@ void ActionMenu::open(Resources::ItemVisual *item, const Common::Point &itemRela
 void ActionMenu::close() {
 	_visible = false;
 	_item = nullptr;
-	_activeMenuType = kActionNone;
+	_activeMenuType = kActionNoneM;
 	_actionHoverSound->stop();
 }
 
@@ -172,7 +172,7 @@ void ActionMenu::enableAction(uint32 action) {
 }
 
 void ActionMenu::updateActionSound() {
-	if (_activeMenuType == kActionNone) {
+	if (_activeMenuType == kActionNoneM) {
 		_actionHoverSound->stop();
 		return;
 	}
@@ -184,7 +184,7 @@ void ActionMenu::updateActionSound() {
 
 void ActionMenu::onMouseMove(const Common::Point &pos) {
 	int32 prevActive = _activeMenuType;
-	int32 newActive  = kActionNone;
+	int32 newActive  = kActionNoneM;
 	for (uint i = 0; i < ARRAYSIZE(_buttons); i++) {
 		if (_buttons[i].enabled && _buttons[i].rect.contains(pos)) {
 			newActive = i;
@@ -193,7 +193,7 @@ void ActionMenu::onMouseMove(const Common::Point &pos) {
 
 	if (newActive != prevActive) {
 		_activeMenuType = newActive;
-		if (_activeMenuType == kActionNone) {
+		if (_activeMenuType == kActionNoneM) {
 			_cursor->setCursorType(Cursor::kDefault);
 		} else {
 			_cursor->setCursorType(Cursor::kActive);
@@ -244,7 +244,7 @@ void ActionMenu::onGameLoop() {
 }
 
 void ActionMenu::onScreenChanged() {
-	_itemDescription->resetTexture();
+	_itemDescription->reset();
 }
 
 } // End of namespace Stark

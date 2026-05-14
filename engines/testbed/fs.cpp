@@ -20,6 +20,7 @@
  */
 
 #include "common/config-manager.h"
+#include "common/file.h"
 #include "common/stream.h"
 #include "common/util.h"
 
@@ -38,8 +39,17 @@ namespace Testbed {
  */
 bool FStests::readDataFromFile(Common::FSDirectory *directory, const char *file) {
 
-	Common::SeekableReadStream *readStream = directory->createReadStreamForMember(file);
+	if (!SearchMan.isPathDirectory(directory->getFSNode().getPath())) {
+		SearchMan.addDirectory(directory->getFSNode().getPath(), 0, 1, false);
+	}
 
+	Common::ScopedPtr<Common::File> f(new Common::File());
+	if (!f->open(file)) {
+		Testsuite::logDetailedPrintf("Can't open game file\n");
+		return false;
+	}
+	
+	Common::SeekableReadStream *readStream = f.release();
 	if (!readStream) {
 		Testsuite::logDetailedPrintf("Can't open game file for reading\n");
 		return false;
@@ -61,26 +71,26 @@ bool FStests::readDataFromFile(Common::FSDirectory *directory, const char *file)
 }
 
 TestExitStatus FStests::testReadFile() {
-	const Common::String &path = ConfMan.get("path");
+	const Common::Path &path = ConfMan.getPath("path");
 	Common::FSDirectory gameRoot(path);
 	int numFailed = 0;
 
 	if (!gameRoot.getFSNode().exists() || !gameRoot.getFSNode().isDirectory()) {
 		Testsuite::logDetailedPrintf("game Path should be an existing directory");
-		 return kTestFailed;
+		return kTestFailed;
 	}
 
-	const char *dirList[] = {"test1" ,"Test2", "TEST3" , "tEST4", "test5"};
+	const char *dirList[] = {"test1", "Test2", "TEST3", "tEST4", "test5"};
 	const char *file[] = {"file.txt", "File.txt", "FILE.txt", "fILe.txt", "file"};
 
 	for (unsigned int i = 0; i < ARRAYSIZE(dirList); i++) {
 		Common::String dirName = dirList[i];
 		Common::String fileName = file[i];
-		Common::FSDirectory *directory = gameRoot.getSubDirectory(dirName);
+		Common::FSDirectory *directory = gameRoot.getSubDirectory(Common::Path(dirName));
 
 		if (!directory) {
 			Testsuite::logDetailedPrintf("Failed to open directory %s during FS tests\n", dirName.c_str());
-			 return kTestFailed;
+			return kTestFailed;
 		}
 
 		if (!readDataFromFile(directory, fileName.c_str())) {
@@ -91,11 +101,11 @@ TestExitStatus FStests::testReadFile() {
 		dirName.toLowercase();
 		fileName.toLowercase();
 		delete directory;
-		directory = gameRoot.getSubDirectory(dirName);
+		directory = gameRoot.getSubDirectory(Common::Path(dirName));
 
 		if (!directory) {
 			Testsuite::logDetailedPrintf("Failed to open directory %s during FS tests\n", dirName.c_str());
-			 return kTestFailed;
+			return kTestFailed;
 		}
 
 		if (!readDataFromFile(directory, fileName.c_str())) {
@@ -106,11 +116,11 @@ TestExitStatus FStests::testReadFile() {
 		dirName.toUppercase();
 		fileName.toUppercase();
 		delete directory;
-		directory = gameRoot.getSubDirectory(dirName);
+		directory = gameRoot.getSubDirectory(Common::Path(dirName));
 
 		if (!directory) {
 			Testsuite::logDetailedPrintf("Failed to open directory %s during FS tests\n", dirName.c_str());
-			 return kTestFailed;
+			return kTestFailed;
 		}
 
 		if (!readDataFromFile(directory, fileName.c_str())) {
@@ -133,20 +143,24 @@ TestExitStatus FStests::testReadFile() {
  * it is same by reading the file again.
  */
 TestExitStatus FStests::testWriteFile() {
-	const Common::String &path = ConfMan.get("path");
-	Common::FSNode gameRoot(path);
-	if (!gameRoot.exists()) {
-		Testsuite::logPrintf("Couldn't open the game data directory %s", path.c_str());
+	Common::FSNode testDirectory(ConfMan.getPath("path"));
+	if (!testDirectory.isWritable()) {
+		// redirect to savepath if game-data directory is not writable.
+		testDirectory = Common::FSNode(ConfMan.getPath("savepath"));
+	}
+	if (!testDirectory.exists()) {
+		Testsuite::logPrintf("Couldn't open the game data directory %s",
+				testDirectory.getPath().toString(Common::Path::kNativeSeparator).c_str());
 		 return kTestFailed;
 	}
 
-	Common::FSNode fileToWrite = gameRoot.getChild("testbed.out");
+	Common::FSNode fileToWrite = testDirectory.getChild("testbed.out");
 
 	Common::WriteStream *ws = fileToWrite.createWriteStream();
 
 	if (!ws) {
 		Testsuite::logDetailedPrintf("Can't open writable file in game data dir\n");
-		 return kTestFailed;
+		return kTestFailed;
 	}
 
 	ws->writeString("ScummVM Rocks!");
@@ -156,7 +170,7 @@ TestExitStatus FStests::testWriteFile() {
 	Common::SeekableReadStream *rs = fileToWrite.createReadStream();
 	if (!rs) {
 		Testsuite::logDetailedPrintf("Can't open recently written file testbed.out in game data dir\n");
-		 return kTestFailed;
+		return kTestFailed;
 	}
 	Common::String readFromFile = rs->readLine();
 	delete rs;
@@ -164,25 +178,28 @@ TestExitStatus FStests::testWriteFile() {
 	if (readFromFile.equals("ScummVM Rocks!")) {
 		// All good
 		Testsuite::logDetailedPrintf("Data written and read correctly\n");
-		 return kTestPassed;
+		return kTestPassed;
 	}
 
 	return kTestFailed;
 }
 
-
 /**
  * This test creates a directory testbed.dir, and confirms if the directory is created successfully
  */
 TestExitStatus FStests::testCreateDir() {
-	const Common::String &path = ConfMan.get("path");
-	Common::FSNode gameRoot(path);
-	if (!gameRoot.exists()) {
-		Testsuite::logPrintf("Couldn't open the game data directory %s", path.c_str());
+	Common::FSNode testDirectory(ConfMan.getPath("path"));
+	if (!testDirectory.isWritable()) {
+		// redirect to savepath if game-data directory is not writable.
+		testDirectory = Common::FSNode(ConfMan.getPath("savepath"));
+	}
+	if (!testDirectory.exists()) {
+		Testsuite::logPrintf("Couldn't open the game data directory %s",
+				testDirectory.getPath().toString(Common::Path::kNativeSeparator).c_str());
 		 return kTestFailed;
 	}
 
-	Common::FSNode dirToCreate = gameRoot.getChild("testbed.dir");
+	Common::FSNode dirToCreate = testDirectory.getChild("testbed.dir");
 
 	// TODO: Delete the directory after creating it
 	if (dirToCreate.exists()) {
@@ -199,12 +216,10 @@ TestExitStatus FStests::testCreateDir() {
 	return kTestPassed;
 }
 
-
-
 FSTestSuite::FSTestSuite() {
 	// FS tests depend on Game Data files.
 	// If those are not found. Disable this testsuite.
-	const Common::String &path = ConfMan.get("path");
+	const Common::Path &path = ConfMan.getPath("path");
 	Common::FSNode gameRoot(path);
 
 	Common::FSNode gameIdentificationFile = gameRoot.getChild("TESTBED");

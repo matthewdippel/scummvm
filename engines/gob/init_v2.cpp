@@ -17,8 +17,15 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
+#include "common/config-manager.h"
 #include "common/endian.h"
 
 #include "gob/gob.h"
@@ -46,11 +53,12 @@ void Init_v2::initVideo() {
 
 	_vm->_global->_colorCount = 16;
 	if (!_vm->isEGA() &&
-	   ((_vm->getPlatform() == Common::kPlatformDOS) ||
-	     (_vm->getPlatform() == Common::kPlatformMacintosh) ||
-	     (_vm->getPlatform() == Common::kPlatformWindows)) &&
-	    ((_vm->_global->_videoMode == 0x13) ||
-	     (_vm->_global->_videoMode == 0x14)))
+		!_vm->is16Colors() &&
+		((_vm->getPlatform() == Common::kPlatformDOS) ||
+		 (_vm->getPlatform() == Common::kPlatformMacintosh) ||
+		 (_vm->getPlatform() == Common::kPlatformWindows)) &&
+		((_vm->_global->_videoMode == 0x13) ||
+		 (_vm->_global->_videoMode == 0x14)))
 		_vm->_global->_colorCount = 256;
 
 	_vm->_global->_pPaletteDesc = &_vm->_global->_paletteStruct;
@@ -64,5 +72,25 @@ void Init_v2::initVideo() {
 	_vm->_draw->_cursorHeight      = 16;
 	_vm->_draw->_transparentCursor =  1;
 }
+
+void Init_v2::initGame() {
+	if (_vm->getGameType() == kGameTypeAdibou1) {
+		const Common::FSNode gameDataDir(ConfMan.getPath("path"));
+
+		// Add additional applications directories (e.g. "Read/Count 4-5 years").
+		Common::FSList subdirs;
+		gameDataDir.getChildren(subdirs, Common::FSNode::kListDirectoriesOnly);
+		for (const Common::FSNode &subdirNode : subdirs) {
+			Common::FSDirectory subdir(subdirNode);
+			if (subdir.hasFile("c51.stk") || subdir.hasFile("c61.stk") || subdir.hasFile("l51.stk") || subdir.hasFile("l61.stk")) {
+				debugC(1, kDebugFileIO, "Found Adibou/Adi application subdirectory \"%s\", adding it to the search path", subdir.getFSNode().getName().c_str());
+				SearchMan.addSubDirectoryMatching(gameDataDir, subdir.getFSNode().getName(), 0, 4, true);
+			}
+		}
+	}
+
+	Init::initGame();
+}
+
 
 } // End of namespace Gob

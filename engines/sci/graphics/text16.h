@@ -22,6 +22,10 @@
 #ifndef SCI_GRAPHICS_TEXT16_H
 #define SCI_GRAPHICS_TEXT16_H
 
+namespace Graphics {
+class Font;
+}
+
 namespace Sci {
 
 #define SCI_TEXT16_ALIGNMENT_RIGHT -1
@@ -34,12 +38,13 @@ class GfxPorts;
 class GfxPaint16;
 class GfxScreen;
 class GfxFont;
+class GfxMacFontManager;
 /**
  * Text16 class, handles text calculation and displaying of text for SCI0->SCI1.1 games
  */
 class GfxText16 {
 public:
-	GfxText16(GfxCache *fonts, GfxPorts *ports, GfxPaint16 *paint16, GfxScreen *screen);
+	GfxText16(GfxCache *fonts, GfxPorts *ports, GfxPaint16 *paint16, GfxScreen *screen, GfxMacFontManager *macFontManager);
 	~GfxText16();
 
 	GuiResourceId GetFontId();
@@ -48,12 +53,16 @@ public:
 
 	int16 CodeProcessing(const char *&text, GuiResourceId orgFontId, int16 orgPenColor, bool doingDrawing);
 
+#if 0
 	void ClearChar(int16 chr);
+#endif
 
 	int16 GetLongest(const char *&text, int16 maxWidth, GuiResourceId orgFontId);
 	void Width(const char *text, int16 from, int16 len, GuiResourceId orgFontId, int16 &textWidth, int16 &textHeight, bool restoreFont);
 	void StringWidth(const Common::String &str, GuiResourceId orgFontId, int16 &textWidth, int16 &textHeight);
+#if 0
 	void ShowString(const Common::String &str, GuiResourceId orgFontId, int16 orgPenColor);
+#endif
 	void DrawString(const Common::String &str, GuiResourceId orgFontId, int16 orgPenColor);
 	int16 Size(Common::Rect &rect, const char *text, uint16 textLanguage, GuiResourceId fontId, int16 maxWidth);
 	void Draw(const char *text, int16 from, int16 len, GuiResourceId orgFontId, int16 orgPenColor);
@@ -75,16 +84,20 @@ public:
 	void kernelTextFonts(int argc, reg_t *argv);
 	void kernelTextColors(int argc, reg_t *argv);
 
+	void macTextSize(const Common::String &text, GuiResourceId sciFontId, GuiResourceId origSciFontId, int16 maxWidth, int16 *textWidth, int16 *textHeight);
+	void macDraw(const Common::String &text, Common::Rect rect, TextAlignment alignment, GuiResourceId sciFontId, GuiResourceId origSciFontId, int16 color);
 private:
 	void init();
 	bool SwitchToFont1001OnKorean(const char *text, uint16 languageSplitter);
 	bool SwitchToFont900OnSjis(const char *text, uint16 languageSplitter);
 	static bool isJapaneseNewLine(int16 curChar, int16 nextChar);
+	int16 macGetLongest(const Common::String &text, uint start, const Graphics::Font *font, int16 maxWidth, int16 *lineWidth);
 
 	GfxCache *_cache;
 	GfxPorts *_ports;
 	GfxPaint16 *_paint16;
 	GfxScreen *_screen;
+	GfxMacFontManager *_macFontManager; // null when not applicable
 
 	int _codeFontsCount;
 	GuiResourceId *_codeFonts;
@@ -99,4 +112,4 @@ private:
 
 } // End of namespace Sci
 
-#endif
+#endif // SCI_GRAPHICS_TEXT16_H

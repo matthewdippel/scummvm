@@ -21,7 +21,10 @@
 
 #include "base/plugins.h"
 
+#include "common/translation.h"
+
 #include "engines/advancedDetector.h"
+#include "gui/message.h"
 
 #include "plumbers/plumbers.h"
 
@@ -30,7 +33,7 @@ const char *PlumbersGame::getGameId() const { return _gameDescription->gameId; }
 Common::Platform PlumbersGame::getPlatform() const { return _gameDescription->platform; }
 } // End of namespace Plumbers
 
-class PlumbersMetaEngine : public AdvancedMetaEngine {
+class PlumbersMetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 	const char *getName() const override {
 		return "plumbers";
 	}
@@ -40,7 +43,10 @@ class PlumbersMetaEngine : public AdvancedMetaEngine {
 };
 
 Common::Error PlumbersMetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const {
-	*engine = new Plumbers::PlumbersGame(syst, desc);
+	if (desc->platform == Common::kPlatform3DO) {
+		*engine = new Plumbers::PlumbersGame3DO(syst, desc);
+	} else
+		*engine = new Plumbers::PlumbersGameWindows(syst, desc);
 	return Common::kNoError;
 }
 

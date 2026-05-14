@@ -94,8 +94,10 @@ public:
 	virtual bool showMouse(bool visible) override;
 	bool lockMouse(bool lock) override;
 
-	virtual bool saveScreenshot(const Common::String &filename) const { return false; }
+	virtual bool saveScreenshot(const Common::Path &filename) const { return false; }
 	void saveScreenshot() override;
+
+	bool setRotationMode(Common::RotationMode rotation) override { _rotationMode = rotation; return true; }
 
 	// Override from Common::EventObserver
 	bool notifyEvent(const Common::Event &event) override;
@@ -109,6 +111,8 @@ public:
 		bool aspectRatio;
 		bool fullscreen;
 		bool cursorPalette;
+		bool vsync;
+		Common::RotationMode rotation;
 
 #ifdef USE_RGB_COLOR
 		Graphics::PixelFormat pixelFormat;
@@ -138,6 +142,7 @@ protected:
 	enum CustomEventAction {
 		kActionToggleFullscreen = 100,
 		kActionToggleMouseCapture,
+		kActionToggleResizableWindow,
 		kActionSaveScreenshot,
 		kActionToggleAspectRatioCorrection,
 		kActionToggleFilteredScaling,
@@ -158,7 +163,10 @@ protected:
 	 * values stored by the graphics manager.
 	 */
 	void getWindowSizeFromSdl(int *width, int *height) const {
-#if SDL_VERSION_ATLEAST(2, 0, 0)
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+		assert(_window);
+		SDL_GetWindowSizeInPixels(_window->getSDLWindow(), width, height);
+#elif SDL_VERSION_ATLEAST(2, 0, 0)
 		assert(_window);
 		SDL_GL_GetDrawableSize(_window->getSDLWindow(), width, height);
 #else
@@ -174,6 +182,8 @@ protected:
 #endif
 	}
 
+	virtual void showSystemMouseCursor(bool visible);
+
 	void setSystemMousePosition(const int x, const int y) override;
 
 	void notifyActiveAreaChanged() override;
@@ -188,8 +198,10 @@ public:
 		_hintedHeight = 0;
 	}
 
+	// Called by SdlWindow when the window is about to be destroyed
+	virtual void destroyingWindow() {}
+
 protected:
-	Uint32 _lastFlags;
 	bool _allowWindowSizeReset;
 	int _hintedWidth, _hintedHeight;
 
@@ -200,8 +212,29 @@ protected:
 	SdlEventSource *_eventSource;
 	SdlWindow *_window;
 
+	/**
+	 * @returns whether switching the fullscreen state is currently safe
+	 */
+	virtual bool canSwitchFullscreen() const { return false; }
+
 private:
 	void toggleFullScreen();
+
+#if defined(USE_IMGUI) && SDL_VERSION_ATLEAST(2, 0, 0)
+public:
+	void setImGuiCallbacks(const ImGuiCallbacks &callbacks) override;
+
+protected:
+	ImGuiCallbacks _imGuiCallbacks;
+	bool _imGuiReady = false;
+	bool _imGuiInited = false;
+	SDL_Renderer *_imGuiSDLRenderer = nullptr;
+
+	void initImGui(SDL_Renderer *renderer, void *glContext);
+	void renderImGui();
+	void destroyImGui();
+#endif
+
 };
 
 #endif

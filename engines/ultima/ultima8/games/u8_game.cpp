@@ -19,30 +19,29 @@
  *
  */
 
-#include "common/config-manager.h"
-
-#include "ultima/ultima8/misc/pent_include.h"
-
 #include "ultima/ultima8/games/u8_game.h"
 
-#include "ultima/ultima8/graphics/palette_manager.h"
-#include "ultima/ultima8/graphics/fade_to_modal_process.h"
-#include "ultima/ultima8/filesys/file_system.h"
-#include "ultima/ultima8/games/game_data.h"
-#include "ultima/ultima8/graphics/xform_blend.h"
-#include "ultima/ultima8/filesys/u8_save_file.h"
-#include "ultima/ultima8/world/world.h"
-#include "ultima/ultima8/world/actors/main_actor.h"
-#include "ultima/ultima8/world/item_factory.h"
-#include "ultima/ultima8/kernel/object_manager.h"
-#include "ultima/ultima8/ultima8.h"
-#include "ultima/ultima8/gumps/movie_gump.h"
-#include "ultima/ultima8/gumps/credits_gump.h"
-#include "ultima/ultima8/kernel/kernel.h"
-#include "ultima/ultima8/audio/music_process.h"
-#include "ultima/ultima8/games/start_u8_process.h"
-#include "ultima/ultima8/world/get_object.h"
+#include "common/config-manager.h"
+#include "common/file.h"
 #include "common/memstream.h"
+#include "common/translation.h"
+#include "gui/error.h"
+#include "ultima/ultima8/ultima8.h"
+#include "ultima/ultima8/audio/music_process.h"
+#include "ultima/ultima8/filesys/u8_save_file.h"
+#include "ultima/ultima8/games/game_data.h"
+#include "ultima/ultima8/games/start_u8_process.h"
+#include "ultima/ultima8/gfx/fade_to_modal_process.h"
+#include "ultima/ultima8/gfx/palette_manager.h"
+#include "ultima/ultima8/gfx/xform_blend.h"
+#include "ultima/ultima8/gumps/credits_gump.h"
+#include "ultima/ultima8/gumps/movie_gump.h"
+#include "ultima/ultima8/kernel/kernel.h"
+#include "ultima/ultima8/kernel/object_manager.h"
+#include "ultima/ultima8/world/actors/main_actor.h"
+#include "ultima/ultima8/world/get_object.h"
+#include "ultima/ultima8/world/item_factory.h"
+#include "ultima/ultima8/world/world.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -69,19 +68,18 @@ U8Game::~U8Game() {
 
 bool U8Game::loadFiles() {
 	// Load palette
-	pout << "Load Palette" << Std::endl;
-	Common::SeekableReadStream *pf = FileSystem::get_instance()->ReadFile("static/u8pal.pal");
-	if (!pf) {
-		perr << "Unable to load static/u8pal.pal." << Std::endl;
+	debug(1, "Load Palette");
+	Common::File pf;
+	if (!pf.open("static/u8pal.pal")) {
+		warning("Unable to load static/u8pal.pal.");
 		return false;
 	}
-	pf->seek(4); // seek past header
+	pf.seek(4); // seek past header
 
 	Common::MemoryReadStream xfds(U8XFormPal, 1024);
-	PaletteManager::get_instance()->load(PaletteManager::Pal_Game, *pf, xfds);
-	delete pf;
+	PaletteManager::get_instance()->load(PaletteManager::Pal_Game, pf, xfds);
 
-	pout << "Load GameData" << Std::endl;
+	debug(1, "Load GameData");
 	GameData::get_instance()->loadU8Data();
 
 	return true;
@@ -89,8 +87,7 @@ bool U8Game::loadFiles() {
 
 bool U8Game::startGame() {
 	// NOTE: assumes the entire engine has been reset!
-
-	pout << "Starting new Ultima 8 game." << Std::endl;
+	debug(1, "Starting new Ultima 8 game.");
 
 	ObjectManager *objman = ObjectManager::get_instance();
 
@@ -98,31 +95,38 @@ bool U8Game::startGame() {
 	for (uint16 i = 384; i < 512; ++i)
 		objman->reserveObjId(i);
 
-	// reserve ObjId 666 for the Guardian Bark hack
-	objman->reserveObjId(666);
+	// Reserved for the Guardian Bark hack
+	objman->reserveObjId(kGuardianId);
 
-	Common::SeekableReadStream *savers = FileSystem::get_instance()->ReadFile("savegame/u8save.000");
-	if (!savers) {
-		perr << "Unable to load savegame/u8save.000." << Std::endl;
+	auto *savers = new Common::File();
+	if (!savers->open("savegame/u8save.000")) {
+		Common::U32String errmsg = _(
+			"Missing Required File\n\n"
+			"Starting a game requires SAVEGAME/U8SAVE.000\n"
+			"from an original installation.\n\n"
+			"Please check you have copied all the files correctly.");
+		::GUI::displayErrorDialog(errmsg);
+		delete savers;
+		error("Unable to load savegame/u8save.000");
 		return false;
 	}
 	U8SaveFile *u8save = new U8SaveFile(savers);
 
-	Common::SeekableReadStream *nfd = u8save->getDataSource("NONFIXED.DAT");
+	Common::SeekableReadStream *nfd = u8save->createReadStreamForMember("NONFIXED.DAT");
 	if (!nfd) {
-		perr << "Unable to load savegame/u8save.000/NONFIXED.DAT." << Std::endl;
+		warning("Unable to load savegame/u8save.000/NONFIXED.DAT.");
 		return false;
 	}
 	World::get_instance()->loadNonFixed(nfd); // deletes nfd
 
-	Common::SeekableReadStream *icd = u8save->getDataSource("ITEMCACH.DAT");
+	Common::SeekableReadStream *icd = u8save->createReadStreamForMember("ITEMCACH.DAT");
 	if (!icd) {
-		perr << "Unable to load savegame/u8save.000/ITEMCACH.DAT." << Std::endl;
+		warning("Unable to load savegame/u8save.000/ITEMCACH.DAT.");
 		return false;
 	}
-	Common::SeekableReadStream *npcd = u8save->getDataSource("NPCDATA.DAT");
+	Common::SeekableReadStream *npcd = u8save->createReadStreamForMember("NPCDATA.DAT");
 	if (!npcd) {
-		perr << "Unable to load savegame/u8save.000/NPCDATA.DAT." << Std::endl;
+		warning("Unable to load savegame/u8save.000/NPCDATA.DAT.");
 		delete icd;
 		return false;
 	}
@@ -158,18 +162,18 @@ ProcId U8Game::playIntroMovie(bool fade) {
 	const GameInfo *gameinfo = Ultima8Engine::get_instance()->getGameInfo();
 	char langletter = gameinfo->getLanguageFileLetter();
 	if (!langletter) {
-		perr << "U8Game::playIntro: Unknown language." << Std::endl;
+		warning("U8Game::playIntro: Unknown language.");
 		return 0;
 	}
 
-	Std::string filename = "static/";
+	Common::String filename = "static/";
 	filename += langletter;
 	filename += "intro.skf";
 
-	FileSystem *filesys = FileSystem::get_instance();
-	Common::SeekableReadStream *skf = filesys->ReadFile(filename);
-	if (!skf) {
-		pout << "U8Game::playIntro: movie not found." << Std::endl;
+	auto *skf = new Common::File();
+	if (!skf->open(filename.c_str())) {
+		debug(1, "U8Game::playIntro: movie not found.");
+		delete skf;
 		return 0;
 	}
 
@@ -177,11 +181,11 @@ ProcId U8Game::playIntroMovie(bool fade) {
 }
 
 ProcId U8Game::playEndgameMovie(bool fade) {
-	static const Std::string filename = "static/endgame.skf";
-	FileSystem *filesys = FileSystem::get_instance();
-	Common::SeekableReadStream *skf = filesys->ReadFile(filename);
-	if (!skf) {
-		pout << "U8Game::playEndgame: movie not found." << Std::endl;
+	static const Common::Path filename = "static/endgame.skf";
+	auto *skf = new Common::File();
+	if (!skf->open(filename)) {
+		debug(1, "U8Game::playEndgame: movie not found.");
+		delete skf;
 		return 0;
 	}
 
@@ -192,20 +196,21 @@ void U8Game::playCredits() {
 	const GameInfo *gameinfo = Ultima8Engine::get_instance()->getGameInfo();
 	char langletter = gameinfo->getLanguageFileLetter();
 	if (!langletter) {
-		perr << "U8Game::playCredits: Unknown language." << Std::endl;
+		warning("U8Game::playCredits: Unknown language.");
 		return;
 	}
-	Std::string filename = "static/";
+
+	Common::String filename = "static/";
 	filename += langletter;
 	filename += "credits.dat";
 
-	Common::SeekableReadStream *rs = FileSystem::get_instance()->ReadFile(filename);
-	if (!rs) {
-		perr << "U8Game::playCredits: error opening credits file: "
-		     << filename << Std::endl;
+	auto *rs = new Common::File();
+	if (!rs->open(filename.c_str())) {
+		warning("U8Game::playCredits: error opening credits file: %s", filename.c_str());
+		delete rs;
 		return;
 	}
-	Std::string text = getCreditText(rs);
+	Common::String text = getCreditText(rs);
 	delete rs;
 
 	MusicProcess *musicproc = MusicProcess::get_instance();
@@ -218,15 +223,15 @@ void U8Game::playCredits() {
 }
 
 void U8Game::playQuotes() {
-	static const Std::string filename = "static/quotes.dat";
+	static const Common::Path filename = "static/quotes.dat";
 
-	Common::SeekableReadStream *rs = FileSystem::get_instance()->ReadFile(filename);
-	if (!rs) {
-		perr << "U8Game::playCredits: error opening credits file: "
-		     << filename << Std::endl;
+	auto *rs = new Common::File();
+	if (!rs->open(filename)) {
+		warning("U8Game::playQuotes: error opening quotes file: %s", filename.toString().c_str());
+		delete rs;
 		return;
 	}
-	const Std::string text = getCreditText(rs);
+	const Common::String text = getCreditText(rs);
 	delete rs;
 
 	MusicProcess *musicproc = MusicProcess::get_instance();
@@ -240,19 +245,18 @@ void U8Game::playQuotes() {
 
 void U8Game::writeSaveInfo(Common::WriteStream *ws) {
 	MainActor *av = getMainActor();
-	int32 x, y, z;
 
-	const Std::string &avname = av->getName();
+	const Common::String &avname = av->getName();
 	const uint8 namelength = static_cast<uint8>(avname.size());
 	ws->writeByte(namelength);
 	for (unsigned int i = 0; i < namelength; ++i)
 		ws->writeByte(static_cast<uint8>(avname[i]));
 
-	av->getLocation(x, y, z);
+	Point3 pt = av->getLocation();
 	ws->writeUint16LE(av->getMapNum());
-	ws->writeUint32LE(static_cast<uint32>(x));
-	ws->writeUint32LE(static_cast<uint32>(y));
-	ws->writeUint32LE(static_cast<uint32>(z));
+	ws->writeUint32LE(static_cast<uint32>(pt.x));
+	ws->writeUint32LE(static_cast<uint32>(pt.y));
+	ws->writeUint32LE(static_cast<uint32>(pt.z));
 
 	ws->writeUint16LE(av->getStr());
 	ws->writeUint16LE(av->getInt());
@@ -277,10 +281,9 @@ void U8Game::writeSaveInfo(Common::WriteStream *ws) {
 	}
 }
 
-Std::string U8Game::getCreditText(Common::SeekableReadStream *rs) {
-	Std::string text;
+Common::String U8Game::getCreditText(Common::SeekableReadStream *rs) {
 	unsigned int size = rs->size();
-	text.resize(size);
+	Common::String text(size, ' ');
 	for (unsigned int i = 0; i < size; ++i) {
 		uint8 c = rs->readByte();
 		int x;

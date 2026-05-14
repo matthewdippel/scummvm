@@ -24,9 +24,9 @@
 #include "ultima/ultima8/gumps/menu_gump.h"
 #include "ultima/ultima8/gumps/cru_menu_gump.h"
 #include "ultima/ultima8/games/game_data.h"
-#include "ultima/ultima8/graphics/gump_shape_archive.h"
-#include "ultima/ultima8/graphics/shape.h"
-#include "ultima/ultima8/graphics/shape_frame.h"
+#include "ultima/ultima8/gfx/gump_shape_archive.h"
+#include "ultima/ultima8/gfx/shape.h"
+#include "ultima/ultima8/gfx/shape_frame.h"
 #include "ultima/ultima8/ultima8.h"
 #include "ultima/ultima8/kernel/mouse.h"
 #include "ultima/ultima8/gumps/widgets/button_widget.h"
@@ -34,12 +34,12 @@
 #include "ultima/ultima8/gumps/quit_gump.h"
 #include "ultima/ultima8/games/game.h"
 #include "ultima/ultima8/world/actors/main_actor.h"
-#include "ultima/ultima8/graphics/palette_manager.h"
+#include "ultima/ultima8/gfx/palette_manager.h"
 #include "ultima/ultima8/audio/music_process.h"
 #include "ultima/ultima8/gumps/widgets/edit_widget.h"
 #include "ultima/ultima8/gumps/u8_save_gump.h"
 #include "ultima/ultima8/world/get_object.h"
-#include "ultima/ultima8/meta_engine.h"
+#include "ultima/ultima8/metaengine.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -51,11 +51,10 @@ MenuGump::MenuGump(bool nameEntryMode)
 	_nameEntryMode = nameEntryMode;
 
 	Mouse *mouse = Mouse::get_instance();
-	mouse->pushMouseCursor();
 	if (!_nameEntryMode)
-		mouse->setMouseCursor(Mouse::MOUSE_HAND);
+		mouse->pushMouseCursor(Mouse::MOUSE_HAND);
 	else
-		mouse->setMouseCursor(Mouse::MOUSE_NONE);
+		mouse->pushMouseCursor(Mouse::MOUSE_NONE);
 
 	// Save old music state
 	MusicProcess *musicprocess = MusicProcess::get_instance();
@@ -147,15 +146,14 @@ void MenuGump::InitGump(Gump *newparent, bool take_focus) {
 		}
 
 		const MainActor *av = getMainActor();
-		Std::string name;
+		Common::String name;
 		if (av)
 			name = av->getName();
 
 		if (!name.empty()) {
-			Rect rect;
 			Gump *widget = new TextWidget(0, 0, name, true, 6);
 			widget->InitGump(this, false);
-			widget->GetDims(rect);
+			Common::Rect32 rect = widget->getDims();
 			widget->Move(90 - rect.width() / 2, _dims.height() - 40);
 		}
 	} else {
@@ -164,8 +162,7 @@ void MenuGump::InitGump(Gump *newparent, bool take_focus) {
 		widget->InitGump(this, false);
 		widget->Move(_dims.width() / 2 + 6, 10);
 
-		Rect textdims;
-		widget->GetDims(textdims);
+		Common::Rect32 textdims = widget->getDims();
 
 		widget = new EditWidget(0, 0, "", true, 6, 110, 40, 15); // CONSTANTS!
 		widget->InitGump(this, true);
@@ -177,6 +174,13 @@ void MenuGump::InitGump(Gump *newparent, bool take_focus) {
 
 void MenuGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool scaled) {
 	Gump::PaintThis(surf, lerp_factor, scaled);
+}
+
+void MenuGump::onMouseDouble(int button, int32 mx, int32 my) {
+	// FIXME: this check should probably be in Game or GUIApp
+	MainActor *av = getMainActor();
+	if (av && !av->hasActorFlags(Actor::ACT_DEAD))
+		Close(); // don't allow closing if dead/game over
 }
 
 bool MenuGump::OnKeyDown(int key, int mod) {
@@ -201,7 +205,7 @@ bool MenuGump::OnKeyDown(int key, int mod) {
 void MenuGump::ChildNotify(Gump *child, uint32 message) {
 	EditWidget *editwidget = dynamic_cast<EditWidget *>(child);
 	if (editwidget && message == EditWidget::EDIT_ENTER) {
-		Std::string name = editwidget->getText();
+		Common::String name = editwidget->getText();
 		if (!name.empty()) {
 			MainActor *av = getMainActor();
 			av->setName(name);
@@ -210,8 +214,10 @@ void MenuGump::ChildNotify(Gump *child, uint32 message) {
 	}
 
 	ButtonWidget *buttonWidget = dynamic_cast<ButtonWidget *>(child);
-	if (buttonWidget && message == ButtonWidget::BUTTON_CLICK) {
-		selectEntry(child->GetIndex());
+	if (buttonWidget) {
+		if (message == ButtonWidget::BUTTON_CLICK || message == ButtonWidget::BUTTON_DOUBLE) {
+			selectEntry(buttonWidget->GetIndex());
+		}
 	}
 }
 

@@ -28,12 +28,56 @@
 #include "common/translation.h"
 #include "common/util.h"
 
+#include "backends/keymapper/action.h"
+#include "backends/keymapper/keymapper.h"
+#include "backends/keymapper/standard-actions.h"
+
 #include "cine/cine.h"
 #include "cine/various.h"
 
 #include "cine/detection.h"
 
 namespace Cine {
+
+static const ADExtraGuiOptionsMap optionsList[] = {
+	{
+		GAMEOPTION_ORIGINAL_SAVELOAD,
+		{
+			_s("Use original save/load screens"),
+			_s("Use the original save/load screens instead of the ScummVM ones"),
+			"originalsaveload",
+			false,
+			0,
+			0
+		}
+	},
+	{
+		GAMEOPTION_TRANSPARENT_DIALOG_BOXES,
+		{
+			_s("Use transparent dialog boxes in 16 color scenes"),
+			_s("Use transparent dialog boxes in 16 color scenes even if the original game version did not support them"),
+			"transparentdialogboxes",
+			false,
+			0,
+			0
+		}
+	},
+#ifdef USE_TTS
+	{
+		GAMEOPTION_TTS,
+		{
+			_s("Enable Text to Speech"),
+			_s("Use TTS to read text in the game (if TTS is available)"),
+			"tts_enabled",
+			false,
+			0,
+			0
+		}
+	},
+#endif
+
+	AD_EXTRA_GUI_OPTIONS_TERMINATOR
+};
 
 #define MAX_SAVEGAMES (ARRAYSIZE(Cine::currentSaveName))
 #define SAVEGAME_NAME_LEN (sizeof(Cine::currentSaveName[0]))
@@ -47,32 +91,32 @@ Common::Platform CineEngine::getPlatform() const { return _gameDescription->desc
 
 } // End of namespace Cine
 
-class CineMetaEngine : public AdvancedMetaEngine {
+class CineMetaEngine : public AdvancedMetaEngine<Cine::CINEGameDescription> {
 public:
 	const char *getName() const override {
 		return "cine";
 	}
 
-	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override;
+	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override {
+		return Cine::optionsList;
+	}
+
+	Common::Error createInstance(OSystem *syst, Engine **engine, const Cine::CINEGameDescription *desc) const override;
 
 	bool hasFeature(MetaEngineFeature f) const override;
 	SaveStateList listSaves(const char *target) const override;
 	int getMaximumSaveSlot() const override;
-	void removeSaveState(const char *target, int slot) const override;
+	bool removeSaveState(const char *target, int slot) const override;
 	Common::String getSavegameFile(int saveGameIdx, const char *target = nullptr) const override;
 	SaveStateDescriptor querySaveMetaInfos(const char *target, int slot) const override;
+
+	Common::KeymapArray initKeymaps(const char *target) const override;
 };
 
 bool CineMetaEngine::hasFeature(MetaEngineFeature f) const {
 	return
-		(f == kSupportsListSaves) ||
 		(f == kSupportsLoadingDuringStartup) ||
-		(f == kSupportsDeleteSave) ||
-		(f == kSavesSupportMetaInfo) ||
-		(f == kSavesSupportThumbnail) ||
-		(f == kSavesSupportCreationDate) ||
-		(f == kSavesSupportPlayTime) ||
-		(f == kSavesUseExtendedFormat);
+		checkExtendedSaves(f);
 }
 
 bool Cine::CineEngine::hasFeature(EngineFeature f) const {
@@ -82,8 +126,8 @@ bool Cine::CineEngine::hasFeature(EngineFeature f) const {
 		(f == kSupportsSavingDuringRuntime);
 }
 
-Common::Error CineMetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const {
-	*engine = new Cine::CineEngine(syst, (const Cine::CINEGameDescription *)desc);
+Common::Error CineMetaEngine::createInstance(OSystem *syst, Engine **engine, const Cine::CINEGameDescription *desc) const {
+	*engine = new Cine::CineEngine(syst,desc);
 	return Common::kNoError;
 }
 
@@ -93,12 +137,11 @@ SaveStateList CineMetaEngine::listSaves(const char *target) const {
 
 	Common::String pattern;
 
-	Common::StringArray::const_iterator file;
-
 	Common::String filename = target;
 	filename += ".dir";
 	Common::InSaveFile *in = saveFileMan->openForLoading(filename);
 	bool foundAutosave = false;
+
 	if (in) {
 		typedef char CommandeType[SAVEGAME_NAME_LEN];
 		CommandeType saveNames[MAX_SAVEGAMES];
@@ -115,9 +158,9 @@ SaveStateList CineMetaEngine::listSaves(const char *target) const {
 		pattern += ".#*";
 		Common::StringArray filenames = saveFileMan->listSavefiles(pattern);
 
-		for (file = filenames.begin(); file != filenames.end(); ++file) {
+		for (const auto &file : filenames) {
 			// Obtain the extension part of the filename, since it corresponds to the save slot number
-			Common::String ext = Common::lastPathComponent(*file, '.');
+			Common::String ext = Common::lastPathComponent(file, '.');
 			int slotNum = (int)ext.asUint64();
 
 			if (ext.equals(Common::String::format("%d", slotNum)) &&
@@ -129,14 +172,14 @@ SaveStateList CineMetaEngine::listSaves(const char *target) const {
 				SaveStateDescriptor saveStateDesc(this, slotNum, saveDesc);
 
 				if (saveStateDesc.getDescription().empty()) {
-					if (saveStateDesc.isAutosave()) {
+					if (slotNum == getAutosaveSlot()) {
 						saveStateDesc.setDescription(_("Unnamed autosave"));
 					} else {
 						saveStateDesc.setDescription(_("Unnamed savegame"));
 					}
 				}
 
-				if (saveStateDesc.isAutosave()) {
+				if (slotNum == getAutosaveSlot()) {
 					foundAutosave = true;
 				}
 
@@ -178,7 +221,7 @@ SaveStateDescriptor CineMetaEngine::querySaveMetaInfos(const char *target, int s
 
 	if (f) {
 		// Create the return descriptor
-		SaveStateDescriptor desc(this, slot, Common::U32String());
+		SaveStateDescriptor desc(this, slot);
 
 		ExtendedSavegameHeader header;
 		if (readSavegameHeader(f.get(), &header, false)) {
@@ -212,15 +255,201 @@ SaveStateDescriptor CineMetaEngine::querySaveMetaInfos(const char *target, int s
 
 	// No saving on empty autosave slot
 	if (slot == getAutosaveSlot()) {
-		return SaveStateDescriptor(this, slot, _("Empty autosave"));
+		SaveStateDescriptor desc(this, slot, _("Empty autosave"));
+		desc.setAutosave(true);
+		return desc;
 	}
 
 	return SaveStateDescriptor();
 }
 
-void CineMetaEngine::removeSaveState(const char *target, int slot) const {
+Common::KeymapArray CineMetaEngine::initKeymaps(const char *target) const {
+	using namespace Common;
+	using namespace Cine;
+
+	Keymap *engineKeyMap = new Keymap(Keymap::kKeymapTypeGame, "cine-default", _("Default keymappings"));
+	Keymap *gameKeyMap = new Keymap(Keymap::kKeymapTypeGame, "game-shortcuts", _("Game keymappings"));
+	Keymap *mouseKeyMap = new Keymap(Keymap::kKeymapTypeGame, "mouse-shortcuts", _("Key to mouse keymappings"));
+	Keymap *introKeyMap = new Keymap(Keymap::kKeymapTypeGame, "intro-shortcuts", _("Exit screen keymappings"));
+
+	Action *act;
+
+	act = new Action(kStandardActionLeftClick, _("Left click"));
+	act->setLeftClickEvent();
+	act->addDefaultInputMapping("MOUSE_LEFT");
+	act->addDefaultInputMapping("JOY_A");
+	engineKeyMap->addAction(act);
+
+	act = new Action(kStandardActionRightClick, _("Right click"));
+	act->setRightClickEvent();
+	act->addDefaultInputMapping("MOUSE_RIGHT");
+	act->addDefaultInputMapping("JOY_B");
+	engineKeyMap->addAction(act);
+
+	act = new Action("SKIPSONY", _("Exit Sony intro screen"));
+	act->setCustomEngineActionEvent(kActionExitSonyScreen);
+	act->addDefaultInputMapping("ESCAPE");
+	act->addDefaultInputMapping("JOY_A");
+	introKeyMap->addAction(act);
+
+	act = new Action("MOUSELEFT", _("Select option / Click in game"));
+	act->setCustomEngineActionEvent(kActionMouseLeft);
+	act->addDefaultInputMapping("RETURN");
+	act->addDefaultInputMapping("KP_ENTER");
+	act->addDefaultInputMapping("KP5");
+	mouseKeyMap->addAction(act);
+
+	act = new Action("MOUSERIGHT", _("Open action menu / Close menu"));
+	act->setCustomEngineActionEvent(kActionMouseRight);
+	act->addDefaultInputMapping("ESCAPE");
+	mouseKeyMap->addAction(act);
+
+	act = new Action("DEFAULTSPEED", _("Default game speed"));
+	act->setCustomEngineActionEvent(kActionGameSpeedDefault);
+	act->addDefaultInputMapping("KP0");
+	gameKeyMap->addAction(act);
+
+	act = new Action("SLOWERSPEED", _("Slower game speed"));
+	act->setCustomEngineActionEvent(kActionGameSpeedSlower);
+	act->addDefaultInputMapping("MINUS");
+	act->addDefaultInputMapping("KP_MINUS");
+	act->allowKbdRepeats();
+	gameKeyMap->addAction(act);
+
+	act = new Action("FASTERSPEED", _("Faster game speed"));
+	act->setCustomEngineActionEvent(kActionGameSpeedFaster);
+	act->addDefaultInputMapping("PLUS");
+	act->addDefaultInputMapping("KP_PLUS");
+	act->addDefaultInputMapping("S+EQUALS");
+	act->allowKbdRepeats();
+	gameKeyMap->addAction(act);
+
+	act = new Action("EXAMINE", _("Examine"));
+	act->setCustomEngineActionEvent(kActionExamine);
+	act->addDefaultInputMapping("F1");
+	gameKeyMap->addAction(act);
+
+	act = new Action("TAKE", _("Take"));
+	act->setCustomEngineActionEvent(kActionTake);
+	act->addDefaultInputMapping("F2");
+	gameKeyMap->addAction(act);
+
+	act = new Action("INVENTORY", _("Inventory"));
+	act->setCustomEngineActionEvent(kActionInventory);
+	act->addDefaultInputMapping("F3");
+	gameKeyMap->addAction(act);
+
+	act = new Action("USE", _("Use"));
+	act->setCustomEngineActionEvent(kActionUse);
+	act->addDefaultInputMapping("F4");
+	gameKeyMap->addAction(act);
+
+	act = new Action("ACTIVATE", _("Activate"));
+	act->setCustomEngineActionEvent(kActionActivate);
+	act->addDefaultInputMapping("F5");
+	gameKeyMap->addAction(act);
+
+	act = new Action("SPEAK", _("Speak"));
+	act->setCustomEngineActionEvent(kActionSpeak);
+	act->addDefaultInputMapping("F6");
+	gameKeyMap->addAction(act);
+
+	act = new Action("ACTMENU", _("Action menu"));
+	act->setCustomEngineActionEvent(kActionActionMenu);
+	act->addDefaultInputMapping("F9");
+	act->addDefaultInputMapping("JOY_LEFT_SHOULDER");
+	gameKeyMap->addAction(act);
+
+	act = new Action("SYSMENU", _("System menu"));
+	act->setCustomEngineActionEvent(kActionSystemMenu);
+	act->addDefaultInputMapping("F10");
+	act->addDefaultInputMapping("JOY_RIGHT_SHOULDER");
+	gameKeyMap->addAction(act);
+
+	// I18N: Opens collision map of where the actor can freely move
+	act = new Action("COLLISIONPAGE", _("Show collisions"));
+	act->setCustomEngineActionEvent(kActionCollisionPage);
+	act->addDefaultInputMapping("F11");
+	act->addDefaultInputMapping("JOY_Y");
+	gameKeyMap->addAction(act);
+
+	// I18N: Move Actor to upwards direction
+	act = new Action("MOVEUP", _("Move up"));
+	act->setCustomEngineActionEvent(kActionMoveUp);
+	act->addDefaultInputMapping("KP8");
+	act->addDefaultInputMapping("JOY_UP");
+	gameKeyMap->addAction(act);
+
+	// I18N: Move Actor to downwards direction
+	act = new Action("MOVEDOWN", _("Move down"));
+	act->setCustomEngineActionEvent(kActionMoveDown);
+	act->addDefaultInputMapping("KP2");
+	act->addDefaultInputMapping("JOY_DOWN");
+	gameKeyMap->addAction(act);
+
+	// I18N: Move Actor to left direction
+	act = new Action("MOVELEFT", _("Move left"));
+	act->setCustomEngineActionEvent(kActionMoveLeft);
+	act->addDefaultInputMapping("KP4");
+	act->addDefaultInputMapping("JOY_LEFT");
+	gameKeyMap->addAction(act);
+
+	// I18N: Move Actor to right direction
+	act = new Action("MOVERIGHT", _("Move right"));
+	act->setCustomEngineActionEvent(kActionMoveRight);
+	act->addDefaultInputMapping("KP6");
+	act->addDefaultInputMapping("JOY_RIGHT");
+	gameKeyMap->addAction(act);
+
+	// I18N: Move Actor to top-left direction
+	act = new Action("MOVEUPLEFT", _("Move up-left"));
+	act->setCustomEngineActionEvent(kActionMoveUpLeft);
+	act->addDefaultInputMapping("KP7");
+	gameKeyMap->addAction(act);
+
+	// I18N: Move Actor to top-right direction
+	act = new Action("MOVEUPRIGHT", _("Move up-right"));
+	act->setCustomEngineActionEvent(kActionMoveUpRight);
+	act->addDefaultInputMapping("KP9");
+	gameKeyMap->addAction(act);
+
+	// I18N: Move Actor to bottom-left direction
+	act = new Action("MOVEDOWNLEFT", _("Move down-left"));
+	act->setCustomEngineActionEvent(kActionMoveDownLeft);
+	act->addDefaultInputMapping("KP1");
+	gameKeyMap->addAction(act);
+
+	// I18N: Move Actor to bottom-right direction
+	act = new Action("MOVEDOWNRIGHT", _("Move down-right"));
+	act->setCustomEngineActionEvent(kActionMoveDownRight);
+	act->addDefaultInputMapping("KP3");
+	gameKeyMap->addAction(act);
+
+	act = new Action("MENUUP", _("Menu option up"));
+	act->setCustomEngineActionEvent(kActionMenuOptionUp);
+	act->addDefaultInputMapping("UP");
+	gameKeyMap->addAction(act);
+
+	act = new Action("MENUDOWN", _("Menu option down"));
+	act->setCustomEngineActionEvent(kActionMenuOptionDown);
+	act->addDefaultInputMapping("DOWN");
+	gameKeyMap->addAction(act);
+
+
+	KeymapArray keymaps(4);
+	keymaps[0] = engineKeyMap;
+	keymaps[1] = mouseKeyMap;
+	keymaps[2] = gameKeyMap;
+	keymaps[3] = introKeyMap;
+
+	introKeyMap->setEnabled(false);
+
+	return keymaps;
+}
+
+bool CineMetaEngine::removeSaveState(const char *target, int slot) const {
 	if (slot < 0 || slot >= MAX_SAVEGAMES) {
-		return;
+		return false;
 	}
 
 	// Load savegame descriptions from index file
@@ -236,7 +465,7 @@ void CineMetaEngine::removeSaveState(const char *target, int slot) const {
 	in = g_system->getSavefileManager()->openForLoading(Common::String::format("%s.dir", target));
 
 	if (!in)
-		return;
+		return false;
 
 	in->read(saveNames, SAVELIST_SIZE);
 	delete in;
@@ -251,7 +480,7 @@ void CineMetaEngine::removeSaveState(const char *target, int slot) const {
 	Common::OutSaveFile *out = g_system->getSavefileManager()->openForSaving(indexFile);
 	if (!out) {
 		warning("Unable to open file %s for saving", indexFile.c_str());
-		return;
+		return false;
 	}
 
 	out->write(saveNames, SAVELIST_SIZE);
@@ -260,7 +489,7 @@ void CineMetaEngine::removeSaveState(const char *target, int slot) const {
 	// Delete save file
 	Common::String saveFileName = getSavegameFile(slot, target);
 
-	g_system->getSavefileManager()->removeSavefile(saveFileName);
+	return g_system->getSavefileManager()->removeSavefile(saveFileName);
 }
 
 #if PLUGIN_ENABLED_DYNAMIC(CINE)
@@ -313,13 +542,12 @@ Common::String CineEngine::getSaveStateName(int slot) const {
 	return getMetaEngine()->getSavegameFile(slot, _targetName.c_str());
 }
 
-bool CineEngine::canLoadGameStateCurrently() {
+bool CineEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	return (!disableSystemMenu && !inMenu);
 }
 
-bool CineEngine::canSaveGameStateCurrently() {
+bool CineEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	return (allowPlayerInput && !disableSystemMenu && !inMenu);
 }
 
 } // End of namespace Cine
-

@@ -32,10 +32,15 @@
 /**
  * This is the namespace of the mTropolis engine.
  *
- * Status of this engine: ???
+ * Status of this engine:
+ *
+ * Supports some games, tends to be buggy outside of those.
+ * Requires a boot list to start a game due to complex installer
+ * configurations.
  *
  * Games using this engine:
  * - Obsidian
+ * - Muppet Treasure Island
  */
 namespace MTropolis {
 
@@ -56,18 +61,19 @@ public:
 
 	const MTropolisGameDescription *_gameDescription;
 	uint32 getGameID() const;
-	uint16 getVersion() const;
 	Common::Platform getPlatform() const;
 
 	bool promptSave(ISaveWriter *writer, const Graphics::Surface *screenshotOverride) override;
+	bool namedSave(ISaveWriter *writer, const Graphics::Surface *screenshotOverride, const Common::String &fileName) override;
 	bool autoSave(ISaveWriter *writer) override;
 	bool promptLoad(ISaveReader *reader) override;
+	bool namedLoad(ISaveReader *reader, const Common::String &fileName) override;
 
 	const Graphics::Surface *getSavegameScreenshot() const;
 
 	Common::Error saveGameStream(Common::WriteStream *stream, bool isAutosave) override;
 	bool canSaveAutosaveCurrently() override;
-	bool canSaveGameStateCurrently() override;	
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;	
 
 public:
 	void handleEvents();
@@ -76,7 +82,13 @@ protected:
 	void pauseEngineIntern(bool pause) override;
 
 private:
-	static const uint kCurrentSaveFileVersion = 1;
+	bool save(ISaveWriter *writer, const Graphics::Surface *screenshotOverride, const Common::String &fileName, const Common::String &desc);
+	bool load(ISaveReader *reader, const Common::String &fileName);
+
+	Common::String getUnpromptedSaveFileName(const Common::String &fileName);
+
+	static const uint kCurrentSaveFileVersion = 2;
+	static const uint kEarliestSupportedSaveFileVersion = 2;
 	static const uint kSavegameSignature = 0x6d545356;	// mTSV
 
 	ISaveWriter *_saveWriter;

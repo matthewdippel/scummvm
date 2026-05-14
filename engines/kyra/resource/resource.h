@@ -52,28 +52,30 @@ public:
 
 	bool reset();
 
-	bool loadPakFile(Common::String filename);
-	bool loadPakFile(Common::String name, Common::ArchiveMemberPtr file);
+	bool loadPakFile(const Common::Path &filename);
+	bool loadPakFile(const Common::String &name, Common::ArchiveMemberPtr file);
 
-	void unloadPakFile(Common::String filename, bool remFromCache = false);
+	void unloadPakFile(const Common::String &name, bool remFromCache = false);
+	void unloadPakFile(const char *name, bool remFromCache = false) { unloadPakFile(Common::String(name), remFromCache); }
+	void unloadPakFile(const Common::Path &name, bool remFromCache = false) { unloadPakFile(name.toString('/'), remFromCache); }
 
-	bool isInPakList(Common::String filename);
+	bool isInPakList(const Common::String &name);
 
-	bool isInCacheList(Common::String name);
+	bool isInCacheList(const Common::String &name);
 
-	bool loadFileList(const Common::String &filedata);
+	bool loadFileList(const Common::Path &filedata);
 	bool loadFileList(const char *const *filelist, uint32 numFiles);
 
 	// This unloads *all* pakfiles, even kyra.dat and protected ones.
 	// It does not remove files from cache though!
 	void unloadAllPakFiles();
 
-	void listFiles(const Common::String &pattern, Common::ArchiveMemberList &list);
+	void listFiles(const Common::Path &pattern, Common::ArchiveMemberList &list);
 
-	bool exists(const char *file, bool errorOutOnFail=false);
-	uint32 getFileSize(const char *file);
-	uint8 *fileData(const char *file, uint32 *size);
-	Common::SeekableReadStream *createReadStream(const Common::String &file);
+	bool exists(const Common::Path &file, bool errorOutOnFail=false);
+	uint32 getFileSize(const Common::Path &file);
+	uint8 *fileData(const Common::Path &file, uint32 *size);
+	Common::SeekableReadStream *createReadStream(const Common::Path &file);
 
 	enum Endianness {
 		kPlatformEndianness = 0,
@@ -81,9 +83,9 @@ public:
 		kForceBE
 	};
 
-	Common::SeekableReadStreamEndian *createEndianAwareReadStream(const Common::String &file, int endianness = kPlatformEndianness);
+	Common::SeekableReadStreamEndian *createEndianAwareReadStream(const Common::Path &file, int endianness = kPlatformEndianness);
 
-	bool loadFileToBuf(const char *file, void *buf, uint32 maxSize);
+	bool loadFileToBuf(const Common::Path &file, void *buf, uint32 maxSize);
 
 	Common::Archive *getCachedArchive(const Common::String &file) const;
 
@@ -95,11 +97,11 @@ protected:
 	Common::SearchSet _archiveFiles;
 	Common::SearchSet _protectedFiles;
 
-	Common::MacResManager *_macResMan;
-
 	Common::Archive *loadArchive(const Common::String &name, Common::ArchiveMemberPtr member);
-	Common::Archive *loadInstallerArchive(const Common::String &file, const Common::String &ext, const uint8 offset);
-	Common::Archive *loadStuffItArchive(const Common::String &file);
+	Common::Archive *loadInstallerArchive(const Common::Path &file, const Common::String &ext, const uint8 offset);
+	Common::Archive *loadStuffItArchive(const Common::Path &file, const Common::String &canonicalName);
+	Common::Archive *loadStuffItArchive(Common::SeekableReadStream *stream, const Common::String &canonicalName, const Common::String &debugName);
+	Common::Archive *loadKyra1MacInstaller();
 
 	bool loadProtectedFiles(const char *const * list);
 
@@ -843,6 +845,12 @@ enum KyraResources {
 	kEoB2IntroAnimData42,
 	kEoB2IntroAnimData43,
 
+	// extra entries for PC-98
+	kEoB2IntroAnimData44,
+	kEoB2IntroAnimData45,
+	kEoB2IntroAnimData46,
+	kEoB2IntroAnimData47,
+
 	kEoB2IntroShapes00,
 	kEoB2IntroShapes01,
 	kEoB2IntroShapes04,
@@ -1138,7 +1146,8 @@ enum KyraResources {
 
 	kEoB2UtilMenuStrings,
 	kEoB2Config2431Strings,
-	kEoB2FontDmpSearchTbl,
+	kEoB2FontLookupTbl,
+	kEoB2FontConvertTbl,
 	kEoB2Ascii2SjisTables,
 	kEoB2Ascii2SjisTables2,
 	kEoB2PcmSoundEffectsIngame,

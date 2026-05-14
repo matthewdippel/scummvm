@@ -74,14 +74,18 @@ protected:
 
 	//! Paint a single stat
 	void PaintStat(RenderSurface *surf, unsigned int n,
-	               Std::string text, int val);
+	               Common::String text, int val);
 
 	RenderedText *_cachedText[14]; // constant!!
 	int _cachedVal[7]; // constant!!
 
 	uint16 _statButtonId;
+
+	uint32 _draggingArmourClass;
+	uint32 _draggingWeight;
+
 private:
-	const Rect _backpackRect;
+	const Common::Rect32 _backpackRect;
 };
 
 } // End of namespace Ultima8

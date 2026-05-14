@@ -36,10 +36,7 @@ enum CCBFlags {
 	kCCBNoPre0 = 1 << 22
 };
 
-Cel3DODecoder::Cel3DODecoder() {
-	_surface = 0;
-	_palette = 0;
-	_paletteColorCount = 0;
+Cel3DODecoder::Cel3DODecoder(): _surface(nullptr), _palette(0) {
 }
 
 Cel3DODecoder::~Cel3DODecoder() {
@@ -47,12 +44,8 @@ Cel3DODecoder::~Cel3DODecoder() {
 }
 
 void Cel3DODecoder::destroy() {
-	_surface = 0;
-
-	delete[] _palette;
-	_palette = 0;
-
-	_paletteColorCount = 0;
+	_surface = nullptr;
+	_palette.clear();
 }
 
 bool Cel3DODecoder::loadStream(Common::SeekableReadStream &stream) {
@@ -108,8 +101,11 @@ bool Cel3DODecoder::loadStream(Common::SeekableReadStream &stream) {
 	}
 
 	// Only RGB555 is supported
-	if ((pre0 & 0x17) != 0x16)
+	if ((pre0 & 0x17) != 0x16) {
+		surface->free();
+		delete surface;
 		return false;
+	}
 
 	if(!(flags & kCCBPacked)) {
 		// RAW
@@ -130,18 +126,18 @@ bool Cel3DODecoder::loadStream(Common::SeekableReadStream &stream) {
 					stopLine = true;
 					break;
 				case 1: // copy
-					for (uint i = 0; i <= (lead & 0x3f) && linerem > 0 && linecomprem > 0;
+					for (uint i = 0; i <= (lead & 0x3fu) && linerem > 0 && linecomprem > 0;
 					     i++, linerem--, linecomprem -= 2)
 						*dst++ = stream.readUint16BE();
 					break;
 				case 2: // black
-					for (uint i = 0; i <= (lead & 0x3f) && linerem > 0; i++, linerem--)
+					for (uint i = 0; i <= (lead & 0x3fu) && linerem > 0; i++, linerem--)
 						*dst++ = 0;
 					break;
 				case 3: { // RLE multiply
 					uint16 rleval = stream.readUint16BE();
 					linecomprem -= 2;
-					for (uint i = 0; i <= (lead & 0x3f) && linerem > 0; i++, linerem--)
+					for (uint i = 0; i <= (lead & 0x3fu) && linerem > 0; i++, linerem--)
 						*dst++ = rleval;
 					break;
 				}

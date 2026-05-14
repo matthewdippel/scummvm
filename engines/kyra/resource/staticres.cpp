@@ -38,7 +38,7 @@
 
 namespace Kyra {
 
-#define RESFILE_VERSION 118
+#define RESFILE_VERSION 123
 
 namespace {
 bool checkKyraDat(Common::SeekableReadStream *file) {
@@ -97,6 +97,8 @@ const IndexTable iLanguageTable[] = {
 	{ Common::ZH_CHN,  9 },
 	{ Common::ZH_TWN, 10 },
 	{ Common::KO_KOR, 11 },
+	{ Common::CS_CZE, 12 },
+	{ Common::PL_POL, 13 },
 	{ -1, -1 }
 };
 
@@ -140,7 +142,7 @@ bool StaticResource::loadStaticResourceFile() {
 		return true;
 
 	Common::ArchiveMemberList kyraDatFiles;
-	res->listFiles(staticDataFilename(), kyraDatFiles);
+	res->listFiles(Common::Path(staticDataFilename()), kyraDatFiles);
 
 	bool foundWorkingKyraDat = false;
 	for (Common::ArchiveMemberList::iterator i = kyraDatFiles.begin(); i != kyraDatFiles.end(); ++i) {
@@ -155,7 +157,33 @@ bool StaticResource::loadStaticResourceFile() {
 		if (!res->loadPakFile(staticDataFilename(), *i))
 			continue;
 
-		if ((setLanguage(_vm->gameFlags().lang) && prefetchId(-1))) {
+		// Fan translations (e.g. Korean) may provide only a subset of
+		// resources in kyra.dat (e.g. intro strings).  Load the base
+		// (replaced) language first, then merge fan language entries on
+		// top — only replacing IDs that the fan language provides.
+		if (_vm->gameFlags().fanLang != Common::UNK_LANG &&
+		    _vm->gameFlags().replacedLang != Common::UNK_LANG) {
+			if ((setLanguage(_vm->gameFlags().replacedLang) && prefetchId(-1))) {
+				foundWorkingKyraDat = true;
+				// Merge: load the fan language ID map WITHOUT clearing
+				// existing _dataTable entries, then reload only the
+				// IDs that changed.
+				Common::SeekableReadStream *fanMap = loadIdMap(_vm->gameFlags().fanLang);
+				if (fanMap) {
+					int numIDs = fanMap->readUint16BE();
+					while (numIDs--) {
+						uint16 id2 = fanMap->readUint16BE();
+						uint8 type = fanMap->readByte();
+						uint32 filename = fanMap->readUint32BE();
+						_dataTable[id2] = DataDescriptor(filename, type);
+						unloadId(id2);
+						prefetchId(id2);
+					}
+					delete fanMap;
+				}
+				break;
+			}
+		} else if ((setLanguage(_vm->gameFlags().lang) && prefetchId(-1))) {
 			foundWorkingKyraDat = true;
 			break;
 		}
@@ -216,7 +244,7 @@ Common::SeekableReadStream *StaticResource::loadIdMap(Common::Language lang) {
 
 
 	// load the ID map for our game
-	const Common::String filenamePattern = Common::String::format("0%01X%01X%01X000%01X", game, platform, special, lng);
+	const Common::Path filenamePattern(Common::String::format("0%01X%01X%01X000%01X", game, platform, special, lng));
 	return _vm->resource()->createReadStream(filenamePattern);
 }
 
@@ -311,7 +339,7 @@ const uint16 *StaticResource::loadRawDataBe16(int id, int &entries) {
 bool StaticResource::setLanguage(Common::Language lang, int id) {
 	if (lang == Common::UNK_LANG)
 		lang = _vm->gameFlags().lang;
-	
+
 	unloadId(id);
 
 	// load the ID map for our game
@@ -366,7 +394,7 @@ bool StaticResource::prefetchId(int id) {
 	ResData data;
 	data.id = id;
 	data.type = dDesc->_value.type;
-	Common::SeekableReadStream *fileStream = _vm->resource()->createReadStream(Common::String::format("%08X", dDesc->_value.filename));
+	Common::SeekableReadStream *fileStream = _vm->resource()->createReadStream(Common::Path(Common::String::format("%08X", dDesc->_value.filename)));
 	if (!fileStream)
 		return false;
 
@@ -459,7 +487,7 @@ bool StaticResource::loadStringTable(Common::SeekableReadStream &stream, void *&
 			string += c;
 
 		output[i] = new char[string.size() + 1];
-		strcpy(output[i], string.c_str());
+		Common::strlcpy(output[i], string.c_str(), string.size() + 1);
 	}
 
 	ptr = output;
@@ -1453,6 +1481,8 @@ const char *const KyraEngine_HoF::_languageExtension[] = {
 	"ITA",      Italian and Spanish were never included
 	"SPA"*/
 	"JPN",
+	"POL",
+	"KOR"
 };
 
 const char *const KyraEngine_HoF::_scriptLangExt[] = {

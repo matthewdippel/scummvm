@@ -90,7 +90,7 @@ int TextDisplayer::dropCRIntoString(char *str, int offs) {
 char *TextDisplayer::preprocessString(const char *str) {
 	if (str != _talkBuffer) {
 		assert(strlen(str) < sizeof(_talkBuffer) - 1);
-		strcpy(_talkBuffer, str);
+		Common::strlcpy(_talkBuffer, str, sizeof(_talkBuffer));
 	}
 
 	if (_vm->gameFlags().lang == Common::ZH_TWN)
@@ -109,7 +109,8 @@ char *TextDisplayer::preprocessString(const char *str) {
 	static const uint16 limKor[2] = { 240, 480 };
 	const uint16 *lim = (_vm->gameFlags().lang == Common::KO_KOR) ? limKor : limDef;
 
-	Screen::FontId curFont = _screen->setFont(_vm->gameFlags().lang == Common::KO_KOR ? Screen::FID_KOREAN_FNT : Screen::FID_8_FNT);
+	Screen::FontId curFont = _screen->setFont(_vm->gameFlags().lang == Common::Language::ZH_TWN && _vm->gameFlags().gameID == GI_LOL ? Screen::FID_CHINESE_FNT :
+						  _vm->gameFlags().lang == Common::KO_KOR ? Screen::FID_KOREAN_FNT : Screen::FID_8_FNT);
 	_screen->_charSpacing = -2;
 	int textWidth = _screen->getTextWidth(p);
 	_screen->_charSpacing = 0;
@@ -209,7 +210,7 @@ void TextDisplayer::printTalkTextMessage(const char *text, int x, int y, uint8 c
 
 	_talkMessageY = top;
 	_talkMessageH = (lineCount * _screen->getFontHeight() + (lineCount - 1) * _screen->_lineSpacing) + _langExtraSpacing;
-	
+
 	int x1 = 12;
 	int x2 = Screen::SCREEN_W - 12;
 	if (_vm->gameFlags().lang != Common::ZH_TWN || lineCount == 1)

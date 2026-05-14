@@ -26,7 +26,7 @@
 
 namespace Graphics {
 
-MacWidget::MacWidget(MacWidget *parent, int x, int y, int w, int h, MacWindowManager *wm, bool focusable, uint16 border, uint16 gutter, uint16 shadow, uint fgcolor, uint bgcolor) :
+MacWidget::MacWidget(MacWidget *parent, int x, int y, int w, int h, MacWindowManager *wm, bool focusable, uint16 border, uint16 gutter, uint16 shadow, uint32 fgcolor, uint32 bgcolor) :
 	_focusable(focusable), _parent(parent), _border(border), _gutter(gutter), _shadow(shadow), _wm(wm) {
 	_contentIsDirty = true;
 	_priority = 0;
@@ -47,6 +47,8 @@ MacWidget::MacWidget(MacWidget *parent, int x, int y, int w, int h, MacWindowMan
 
 	_active = false;
 	_editable = false;
+
+	_borderColor = 0xff;
 }
 
 MacWidget::~MacWidget() {
@@ -152,10 +154,23 @@ MacWidget *MacWidget::findEventHandler(Common::Event &event, int dx, int dy) {
 }
 
 Common::Point MacWidget::getAbsolutePos() {
-	if (!_parent)
-		return Common::Point(0, 0);
+	Common::Point absPoint = Common::Point(0, 0);
+	MacWidget *currentParent = _parent;
+	while (currentParent != nullptr) {
+		absPoint = Common::Point(currentParent->_dims.left, currentParent->_dims.top) + absPoint;
+		currentParent = currentParent->_parent;
+	}
 
-	return Common::Point(_parent->_dims.left, _parent->_dims.top) + _parent->getAbsolutePos();
+	return absPoint;
+}
+
+Common::Rect MacWidget::getAbsoluteDimensions() {
+	Common::Point absPos = getAbsolutePos();
+	Common::Rect dims = getDimensions();
+
+	dims.translate(absPos.x, absPos.y);
+
+	return dims;
 }
 
 } // End of namespace Graphics

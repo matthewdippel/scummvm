@@ -20,15 +20,15 @@
  */
 
 #include "ultima/ultima8/gumps/paperdoll_gump.h"
-#include "ultima/ultima8/graphics/shape.h"
-#include "ultima/ultima8/graphics/shape_frame.h"
+#include "ultima/ultima8/gfx/shape.h"
+#include "ultima/ultima8/gfx/shape_frame.h"
 #include "ultima/ultima8/world/actors/actor.h"
-#include "ultima/ultima8/graphics/render_surface.h"
+#include "ultima/ultima8/gfx/render_surface.h"
 #include "ultima/ultima8/games/game_data.h"
-#include "ultima/ultima8/graphics/main_shape_archive.h"
-#include "ultima/ultima8/graphics/fonts/font.h"
-#include "ultima/ultima8/graphics/fonts/font_manager.h"
-#include "ultima/ultima8/graphics/fonts/rendered_text.h"
+#include "ultima/ultima8/gfx/main_shape_archive.h"
+#include "ultima/ultima8/gfx/fonts/font.h"
+#include "ultima/ultima8/gfx/fonts/font_manager.h"
+#include "ultima/ultima8/gfx/fonts/rendered_text.h"
 #include "ultima/ultima8/gumps/widgets/button_widget.h"
 #include "ultima/ultima8/gumps/mini_stats_gump.h"
 #include "ultima/ultima8/ultima8.h"
@@ -43,7 +43,7 @@ DEFINE_RUNTIME_CLASSTYPE_CODE(PaperdollGump)
 
 
 // lots of CONSTANTS...
-struct equipcoords_struct {
+const struct equipcoords_struct {
 	int x, y;
 } equipcoords[] = {
 	{ 0, 0 },
@@ -55,7 +55,7 @@ struct equipcoords_struct {
 	{ 16, 18 }  // weapon
 };
 
-struct statcords_struct {
+const struct statcords_struct {
 
 	int xd, x, y;
 } statcoords[] = {
@@ -79,6 +79,7 @@ static const int statbuttony = 84;
 
 
 PaperdollGump::PaperdollGump() : ContainerGump(), _statButtonId(0),
+		_draggingArmourClass(0), _draggingWeight(0),
 		_backpackRect(49, 25, 59, 50) {
 	Common::fill(_cachedText, _cachedText + 14, (RenderedText *)nullptr);
 	Common::fill(_cachedVal, _cachedVal + 7, 0);
@@ -87,7 +88,8 @@ PaperdollGump::PaperdollGump() : ContainerGump(), _statButtonId(0),
 PaperdollGump::PaperdollGump(const Shape *shape, uint32 frameNum, uint16 owner,
 		uint32 Flags, int32 layer)
 		: ContainerGump(shape, frameNum, owner, Flags, layer),
-		_statButtonId(0), _backpackRect(49, 25, 59, 50) {
+		_statButtonId(0), _draggingArmourClass(0), _draggingWeight(0),
+		_backpackRect(49, 25, 59, 50) {
 	_statButtonId = 0;
 
 	Common::fill(_cachedText, _cachedText + 14, (RenderedText *)nullptr);
@@ -120,11 +122,7 @@ void PaperdollGump::Close(bool no_del) {
 	Container *c = getContainer(_owner);
 	if (!c) return; // Container gone!?
 
-	Std::list<Item *> &contents = c->_contents;
-	Std::list<Item *>::iterator iter = contents.begin();
-	while (iter != contents.end()) {
-		Item *item = *iter;
-		++iter;
+	for (auto *item : c->_contents) {
 		item->leaveFastArea();  // Can destroy the item
 	}
 
@@ -136,7 +134,7 @@ void PaperdollGump::Close(bool no_del) {
 }
 
 void PaperdollGump::PaintStat(RenderSurface *surf, unsigned int n,
-							  Std::string text, int val) {
+							  Common::String text, int val) {
 	assert(n < 7); // constant!
 
 	Font *font, *descfont;
@@ -154,7 +152,7 @@ void PaperdollGump::PaintStat(RenderSurface *surf, unsigned int n,
 
 	if (!_cachedText[2 * n + 1] || _cachedVal[n] != val) {
 		delete _cachedText[2 * n + 1];
-		sprintf(buf, "%d", val);
+		Common::sprintf_s(buf, "%d", val);
 		_cachedText[2 * n + 1] = font->renderText(buf, remaining,
 		                         statwidth, statheight,
 		                         Font::TEXT_RIGHT);
@@ -167,13 +165,20 @@ void PaperdollGump::PaintStats(RenderSurface *surf, int32 lerp_factor) {
 	Actor *a = getActor(_owner);
 	assert(a);
 
+	int armour = a->getArmourClass();
+	int weight = a->getTotalWeight();
+	if (_displayDragging) {
+		armour += _draggingArmourClass;
+		weight += _draggingWeight;
+	}
+
 	PaintStat(surf, 0, _TL_("STR"), a->getStr());
 	PaintStat(surf, 1, _TL_("INT"), a->getInt());
 	PaintStat(surf, 2, _TL_("DEX"), a->getDex());
-	PaintStat(surf, 3, _TL_("ARMR"), a->getArmourClass());
+	PaintStat(surf, 3, _TL_("ARMR"), armour);
 	PaintStat(surf, 4, _TL_("HITS"), a->getHP());
 	PaintStat(surf, 5, _TL_("MANA"), a->getMana());
-	PaintStat(surf, 6, _TL_("WGHT"), a->getTotalWeight() / 10);
+	PaintStat(surf, 6, _TL_("WGHT"), weight / 10);
 }
 
 void PaperdollGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool scaled) {
@@ -250,8 +255,9 @@ uint16 PaperdollGump::TraceObjId(int32 mx, int32 my) {
 
 	// try backpack
 	if (_backpackRect.contains(mx - _itemArea.left, my - _itemArea.top)) {
-		if (a->getEquip(7)) // constants
-			return a->getEquip(7);
+		ObjId bp = a->getEquip(ShapeInfo::SE_BACKPACK);
+		if (bp)
+			return bp;
 	}
 
 	// didn't find anything, so return self
@@ -303,6 +309,15 @@ bool PaperdollGump::StartDraggingItem(Item *item, int mx, int my) {
 	Mouse::get_instance()->setDraggingOffset(frame->_width / 2 - frame->_xoff,
 	        frame->_height / 2 - frame->_yoff);
 
+	// Remove equipment and clear owner on drag start for better drag feedback
+	// NOTE: This original game appears to equip/unequip the item during drag instead of on drop
+	if (_owner == item->getParent() && item->hasFlags(Item::FLG_EQUIPPED)) {
+		Actor *a = getActor(_owner);
+		if (a && a->removeItem(item)) {
+			item->setParent(0);
+		}
+	}
+
 	return ret;
 }
 
@@ -328,14 +343,28 @@ bool PaperdollGump::DraggingItem(Item *item, int mx, int my) {
 	_draggingShape = item->getShape();
 	_draggingFrame = item->getFrame();
 	_draggingFlags = item->getFlags();
+	_draggingArmourClass = 0;
+	_draggingWeight = 0;
 
-	int equiptype = item->getShapeInfo()->_equipType;
+	Container *root = item->getRootContainer();
+	if (!root || root->getObjId() != _owner)
+		_draggingWeight = item->getWeight();
+
+	const ShapeInfo *si = item->getShapeInfo();
+	int equiptype = si->_equipType;
 	// determine target location and set dragging_x/y
 	if (!over_backpack && equiptype) {
 		// check if item will fit (weight/volume/etc...)
 		if (!a->CanAddItem(item, true)) {
 			_displayDragging = false;
 			return false;
+		}
+
+		if (si->_armourInfo) {
+			_draggingArmourClass += si->_armourInfo[_draggingFrame]._armourClass;
+		}
+		if (si->_weaponInfo) {
+			_draggingArmourClass += si->_weaponInfo->_armourBonus;
 		}
 
 		_draggingFrame++;
@@ -357,6 +386,8 @@ bool PaperdollGump::DraggingItem(Item *item, int mx, int my) {
 
 void PaperdollGump::DropItem(Item *item, int mx, int my) {
 	_displayDragging = false;
+	_draggingArmourClass = 0;
+	_draggingWeight = 0;
 
 	Actor *a = getActor(_owner);
 	assert(a);
@@ -379,7 +410,7 @@ void PaperdollGump::DropItem(Item *item, int mx, int my) {
 
 void PaperdollGump::ChildNotify(Gump *child, uint32 message) {
 	if (child->getObjId() == _statButtonId &&
-	        message == ButtonWidget::BUTTON_CLICK) {
+		(message == ButtonWidget::BUTTON_CLICK || message == ButtonWidget::BUTTON_DOUBLE)) {
 		// check if there already is an open MiniStatsGump
 		Gump *desktop = Ultima8Engine::get_instance()->getDesktopGump();
 		Gump *statsgump = desktop->FindGump<MiniStatsGump>();
@@ -390,10 +421,8 @@ void PaperdollGump::ChildNotify(Gump *child, uint32 message) {
 			gump->setRelativePosition(BOTTOM_RIGHT, -5, -5);
 		} else {
 			// check if it is off-screen. If so, move it back
-			Rect rect;
-			desktop->GetDims(rect);
-			Rect sr;
-			statsgump->GetDims(sr);
+			Common::Rect32 rect = desktop->getDims();
+			Common::Rect32 sr = statsgump->getDims();
 			sr.grow(-2);
 			statsgump->GumpRectToScreenSpace(sr);
 			if (!sr.intersects(rect))

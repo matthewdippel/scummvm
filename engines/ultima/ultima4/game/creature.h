@@ -35,8 +35,8 @@ class ConfigElement;
 class Tile;
 
 typedef unsigned short CreatureId;
-typedef Std::map<CreatureId, class Creature *> CreatureMap;
-typedef Std::vector<class Creature *> CreatureVector;
+typedef Common::HashMap<CreatureId, class Creature *> CreatureMap;
+typedef Common::Array<class Creature *> CreatureVector;
 
 #define MAX_CREATURES 128
 
@@ -309,7 +309,7 @@ public:
 	/**
 	 * Performs a special action for the creature
 	 * Returns true if the action takes up the creatures
-	 * whole turn (i.e. it cant move afterwords)
+	 * whole turn (i.e. it can't move afterwards)
 	 */
 	bool specialAction();
 
@@ -430,7 +430,7 @@ public:
 private:
 	CreatureMgr() {}
 
-	// disallow assignments, copy contruction
+	// disallow assignments, copy construction
 	CreatureMgr(const CreatureMgr &);
 	const CreatureMgr &operator=(const CreatureMgr &);
 

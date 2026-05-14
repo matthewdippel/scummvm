@@ -43,14 +43,22 @@ namespace Image {
 class MJPEGDecoder : public Codec {
 public:
 	MJPEGDecoder();
-	~MJPEGDecoder();
+	~MJPEGDecoder() override;
 
-	const Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream);
-	Graphics::PixelFormat getPixelFormat() const { return _pixelFormat; }
+	const Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream) override;
+	void setCodecAccuracy(CodecAccuracy accuracy) override;
+	Graphics::PixelFormat getPixelFormat() const override { return _pixelFormat; }
+	bool setOutputPixelFormat(const Graphics::PixelFormat &format) override {
+		if (format.isCLUT8())
+			return false;
+		_pixelFormat = format;
+		return true;
+	}
 
 private:
 	Graphics::PixelFormat _pixelFormat;
 	Graphics::Surface *_surface;
+	CodecAccuracy _accuracy;
 };
 
 } // End of namespace Image

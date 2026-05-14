@@ -25,7 +25,7 @@
 #include "common/scummsys.h"
 #include "common/str-enc.h"
 #include "common/ustr.h"
-#include "common/base-str.h"
+#include "common/str-base.h"
 
 #include <stdarg.h>
 
@@ -43,7 +43,7 @@ namespace Common {
 class U32String;
 
 /**
- * Simple string class for ScummVM. Provides automatic storage managment,
+ * Simple string class for ScummVM. Provides automatic storage management,
  * and overloads several operators in a 'natural' fashion, mimicking
  * the std::string class. Even provides simple iterators.
  *
@@ -66,7 +66,7 @@ public:
 	typedef unsigned char unsigned_type;
 
 	/** Construct a new empty string. */
-	String() : BaseString<char>() {}
+	constexpr String() : BaseString<char>() {}
 
 	/** Construct a new string from the given NULL-terminated C string. */
 	String(const char *str) : BaseString<char>(str) {}
@@ -78,16 +78,23 @@ public:
 	String(const char *beginP, const char *endP) : BaseString<char>(beginP, endP) {}
 
 	/** Construct a copy of the given string. */
-	String(const String &str) : BaseString<char>(str) {};
+	String(const String &str) : BaseString<char>(str) {}
+
+	/** Construct a string by moving an existing string. */
+	String(String &&str) : BaseString<char>(static_cast<BaseString<char> &&>(str)) {}
 
 	/** Construct a string consisting of the given character. */
-	explicit String(char c);
+	explicit constexpr String(value_type c) : BaseString<char>(c) {}
+
+	/** Construct a string consisting of n copies of the given character. */
+	String(size_t n, value_type c) : BaseString<char>(n, c) {}
 
 	/** Construct a new string from the given u32 string. */
 	String(const U32String &str, CodePage page = kUtf8);
 
 	String &operator=(const char *str);
 	String &operator=(const String &str);
+	String &operator=(String &&str);
 	String &operator=(char c);
 	String &operator+=(const char *str);
 	String &operator+=(const String &str);
@@ -111,11 +118,9 @@ public:
 	bool hasPrefixIgnoreCase(const String &x) const;
 	bool hasPrefixIgnoreCase(const char *x) const;
 
+	using BaseString<value_type>::contains;
 	bool contains(const String &x) const;
 	bool contains(const char *x) const;
-	bool contains(char x) const;
-	bool contains(uint32 x) const;
-	bool contains(char32_t x) const;
 
 	/**
 	 * Simple DOS-style pattern matching function (understands * and ? like used in DOS).
@@ -145,38 +150,6 @@ public:
 	bool matchString(const char *pat, bool ignoreCase = false, const char *wildcardExclusions = NULL) const;
 	bool matchString(const String &pat, bool ignoreCase = false, const char *wildcardExclusions = NULL) const;
 
-	/**@{
-	 * Functions to replace some amount of chars with chars from some other string.
-	 *
-	 * @note The implementation follows that of the STL's std::string:
-	 *       http://www.cplusplus.com/reference/string/string/replace/
-	 *
-	 * @param pos Starting position for the replace in the original string.
-	 * @param count Number of chars to replace from the original string.
-	 * @param str Source of the new chars.
-	 * @param posOri Same as pos
-	 * @param countOri Same as count
-	 * @param posDest Initial position to read str from.
-	 * @param countDest Number of chars to read from str. npos by default.
-	 */
-	// Replace 'count' bytes, starting from 'pos' with str.
-	void replace(uint32 pos, uint32 count, const String &str);
-	// The same as above, but accepts a C-like array of characters.
-	void replace(uint32 pos, uint32 count, const char *str);
-	// Replace the characters in [begin, end) with str._str.
-	void replace(iterator begin, iterator end, const String &str);
-	// Replace the characters in [begin, end) with str.
-	void replace(iterator begin, iterator end, const char *str);
-	// Replace _str[posOri, posOri + countOri) with
-	// str._str[posDest, posDest + countDest)
-	void replace(uint32 posOri, uint32 countOri, const String &str,
-					uint32 posDest, uint32 countDest);
-	// Replace _str[posOri, posOri + countOri) with
-	// str[posDest, posDest + countDest)
-	void replace(uint32 posOri, uint32 countOri, const char *str,
-					uint32 posDest, uint32 countDest);
-	/**@}*/
-
 	/**
 	 * Print formatted data into a String object. Similar to sprintf,
 	 * except that it stores the result in (variably sized) String
@@ -191,51 +164,6 @@ public:
 	 */
 	static String vformat(const char *fmt, va_list args);
 
-	/** Does a reverse find for the passed string */
-	size_t rfind(const char *s) const;
-	size_t rfind(const String &s) const {
-		return rfind(s.c_str());
-	}
-
-	/** Does a reverse find for a passed character */
-	size_t rfind(char c, size_t pos = npos) const;
-
-	/** Find first character in the string matching the passed character */
-	size_t findFirstOf(char c, size_t pos = 0) const;
-
-	/** Find first character in the string that's any character of the passed string */
-	size_t findFirstOf(const char *chars, size_t pos = 0) const;
-	size_t findFirstOf(const String &chars, size_t pos = 0) const {
-		return findFirstOf(chars.c_str(), pos);
-	}
-
-	/** Find the last character in the string that's the specified character */
-	size_t findLastOf(char c, size_t pos = npos) const;
-
-	/** Find the last character in the string that's in any of the passed characters */
-	size_t findLastOf(const char *chars, size_t pos = npos) const;
-	size_t findLastOf(const String &chars, size_t pos = npos) const {
-		return findLastOf(chars.c_str(), pos);
-	}
-
-	/** Find first character in the string that's not the specified character */
-	size_t findFirstNotOf(char c, size_t pos = 0) const;
-
-	/** Find first character in the string that's not any character of the passed string */
-	size_t findFirstNotOf(const char *chars, size_t pos = 0) const;
-	size_t findFirstNotOf(const String &chars, size_t pos = 0) const {
-		return findFirstNotOf(chars.c_str(), pos);
-	}
-
-	/** Find the last character in the string that's not the specified character */
-	size_t findLastNotOf(char c) const;
-
-	/** Find the last character in the string that's not in any of the passed characters */
-	size_t findLastNotOf(const char *chars) const;
-	size_t findLastNotOf(const String &chars) const {
-		return findLastNotOf(chars.c_str());
-	}
-
 	/** Return a substring of this string */
 	String substr(size_t pos = 0, size_t len = npos) const;
 
@@ -248,6 +176,7 @@ public:
 protected:
 	StringEncodingResult encodeUTF8(const U32String &src, char errorChar);
 	StringEncodingResult encodeWindows932(const U32String &src, char errorChar);
+	StringEncodingResult encodeWindows936(const U32String &src, char errorChar);
 	StringEncodingResult encodeWindows949(const U32String &src, char errorChar);
 	StringEncodingResult encodeWindows950(const U32String &src, bool translit, char errorChar);
 	StringEncodingResult encodeJohab(const U32String &src, char errorChar);
@@ -371,6 +300,115 @@ String tag2string(uint32 tag, bool nonPrintable = false);
  * Copy up to size - 1 characters from src to dst and also zero terminate the
  * result. Note that src must be a zero terminated string.
  *
+ * @note This is modeled after strcpy_s from C11 but simplified by using warning
+ * instead of erroring out
+ *
+ * @param dst The destination buffer.
+ * @param size The size of the destination buffer.
+ * @param src The source string.
+ */
+void strcpy_s(char *dst, size_t size, const char *src);
+
+/**
+ * Copy up to N - 1 characters from src to dst and also zero terminate the
+ * result. Note that src must be a zero terminated string.
+ *
+ * @note This is modeled after strcpy_s from C11 but simplified by using warning
+ * instead of erroring out
+ *
+ * @param dst The destination buffer as a reference to a constant size array.
+ * @param src The source string.
+ */
+template<typename T, size_t N>
+FORCEINLINE void strcpy_s(T (&dst)[N], const char *src) {
+	static_assert(sizeof(T) == sizeof(char), "T is not compatible with char");
+	strcpy_s((char *)dst, N, src);
+}
+
+/**
+ * Append the string src to the string dst. Note that both src and dst must be
+ * zero terminated. The result will be zero terminated. At most
+ * "size - strlen(dst) - 1" bytes will be appended.
+ *
+ * @note This is modeled after strcpy_s from C11 but simplified by using warning
+ * instead of erroring out
+ *
+ * @param dst The string the source string should be appended to.
+ * @param size The (total) size of the destination buffer.
+ * @param src The source string.
+ */
+void strcat_s(char *dst, size_t size, const char *src);
+
+/**
+ * Append the string src to the string dst. Note that both src and dst must be
+ * zero terminated. The result will be zero terminated. At most
+ * "N - strlen(dst) - 1" bytes will be appended.
+ *
+ * @note This is modeled after strcat_s from C11 but simplified by using warning
+ * instead of erroring out
+ *
+ * @param dst The string the source string should be appended to as a reference to a constant size array.
+ * @param src The source string.
+ */
+template<typename T, size_t N>
+FORCEINLINE void strcat_s(T (&dst)[N], const char *src) {
+	static_assert(sizeof(T) == sizeof(char), "T is not compatible with char");
+	strcat_s((char *)dst, N, src);
+}
+
+/**
+ * A sprintf shim which warns when the buffer overruns and null terminates in this case
+ *
+ * @param dst Where the resulting string will be stored.
+ * @param size The (total) size of the destination buffer.
+ * @param format The format string.
+ */
+int vsprintf_s(char *dst, size_t size, const char *format, va_list ap) GCC_PRINTF(3, 0);
+
+/**
+ * A sprintf shim which warns when the buffer overruns and null terminates in this case
+ * The size of the buffer is automatically determined.
+ *
+ * @param dst Where the resulting string will be stored.
+ * @param format The format string.
+ */
+template<typename T, size_t N>
+FORCEINLINE GCC_PRINTF(2, 0) int vsprintf_s(T (&dst)[N], const char *format, va_list ap) {
+	static_assert(sizeof(T) == sizeof(char), "T is not compatible with char");
+	return vsprintf_s((char *)dst, N, format, ap);
+}
+
+/**
+ * A sprintf shim which warns when the buffer overruns and null terminates in this case
+ *
+ * @param dst Where the resulting string will be stored.
+ * @param size The (total) size of the destination buffer.
+ * @param format The format string.
+ */
+int sprintf_s(char *dst, size_t size, MSVC_PRINTF const char *format, ...) GCC_PRINTF(3, 4);
+
+/**
+ * A sprintf shim which warns when the buffer overruns and null terminates in this case
+ * The size of the buffer is automatically determined.
+ *
+ * @param dst Where the resulting string will be stored.
+ * @param format The format string.
+ */
+template<typename T, size_t N>
+inline GCC_PRINTF(2, 3) int sprintf_s(T (&dst)[N], MSVC_PRINTF const char *format, ...) {
+	static_assert(sizeof(T) == sizeof(char), "T is not compatible with char");
+	int ret;
+	va_list ap;
+	va_start(ap, format);
+	ret = vsprintf_s((char *)dst, N, format, ap);
+	va_end(ap);
+	return ret;
+}
+
+/**
+ * Copy up to size - 1 characters from src to dst and also zero terminate the
+ * result. Note that src must be a zero terminated string.
+ *
  * In case size is zero this function just returns the length of the source
  * string.
  *
@@ -438,6 +476,11 @@ size_t strnlen(const char *src, size_t maxSize);
  * @return The converted string.
  */
 String toPrintable(const String &src, bool keepNewLines = true);
+
+/**
+ * Converts string with special URL characters to URL encoded (percent encoded) strings
+ */
+String percentEncodeString(const String &src);
 
 /** @} */
 

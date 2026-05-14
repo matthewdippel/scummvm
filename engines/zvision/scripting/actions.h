@@ -22,8 +22,9 @@
 #ifndef ZVISION_ACTIONS_H
 #define ZVISION_ACTIONS_H
 
-#include "common/str.h"
+#include "common/path.h"
 #include "common/rect.h"
+#include "common/str.h"
 
 namespace ZVision {
 
@@ -58,11 +59,12 @@ protected:
 class ActionAdd : public ResultAction {
 public:
 	ActionAdd(ZVision *engine, int32 slotkey, const Common::String &line);
+	~ActionAdd();
 	bool execute() override;
 
 private:
 	uint32 _key;
-	ValueSlot *_value;
+	ValueSlot *_value = NULL;
 };
 
 class ActionAssign : public ResultAction {
@@ -73,7 +75,7 @@ public:
 
 private:
 	uint32 _key;
-	ValueSlot *_value;
+	ValueSlot *_value = NULL;
 };
 
 class ActionAttenuate : public ResultAction {
@@ -221,7 +223,7 @@ public:
 	bool execute() override;
 
 private:
-	Common::String _fileName;
+	Common::Path _fileName;
 	bool _loop;
 	ValueSlot *_volume;
 	bool _universe;
@@ -237,7 +239,14 @@ public:
 	bool execute() override;
 
 private:
-	int32 _pos;
+	int32 _pos; // Sound source position; NB in panoramas (all original game scripts), this is specified as the X background coordinate; otherwise it is specified in azimuth degrees.
+	uint8  _mag; // Magnitude of effect (not used by original game scripts); 255 for fully directional sound, 0 for fully ambient
+	bool _resetMusicNode; // If true (default, original game scripts have no concept of this), associated music slot value is reset to a value of 2 upon creation of this object.
+	// This seems necessary to ensure all original game pan-track effects load correctly, though it is still unclear exactly what the original intent of these values was.
+	// So far, best guess for music slotkey values is: 0 = has never been loaded, 1 = loaded and actively playing now, 2 = has loaded & played & then subsequently been killed.
+	// Since there is literally nothing in the game scripts that sets some of these values to 2, and certain pan_tracks require it to be 2 for the puzzle that creates them to trigger, the original game engine code must have set these values to 2 manually somehow upon conditions being met to allow a pan_track to be created?
+	bool _staticScreen; // Used by auxiliary scripts to apply directionality to audio in static screens; not used in original game scripts.
+	bool _resetMixerOnDelete; // Unnecessary and should be set false for original scripts; useful in some cases in extra scripts to avoid brief volume spikes on location changes
 	uint32 _musicSlot;
 };
 
@@ -248,7 +257,7 @@ public:
 	bool execute() override;
 
 private:
-	Common::String _fileName;
+	Common::Path _fileName;
 	uint32 _x;
 	uint32 _y;
 	uint32 _x2;
@@ -283,7 +292,7 @@ public:
 	bool execute() override;
 
 private:
-	Common::String _fileName;
+	Common::Path _fileName;
 	int32 _mask;
 	int32 _framerate;
 };
@@ -344,7 +353,7 @@ public:
 	bool execute() override;
 
 private:
-	Common::String _fileName;
+	Common::Path _fileName;
 };
 
 class ActionRotateTo : public ResultAction {
@@ -365,7 +374,7 @@ public:
 private:
 	uint _x;
 	uint _y;
-	Common::String _fileName;
+	Common::Path _fileName;
 	int32 _backgroundColor;
 };
 
@@ -375,7 +384,7 @@ public:
 	bool execute() override;
 
 private:
-	Common::String _fileName;
+	Common::Path _fileName;
 };
 
 class ActionStop : public ResultAction {
@@ -393,11 +402,7 @@ public:
 	bool execute() override;
 
 private:
-	enum {
-		DIFFERENT_DIMENSIONS = 0x1 // 0x1 flags that the destRect dimensions are different from the original video dimensions
-	};
-
-	Common::String _fileName;
+	Common::Path _fileName;
 	uint _x1;
 	uint _y1;
 	uint _x2;
@@ -413,7 +418,7 @@ public:
 
 private:
 	int _syncto;
-	Common::String _fileName;
+	Common::Path _fileName;
 };
 
 class ActionTimer : public ResultAction {
@@ -432,7 +437,7 @@ public:
 	bool execute() override;
 
 private:
-	Common::String _filename;
+	Common::Path _filename;
 	uint32 _delay;
 	Common::Rect _r;
 };

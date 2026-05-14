@@ -36,7 +36,6 @@ namespace Playground3d {
 class TinyGLRenderer : public Renderer {
 public:
 	TinyGLRenderer(OSystem *_system);
-	virtual ~TinyGLRenderer();
 
 	void init() override;
 	void deinit() override;
@@ -56,10 +55,15 @@ public:
 	void drawRgbaTexture() override;
 
 	void enableFog(const Math::Vector4d &fogColor) override;
+	void disableFog() override;
+
+	void enableScissor(int x, int y, int width, int height) override;
+	void disableScissor() override;
 
 	void flipBuffer() override;
 
 private:
+	TinyGL::ContextHandle *_context;
 	Math::Vector3d _pos;
 	TGLuint _textureRgbaId[5];
 	TGLuint _textureRgbId[5];

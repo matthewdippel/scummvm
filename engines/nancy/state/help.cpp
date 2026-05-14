@@ -36,15 +36,6 @@ DECLARE_SINGLETON(Nancy::State::Help);
 namespace Nancy {
 namespace State {
 
-Help::Help() :
-		_state(kInit),
-		_image(),
-		_button(nullptr) {}
-
-Help::~Help() {
-	delete _button;
-}
-
 void Help::process() {
 	switch (_state) {
 	case kInit:
@@ -56,32 +47,36 @@ void Help::process() {
 	case kRun:
 		run();
 		break;
-	case kWaitForSound:
-		waitForSound();
+	case kWait:
+		wait();
 		break;
 	}
 }
 
+void Help::onStateEnter(const NancyState::NancyState prevState) {
+	if (prevState == NancyState::kPause) {
+		g_nancy->_sound->pauseSound("MSND", false);
+	}
+}
+
+bool Help::onStateExit(const NancyState::NancyState nextState) {
+	// Handle the GMM being called
+	if (nextState == NancyState::kPause) {
+		g_nancy->_sound->pauseSound("MSND", true);
+
+		return false;
+	} else {
+		return true;
+	}
+}
+
 void Help::init() {
-	Common::SeekableReadStream *chunk = g_nancy->getBootChunkStream("HELP");
+	auto *helpData = GetEngineData(HELP);
+	assert(helpData);
 
-	chunk->seek(0);
-	Common::String imageName;
-	readFilename(*chunk, imageName);
-	_image.init(imageName);
+	_image.init(helpData->imageName);
 
-	chunk->skip(20);
-	Common::Rect buttonSrc, buttonDest;
-	buttonDest.left = chunk->readUint16LE();
-	buttonDest.top = chunk->readUint16LE();
-	buttonDest.right = chunk->readUint16LE();
-	buttonDest.bottom = chunk->readUint16LE();
-	buttonSrc.left = chunk->readUint16LE();
-	buttonSrc.top = chunk->readUint16LE();
-	buttonSrc.right = chunk->readUint16LE();
-	buttonSrc.bottom = chunk->readUint16LE();
-
-	_button = new UI::Button(_image, 5, _image._drawSurface, buttonSrc, buttonDest);
+	_button.reset(new UI::Button(5, _image._drawSurface, helpData->buttonSrc, helpData->buttonDest, helpData->buttonHoverSrc));
 	_button->init();
 
 	_state = kBegin;
@@ -96,7 +91,7 @@ void Help::begin() {
 	_button->registerGraphics();
 	_image.setVisible(true);
 
-	g_nancy->_cursorManager->setCursorType(CursorManager::kNormalArrow);
+	g_nancy->_cursor->setCursorType(CursorManager::kNormalArrow);
 
 	_state = kRun;
 }
@@ -106,15 +101,20 @@ void Help::run() {
 	_button->handleInput(input);
 
 	if (_button->_isClicked) {
+		auto *bootSummary = GetEngineData(BSUM);
+		assert(bootSummary);
+
 		_button->_isClicked = false;
 		g_nancy->_sound->playSound("BUOK");
-		_state = kWaitForSound;
+		_buttonPressActivationTime = g_system->getMillis() + bootSummary->buttonPressTimeDelay;
+		_state = kWait;
 	}
+
+	g_nancy->_cursor->setCursorType(CursorManager::kNormalArrow);
 }
 
-void Help::waitForSound() {
-	if (!g_nancy->_sound->isSoundPlaying("BUOK")) {
-		g_nancy->_sound->stopSound("BUOK");
+void Help::wait() {
+	if (g_system->getMillis() > _buttonPressActivationTime) {
 		g_nancy->setToPreviousState();
 	}
 }

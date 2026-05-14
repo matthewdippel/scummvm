@@ -26,11 +26,11 @@
 
 #include "engines/stark/gfx/tinygl.h"
 #include "engines/stark/gfx/tinyglactor.h"
+#include "engines/stark/gfx/tinyglbitmap.h"
 #include "engines/stark/gfx/tinyglprop.h"
 #include "engines/stark/gfx/tinyglsurface.h"
 #include "engines/stark/gfx/tinyglfade.h"
 #include "engines/stark/gfx/tinygltexture.h"
-#include "engines/stark/gfx/tinyglbitmap.h"
 #include "engines/stark/scene.h"
 #include "engines/stark/services/services.h"
 
@@ -103,17 +103,11 @@ void TinyGLDriver::flipBuffer() {
 	g_system->updateScreen();
 }
 
-Texture *TinyGLDriver::createTexture(const Graphics::Surface *surface, const byte *palette) {
-	TinyGlTexture *texture = new TinyGlTexture();
-
-	if (surface) {
-		texture->update(surface, palette);
-	}
-
-	return texture;
+Texture *TinyGLDriver::createTexture() {
+	return new TinyGlTexture();
 }
 
-Texture *TinyGLDriver::createBitmap(const Graphics::Surface *surface, const byte *palette) {
+Bitmap *TinyGLDriver::createBitmap(const Graphics::Surface *surface, const byte *palette) {
 	TinyGlBitmap *texture = new TinyGlBitmap();
 
 	if (surface) {
@@ -179,7 +173,7 @@ Common::Rect TinyGLDriver::getUnscaledViewport() const {
 }
 
 Graphics::Surface *TinyGLDriver::getViewportScreenshot() const {
-	Graphics::Surface *tmp = TinyGL::copyToBuffer(getRGBAPixelFormat());
+	Graphics::Surface *tmp = TinyGL::copyFromFrameBuffer(getRGBAPixelFormat());
 	Graphics::Surface *s = new Graphics::Surface();
 	s->create(_viewport.width(), _viewport.height(), getRGBAPixelFormat());
 	byte *src = (byte *)tmp->getPixels();

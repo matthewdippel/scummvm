@@ -29,8 +29,6 @@
 #include "backends/keymapper/keymap.h"
 #include "backends/keymapper/keymapper.h"
 #include "backends/keymapper/standard-actions.h"
-#include "backends/platform/3ds/config.h"
-#include "backends/platform/3ds/options-dialog.h"
 #include "backends/timer/default/default-timer.h"
 #include "common/translation.h"
 #include "engines/engine.h"
@@ -54,16 +52,16 @@ static const Common::HardwareInputTableEntry ctrJoystickButtons[] = {
 	{ "JOY_RIGHT_STICK",    Common::JOYSTICK_BUTTON_RIGHT_STICK,    _s("ZR")          },
 	{ "JOY_LEFT_SHOULDER",  Common::JOYSTICK_BUTTON_LEFT_SHOULDER,  _s("L")           },
 	{ "JOY_RIGHT_SHOULDER", Common::JOYSTICK_BUTTON_RIGHT_SHOULDER, _s("R")           },
-	{ "JOY_UP",             Common::JOYSTICK_BUTTON_DPAD_UP,        _s("D-pad Up")    },
-	{ "JOY_DOWN",           Common::JOYSTICK_BUTTON_DPAD_DOWN,      _s("D-pad Down")  },
-	{ "JOY_LEFT",           Common::JOYSTICK_BUTTON_DPAD_LEFT,      _s("D-pad Left")  },
-	{ "JOY_RIGHT",          Common::JOYSTICK_BUTTON_DPAD_RIGHT,     _s("D-pad Right") },
+	{ "JOY_UP",             Common::JOYSTICK_BUTTON_DPAD_UP,        _s("D-pad up")    },
+	{ "JOY_DOWN",           Common::JOYSTICK_BUTTON_DPAD_DOWN,      _s("D-pad down")  },
+	{ "JOY_LEFT",           Common::JOYSTICK_BUTTON_DPAD_LEFT,      _s("D-pad left")  },
+	{ "JOY_RIGHT",          Common::JOYSTICK_BUTTON_DPAD_RIGHT,     _s("D-pad right") },
 	{ nullptr,              0,                                      nullptr           }
 };
 
 static const Common::AxisTableEntry ctrJoystickAxes[] = {
-	{ "JOY_LEFT_STICK_X", Common::JOYSTICK_AXIS_LEFT_STICK_X, Common::kAxisTypeFull, _s("C-Pad X") },
-	{ "JOY_LEFT_STICK_Y", Common::JOYSTICK_AXIS_LEFT_STICK_Y, Common::kAxisTypeFull, _s("C-Pad Y") },
+	{ "JOY_LEFT_STICK_X", Common::JOYSTICK_AXIS_LEFT_STICK_X, Common::kAxisTypeFull, _s("Circle Pad X") },
+	{ "JOY_LEFT_STICK_Y", Common::JOYSTICK_AXIS_LEFT_STICK_Y, Common::kAxisTypeFull, _s("Circle Pad Y") },
 	{ nullptr,            0,                                  Common::kAxisTypeFull, nullptr       }
 };
 
@@ -113,7 +111,7 @@ static void eventThreadFunc(void *arg) {
 		if (held & KEY_TOUCH) {
 			touchPosition touch;
 			hidTouchRead(&touch);
-			if (config.snapToBorder) {
+			if (osys->_snapToBorder) {
 				if (touch.px < borderSnapZone) {
 					touch.px = 0;
 				}
@@ -225,7 +223,8 @@ static void aptHookFunc(APT_HookType hookType, void *param) {
 				osys->_sleepPauseToken.clear();
 			}
 			osys->sleeping = false;
-			loadConfig();
+			osys->updateBacklight();
+			osys->updateConfig();
 			break;
 		case APTHOOK_ONEXIT:
 			break;
@@ -277,7 +276,7 @@ void OSystem_3DS::destroyEvents() {
 }
 
 void OSystem_3DS::transformPoint(touchPosition &point) {
-	if (!_overlayVisible) {
+	if (!_overlayInGUI) {
 		point.px = static_cast<float>(point.px) / _gameBottomTexture.getScaleX() - _gameBottomTexture.getPosX();
 		point.py = static_cast<float>(point.py) / _gameBottomTexture.getScaleY() - _gameBottomTexture.getPosY();
 	}
@@ -286,7 +285,7 @@ void OSystem_3DS::transformPoint(touchPosition &point) {
 }
 
 void OSystem_3DS::clipPoint(touchPosition &point) {
-	if (_overlayVisible) {
+	if (_overlayInGUI) {
 		point.px = CLIP<uint16>(point.px, 0, getOverlayWidth()  - 1);
 		point.py = CLIP<uint16>(point.py, 0, getOverlayHeight() - 1);
 	} else {
@@ -297,8 +296,7 @@ void OSystem_3DS::clipPoint(touchPosition &point) {
 
 enum _3DSCustomEvent {
 	k3DSEventToggleDragMode,
-	k3DSEventToggleMagnifyMode,
-	k3DSEventOpenSettings
+	k3DSEventToggleMagnifyMode
 };
 
 Common::KeymapArray OSystem_3DS::getGlobalKeymaps() {
@@ -318,19 +316,11 @@ Common::KeymapArray OSystem_3DS::getGlobalKeymaps() {
 	act->addDefaultInputMapping("JOY_LEFT_SHOULDER");
 	keymap->addAction(act);
 
-	act = new Action("OPTS", _("Open 3DS Settings"));
-	act->setCustomBackendActionEvent(k3DSEventOpenSettings);
-	act->addDefaultInputMapping("JOY_BACK");
-	keymap->addAction(act);
-
 	return Keymap::arrayOf(keymap);
 }
 
 Common::KeymapperDefaultBindings *OSystem_3DS::getKeymapperDefaultBindings() {
 	Common::KeymapperDefaultBindings *keymapperDefaultBindings = new Common::KeymapperDefaultBindings();
-
-	// Bind the virtual keyboard to X so SELECT can be used for the 3DS options dialog
-	keymapperDefaultBindings->setDefaultBinding(Common::kGlobalKeymapName, "VIRT", "JOY_X");
 
 	// Unmap the main menu standard action so LEFT_SHOULDER can be used for drag mode
 	keymapperDefaultBindings->setDefaultBinding("engine-default", Common::kStandardActionOpenMainMenu, "");
@@ -406,7 +396,7 @@ bool OSystem_3DS::notifyEvent(const Common::Event &event) {
 	case k3DSEventToggleMagnifyMode:
 		if (_overlayVisible) {
 			displayMessageOnOSD(_("Magnify Mode cannot be activated in menus."));
-		} else if (config.screen != kScreenBoth && _magnifyMode == MODE_MAGOFF) {
+		} else if (_screen != kScreenBoth && _magnifyMode == MODE_MAGOFF) {
 			// TODO: Automatically enable both screens while magnify mode is on
 			displayMessageOnOSD(_("Magnify Mode can only be activated\n when both screens are enabled."));
 		} else if (_gameWidth <= 400 && _gameHeight <= 240) {
@@ -432,53 +422,9 @@ bool OSystem_3DS::notifyEvent(const Common::Event &event) {
 			}
 		}
 		return true;
-
-	case k3DSEventOpenSettings:
-		runOptionsDialog();
-		return true;
 	}
 
 	return false;
-}
-
-void OSystem_3DS::runOptionsDialog() {
-	static bool optionsDialogRunning = false;
-
-	// Prevent opening the options dialog multiple times
-	if (optionsDialogRunning) {
-		return;
-	}
-
-	optionsDialogRunning = true;
-
-	PauseToken pauseToken;
-	OptionsDialog dialog;
-	if (g_engine) {
-		pauseToken = g_engine->pauseEngine();
-	}
-	int result = dialog.runModal();
-	if (g_engine) {
-		pauseToken.clear();
-	}
-
-	if (result > 0) {
-		int oldScreen = config.screen;
-
-		config.showCursor   = dialog.getShowCursor();
-		config.snapToBorder = dialog.getSnapToBorder();
-		config.stretchToFit = dialog.getStretchToFit();
-		config.screen       = dialog.getScreen();
-
-		saveConfig();
-		loadConfig();
-
-		if (config.screen != oldScreen) {
-			_screenChangeId++;
-			g_gui.checkScreenChange();
-		}
-	}
-
-	optionsDialogRunning = false;
 }
 
 } // namespace N3DS

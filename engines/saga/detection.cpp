@@ -34,19 +34,20 @@ static const PlainGameDescriptor sagaGames[] = {
 
 #include "saga/detection_tables.h"
 
-class SagaMetaEngineDetection : public AdvancedMetaEngineDetection {
+class SagaMetaEngineDetection : public AdvancedMetaEngineDetection<Saga::SAGAGameDescription> {
 public:
-	SagaMetaEngineDetection() : AdvancedMetaEngineDetection(Saga::gameDescriptions, sizeof(Saga::SAGAGameDescription), sagaGames) {
-		static const char *const DIRECTORY_GLOBS[2] = { "music", nullptr };
+	SagaMetaEngineDetection() : AdvancedMetaEngineDetection(Saga::gameDescriptions, sagaGames) {
+		static const char *const DIRECTORY_GLOBS[3] = { "music", "ITE Data Files", nullptr };
 		_maxScanDepth = 2;
 		_directoryGlobs = DIRECTORY_GLOBS;
-	}
-
-	const char *getEngineId() const override {
-		return "saga";
+		_flags = kADFlagUseExtraAsHint;
 	}
 
 	const char *getName() const override {
+		return "saga";
+	}
+
+	const char *getEngineName() const override {
 		return "SAGA ["
 
 #if defined(ENABLE_IHNM)

@@ -47,11 +47,11 @@ class Streams;
 class Windows;
 
 enum GlkDebugChannels {
-	kDebugCore      = 1 << 0,
-	kDebugScripts   = 1 << 1,
-	kDebugGraphics  = 1 << 2,
-	kDebugSound     = 1 << 3,
-	kDebugSpeech    = 1 << 4
+	kDebugCore = 1,
+	kDebugScripts,
+	kDebugGraphics,
+	kDebugSound,
+	kDebugSpeech,
 };
 
 
@@ -137,12 +137,12 @@ public:
 	/**
 	 * Returns true if a savegame can be loaded
 	 */
-	bool canLoadGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	/**
 	 * Returns true if the game can be saved
 	 */
-	bool canSaveGameStateCurrently() override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	/**
 	 * Returns the language

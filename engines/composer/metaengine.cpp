@@ -25,6 +25,12 @@
 #include "common/str-array.h"
 #include "engines/advancedDetector.h"
 
+#include "common/translation.h"
+
+#include "backends/keymapper/action.h"
+#include "backends/keymapper/keymapper.h"
+#include "backends/keymapper/standard-actions.h"
+
 #include "composer/composer.h"
 #include "composer/detection.h"
 
@@ -54,24 +60,26 @@ bool ComposerEngine::loadDetectedConfigFile(Common::INIFile &configFile) const {
 	const ADGameFileDescription *res = _gameDescription->desc.filesDescriptions;
 	while (res->fileName != nullptr) {
 		if (res->fileType == GAME_CONFIGFILE) {
-			return configFile.loadFromFile(res->fileName);
+			return configFile.loadFromFileOrDataFork(res->fileName);
 		}
 		res++;
 	}
 	// default config file name
-	return configFile.loadFromFile("book.ini") || configFile.loadFromFile("book.mac");
+	return configFile.loadFromFileOrDataFork("book.ini") || configFile.loadFromFileOrDataFork("book.mac");
 }
 
 } // End of namespace Composer
 
-class ComposerMetaEngine : public AdvancedMetaEngine {
+class ComposerMetaEngine : public AdvancedMetaEngine<Composer::ComposerGameDescription> {
 public:
 	const char *getName() const override {
 		return "composer";
 	}
 
-	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override;
+	Common::Error createInstance(OSystem *syst, Engine **engine, const Composer::ComposerGameDescription *desc) const override;
 	bool hasFeature(MetaEngineFeature f) const override;
+
+	Common::KeymapArray initKeymaps(const char *target) const override;
 
 	int getMaximumSaveSlot() const override;
 	SaveStateList listSaves(const char* target) const override;
@@ -85,13 +93,44 @@ public:
 	}
 };
 
-Common::Error ComposerMetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const {
-	*engine = new Composer::ComposerEngine(syst, (const Composer::ComposerGameDescription *)desc);
+Common::Error ComposerMetaEngine::createInstance(OSystem *syst, Engine **engine, const Composer::ComposerGameDescription *desc) const {
+	*engine = new Composer::ComposerEngine(syst,desc);
 	return Common::kNoError;
 }
 
 bool ComposerMetaEngine::hasFeature(MetaEngineFeature f) const {
-	return ((f == kSupportsListSaves) || (f == kSupportsLoadingDuringStartup));
+	// FIXME: Disabled loading from launcher currently due to issues with loading Darby The Dragon (and probably others) savegames. See bug #16432
+	return ((f == kSupportsListSaves) /*|| (f == kSupportsLoadingDuringStartup)*/);
+}
+
+Common::KeymapArray ComposerMetaEngine::initKeymaps(const char *target) const {
+	using namespace Common;
+	using namespace Composer;
+
+	Keymap *engineKeyMap = new Keymap(Keymap::kKeymapTypeGame, "composer-engine", "Composer engine");
+
+	Action *act;
+
+	act = new Action(kStandardActionLeftClick, _("Left click"));
+	act->setLeftClickEvent();
+	act->addDefaultInputMapping("MOUSE_LEFT");
+	act->addDefaultInputMapping("JOY_A");
+	engineKeyMap->addAction(act);
+
+	act = new Action(kStandardActionRightClick, _("Right click"));
+	act->setRightClickEvent();
+	act->addDefaultInputMapping("MOUSE_RIGHT");
+	act->addDefaultInputMapping("JOY_B");
+	engineKeyMap->addAction(act);
+
+	act = new Action(kStandardActionSkip, _("Skip"));
+	act->setKeyEvent(KeyState(KEYCODE_ESCAPE, ASCII_ESCAPE));
+	act->addDefaultInputMapping("ESCAPE");
+	act->addDefaultInputMapping("JOY_Y");
+	act->allowKbdRepeats();
+	engineKeyMap->addAction(act);
+
+	return Keymap::arrayOf(engineKeyMap);
 }
 
 Common::String getSaveName(Common::InSaveFile *in) {

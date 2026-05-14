@@ -22,7 +22,7 @@
 #ifndef NUVIE_FILES_U6BMP_H
 #define NUVIE_FILES_U6BMP_H
 
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 
 #include "ultima/nuvie/files/u6_shape.h"
 
@@ -38,7 +38,7 @@ public:
 	U6Bmp();
 	~U6Bmp() override;
 
-	bool load(Std::string filename) override;
+	bool load(const Common::Path &filename) override;
 
 };
 

@@ -655,6 +655,7 @@ static const char *const kEoB2ClericSpellsListAmigaEnglish[30] = {
 	"True Seeing",
 	"Harm",
 	"Heal",
+	// FIXME: Spelling incorrect. ressurection should be resurrection. Fixing changes game data and thus may cause issues
 	"Ressurection",
 	"Lay on Hands",
 	"Turn undead"
@@ -721,6 +722,7 @@ static const char *const kEoB2SpellNamesAmigaEnglish[68] = {
 	"true seeing",
 	"harm",
 	"heal",
+	// FIXME: Spelling incorrect. ressurection should be resurrection. Fixing changes game data and thus may cause issues
 	"ressurection",
 	"lay on hands",
 	"turn undead",
@@ -893,7 +895,7 @@ static const char *const kEoB2MainMenuStringsAmigaEnglish[5] = {
 	"START A NEW PARTY\r",
 	"TRANSFER EOB I PARTY\r",
 	"RUN INTRODUCTION\r",
-	"FORMAT SAVE GAME DISK\r"
+	"EXIT TO DOS\r"
 };
 
 static const StringListProvider kEoB2MainMenuStringsAmigaEnglishProvider = { ARRAYSIZE(kEoB2MainMenuStringsAmigaEnglish), kEoB2MainMenuStringsAmigaEnglish };

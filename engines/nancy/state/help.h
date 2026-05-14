@@ -22,12 +22,12 @@
 #ifndef NANCY_STATE_HELP_H
 #define NANCY_STATE_HELP_H
 
+#include "common/ptr.h"
 #include "common/singleton.h"
 
 #include "engines/nancy/commontypes.h"
-
+#include "engines/nancy/time.h"
 #include "engines/nancy/state/state.h"
-
 #include "engines/nancy/ui/fullscreenimage.h"
 
 namespace Nancy {
@@ -40,26 +40,26 @@ namespace State {
 
 class Help : public State, public Common::Singleton<Help> {
 public:
-	enum State { kInit, kBegin, kRun, kWaitForSound };
-	Help();
-	virtual ~Help();
+	enum State { kInit, kBegin, kRun, kWait };
 
 	// State API
 	void process() override;
-	void onStateExit() override { destroy(); };
+	void onStateEnter(const NancyState::NancyState prevState) override;
+	bool onStateExit(const NancyState::NancyState nextState) override;
 
 private:
 	void init();
 	void begin();
 	void run();
-	void waitForSound();
+	void wait();
 
-	State _state;
+	State _state = kInit;
 	UI::FullScreenImage _image;
-	UI::Button *_button;
+	Common::ScopedPtr<UI::Button> _button;
+	Time _buttonPressActivationTime;
 };
 
-#define NancyHelpState Nancy::State::Help::instance()
+#define NancyHelpState State::Help::instance()
 
 } // End of namespace State
 } // End of namespace Nancy

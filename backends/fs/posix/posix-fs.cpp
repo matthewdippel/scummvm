@@ -55,10 +55,6 @@
 #include <os2.h>
 #endif
 
-#if defined(ANDROID_PLAIN_PORT)
-#include "backends/platform/android/jni-android.h"
-#endif
-
 bool POSIXFilesystemNode::exists() const {
 	return access(_path.c_str(), F_OK) == 0;
 }
@@ -68,14 +64,7 @@ bool POSIXFilesystemNode::isReadable() const {
 }
 
 bool POSIXFilesystemNode::isWritable() const {
-	bool retVal = access(_path.c_str(), W_OK) == 0;
-#if defined(ANDROID_PLAIN_PORT)
-	if (!retVal) {
-		// Update return value if going through Android's SAF grants the permission
-		retVal = JNI::isDirectoryWritableWithSAF(_path);
-	}
-#endif // ANDROID_PLAIN_PORT
-	return retVal;
+	return access(_path.c_str(), W_OK) == 0;
 }
 
 void POSIXFilesystemNode::setFlags() {
@@ -121,7 +110,7 @@ POSIXFilesystemNode::POSIXFilesystemNode(const Common::String &p) {
 	if (!_path.hasPrefix("/")) {
 		char buf[MAXPATHLEN+1];
 		getcwd(buf, MAXPATHLEN);
-		strcat(buf, "/");
+		Common::strcat_s(buf, "/");
 		_path = buf + _path;
 	}
 #endif
@@ -179,23 +168,6 @@ bool POSIXFilesystemNode::getChildren(AbstractFSList &myList, ListMode mode, boo
 	}
 #endif
 
-#if defined(ANDROID_PLAIN_PORT)
-	if (_path == "/") {
-		Common::Array<Common::String> list = JNI::getAllStorageLocations();
-		for (Common::Array<Common::String>::const_iterator it = list.begin(), end = list.end(); it != end; ++it) {
-			POSIXFilesystemNode *entry = new POSIXFilesystemNode();
-
-			entry->_isDirectory = true;
-			entry->_isValid = true;
-			entry->_displayName = *it;
-			++it;
-			entry->_path = *it;
-			myList.push_back(entry);
-		}
-		return true;
-	}
-#endif
-
 	DIR *dirp = opendir(_path.c_str());
 	struct dirent *dp;
 
@@ -230,20 +202,30 @@ bool POSIXFilesystemNode::getChildren(AbstractFSList &myList, ListMode mode, boo
 		 */
 		entry.setFlags();
 #else
-		if (dp->d_type == DT_UNKNOWN) {
+		switch (dp->d_type) {
+		case DT_DIR:
+		case DT_REG:
+			entry._isValid = true;
+			entry._isDirectory = (dp->d_type == DT_DIR);
+			break;
+		case DT_LNK:
+			entry._isValid = true;
+			struct stat st;
+			if (stat(entry._path.c_str(), &st) == 0)
+				entry._isDirectory = S_ISDIR(st.st_mode);
+			else
+				entry._isDirectory = false;
+			break;
+		case DT_UNKNOWN:
+		default:
 			// Fall back to stat()
+			//
+			// It's important NOT to limit this to DT_UNKNOWN, because d_type can
+			// be unreliable on some OSes and filesystems; a confirmed example is
+			// macOS 10.4, where d_type can hold bogus values when iterating over
+			// the files of a cddafs mount point (as used by MacOSXAudioCDManager).
 			entry.setFlags();
-		} else {
-			entry._isValid = (dp->d_type == DT_DIR) || (dp->d_type == DT_REG) || (dp->d_type == DT_LNK);
-			if (dp->d_type == DT_LNK) {
-				struct stat st;
-				if (stat(entry._path.c_str(), &st) == 0)
-					entry._isDirectory = S_ISDIR(st.st_mode);
-				else
-					entry._isDirectory = false;
-			} else {
-				entry._isDirectory = (dp->d_type == DT_DIR);
-			}
+			break;
 		}
 #endif
 
@@ -272,12 +254,6 @@ AbstractFSNode *POSIXFilesystemNode::getParent() const {
 	if (_path.size() == 3 && _path.hasSuffix(":/"))
 		// This is a root directory of a drive
 		return makeNode("/");   // return a virtual root for a list of drives
-#elif defined(ANDROID_PLAIN_PORT)
-	Common::String pathCopy = _path;
-	pathCopy.trim();
-	if (pathCopy.empty()) {
-		return makeNode("/");   // return a virtual root for a list of drives
-	}
 #endif
 
 	const char *start = _path.c_str();
@@ -300,27 +276,28 @@ AbstractFSNode *POSIXFilesystemNode::getParent() const {
 }
 
 Common::SeekableReadStream *POSIXFilesystemNode::createReadStream() {
-	return PosixIoStream::makeFromPath(getPath(), false);
+	return PosixIoStream::makeFromPath(getPath(), StdioStream::WriteMode_Read);
 }
 
-Common::SeekableWriteStream *POSIXFilesystemNode::createWriteStream() {
-	return PosixIoStream::makeFromPath(getPath(), true);
+Common::SeekableReadStream *POSIXFilesystemNode::createReadStreamForAltStream(Common::AltStreamType altStreamType) {
+#ifdef MACOSX
+	if (altStreamType == Common::AltStreamType::MacResourceFork) {
+		// Check the actual fork on a Mac computer
+		return PosixIoStream::makeFromPath(getPath() + "/..namedfork/rsrc", StdioStream::WriteMode_Read);
+	}
+#endif
+
+	return nullptr;
+}
+
+Common::SeekableWriteStream *POSIXFilesystemNode::createWriteStream(bool atomic) {
+	return PosixIoStream::makeFromPath(getPath(), atomic ?
+			StdioStream::WriteMode_WriteAtomic : StdioStream::WriteMode_Write);
 }
 
 bool POSIXFilesystemNode::createDirectory() {
 	if (mkdir(_path.c_str(), 0755) == 0)
 		setFlags();
-#if defined(ANDROID_PLAIN_PORT)
-	else {
-		// TODO eventually android specific stuff should be moved to an Android backend for fs
-		//      peterkohaut already has some work on that in his fork (moving the port to more native code)
-		//      However, I have not found a way to do this Storage Access Framework stuff natively yet.
-		if (JNI::createDirectoryWithSAF(_path)) {
-			setFlags();
-		}
-	}
-#endif // ANDROID_PLAIN_PORT
-
 
 	return _isValid && _isDirectory;
 }

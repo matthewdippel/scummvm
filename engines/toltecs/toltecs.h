@@ -83,6 +83,16 @@ enum SysString {
 	kSysStrCount
 };
 
+enum TOLTECSAction {
+	kActionNone,
+	kActionSkipDialog,
+	kActionOpenSaveMenu,
+	kActionOpenLoadMenu,
+	kActionSkipMovie,
+	kActionMenuOpen,
+	kActionSkipRide,
+};
+
 enum MenuID {
 	kMenuIdNone,
 	kMenuIdMain,
@@ -92,7 +102,7 @@ enum MenuID {
 };
 
 class ToltecsEngine : public ::Engine {
-	Common::KeyState _keyPressed;
+	
 
 protected:
 	Common::Error run() override;
@@ -179,7 +189,7 @@ public:
 
 	int16 _walkSpeedY, _walkSpeedX;
 
-	Common::KeyState _keyState;
+	Common::CustomEventType _action;
 	int16 _mouseX, _mouseY;
 	int16 _mouseDblClickTicks;
 	bool _mouseWaitForRelease;
@@ -211,8 +221,8 @@ public:
 
 	bool _isSaveAllowed;
 
-	bool canLoadGameStateCurrently() override { return _isSaveAllowed; }
-	bool canSaveGameStateCurrently() override { return _isSaveAllowed; }
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override { return _isSaveAllowed; }
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override { return _isSaveAllowed; }
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &description, bool isAutosave = false) override;
 	void savegame(const char *filename, const char *description);

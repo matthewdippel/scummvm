@@ -24,6 +24,7 @@
  *
  */
 
+#include "engines/icb/icb.h"
 #include "engines/icb/p4.h"
 #include "engines/icb/common/px_common.h"
 #include "engines/icb/common/px_floor_map.h"
@@ -36,7 +37,7 @@
 #include "engines/icb/global_objects.h"
 
 #include "common/system.h"
-#include "common/math.h"
+#include "math/utils.h"
 
 namespace ICB {
 
@@ -47,21 +48,21 @@ void _prim_route_builder::Reset_barrier_list() {
 	total_points = 0;
 }
 
-void _prim_route_builder::Add_barrier(_route_barrier *new_barrier) {
-	barrier_list[total_points].x = new_barrier->x1();
-	barrier_list[total_points++].z = new_barrier->z1();
-	barrier_list[total_points].x = new_barrier->x2();
-	barrier_list[total_points++].z = new_barrier->z2();
+void _prim_route_builder::Add_barrier(RouteBarrier *new_barrier) {
+	barrier_list[total_points].x = new_barrier->m_x1;
+	barrier_list[total_points++].z = new_barrier->m_z1;
+	barrier_list[total_points].x = new_barrier->m_x2;
+	barrier_list[total_points++].z = new_barrier->m_z2;
 
 	if (!ExtrapolateLine(&barrier_list[total_points - 2], &barrier_list[total_points - 1], &barrier_list[total_points - 2], &barrier_list[total_points - 1], extrap_size))
-		Fatal_error("extrapolate line failed on line %3.2f %3.2f  %3.2f %3.2f", new_barrier->x1(), new_barrier->z1(), new_barrier->x2(), new_barrier->z2());
+		Fatal_error("extrapolate line failed on line %3.2f %3.2f  %3.2f %3.2f", new_barrier->m_x1, new_barrier->m_z1, new_barrier->m_x2, new_barrier->m_z2);
 
 	assert(total_points < MAX_barriers);
 }
 
 void _prim_route_builder::Give_barrier_list(_route_description *route) {
 	// this may seem daft, but now we're giving the barriers back - for NETHACK diagnostics, not the logic
-	// this wont be called in final .exe
+	// this won't be called in final .exe
 
 	if (!total_points) {
 		route->number_of_diag_bars = 0;
@@ -93,7 +94,7 @@ void _prim_route_builder::Give_route(_route_description *route) {
 	if (!final_points)
 		Fatal_error("_prim_route_builder::Give_route no route to give!");
 
-	// do a check for length exceeding MAX_final_route as this isnt really done anyway - it will have already scribbled of course but hey we're hanging on in there
+	// do a check for length exceeding MAX_final_route as this isn't really done anyway - it will have already scribbled of course but hey we're hanging on in there
 
 	if (final_points + 1 >= MAX_final_route)
 		Fatal_error("route too big");
@@ -166,7 +167,7 @@ _route_stat _prim_route_builder::Calc_route(PXreal startx, PXreal startz, PXreal
 
 		//		test against all our lines
 		for (l = 0; l < total_points - 2; l += 2) {
-			//			dont test point J against the line it is derived from
+			//			don't test point J against the line it is derived from
 			if (l != (j & 0xfffffffe)) {
 				if (Get_intersect(/*firing line from*/ barrier_list[j].x, barrier_list[j].z, /*firing line to*/ barrier_list[to].x, barrier_list[to].z,
 				                  /*barrier*/ barrier_list[l].x, barrier_list[l].z, barrier_list[l + 1].x, barrier_list[l + 1].z)) {
@@ -225,7 +226,7 @@ _route_stat _prim_route_builder::Calc_route(PXreal startx, PXreal startz, PXreal
 						// test point thisp to point lastp
 						// test against all our lines
 						for (l = 0; l < total_points - 2; l += 2) {
-							// dont test point J against the line it is derived from
+							// don't test point J against the line it is derived from
 							if ((l != (thisp & 0xfffffffe)) && (l != (lastp & 0xfffffffe))) {
 								if (Get_intersect(/*firing line*/ barrier_list[thisp].x, barrier_list[thisp].z, barrier_list[lastp].x,
 								                  barrier_list[lastp].z,
@@ -492,7 +493,11 @@ int32 _prim_route_builder::Get_intersect(PXreal x0, PXreal y0, PXreal x1, PXreal
 }
 
 bool8 _prim_route_builder::LineIntersectsRect(DXrect oRect, int32 nX1, int32 nY1, int32 nX2, int32 nY2) const {
-	return (g_oRemora->CohenSutherland(oRect, nX1, nY1, nX2, nY2, FALSE8));
+	if (g_icb->getGameType() == GType_ICB) {
+		return (g_oRemora->CohenSutherland(oRect, nX1, nY1, nX2, nY2, FALSE8));
+	} else {
+		return (/*g_oMap*/g_oRemora->CohenSutherland(oRect, nX1, nY1, nX2, nY2, FALSE8));
+	}
 }
 
 } // End of namespace ICB

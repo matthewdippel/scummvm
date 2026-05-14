@@ -381,14 +381,13 @@ bool Script::loadAllMasks(Common::Array<Mask> &maskList, int offset) {
 		tempMask._z = maskStream.readUint16LE();
 		tempMask._number = maskStream.readUint16LE();
 
-		const Common::String msStreamName = Common::String::format("MS%02d", tempMask._number);
+		const Common::Path msStreamName(Common::String::format("MS%02d", tempMask._number));
 		Common::SeekableReadStream *msStream = SearchMan.createReadStreamForMember(msStreamName);
 		if (!msStream) {
 			tempMask._width = 0;
 			tempMask._height = 0;
 			tempMask._data = nullptr;
-			warning("loadAllMasks: Can't load %s", msStreamName.c_str());
-			delete msStream;
+			warning("loadAllMasks: Can't load %s", msStreamName.toString().c_str());
 		} else {
 			msStream = Resource::getDecompressedStream(msStream);
 
@@ -603,12 +602,13 @@ void Interpreter::O_BLACKPALETTE() {
 
 void Interpreter::O_SETUPPALETTE() {
 	debugInterpreter("O_SETUPPALETTE");
-	_vm->setPalette(_vm->_roomBmp->getPalette());
+	_vm->setPalette(_vm->_roomBmp->getPalette().data());
 }
 
 void Interpreter::O_INITROOM() {
 	int32 roomId = readScriptFlagValue();
 	debugInterpreter("O_INITROOM %d", roomId);
+	_vm->_printMapNotification = true;
 	_vm->loadLocation(roomId);
 	_opcodeNF = 1;
 }
@@ -873,6 +873,8 @@ void Interpreter::O_CHANGECURSOR() {
 	int32 cursorId = readScriptFlagValue();
 	debugInterpreter("O_CHANGECURSOR %x", cursorId);
 	_vm->changeCursor(cursorId);
+
+	_vm->_isConversing = (cursorId == 0);
 }
 
 // Not used in script
@@ -1109,6 +1111,9 @@ void Interpreter::O_HEROON() {
 void Interpreter::O_CLSTEXT() {
 	int32 slot = readScriptFlagValue();
 	debugInterpreter("O_CLSTEXT slot %d", slot);
+	if (slot == 0) {
+		_vm->stopTextToSpeech();
+	}
 	_vm->_textSlots[slot]._str = nullptr;
 	_vm->_textSlots[slot]._time = 0;
 }

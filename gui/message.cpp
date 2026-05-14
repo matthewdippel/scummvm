@@ -42,11 +42,37 @@ void MessageDialog::init(const Common::U32String &message,
 						 const Common::U32String &defaultButton,
 						 const Common::U32StringArray &altButtons,
 						 Graphics::TextAlign alignment,
-						 const char *url) {
+						 const char *url,
+						 const Common::U32String &extraMessage) {
+	// message widgets will be created in reflowLayout as needed
+	_message = message;
+	_alignment = alignment;
 	_url = url;
+	_extraMessage = nullptr;
 
-	const int screenW = g_system->getOverlayWidth();
-	const int screenH = g_system->getOverlayHeight();
+	// Only use bogus sizes, we do the calculation in reflowLayout
+	if (!defaultButton.empty()) {
+		// Confirm dialog
+		_buttons.push_back(new ButtonWidget(this, 0, 0, 0, 0, defaultButton, Common::U32String(), kDefaultCmd, Common::ASCII_RETURN));
+	}
+
+	int buttonHotKey = altButtons.size() == 1 ? Common::ASCII_ESCAPE : 0;
+	for (size_t i = 0, total = altButtons.size(); i < total; ++i) {
+		_buttons.push_back(new ButtonWidget(this, 0, 0, 0, 0, altButtons[i], Common::U32String(), kAltCmd + i, buttonHotKey));
+		buttonHotKey = 0;
+	}
+
+	if (!extraMessage.empty()) {
+		_extraMessage = new StaticTextWidget(this, 0, 0, 0, 0, extraMessage, Graphics::kTextAlignLeft);
+	}
+}
+
+void MessageDialog::reflowLayout() {
+	const int horizontalMargin = 10;
+	const int buttonSpacing = 10;
+
+	int16 screenW, screenH;
+	const Common::Rect safeArea = g_system->getSafeOverlayArea(&screenW, &screenH);
 
 	int buttonWidth = g_gui.xmlEval()->getVar("Globals.Button.Width", 0);
 	int buttonHeight = g_gui.xmlEval()->getVar("Globals.Button.Height", 0);
@@ -56,64 +82,95 @@ void MessageDialog::init(const Common::U32String &message,
 	// Using this, and accounting for the space the button(s) need, we can set
 	// the real size of the dialog
 	Common::Array<Common::U32String> lines;
-	int lineCount;
-	const int horizontalMargin = 10;
-	int maxlineWidth = g_gui.getFont().wordWrapText(message, screenW - 2 * horizontalMargin - 20, lines);
-	const int buttonCount = altButtons.size() + 1;
-	const int buttonSpacing = 10;
+	size_t lineCount;
+
+	int maxlineWidth = g_gui.getFont().wordWrapText(_message, safeArea.width() - 2 * horizontalMargin - 20, lines);
+
+	const size_t buttonCount = _buttons.size();
 	const int buttonsTotalWidth = buttonCount * buttonWidth + (buttonCount - 1) * buttonSpacing;
 
-	// Calculate the desired dialog size (maxing out at 300*180 for now)
+	// Calculate the desired dialog size
 	_w = MAX(maxlineWidth, buttonsTotalWidth) + 2 * horizontalMargin;
 
 	lineCount = lines.size();
 
 	_h = 16;
-	if (!defaultButton.empty() || !altButtons.empty())
+	if (buttonCount)
 		_h += buttonHeight + 8;
+	if (_extraMessage)
+		_h += kLineHeight;
 
 	// Limit the number of lines so that the dialog still fits on the screen.
-	if (lineCount > (screenH - 20 - _h) / kLineHeight) {
-		lineCount = (screenH - 20 - _h) / kLineHeight;
-	}
+	lineCount = MIN(lineCount, (size_t)((safeArea.height() - 20 - _h) / kLineHeight));
 	_h += lineCount * kLineHeight;
 
 	// Center the dialog
 	_x = (screenW - _w) / 2;
 	_y = (screenH - _h) / 2;
 
+	safeArea.constrain(_x, _y, _w, _h);
+
+	int curY = 10;
+
 	// Each line is represented by one static text item.
-	for (int i = 0; i < lineCount; i++) {
-		new StaticTextWidget(this, horizontalMargin, 10 + i * kLineHeight, maxlineWidth, kLineHeight, lines[i], alignment);
+	// Update existing lines
+	size_t toUpdateLines = MIN<size_t>(lineCount, _lines.size());
+	for (size_t i = 0; i < toUpdateLines; i++) {
+		_lines[i]->setPos(horizontalMargin, curY);
+		_lines[i]->setSize(maxlineWidth, kLineHeight);
+		_lines[i]->setLabel(lines[i]);
+		curY += kLineHeight;
+	}
+	// Create missing lines
+	for (size_t i = toUpdateLines; i < lineCount; i++) {
+		_lines.push_back(new StaticTextWidget(this, horizontalMargin, curY, maxlineWidth, kLineHeight, lines[i], _alignment));
+		curY += kLineHeight;
+	}
+	// Cleanup old useless lines
+	for (size_t i = lineCount, total = _lines.size(); i < total; i++) {
+		this->removeWidget(_lines[i]);
+		delete _lines[i];
+	}
+	_lines.resize(lineCount);
+
+	if (buttonCount) {
+		curY += 8;
+		int buttonPos = (_w - buttonsTotalWidth) / 2;
+		for (size_t i = 0; i < buttonCount; ++i) {
+			_buttons[i]->setPos(buttonPos, curY);
+			_buttons[i]->setSize(buttonWidth, buttonHeight);
+			buttonPos += buttonWidth + buttonSpacing;
+		}
+		curY += buttonHeight;
 	}
 
-	// Assume defaultButton is always given
-	int buttonPos = (_w - buttonsTotalWidth) / 2;
+	curY += 6;
 
-	if (!defaultButton.empty()) {
-		// Confirm dialog
-		new ButtonWidget(this, buttonPos, _h - buttonHeight - 8, buttonWidth, buttonHeight, defaultButton, Common::U32String(), kDefaultCmd, Common::ASCII_RETURN);
-		buttonPos += buttonWidth + buttonSpacing;
+	if (_extraMessage) {
+		_extraMessage->setPos(10, curY);
+		_extraMessage->setSize(maxlineWidth, kLineHeight);
 	}
+}
 
-	int buttonHotKey = altButtons.size() == 1 ? Common::ASCII_ESCAPE : 0;
-	for (size_t i = 0, total = altButtons.size(); i < total; ++i) {
-		new ButtonWidget(this, buttonPos, _h - buttonHeight - 8, buttonWidth, buttonHeight, altButtons[i], Common::U32String(), kAltCmd + i, buttonHotKey);
-		buttonHotKey = 0;
-		buttonPos += buttonWidth + buttonSpacing;
-	}
+MessageDialog::MessageDialog(const Common::U32String &message)
+	: MessageDialog(message, _("OK")) {
+}
+
+MessageDialog::MessageDialog(const Common::String &message)
+	: MessageDialog(Common::U32String(message), _("OK")) {
 }
 
 MessageDialog::MessageDialog(const Common::U32String &message,
 							 const Common::U32String &defaultButton,
 							 const Common::U32String &altButton,
 							 Graphics::TextAlign alignment,
-							 const char *url)
+							 const char *url,
+							 const Common::U32String &extraMessage)
 	: Dialog(30, 20, 260, 124) {
 
 	init(message, defaultButton,
 		 altButton.empty() ? Common::U32StringArray() : Common::U32StringArray(1, altButton),
-		 alignment, url);
+		 alignment, url, extraMessage);
 }
 
 MessageDialog::MessageDialog(const Common::String &message,
@@ -125,7 +182,7 @@ MessageDialog::MessageDialog(const Common::String &message,
 
 	init(Common::U32String(message), Common::U32String(defaultButton),
 		 altButton.empty() ? Common::U32StringArray() : Common::U32StringArray(1, Common::U32String(altButton)),
-		 alignment, url);
+		 alignment, url, Common::U32String());
 }
 
 MessageDialog::MessageDialog(const Common::U32String &message,
@@ -134,7 +191,7 @@ MessageDialog::MessageDialog(const Common::U32String &message,
 							 Graphics::TextAlign alignment)
 	: Dialog(30, 20, 260, 124) {
 
-	init(message, defaultButton, altButtons, alignment, nullptr);
+	init(message, defaultButton, altButtons, alignment, nullptr, Common::U32String());
 }
 
 void MessageDialog::handleCommand(CommandSender *sender, uint32 cmd, uint32 data) {
@@ -167,6 +224,54 @@ void TimedMessageDialog::handleTickle() {
 	MessageDialog::handleTickle();
 	if (g_system->getMillis() > _timer)
 		close();
+}
+
+CountdownMessageDialog::CountdownMessageDialog(const Common::U32String &message,
+				  uint32 duration)
+	: CountdownMessageDialog(message, duration, _("OK")) {
+}
+
+CountdownMessageDialog::CountdownMessageDialog(const Common::U32String &message,
+				  uint32 duration,
+				  const Common::U32String &defaultButton,
+				  const Common::U32String &altButton,
+				  Graphics::TextAlign alignment,
+				  const Common::U32String &countdownMessage)
+	: MessageDialog(message, defaultButton, altButton, alignment, nullptr, countdownMessage) {
+	_startTime = g_system->getMillis();
+	_timer = _startTime + duration;
+
+	_countdownMessage = countdownMessage;
+
+	updateCountdown();
+}
+
+void CountdownMessageDialog::handleTickle() {
+	updateCountdown();
+
+	MessageDialog::handleTickle();
+	if (g_system->getMillis() > _timer) {
+		setResult(kMessageAlt);
+		close();
+	}
+}
+
+void CountdownMessageDialog::updateCountdown() {
+	uint32 secs = (_timer - g_system->getMillis()) / 1000;
+
+	Common::U32String msg = Common::U32String::format(_countdownMessage, secs);
+
+	if (msg != _extraMessage->getLabel()) {
+		_extraMessage->setLabel(msg);
+	}
+}
+
+MessageDialogWithURL::MessageDialogWithURL(const Common::U32String &message, const char *url)
+	: MessageDialogWithURL(message, url, _("OK")) {
+}
+
+MessageDialogWithURL::MessageDialogWithURL(const Common::String &message, const char *url)
+	: MessageDialogWithURL(Common::U32String(message), url, _("OK")) {
 }
 
 MessageDialogWithURL::MessageDialogWithURL(const Common::U32String &message, const char *url, const Common::U32String &defaultButton, Graphics::TextAlign alignment)

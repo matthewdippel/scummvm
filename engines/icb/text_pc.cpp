@@ -50,6 +50,7 @@ void Clip_text_print(_rgb *pen, uint32 x, uint32 y, uint8 *base, uint32 pitch, c
 
 	va_start(arg_ptr, format);
 	vsnprintf(ascii, 150, format, arg_ptr);
+	va_end(arg_ptr);
 
 	pxString font_cluster = FONT_CLUSTER_PATH;
 	charSet = rs_font->Res_open(SYS_FONT, sys_font_hash, font_cluster, font_cluster_hash);
@@ -62,11 +63,11 @@ void Clip_text_print(_rgb *pen, uint32 x, uint32 y, uint8 *base, uint32 pitch, c
 		head = (_frameHeader *)FetchFrameHeader(charSet, (uint16)chr);
 		sprite_data = (uint8 *)(head + 1);
 
-		Render_clip_character(x, y, head->width, head->height, pen, base, pitch, sprite_data);
+		Render_clip_character(x, y, FROM_LE_16(head->width), FROM_LE_16(head->height), pen, base, pitch, sprite_data);
 
-		x += head->width + 1; // move on the x coordinate
+		x += FROM_LE_16(head->width) + 1; // move on the x coordinate
 
-	} while ((ascii[j]) && j < 150);
+	} while (j < 150 && ascii[j]);
 }
 
 void Render_clip_character(int32 x, int32 y, uint32 width, uint32 height, _rgb *pen, uint8 *ad, uint32 pitch, uint8 *sprite_data_ad) {

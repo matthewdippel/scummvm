@@ -25,6 +25,7 @@
 #include "engines/stark/visual/visual.h"
 
 #include "engines/stark/services/fontprovider.h"
+#include "engines/stark/gfx/color.h"
 
 #include "common/rect.h"
 #include "graphics/font.h"
@@ -34,25 +35,8 @@ namespace Stark {
 namespace Gfx {
 class Driver;
 class SurfaceRenderer;
-class Texture;
+class Bitmap;
 }
-
-struct Color {
-	uint8 r;
-	uint8 g;
-	uint8 b;
-	uint8 a;
-
-	Color(uint8 red, uint8 green, uint8 blue, uint8 alpha = 0xFF) :
-			r(red), g(green), b(blue), a(alpha) {}
-
-	bool operator==(const Color &color) const {
-		return r == color.r &&
-		       g == color.g &&
-		       b == color.b &&
-		       a == color.a;
-	}
-};
 
 /**
  * Text renderer
@@ -67,8 +51,8 @@ public:
 	Common::Rect getRect();
 
 	void setText(const Common::String &text);
-	void setColor(const Color &color);
-	void setBackgroundColor(const Color &color);
+	void setColor(const Gfx::Color &color);
+	void setBackgroundColor(const Gfx::Color &color);
 	void setAlign(Graphics::TextAlign align);
 	void setTargetWidth(uint32 width);
 	void setTargetHeight(uint32 height);
@@ -78,23 +62,22 @@ public:
 	uint getTargetHeight() { return _targetHeight; }
 
 	void render(const Common::Point &position);
-	void resetTexture();
+	void reset();
 
 private:
-	void createTexture();
-	void freeTexture();
+	void createBitmap();
+	void freeBitmap();
 
 	/** Check whether the text is blank */
 	bool isBlank();
 
 	Gfx::Driver *_gfx;
 	Gfx::SurfaceRenderer *_surfaceRenderer;
-	Gfx::Texture *_texture;
-	Gfx::Texture *_bgTexture;
+	Gfx::Bitmap *_bitmap;
 
 	Common::String _text;
-	Color _color;
-	Color _backgroundColor;
+	Gfx::Color _color;
+	Gfx::Color _backgroundColor;
 	Graphics::TextAlign _align;
 	uint32 _targetWidth;
 	uint32 _targetHeight;

@@ -21,7 +21,7 @@
 
 /*
  * Source is based on the player example from libvorbis package,
- * available at: http://svn.xiph.org/trunk/theora/examples/player_example.c
+ * available at: https://gitlab.xiph.org/xiph/theora/-/blob/main/examples/player_example.c
  *
  * THIS FILE IS PART OF THE OggTheora SOFTWARE CODEC SOURCE CODE.
  * USE, DISTRIBUTION AND REPRODUCTION OF THIS LIBRARY SOURCE IS
@@ -43,6 +43,7 @@
 #include "common/util.h"
 #include "graphics/pixelformat.h"
 #include "graphics/yuv_to_rgb.h"
+#include "image/codecs/codec.h"
 
 namespace Video {
 
@@ -167,7 +168,7 @@ bool TheoraDecoder::loadStream(Common::SeekableReadStream *stream) {
 
 	// And now we have it all. Initialize decoders next
 	if (_hasVideo) {
-		_videoTrack = new TheoraVideoTrack(getDefaultHighColorFormat(), theoraInfo, theoraSetup);
+		_videoTrack = new TheoraVideoTrack(theoraInfo, theoraSetup);
 		addTrack(_videoTrack);
 	}
 
@@ -248,21 +249,32 @@ void TheoraDecoder::readNextPacket() {
 	ensureAudioBufferSize();
 }
 
-TheoraDecoder::TheoraVideoTrack::TheoraVideoTrack(const Graphics::PixelFormat &format, th_info &theoraInfo, th_setup_info *theoraSetup) {
+Common::Rational TheoraDecoder::getFrameRate() const {
+	if (_videoTrack)
+		return _videoTrack->getFrameRate();
+	return Common::Rational();
+}
+
+TheoraDecoder::TheoraVideoTrack::TheoraVideoTrack(th_info &theoraInfo, th_setup_info *theoraSetup) {
 	_theoraDecode = th_decode_alloc(&theoraInfo, theoraSetup);
 
-	if (theoraInfo.pixel_fmt != TH_PF_420)
-		error("Only theora YUV420 is supported");
+	if (theoraInfo.pixel_fmt != TH_PF_420 && theoraInfo.pixel_fmt != TH_PF_422 && theoraInfo.pixel_fmt != TH_PF_444) {
+		error("Found unknown Theora format (must be YUV420, YUV422 or YUV444)");
+	}
 
 	int postProcessingMax;
 	th_decode_ctl(_theoraDecode, TH_DECCTL_GET_PPLEVEL_MAX, &postProcessingMax, sizeof(postProcessingMax));
 	th_decode_ctl(_theoraDecode, TH_DECCTL_SET_PPLEVEL, &postProcessingMax, sizeof(postProcessingMax));
 
-	_surface.create(theoraInfo.frame_width, theoraInfo.frame_height, format);
+	_x = theoraInfo.pic_x;
+	_y = theoraInfo.pic_y;
+	_width = theoraInfo.pic_width;
+	_height = theoraInfo.pic_height;
+	_surfaceWidth = theoraInfo.frame_width;
+	_surfaceHeight = theoraInfo.frame_height;
 
-	// Set up a display surface
-	_displaySurface.init(theoraInfo.pic_width, theoraInfo.pic_height, _surface.pitch,
-	                    _surface.getBasePtr(theoraInfo.pic_x, theoraInfo.pic_y), format);
+	_pixelFormat = Image::Codec::getDefaultYUVFormat();
+	_theoraPixelFormat = theoraInfo.pixel_fmt;
 
 	// Set the frame rate
 	_frameRate = Common::Rational(theoraInfo.fps_numerator, theoraInfo.fps_denominator);
@@ -270,34 +282,50 @@ TheoraDecoder::TheoraVideoTrack::TheoraVideoTrack(const Graphics::PixelFormat &f
 	_endOfVideo = false;
 	_nextFrameStartTime = 0.0;
 	_curFrame = -1;
+	_surface = nullptr;
+	_displaySurface = nullptr;
 }
 
 TheoraDecoder::TheoraVideoTrack::~TheoraVideoTrack() {
 	th_decode_free(_theoraDecode);
 
-	_surface.free();
-	_displaySurface.setPixels(0);
+	if (_surface) {
+		_surface->free();
+		delete _surface;
+		_surface = nullptr;
+	}
+
+	if (_displaySurface) {
+		_displaySurface->setPixels(0);
+		delete _displaySurface;
+		_displaySurface = nullptr;
+	}
 }
 
 bool TheoraDecoder::TheoraVideoTrack::decodePacket(ogg_packet &oggPacket) {
-	if (th_decode_packetin(_theoraDecode, &oggPacket, 0) == 0) {
-		_curFrame++;
+	int decodeRes = th_decode_packetin(_theoraDecode, &oggPacket, 0);
 
-		// Convert YUV data to RGB data
-		th_ycbcr_buffer yuv;
-		th_decode_ycbcr_out(_theoraDecode, yuv);
-		translateYUVtoRGBA(yuv);
+	bool gotNewFrame = decodeRes == 0;           // new frame, decoding needed
+	bool gotDupFrame = decodeRes == TH_DUPFRAME; // no decoding needed, just update timing
+	
+	if (gotNewFrame || gotDupFrame) {
+		if (gotNewFrame) {
+			// Convert YUV data to RGB data
+			th_ycbcr_buffer yuv;
+			th_decode_ycbcr_out(_theoraDecode, yuv);
+			translateYUVtoRGBA(yuv);
+		}
 
-		double time = th_granule_time(_theoraDecode, oggPacket.granulepos);
-
-		// We need to calculate when the next frame should be shown
-		// This is all in floating point because that's what the Ogg code gives us
-		// Ogg is a lossy container format, so it doesn't always list the time to the
-		// next frame. In such cases, we need to calculate it ourselves.
-		if (time == -1.0)
+		// If we have a valid granule position for this packet, use it to calculate the next
+		// frame information. If we don't have a valid granule position, we need to do our
+		// calculation for the frame number and timing.
+		if (oggPacket.granulepos >= 0) {
+			_curFrame = (int)th_granule_frame(_theoraDecode, oggPacket.granulepos);
+			_nextFrameStartTime = th_granule_time(_theoraDecode, oggPacket.granulepos);
+		} else {
+			_curFrame++;
 			_nextFrameStartTime += _frameRate.getInverse().toDouble();
-		else
-			_nextFrameStartTime = time;
+		}
 
 		return true;
 	}
@@ -318,13 +346,37 @@ void TheoraDecoder::TheoraVideoTrack::translateYUVtoRGBA(th_ycbcr_buffer &YUVBuf
 	assert((YUVBuffer[kBufferU].width & 1) == 0);
 	assert((YUVBuffer[kBufferV].width & 1) == 0);
 
-	// UV images have to have a quarter of the Y image resolution
-	assert(YUVBuffer[kBufferU].width == YUVBuffer[kBufferY].width >> 1);
-	assert(YUVBuffer[kBufferV].width == YUVBuffer[kBufferY].width >> 1);
-	assert(YUVBuffer[kBufferU].height == YUVBuffer[kBufferY].height >> 1);
-	assert(YUVBuffer[kBufferV].height == YUVBuffer[kBufferY].height >> 1);
+	// UV components must be half or equal the Y component
+	assert((YUVBuffer[kBufferU].width == YUVBuffer[kBufferY].width >> 1) || (YUVBuffer[kBufferU].width == YUVBuffer[kBufferY].width));
+	assert((YUVBuffer[kBufferV].width == YUVBuffer[kBufferY].width >> 1) || (YUVBuffer[kBufferV].width == YUVBuffer[kBufferY].width));
+	assert((YUVBuffer[kBufferU].height == YUVBuffer[kBufferY].height >> 1) || (YUVBuffer[kBufferU].height == YUVBuffer[kBufferY].height));
+	assert((YUVBuffer[kBufferV].height == YUVBuffer[kBufferY].height >> 1) || (YUVBuffer[kBufferV].height == YUVBuffer[kBufferY].height));
 
-	YUVToRGBMan.convert420(&_surface, Graphics::YUVToRGBManager::kScaleITU, YUVBuffer[kBufferY].data, YUVBuffer[kBufferU].data, YUVBuffer[kBufferV].data, YUVBuffer[kBufferY].width, YUVBuffer[kBufferY].height, YUVBuffer[kBufferY].stride, YUVBuffer[kBufferU].stride);
+	if (!_surface) {
+		_surface = new Graphics::Surface();
+		_surface->create(_surfaceWidth, _surfaceHeight, _pixelFormat);
+	}
+
+	// Set up a display surface
+	if (!_displaySurface) {
+		_displaySurface = new Graphics::Surface();
+		_displaySurface->init(_width, _height, _surface->pitch,
+		                      _surface->getBasePtr(_x, _y), _surface->format);
+	}
+
+	switch (_theoraPixelFormat) {
+	case TH_PF_420:
+		YUVToRGBMan.convert420(_surface, Graphics::YUVToRGBManager::kScaleITU, YUVBuffer[kBufferY].data, YUVBuffer[kBufferU].data, YUVBuffer[kBufferV].data, YUVBuffer[kBufferY].width, YUVBuffer[kBufferY].height, YUVBuffer[kBufferY].stride, YUVBuffer[kBufferU].stride);
+		break;
+	case TH_PF_422:
+		YUVToRGBMan.convert422(_surface, Graphics::YUVToRGBManager::kScaleITU, YUVBuffer[kBufferY].data, YUVBuffer[kBufferU].data, YUVBuffer[kBufferV].data, YUVBuffer[kBufferY].width, YUVBuffer[kBufferY].height, YUVBuffer[kBufferY].stride, YUVBuffer[kBufferU].stride);
+		break;
+	case TH_PF_444:
+		YUVToRGBMan.convert444(_surface, Graphics::YUVToRGBManager::kScaleITU, YUVBuffer[kBufferY].data, YUVBuffer[kBufferU].data, YUVBuffer[kBufferV].data, YUVBuffer[kBufferY].width, YUVBuffer[kBufferY].height, YUVBuffer[kBufferY].stride, YUVBuffer[kBufferU].stride);
+		break;
+	default:
+		error("Unsupported Theora pixel format");
+	}
 }
 
 static vorbis_info *info = 0;

@@ -19,6 +19,8 @@
  *
  */
 
+#define FORBIDDEN_SYMBOL_EXCEPTION_printf
+
 #include "base/plugins.h"
 
 #include "engines/metaengine.h"
@@ -36,7 +38,7 @@
 #include "scumm/detection_tables.h"
 #include "scumm/file.h"
 #include "scumm/file_nes.h"
-#include "scumm/scumm.h"
+#include "scumm/scumm-md5.h"
 
 #pragma mark -
 #pragma mark --- Detection code ---
@@ -62,6 +64,8 @@ static const DebugChannelDef debugFlagList[] = {
 		{Scumm::DEBUG_INSANE, "INSANE", "Track INSANE"},
 		{Scumm::DEBUG_SMUSH, "SMUSH", "Track SMUSH"},
 		{Scumm::DEBUG_MOONBASE_AI, "MOONBASEAI", "Track Moonbase AI"},
+		{Scumm::DEBUG_NETWORK, "NETWORK", "Track Networking"},
+		{Scumm::DEBUG_IMGUI, "IMGUI", "Show ImGui debug window (if available)"},
 		DEBUG_CHANNEL_END
 };
 
@@ -69,7 +73,7 @@ using namespace Scumm;
 
 class ScummMetaEngineDetection : public MetaEngineDetection {
 public:
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "scumm";
 	}
 
@@ -77,22 +81,119 @@ public:
 		return debugFlagList;
 	}
 
-	const char *getName() const override;
+	const char *getEngineName() const override;
 	const char *getOriginalCopyright() const override;
 
 	PlainGameList getSupportedGames() const override;
 	PlainGameDescriptor findGame(const char *gameid) const override;
+	Common::Error identifyGame(DetectedGame &game, const void **descriptor) override;
 	DetectedGames detectGames(const Common::FSList &fslist, uint32 /*skipADFlags*/, bool /*skipIncomplete*/) override;
 
-	const ExtraGuiOptions getExtraGuiOptions(const Common::String &target) const override;
+	uint getMD5Bytes() const override {
+		 return 1024 * 1024;
+	}
+	int getGameVariantCount() const override {
+		int entries = 0;
+		for (const GameSettings *g = gameVariantsTable; g->gameid; ++g)
+			++entries;
+		return entries;
+	}
+
+	void dumpDetectionEntries() const override final;
+
+	GameFilenamePattern matchGameFilenamePattern(const MD5Table *entry) const;
 };
 
 PlainGameList ScummMetaEngineDetection::getSupportedGames() const {
 	return PlainGameList(gameDescriptions);
 }
 
+GameFilenamePattern ScummMetaEngineDetection::matchGameFilenamePattern(const MD5Table *entry) const {
+	GameFilenamePattern bestMatch = GameFilenamePattern();
+
+	for (const GameFilenamePattern *gfp = gameFilenamesTable; gfp->gameid; ++gfp) {
+		if (!scumm_stricmp(gfp->gameid, entry->gameid)) {
+			if (gfp->platform == UNK || entry->platform == UNK || gfp->platform == entry->platform) {
+				bestMatch = *gfp;
+
+				if (gfp->language == UNK_LANG || entry->language == UNK_LANG || gfp->language == entry->language) {
+					if (!gfp->variant || !entry->variant || !scumm_stricmp(gfp->variant, entry->variant))
+						return *gfp;
+				}
+			}
+		}
+	}
+
+	return bestMatch;
+}
+
+#if 0
+struct EntryPos {
+	const char *gameid;
+	int id;
+
+	EntryPos(const char *strId, int intId) : gameid(strId), id(intId) {}
+};
+
+static int compareTreeNodes(const void *a, const void *b) {
+	return scumm_stricmp(((const EntryPos *)a)->gameid, ((const EntryPos *)b)->gameid);
+}
+#endif
+
+ void ScummMetaEngineDetection::dumpDetectionEntries() const {
+#if 0
+	// Sort all entries by gameid, as they are sorted by md5
+	Common::SortedArray<EntryPos *> gameIDs(compareTreeNodes);
+	for (int i = 0; md5table[i].gameid != 0; ++i)
+		gameIDs.insert(new EntryPos(md5table[i].gameid , i));
+
+	for (auto &iter : gameIDs) {
+		const MD5Table *entry = &md5table[iter->id];
+		PlainGameDescriptor pd = findGame(entry->gameid);
+		const char *title = pd.description;
+
+		printf("game (\n");
+		printf("\tname \"%s\"\n", escapeString(entry->gameid).c_str());
+		printf("\ttitle \"%s\"\n", escapeString(title).c_str());
+		printf("\textra \"%s\"\n", escapeString(entry->extra).c_str());
+		printf("\tlanguage \"%s\"\n", escapeString(getLanguageLocale(entry->language)).c_str());
+		printf("\tplatform \"%s\"\n", escapeString(getPlatformCode(entry->platform)).c_str());
+		printf("\tsourcefile \"%s\"\n", escapeString(getName()).c_str());
+		printf("\tengine \"%s\"\n", escapeString("scumm").c_str());
+
+		// Match the appropriate file name for the current game variant.
+		GameFilenamePattern gameEntry = matchGameFilenamePattern(entry);
+		Common::String fileName;
+
+		if (gameEntry.gameid) {
+			fileName = generateFilenameForDetection(gameEntry.pattern, gameEntry.genMethod, gameEntry.platform);
+		} else {
+			warning("dumpDetectionEntries(): no game entry found for '%s'", entry->gameid);
+			fileName = entry->gameid;
+		}
+
+		printf("\trom ( name \"%s\" size %lld md5-%d %s )\n",
+			escapeString(fileName.c_str()).c_str(),
+			static_cast<long long int>(entry->filesize),
+			getMD5Bytes(),
+			entry->md5);
+
+		printf(")\n\n"); // Closing for 'game ('
+	}
+
+	for (auto &iter : gameIDs)
+		delete iter;
+#endif
+}
+
 PlainGameDescriptor ScummMetaEngineDetection::findGame(const char *gameid) const {
 	return Engines::findGameID(gameid, gameDescriptions, obsoleteGameIDsTable);
+}
+
+Common::Error ScummMetaEngineDetection::identifyGame(DetectedGame &game, const void **descriptor) {
+	*descriptor = nullptr;
+	game = DetectedGame(getName(), findGame(ConfMan.get("gameid").c_str()));
+	return game.gameId.empty() ? Common::kUnknownError : Common::kNoError;
 }
 
 static Common::String generatePreferredTarget(const DetectorResult &x) {
@@ -131,14 +232,16 @@ DetectedGames ScummMetaEngineDetection::detectGames(const Common::FSList &fslist
 		const PlainGameDescriptor *g = findPlainGameDescriptor(x->game.gameid, gameDescriptions);
 		assert(g);
 
-		DetectedGame game = DetectedGame(getEngineId(), x->game.gameid, g->description, x->language, x->game.platform, x->extra);
+		DetectedGame game = DetectedGame(getName(), x->game.gameid, g->description, x->language, x->game.platform, x->extra);
 
 		// Compute and set the preferred target name for this game.
 		// Based on generateComplexID() in advancedDetector.cpp.
 		game.preferredTarget = generatePreferredTarget(*x);
 
-		game.setGUIOptions(x->game.guioptions + MidiDriver::musicType2GUIO(x->game.midi));
+		game.setGUIOptions(customizeGuiOptions(*x));
 		game.appendGUIOptions(getGameGUIOptionsDescriptionLanguage(x->language));
+		game.appendGUIOptions(getGameGUIOptionsDescriptionPlatform(x->game.platform));
+
 
 		detectedGames.push_back(game);
 	}
@@ -146,7 +249,7 @@ DetectedGames ScummMetaEngineDetection::detectGames(const Common::FSList &fslist
 	return detectedGames;
 }
 
-const char *ScummMetaEngineDetection::getName() const {
+const char *ScummMetaEngineDetection::getEngineName() const {
 	return "SCUMM ["
 
 #if defined(ENABLE_SCUMM_7_8) && defined(ENABLE_HE)
@@ -169,121 +272,6 @@ const char *ScummMetaEngineDetection::getName() const {
 const char *ScummMetaEngineDetection::getOriginalCopyright() const {
 	return "LucasArts SCUMM Games (C) LucasArts\n"
 	       "Humongous SCUMM Games (C) Humongous";
-}
-
-static const ExtraGuiOption comiObjectLabelsOption = {
-	_s("Show Object Line"),
-	_s("Show the names of objects at the bottom of the screen"),
-	"object_labels",
-	true,
-	0,
-	0
-};
-
-static const ExtraGuiOption mmnesObjectLabelsOption = {
-	_s("Use NES Classic Palette"),
-	_s("Use a more neutral color palette that closely emulates the NES Classic"),
-	"mm_nes_classic_palette",
-	false,
-	0,
-	0
-};
-
-static const ExtraGuiOption fmtownsTrimTo200 = {
-	_s("Trim FM-TOWNS games to 200 pixels height"),
-	_s("Cut the extra 40 pixels at the bottom of the screen, to make it standard 200 pixels height, allowing using 'aspect ratio correction'"),
-	"trim_fmtowns_to_200_pixels",
-	false,
-	0,
-	0
-};
-
-static const ExtraGuiOption macV3LowQualityMusic = {
-	_s("Play simplified music"),
-	_s("This music was presumably intended for low-end Macs, and uses only one channel."),
-	"mac_v3_low_quality_music",
-	false,
-	0,
-	0
-};
-
-static const ExtraGuiOption smoothScrolling = {
-	_s("Enable smooth scrolling"),
-	_s("(instead of the normal 8-pixels steps scrolling)"),
-	"smooth_scroll",
-	true,
-	0,
-	1
-};
-
-static const ExtraGuiOption semiSmoothScrolling = {
-	_s("Allow semi-smooth scrolling"),
-	_s("Allow scrolling to be less smooth during the fast camera movement in the intro."),
-	"semi_smooth_scroll",
-	false,
-	1,
-	0
-};
-
-static const ExtraGuiOption enableEnhancements {
-	_s("Enable game-specific enhancements"),
-	_s("Allow ScummVM to make small enhancements to the game, usually based on other versions of the same game."),
-	"enable_enhancements",
-	true,
-	0,
-	0
-};
-
-static const ExtraGuiOption audioOverride {
-	_s("Load modded audio"),
-	_s("Replace music, sound effects, and speech clips with modded audio files, if available."),
-	"audio_override",
-	true,
-	0,
-	0
-};
-
-const ExtraGuiOptions ScummMetaEngineDetection::getExtraGuiOptions(const Common::String &target) const {
-	ExtraGuiOptions options;
-	// Query the GUI options
-	const Common::String guiOptionsString = ConfMan.get("guioptions", target);
-	const Common::String gameid = ConfMan.get("gameid", target);
-	const Common::String extra = ConfMan.get("extra", target);
-	const Common::String guiOptions = parseGameGUIOptions(guiOptionsString);
-	const Common::Platform platform = Common::parsePlatform(ConfMan.get("platform", target));
-
-	if (target.empty() || guiOptions.contains(GUIO_ENHANCEMENTS)) {
-		options.push_back(enableEnhancements);
-	}
-	if (target.empty() || guiOptions.contains(GUIO_AUDIO_OVERRIDE)) {
-		options.push_back(audioOverride);
-	}
-	if (target.empty() || gameid == "comi") {
-		options.push_back(comiObjectLabelsOption);
-	}
-	if (target.empty() || platform == Common::kPlatformNES) {
-		options.push_back(mmnesObjectLabelsOption);
-	}
-	if (target.empty() || platform == Common::kPlatformFMTowns) {
-		options.push_back(smoothScrolling);
-		if (target.empty() || gameid == "loom")
-			options.push_back(semiSmoothScrolling);
-		if (guiOptions.contains(GUIO_TRIM_FMTOWNS_TO_200_PIXELS))
-			options.push_back(fmtownsTrimTo200);
-	}
-
-	// The Steam Mac versions of Loom and Indy 3 are more akin to the VGA
-	// DOS versions, and that's how ScummVM usually sees them. But that
-	// rebranding does not happen until later.
-
-	// The low quality music in Loom was probably intended for low-end
-	// Macs. It plays only one channel, instead of three.
-
-	if (target.empty() || (gameid == "loom" && platform == Common::kPlatformMacintosh && extra != "Steam")) {
-		options.push_back(macV3LowQualityMusic);
-	}
-
-	return options;
 }
 
 REGISTER_PLUGIN_STATIC(SCUMM_DETECTION, PLUGIN_TYPE_ENGINE_DETECTION, ScummMetaEngineDetection);

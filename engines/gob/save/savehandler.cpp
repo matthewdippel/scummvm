@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/endian.h"
@@ -223,6 +229,16 @@ bool SaveHandler::deleteFile() {
 	return true;
 }
 
+bool SaveHandler::loadToRaw(byte *ptr, int32 size, int32 offset) {
+	warning("SaveHandler::loadToRaw() not implemented");
+	return false;
+}
+
+bool SaveHandler::saveFromRaw(const byte *ptr, int32 size, int32 offset) {
+	warning("SaveHandler::saveFromRaw() not implemented");
+	return false;
+}
+
 
 TempSpriteHandler::TempSpriteHandler(GobEngine *vm) : SaveHandler(vm) {
 	_sprite = nullptr;
@@ -239,8 +255,8 @@ int32 TempSpriteHandler::getSize() {
 	return _sprite->getSize();
 }
 
-bool TempSpriteHandler::load(int16 dataVar, int32 size, int32 offset) {
-	if (isDummy(size))
+bool TempSpriteHandler::load(int16 dataVar, int32 index_as_size, int32 offset) {
+	if (isDummy(index_as_size))
 		return true;
 
 	// Sprite available?
@@ -248,11 +264,11 @@ bool TempSpriteHandler::load(int16 dataVar, int32 size, int32 offset) {
 		return false;
 
 	// Sprite requested?
-	if (!isSprite(size))
+	if (!isSprite(index_as_size))
 		return false;
 
 	// Index sane?
-	int index = getIndex(size);
+	int index = getIndex(index_as_size);
 	if ((index < 0) || (index >= Draw::kSpriteCount))
 		return false;
 
@@ -267,7 +283,7 @@ bool TempSpriteHandler::load(int16 dataVar, int32 size, int32 offset) {
 		return false;
 
 	// Handle palette
-	if (usesPalette(size)) {
+	if (usesPalette(index_as_size)) {
 		if (!_sprite->writePalette((byte *)_vm->_global->_pPaletteDesc->vgaPal))
 			return false;
 
@@ -285,11 +301,11 @@ bool TempSpriteHandler::load(int16 dataVar, int32 size, int32 offset) {
 	return true;
 }
 
-bool TempSpriteHandler::save(int16 dataVar, int32 size, int32 offset) {
-	if (isDummy(size))
+bool TempSpriteHandler::save(int16 dataVar, int32 index_as_size, int32 offset) {
+	if (isDummy(index_as_size))
 		return true;
 
-	SurfacePtr sprite = createSprite(dataVar, size, offset);
+	SurfacePtr sprite = createSprite(index_as_size, offset);
 	if (!sprite)
 		return false;
 
@@ -298,7 +314,7 @@ bool TempSpriteHandler::save(int16 dataVar, int32 size, int32 offset) {
 		return false;
 
 	// Handle palette
-	if (usesPalette(size))
+	if (usesPalette(index_as_size))
 		if (!_sprite->readPalette((const byte *)_vm->_global->_pPaletteDesc->vgaPal))
 			return false;
 
@@ -315,19 +331,47 @@ bool TempSpriteHandler::create(uint32 width, uint32 height, bool trueColor) {
 	return true;
 }
 
-bool TempSpriteHandler::createFromSprite(int16 dataVar, int32 size, int32 offset) {
-	return createSprite(dataVar, size, offset) != nullptr;
+bool TempSpriteHandler::loadToRaw(byte *ptr, int32 size, int32 offset) {
+	// Sprite available?
+	if (!_sprite)
+		return false;
+
+	Surface destSprite(1, size, 1);
+
+	// Load the sprite
+	if (!_sprite->writeSprite(destSprite))
+		return false;
+
+	// Copy the sprite to the buffer
+	memcpy(ptr, destSprite.getData(), size);
+
+	return true;
 }
 
-SurfacePtr TempSpriteHandler::createSprite(int16 dataVar, int32 size, int32 offset) {
+bool TempSpriteHandler::saveFromRaw(const byte *ptr, int32 size, int32 offset) {
+	create(1, size, false);
+
+	if (!_sprite->readSpriteRaw(ptr, size))
+		return false;
+
+	// Assume no palette used
+
+	return true;
+}
+
+bool TempSpriteHandler::createFromSprite(int32 index_as_size, int32 offset) {
+	return createSprite(index_as_size, offset) != nullptr;
+}
+
+SurfacePtr TempSpriteHandler::createSprite(int32 index_as_size, int32 offset) {
 	SurfacePtr sprt;
 
 	// Sprite requested?
-	if (!isSprite(size))
+	if (!isSprite(index_as_size))
 		return sprt;
 
 	// Index sane?
-	int index = getIndex(size);
+	int index = getIndex(index_as_size);
 	if ((index < 0) || (index >= Draw::kSpriteCount))
 		return sprt;
 
@@ -505,7 +549,7 @@ bool FakeFileHandler::load(int16 dataVar, int32 size, int32 offset) {
 	if ((uint32)(offset + size) > _data.size())
 		return false;
 
-	_vm->_inter->_variables->copyFrom(dataVar, &_data[0] + offset, size);
+	_vm->_inter->_variables->copyFrom((uint16) dataVar, &_data[0] + offset, size);
 
 	return true;
 }
@@ -517,7 +561,31 @@ bool FakeFileHandler::save(int16 dataVar, int32 size, int32 offset) {
 	if ((uint32)(offset + size) > _data.size())
 		_data.resize(offset + size);
 
-	_vm->_inter->_variables->copyTo(dataVar, &_data[0] + offset, size);
+	_vm->_inter->_variables->copyTo((uint16) dataVar, &_data[0] + offset, size);
+
+	return true;
+}
+
+bool FakeFileHandler::loadToRaw(byte *ptr, int32 size, int32 offset) {
+	if (size <= 0)
+		return false;
+
+	if ((uint32)(offset + size) > _data.size())
+		return false;
+
+	memcpy(ptr, &_data[0] + offset, size);
+
+	return true;
+}
+
+bool FakeFileHandler::saveFromRaw(const byte *ptr, int32 size, int32 offset) {
+	if (size <= 0)
+		return false;
+
+	if ((uint32)(offset + size) > _data.size())
+		_data.resize(offset + size);
+
+	memcpy(&_data[0] + offset, ptr, size);
 
 	return true;
 }

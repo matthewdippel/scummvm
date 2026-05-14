@@ -26,7 +26,6 @@
 #include "common/queue.h"
 #include "common/rect.h"
 
-#include "graphics/palette.h"
 #include "graphics/surface.h"
 
 #include "asylum/shared.h"
@@ -91,6 +90,7 @@ public:
 	void drawTransparent(ResourceId resourceId, uint32 frameIndex, const Common::Point &source, DrawFlags flags, uint32 transTableNum);
 	void drawTransparent(GraphicResource *resource, uint32 frameIndex, const Common::Point &source, DrawFlags flags, uint32 transTableNum);
 	void draw(ResourceId resourceId, uint32 frameIndex, const Common::Point &source, DrawFlags flags, ResourceId resourceId2, const Common::Point &destination, bool colorKey = true);
+	void draw(const Graphics::Surface &surface, int x, int y);
 
 	// Misc
 	void clear();
@@ -146,8 +146,8 @@ public:
 	void drawRect(const Common::Rect &rect, uint32 color = 0xFF);
 	void copyToBackBufferClipped(Graphics::Surface *surface, int16 x, int16 y);
 
-	// Used by Writings puzzle
-	const Graphics::Surface &getSurface() const { return _backBuffer; };
+	// Used by Writings puzzle and Chinese renderer
+	Graphics::Surface *getSurface() { return &_backBuffer; };
 
 private:
 	AsylumEngine *_vm;

@@ -24,10 +24,10 @@
 #include "backends/cloud/dropbox/dropboxtokenrefresher.h"
 #include "backends/cloud/cloudmanager.h"
 #include "backends/cloud/storage.h"
-#include "backends/networking/curl/connectionmanager.h"
-#include "backends/networking/curl/curljsonrequest.h"
-#include "backends/networking/curl/networkreadstream.h"
-#include "common/json.h"
+#include "backends/networking/http/connectionmanager.h"
+#include "backends/networking/http/httpjsonrequest.h"
+#include "backends/networking/http/networkreadstream.h"
+#include "common/formats/json.h"
 
 namespace Cloud {
 namespace Dropbox {
@@ -54,9 +54,9 @@ void DropboxInfoRequest::start() {
 		_workingRequest->finish();
 	_ignoreCallback = false;
 
-	Networking::JsonCallback innerCallback = new Common::Callback<DropboxInfoRequest, Networking::JsonResponse>(this, &DropboxInfoRequest::userResponseCallback);
-	Networking::ErrorCallback errorResponseCallback = new Common::Callback<DropboxInfoRequest, Networking::ErrorResponse>(this, &DropboxInfoRequest::errorCallback);
-	Networking::CurlJsonRequest *request = new DropboxTokenRefresher(_storage, innerCallback, errorResponseCallback, DROPBOX_API_GET_CURRENT_ACCOUNT);
+	Networking::JsonCallback innerCallback = new Common::Callback<DropboxInfoRequest, const Networking::JsonResponse &>(this, &DropboxInfoRequest::userResponseCallback);
+	Networking::ErrorCallback errorResponseCallback = new Common::Callback<DropboxInfoRequest, const Networking::ErrorResponse &>(this, &DropboxInfoRequest::errorCallback);
+	Networking::HttpJsonRequest *request = new DropboxTokenRefresher(_storage, innerCallback, errorResponseCallback, DROPBOX_API_GET_CURRENT_ACCOUNT);
 	request->addHeader("Authorization: Bearer " + _storage->accessToken());
 	request->addHeader("Content-Type: application/json");
 	request->addPostField("null"); //use POST
@@ -64,8 +64,8 @@ void DropboxInfoRequest::start() {
 	_workingRequest = ConnMan.addRequest(request);
 }
 
-void DropboxInfoRequest::userResponseCallback(Networking::JsonResponse response) {
-	Common::JSONValue *json = response.value;
+void DropboxInfoRequest::userResponseCallback(const Networking::JsonResponse &response) {
+	const Common::JSONValue *json = response.value;
 	_workingRequest = nullptr;
 	if (_ignoreCallback) {
 		delete json;
@@ -73,7 +73,7 @@ void DropboxInfoRequest::userResponseCallback(Networking::JsonResponse response)
 	}
 
 	Networking::ErrorResponse error(this, "DropboxInfoRequest::userResponseCallback: unknown error");
-	Networking::CurlJsonRequest *rq = (Networking::CurlJsonRequest *)response.request;
+	const Networking::HttpJsonRequest *rq = (const Networking::HttpJsonRequest *)response.request;
 	if (rq && rq->getNetworkReadStream())
 		error.httpResponseCode = rq->getNetworkReadStream()->httpResponseCode();
 
@@ -92,25 +92,25 @@ void DropboxInfoRequest::userResponseCallback(Networking::JsonResponse response)
 
 	//Dropbox documentation states there are no errors for this API method
 	Common::JSONObject info = json->asObject();
-	if (Networking::CurlJsonRequest::jsonContainsAttribute(info, "name", "DropboxInfoRequest") &&
-		Networking::CurlJsonRequest::jsonIsObject(info.getVal("name"), "DropboxInfoRequest")) {
+	if (Networking::HttpJsonRequest::jsonContainsAttribute(info, "name", "DropboxInfoRequest") &&
+		Networking::HttpJsonRequest::jsonIsObject(info.getVal("name"), "DropboxInfoRequest")) {
 		Common::JSONObject nameInfo = info.getVal("name")->asObject();
-		if (Networking::CurlJsonRequest::jsonContainsString(nameInfo, "display_name", "DropboxInfoRequest")) {
+		if (Networking::HttpJsonRequest::jsonContainsString(nameInfo, "display_name", "DropboxInfoRequest")) {
 			_name = nameInfo.getVal("display_name")->asString();
 		}
 	}
-	if (Networking::CurlJsonRequest::jsonContainsString(info, "account_id", "DropboxInfoRequest")) {
+	if (Networking::HttpJsonRequest::jsonContainsString(info, "account_id", "DropboxInfoRequest")) {
 		_uid = info.getVal("account_id")->asString();
 	}
-	if (Networking::CurlJsonRequest::jsonContainsString(info, "email", "DropboxInfoRequest")) {
+	if (Networking::HttpJsonRequest::jsonContainsString(info, "email", "DropboxInfoRequest")) {
 		_email = info.getVal("email")->asString();
 	}
 	CloudMan.setStorageUsername(kStorageDropboxId, _email);
 	delete json;
 
-	Networking::JsonCallback innerCallback = new Common::Callback<DropboxInfoRequest, Networking::JsonResponse>(this, &DropboxInfoRequest::quotaResponseCallback);
-	Networking::ErrorCallback errorResponseCallback = new Common::Callback<DropboxInfoRequest, Networking::ErrorResponse>(this, &DropboxInfoRequest::errorCallback);
-	Networking::CurlJsonRequest *request = new DropboxTokenRefresher(_storage, innerCallback, errorResponseCallback, DROPBOX_API_GET_SPACE_USAGE);
+	Networking::JsonCallback innerCallback = new Common::Callback<DropboxInfoRequest, const Networking::JsonResponse &>(this, &DropboxInfoRequest::quotaResponseCallback);
+	Networking::ErrorCallback errorResponseCallback = new Common::Callback<DropboxInfoRequest, const Networking::ErrorResponse &>(this, &DropboxInfoRequest::errorCallback);
+	Networking::HttpJsonRequest *request = new DropboxTokenRefresher(_storage, innerCallback, errorResponseCallback, DROPBOX_API_GET_SPACE_USAGE);
 	request->addHeader("Authorization: Bearer " + _storage->accessToken());
 	request->addHeader("Content-Type: application/json");
 	request->addPostField("null"); //use POST
@@ -118,8 +118,8 @@ void DropboxInfoRequest::userResponseCallback(Networking::JsonResponse response)
 	_workingRequest = ConnMan.addRequest(request);
 }
 
-void DropboxInfoRequest::quotaResponseCallback(Networking::JsonResponse response) {
-	Common::JSONValue *json = response.value;
+void DropboxInfoRequest::quotaResponseCallback(const Networking::JsonResponse &response) {
+	const Common::JSONValue *json = response.value;
 	_workingRequest = nullptr;
 	if (_ignoreCallback) {
 		delete json;
@@ -127,7 +127,7 @@ void DropboxInfoRequest::quotaResponseCallback(Networking::JsonResponse response
 	}
 
 	Networking::ErrorResponse error(this, "DropboxInfoRequest::quotaResponseCallback: unknown error");
-	Networking::CurlJsonRequest *rq = (Networking::CurlJsonRequest *)response.request;
+	const Networking::HttpJsonRequest *rq = (const Networking::HttpJsonRequest *)response.request;
 	if (rq && rq->getNetworkReadStream())
 		error.httpResponseCode = rq->getNetworkReadStream()->httpResponseCode();
 
@@ -147,7 +147,7 @@ void DropboxInfoRequest::quotaResponseCallback(Networking::JsonResponse response
 	//Dropbox documentation states there are no errors for this API method
 	Common::JSONObject info = json->asObject();
 
-	if (!Networking::CurlJsonRequest::jsonContainsIntegerNumber(info, "used", "DropboxInfoRequest")) {
+	if (!Networking::HttpJsonRequest::jsonContainsIntegerNumber(info, "used", "DropboxInfoRequest")) {
 		error.response = "Passed JSON misses 'used' attribute!";
 		finishError(error);
 		delete json;
@@ -156,10 +156,10 @@ void DropboxInfoRequest::quotaResponseCallback(Networking::JsonResponse response
 
 	uint64 used = info.getVal("used")->asIntegerNumber(), allocated = 0;
 
-	if (Networking::CurlJsonRequest::jsonContainsAttribute(info, "allocation", "DropboxInfoRequest") &&
-		Networking::CurlJsonRequest::jsonIsObject(info.getVal("allocation"), "DropboxInfoRequest")) {
+	if (Networking::HttpJsonRequest::jsonContainsAttribute(info, "allocation", "DropboxInfoRequest") &&
+		Networking::HttpJsonRequest::jsonIsObject(info.getVal("allocation"), "DropboxInfoRequest")) {
 		Common::JSONObject allocation = info.getVal("allocation")->asObject();
-		if (!Networking::CurlJsonRequest::jsonContainsIntegerNumber(allocation, "allocated", "DropboxInfoRequest")) {
+		if (!Networking::HttpJsonRequest::jsonContainsIntegerNumber(allocation, "allocated", "DropboxInfoRequest")) {
 			error.response = "Passed JSON misses 'allocation/allocated' attribute!";
 			finishError(error);
 			delete json;
@@ -173,7 +173,7 @@ void DropboxInfoRequest::quotaResponseCallback(Networking::JsonResponse response
 	delete json;
 }
 
-void DropboxInfoRequest::errorCallback(Networking::ErrorResponse error) {
+void DropboxInfoRequest::errorCallback(const Networking::ErrorResponse &error) {
 	_workingRequest = nullptr;
 	if (_ignoreCallback) return;
 	finishError(error);
@@ -183,7 +183,7 @@ void DropboxInfoRequest::handle() {}
 
 void DropboxInfoRequest::restart() { start(); }
 
-void DropboxInfoRequest::finishInfo(StorageInfo info) {
+void DropboxInfoRequest::finishInfo(const StorageInfo &info) {
 	Request::finishSuccess();
 	if (_infoCallback)
 		(*_infoCallback)(Storage::StorageInfoResponse(this, info));

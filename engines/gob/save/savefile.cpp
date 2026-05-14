@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/util.h"
@@ -247,11 +253,11 @@ bool SavePartVars::readFrom(uint32 var, uint32 offset, uint32 size) {
 	return _vm->_inter->_variables->copyTo(var, _data + offset, size);
 }
 
-bool SavePartVars::readFromRaw(const byte *data, uint32 size) {
-	if (size != _size)
+bool SavePartVars::readFromRaw(const byte *data, uint32 offset, uint32 size) {
+	if (offset + size > _size)
 		return false;
 
-	memcpy(_data, data, size);
+	memcpy(_data + offset, data, size);
 	return true;
 }
 
@@ -266,6 +272,14 @@ bool SavePartVars::writeInto(uint32 var, uint32 offset, uint32 size) const {
 	if (!_vm->_inter->_variables->copyFrom(var, _data + offset, size))
 		return false;
 
+	return true;
+}
+
+bool SavePartVars::writeIntoRaw(byte *data, uint32 offset, uint32 size) const {
+	if ((offset + size) > _size)
+		return false;
+
+	memcpy(data, _data + offset, size);
 	return true;
 }
 
@@ -322,9 +336,10 @@ bool SavePartSprite::read(Common::ReadStream &stream) {
 	}
 
 	// The sprite's dimensions have to fit
-	if (stream.readUint32LE() != _width)
-		return false;
-	if (stream.readUint32LE() != _height)
+	uint32 width = stream.readUint32LE();
+	uint32 height = stream.readUint32LE();
+
+	if (width * height != _width * _height)
 		return false;
 
 	// If it's in the current format, the true color flag has to be the same too
@@ -371,9 +386,7 @@ bool SavePartSprite::readPalette(const byte *palette) {
 
 bool SavePartSprite::readSprite(const Surface &sprite) {
 	// The sprite's dimensions have to fit
-	if (((uint32)sprite.getWidth()) != _width)
-		return false;
-	if (((uint32)sprite.getHeight()) != _height)
+	if (((uint32)sprite.getWidth() * sprite.getHeight()) != _width * _height)
 		return false;
 
 	if (_trueColor) {
@@ -413,9 +426,7 @@ bool SavePartSprite::writePalette(byte *palette) const {
 
 bool SavePartSprite::writeSprite(Surface &sprite) const {
 	// The sprite's dimensions have to fit
-	if (((uint32)sprite.getWidth()) != _width)
-		return false;
-	if (((uint32)sprite.getHeight()) != _height)
+	if (((uint32) sprite.getWidth() * sprite.getHeight()) != _width * _height)
 		return false;
 
 	if (_trueColor) {
@@ -719,11 +730,9 @@ bool SaveContainer::read(Common::ReadStream &stream) {
 	_header.setSize(calcSize());
 
 	// Iterate over all parts
-	for (PartIterator it = _parts.begin(); it != _parts.end(); ++it) {
-		Part *&p = *it;
-
+	for (auto &part : _parts) {
 		// Read the part
-		if (stream.read(p->data, p->size) != p->size) {
+		if (stream.read(part->data, part->size) != part->size) {
 			clear();
 			return false;
 		}
@@ -741,24 +750,22 @@ bool SaveContainer::write(Common::WriteStream &stream) const {
 	stream.writeUint32LE(_partCount);
 
 	// Iterate over all parts
-	for (PartConstIterator it = _parts.begin(); it != _parts.end(); ++it) {
+	for (auto &part : _parts) {
 		// Part doesn't actually exist => error
-		if (!*it)
+		if (!part)
 			return false;
 
 		// Write the part's size
-		stream.writeUint32LE((*it)->size);
+		stream.writeUint32LE(part->size);
 	}
 
 	if (!flushStream(stream))
 		return false;
 
 	// Iterate over all parts
-	for (PartConstIterator it = _parts.begin(); it != _parts.end(); ++it) {
-		Part * const &p = *it;
-
+	for (auto &part : _parts) {
 		// Write the part
-		if (stream.write(p->data, p->size) != p->size)
+		if (stream.write(part->data, part->size) != part->size)
 			return false;
 	}
 
@@ -924,7 +931,7 @@ Common::InSaveFile *SaveReader::openSave() {
 }
 
 bool SaveReader::getInfo(Common::SeekableReadStream &stream, SavePartInfo &info) {
-	// Remeber the stream's starting position to seek back to
+	// Remember the stream's starting position to seek back to
 	uint32 startPos = stream.pos();
 
 	// Get parts' basic information
@@ -1002,6 +1009,14 @@ bool SaveWriter::writePart(uint32 partN, const SavePart *part) {
 
 bool SaveWriter::save(Common::WriteStream &stream) {
 	return SaveContainer::write(stream);
+}
+
+bool SaveWriter::deleteFile() {
+	if (_fileName.empty())
+		return false;
+
+	Common::SaveFileManager *saveMan = g_system->getSavefileManager();
+	return saveMan->removeSavefile(_fileName);
 }
 
 bool SaveWriter::save() {

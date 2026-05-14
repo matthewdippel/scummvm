@@ -28,7 +28,7 @@
 #include "graphics/thumbnail.h"
 #include "graphics/surface.h"
 
-#define CURRENT_SAVE_VERSION 21
+#define CURRENT_SAVE_VERSION 24
 
 #define GF_FLOPPY  (1 <<  0)
 #define GF_TALKIE  (1 <<  1)
@@ -180,7 +180,7 @@ Common::SeekableReadStream *KyraEngine_v1::openSaveForReading(const char *filena
 
 		if (header.version < 2) {
 			warning("Make sure your savefile was from this version! (too old savefile version to detect that)");
-		} else {
+		} else if (checkID) {
 			if ((header.flags & GF_FLOPPY) && (_flags.isTalkie || _flags.platform == Common::kPlatformFMTowns || _flags.platform == Common::kPlatformPC98)) {
 				warning("Can not load DOS Floppy savefile for this (non DOS Floppy) gameversion");
 				delete in;
@@ -189,7 +189,7 @@ Common::SeekableReadStream *KyraEngine_v1::openSaveForReading(const char *filena
 				warning("Can not load DOS CD-ROM savefile for this (non DOS CD-ROM) gameversion");
 				delete in;
 				return nullptr;
-			} else if (checkID && ((header.flags & GF_FMTOWNS) && !(_flags.platform == Common::kPlatformFMTowns || _flags.platform == Common::kPlatformPC98))) {
+			} else if ((header.flags & GF_FMTOWNS) && !(_flags.platform == Common::kPlatformFMTowns || _flags.platform == Common::kPlatformPC98)) {
 				warning("Can not load FM-TOWNS/PC98 savefile for this (non FM-TOWNS/PC98) gameversion");
 				delete in;
 				return nullptr;
@@ -250,7 +250,7 @@ Common::OutSaveFile *KyraEngine_v1::openSaveForWriting(const char *filename, con
 	out->writeSint32BE(td.tm_hour);
 	out->writeSint32BE(td.tm_mday);
 	out->writeSint32BE(td.tm_mon);
-	out->writeSint32BE(td.tm_year);		
+	out->writeSint32BE(td.tm_year);
 	out->writeSint32BE(td.tm_wday);
 
 	out->writeUint32BE(_totalPlaySecs);

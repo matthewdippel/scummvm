@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "gob/save/saveload.h"
@@ -318,7 +324,7 @@ bool SaveLoad_Inca2::ScreenshotHandler::load(int16 dataVar, int32 size, int32 of
 			return false;
 		}
 
-		if (!TempSpriteHandler::createFromSprite(dataVar, size, offset))
+		if (!TempSpriteHandler::createFromSprite(size, offset))
 			return false;
 
 		if (!_gameHandler->loadScreenshot(slot, _sprite))

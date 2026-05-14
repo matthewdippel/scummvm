@@ -234,7 +234,7 @@ Audio32::~Audio32() {
 
 int Audio32::writeAudioInternal(Audio::AudioStream &sourceStream, Audio::RateConverter &converter, Audio::st_sample_t *targetBuffer, const int numSamples, const Audio::st_volume_t leftVolume, const Audio::st_volume_t rightVolume) {
 	const int samplePairsToRead = numSamples >> 1;
-	const int samplePairsWritten = converter.flow(sourceStream, targetBuffer, samplePairsToRead, leftVolume, rightVolume);
+	const int samplePairsWritten = converter.convert(sourceStream, targetBuffer, samplePairsToRead, leftVolume, rightVolume);
 	return samplePairsWritten << 1;
 }
 
@@ -694,7 +694,8 @@ bool Audio32::playRobotAudio(const RobotAudioStream::RobotAudioPacket &packet) {
 		channel.soundNode = NULL_REG;
 		channel.volume = kMaxVolume;
 		channel.pan = -1;
-		channel.converter.reset(Audio::makeRateConverter(RobotAudioStream::kRobotSampleRate, getRate(), false));
+		// TODO: Avoid unnecessary channel conversion
+		channel.converter.reset(Audio::makeRateConverter(RobotAudioStream::kRobotSampleRate, getRate(), false, true, false));
 		// The RobotAudioStream buffer size is
 		// ((bytesPerSample * channels * sampleRate * 2000ms) / 1000ms) & ~3
 		// where bytesPerSample = 2, channels = 1, and sampleRate = 22050
@@ -860,7 +861,8 @@ uint16 Audio32::play(int16 channelIndex, const ResourceId resourceId, const bool
 	}
 
 	channel.stream.reset(new MutableLoopAudioStream(audioStream, loop));
-	channel.converter.reset(Audio::makeRateConverter(channel.stream->getRate(), getRate(), channel.stream->isStereo(), false));
+	// TODO: Avoid unnecessary channel conversion
+	channel.converter.reset(Audio::makeRateConverter(channel.stream->getRate(), getRate(), channel.stream->isStereo(), true, false));
 
 	// SSCI sets up a decompression buffer here for the audio stream, plus
 	// writes information about the sample to the channel to convert to the

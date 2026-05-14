@@ -20,7 +20,6 @@
  */
 
 #include "base/plugins.h"
-#include "common/translation.h"
 #include "engines/advancedDetector.h"
 
 #include "sword25/detection.h"
@@ -28,49 +27,35 @@
 #include "sword25/sword25.h"
 
 static const PlainGameDescriptor sword25Game[] = {
-	{"sword25", "Broken Sword 2.5"},
+	{"sword25", "Broken Sword 2.5: The Return of the Templars"},
 	{0, 0}
 };
 
 static const DebugChannelDef debugFlagList[] = {
 	{Sword25::kDebugScript, "Script", "Script debug level"},
 	{Sword25::kDebugSound, "Sound", "Sound debug level"},
+	{Sword25::kDebugInternalDebugger, "Internaldebugger", "Internal debugger level"}, 
 	DEBUG_CHANNEL_END
 };
 
-static const char *directoryGlobs[] = {
+static const char *const directoryGlobs[] = {
 	"system", // Used by extracted dats
 	0
 };
 
-static const ADExtraGuiOptionsMap optionsList[] = {
-	{
-		GAMEOPTION_ENGLISH_SPEECH,
-		{
-			_s("Use English speech"),
-			_s("Use English speech instead of German for every language other than German"),
-			"english_speech",
-			false,
-			0,
-			0
-		}
-	},
-	AD_EXTRA_GUI_OPTIONS_TERMINATOR
-};
-
-class Sword25MetaEngineDetection : public AdvancedMetaEngineDetection {
+class Sword25MetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	Sword25MetaEngineDetection() : AdvancedMetaEngineDetection(Sword25::gameDescriptions, sizeof(ADGameDescription), sword25Game, optionsList) {
+	Sword25MetaEngineDetection() : AdvancedMetaEngineDetection(Sword25::gameDescriptions, sword25Game) {
 		_guiOptions = GUIO2(GUIO_NOMIDI, GAMEOPTION_ENGLISH_SPEECH);
 		_maxScanDepth = 2;
 		_directoryGlobs = directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "sword25";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Broken Sword 2.5";
 	}
 

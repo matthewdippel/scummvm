@@ -40,7 +40,7 @@ TextRenderer_v7::TextRenderer_v7(ScummEngine *vm, GlyphRenderer_v7 *gr)	:
 	_direction(vm->_language == Common::HE_ISR ? -1 : 1),
 	_rtlCenteredOffset(vm->_language == Common::HE_ISR ? 1 : 0),
 	_spacing(vm->_language != Common::JA_JPN ? 1 : 0),
-	_lineBreakMarker(vm->_newLineCharacter),
+	_lineBreakMarker((char)vm->_newLineCharacter),
 	_newStyle (gr->newStyleWrapping()),
 	_gr(gr) {
 }
@@ -183,11 +183,15 @@ void TextRenderer_v7::drawString(const char *str, byte *buffer, Common::Rect &cl
 
 	int totalLen = (int)strlen(str);
 	int lineStart = 0;
+	int xAdj = 0;
 
 	// COMI always does this for CJK strings (before any other possible yPos fixes).
 	if (_gameId == GID_CMI) {
-		if (_useCJKMode)
+		if (_useCJKMode) {
 			y += 2;
+			if (col != 0)
+				xAdj = 1; // x-adjust for left side glyph shadow
+		}
 		// No idea whether it is actually used. We currently don't handle this flag.
 		/*if (flags & 0x40)
 			y -= (getStringHeight(str, totalLen) / 2);*/
@@ -223,10 +227,10 @@ void TextRenderer_v7::drawString(const char *str, byte *buffer, Common::Rect &cl
 		lineStart = pos + 1;
 	}
 
-	clipRect.left = (flags & kStyleAlignCenter) ? x - maxWidth / 2 : ((flags & kStyleAlignRight) ? x - maxWidth : x);
-	clipRect.right = MIN<int>(clipRect.right, clipRect.left + maxWidth);
-	clipRect.top = y2;
-	clipRect.bottom = y + (_newStyle ? 0 : 1);
+	clipRect.left = MAX<int>(0, ((flags & kStyleAlignCenter) ? x - maxWidth / 2 : ((flags & kStyleAlignRight) ? x - maxWidth : x)) - xAdj);
+	clipRect.right = MIN<int>(clipRect.right, clipRect.left + xAdj + maxWidth);
+	clipRect.top = y2 - (_newStyle ? 0 : 4);
+	clipRect.bottom = y + (_newStyle ? 0 : 4);
 }
 
 void TextRenderer_v7::drawStringWrap(const char *str, byte *buffer, Common::Rect &clipRect, int x, int y, int pitch, int16 col, TextStyleFlags flags) {
@@ -263,10 +267,14 @@ void TextRenderer_v7::drawStringWrap(const char *str, byte *buffer, Common::Rect
 	int maxWidth = 0;
 	int curWidth = 0;
 	int curPos = -1;
+	int xAdj = 0;
 
 	// COMI does this for CJK strings (before any other possible yPos fixes, see lines 343 - 355).
-	if (_gameId == GID_CMI && _useCJKMode)
+	if (_gameId == GID_CMI && _useCJKMode) {
 		y += 2;
+		if (col != 0)
+			xAdj = 1; // x-adjust for left side glyph shadow
+	}
 
 	while (curPos < len) {
 		int textStart = curPos + 1;
@@ -302,7 +310,9 @@ void TextRenderer_v7::drawStringWrap(const char *str, byte *buffer, Common::Rect
 				substrWidths[numSubstrings] = curWidth;
 				substrByteLength[numSubstrings] = curPos - substrStart[numSubstrings];
 				numSubstrings++;
-				substrStart[numSubstrings] = curPos + 1;
+				// extra check for PVS-Studio (we won't actually ever get close to SCUMM7_MAX_STRINGS)
+				if (numSubstrings < SCUMM7_MAX_STRINGS)
+					substrStart[numSubstrings] = curPos + 1;
 			}
 			curWidth = 0;
 		}
@@ -374,10 +384,10 @@ void TextRenderer_v7::drawStringWrap(const char *str, byte *buffer, Common::Rect
 		y += getStringHeight(str + substrStart[i], len);
 	}
 
-	clipRect.left = (flags & kStyleAlignCenter) ? x - maxWidth / 2 : ((flags & kStyleAlignRight) ? x - maxWidth : x);
-	clipRect.right = MIN<int>(clipRect.right, clipRect.left + maxWidth);
-	clipRect.top = y2;
-	clipRect.bottom = y + (_newStyle ? 0 : 1);
+	clipRect.left = MAX<int>(0, ((flags & kStyleAlignCenter) ? x - maxWidth / 2 : ((flags & kStyleAlignRight) ? x - maxWidth : x)) - xAdj);
+	clipRect.right = MIN<int>(clipRect.right, clipRect.left + xAdj + maxWidth);
+	clipRect.top = y2 - (_newStyle ? 0 : 4);
+	clipRect.bottom = y + (_newStyle ? 0 : 4);
 }
 
 Common::Rect TextRenderer_v7::calcStringDimensions(const char *str, int x, int y, TextStyleFlags flags) {
@@ -402,7 +412,7 @@ void ScummEngine_v7::createTextRenderer(GlyphRenderer_v7 *gr) {
 #pragma mark --- V7 blast text queue code ---
 #pragma mark -
 
-void ScummEngine_v7::enqueueText(const byte *text, int x, int y, byte color, byte charset, TextStyleFlags flags) {
+void ScummEngine_v7::enqueueText(const byte *text, int x, int y, byte color, byte charset, TextStyleFlags flags, bool ttsVoiceText, bool ttsIsSubtitle) {
 	assert(_blastTextQueuePos + 1 <= ARRAYSIZE(_blastTextQueue));
 
 	if (_useCJKMode) {
@@ -417,8 +427,14 @@ void ScummEngine_v7::enqueueText(const byte *text, int x, int y, byte color, byt
 	convertMessageToString(text, bt.text, sizeof(bt.text));
 
 	// The original DIG interpreter expressly checks for " " strings here. And the game also sends these quite frequently...
-	if (!bt.text[0] || (bt.text[0] == (byte)' ' && !bt.text[1]))
+	if (!bt.text[0] || (bt.text[0] == (byte)' ' && !bt.text[1])) {
+#ifdef USE_TTS
+		if (getTalkingActor() == 0xFF || getTalkingActor() == 0) {
+			_previousSaid.clear();
+		}
+#endif
 		return;
+	}
 
 	_blastTextQueuePos++;
 	bt.xpos = x;
@@ -426,21 +442,46 @@ void ScummEngine_v7::enqueueText(const byte *text, int x, int y, byte color, byt
 	bt.color = color;
 	bt.charset = charset;
 	bt.flags = flags;
+#ifdef USE_TTS
+	bt.voiceText = ttsVoiceText;
+	bt.isSubtitle = ttsIsSubtitle;
+#endif
+}
+
+void ScummEngine_v7::drawTextImmediately(const byte *text, Common::Rect *clipRect, int x, int y, byte color, byte charset, TextStyleFlags flags) {
+	// This function allows for a string to be immediately
+	// drawn on the screen without having to enqueueing it.
+	byte msg[256];
+	Common::Rect rect = clipRect ? *clipRect : _defaultTextClipRect;
+	int effX = x;
+	TextStyleFlags effFlags = flags;
+	VirtScreen *vs = &_virtscr[kMainVirtScreen];
+
+	convertMessageToString(text, msg, sizeof(msg));
+
+	_charset->setCurID(charset);
+
+	_textV7->drawString((const char *)msg, (byte *)vs->getPixels(0, _screenTop), rect, effX, y, vs->pitch, color, effFlags);
+
+	rect.top += _screenTop;
+	rect.bottom += _screenTop;
+	markRectAsDirty(vs->number, rect);
 }
 
 void ScummEngine_v7::drawBlastTexts() {
 	VirtScreen *vs = &_virtscr[kMainVirtScreen];
 
+#ifdef USE_TTS
+	Common::String ttsMessage;
+	Common::String ttsSubtitles;
+#endif
 	for (int i = 0; i < _blastTextQueuePos; i++) {
 		BlastText &bt = _blastTextQueue[i];
 
 		_charset->setCurID(_blastTextQueue[i].charset);
 
-		// If a Hebrew String comes up that is still marked as kStyleAlignLeft we fix it here...
-		if (_language == Common::HE_ISR && !(bt.flags & (kStyleAlignCenter | kStyleAlignRight))) {
-			bt.flags = (TextStyleFlags)(bt.flags | kStyleAlignRight);
-			bt.xpos = _screenWidth - 1 - bt.xpos;
-		}
+		if (_game.version == 7 && _charset->getCurID() != -1)
+			memcpy(_charsetColorMap, _charsetData[_charset->getCurID()], _game.id == GID_DIG ? sizeof(_charsetColorMap) : 4);
 
 		if (bt.flags & kStyleWordWrap) {
 			bt.rect = _wrappedTextClipRect;
@@ -459,24 +500,74 @@ void ScummEngine_v7::drawBlastTexts() {
 			}
 
 			_textV7->drawStringWrap((const char*)bt.text, (byte*)vs->getPixels(0, _screenTop), bt.rect, bt.xpos, bt.ypos, vs->pitch, bt.color, bt.flags);
+#ifdef USE_TTS
+			if (bt.voiceText) {
+				if (bt.isSubtitle) {
+					ttsSubtitles += " ";
+					ttsSubtitles += (const char *)bt.text;
+				} else {
+					ttsMessage += " ";
+					ttsMessage += (const char *)bt.text;
+				}
+			}
+#endif
 		} else {
 			bt.rect = _defaultTextClipRect;
 			_textV7->drawString((const char*)bt.text, (byte*)vs->getPixels(0, _screenTop), bt.rect, bt.xpos, bt.ypos, vs->pitch, bt.color, bt.flags);
+			
+#ifdef USE_TTS
+			if (bt.voiceText) {
+				if (bt.isSubtitle) {
+					ttsSubtitles += " ";
+					ttsSubtitles += (const char *)bt.text;
+				} else {
+					ttsMessage += " ";
+					ttsMessage += (const char *)bt.text;
+				}
+			}
+#endif
 		}
 
 		bt.rect.top += _screenTop;
 		bt.rect.bottom += _screenTop;
 		markRectAsDirty(vs->number, bt.rect);
 	}
+
+#ifdef USE_TTS
+	if (!ttsSubtitles.empty()) {
+		ttsMessage = ttsSubtitles;
+	}
+
+	if (_previousSaid != ttsMessage) {
+		sayText(ttsMessage, Common::TextToSpeechManager::INTERRUPT);
+		_previousSaid = ttsMessage;
+	}
+#endif
 }
 
 void ScummEngine_v7::removeBlastTexts() {
-	int i;
+	if (_game.version == 8) {
+		if (_blastTextQueuePos != 0)
+			_blastTextRectsQueue = _blastTextQueuePos;
+		_blastTextQueuePos = 0;
+		return;
+	}
 
-	for (i = 0; i < _blastTextQueuePos; i++) {
+	for (int i = 0; i < _blastTextQueuePos; i++) {
 		restoreBackground(_blastTextQueue[i].rect);
 	}
 	_blastTextQueuePos = 0;
+}
+
+void ScummEngine_v7::restoreBlastTextsRects() {
+	if (_game.version < 8)
+		return;
+
+	for (int i = 0; i < _blastTextRectsQueue; i++) {
+		restoreBackground(_blastTextQueue[i].rect);
+	}
+
+	_blastTextRectsQueue = 0;
 }
 
 void ScummEngine_v8::printString(int m, const byte *msg) {
@@ -488,6 +579,24 @@ void ScummEngine_v8::printString(int m, const byte *msg) {
 		enqueueText(msg, st.xpos, st.ypos, st.color, st.charset, (TextStyleFlags)flags);
 	} else {
 		ScummEngine::printString(m, msg);
+	}
+}
+
+void ScummEngine_v7::showMessageDialog(const byte *msg) {
+	if (isUsingOriginalGUI()) {
+		int textColor = _string[3].color;
+		if (textColor)
+			setBannerColors(
+				26,
+				_currentPalette[3 * textColor],
+				_currentPalette[3 * textColor + 1],
+				_currentPalette[3 * textColor + 2]);
+		Common::KeyState ks = showBannerAndPause(2, -1, (const char *)msg);
+
+		if (VAR_KEYPRESS != 0xFF)
+			VAR(VAR_KEYPRESS) = ks.ascii;
+	} else {
+		ScummEngine::showMessageDialog(msg);
 	}
 }
 
@@ -504,13 +613,13 @@ void ScummEngine_v7::processSubtitleQueue() {
 			continue;
 		if (usingOldSystem) {
 			if (st->center || VAR(VAR_VOICE_MODE)) {
-				enqueueText(st->text, st->xpos, st->ypos, st->color, st->charset, (TextStyleFlags)0);
+				enqueueText(st->text, st->xpos, st->ypos, st->color, st->charset, (TextStyleFlags)0, (st->actorSpeechMsg || ConfMan.getBool("speech_mute") || VAR(VAR_VOICE_MODE) == 2), true);
 			}
 		} else {
 			int flags = st->wrap ? kStyleWordWrap : 0;
 			if (st->center)
 				flags |= kStyleAlignCenter;
-			enqueueText(st->text, st->xpos, st->ypos, st->color, st->charset, (TextStyleFlags)flags);
+			enqueueText(st->text, st->xpos, st->ypos, st->color, st->charset, (TextStyleFlags)flags, (st->actorSpeechMsg || ConfMan.getBool("speech_mute") || VAR(VAR_VOICE_MODE) == 2), true);
 		}
 	}
 }
@@ -542,7 +651,7 @@ void ScummEngine_v7::clearSubtitleQueue() {
 	_subtitleQueuePos = 0;
 }
 
-void ScummEngine_v7::CHARSET_1() {
+void ScummEngine_v7::displayDialog() {
 	processSubtitleQueue();
 
 	bool usingOldSystem = (_game.id == GID_FT) || (_game.id == GID_DIG && _game.features & GF_DEMO);
@@ -556,16 +665,16 @@ void ScummEngine_v7::CHARSET_1() {
 
 	Actor *a = NULL;
 	if (getTalkingActor() != 0xFF)
-		a = derefActorSafe(getTalkingActor(), "CHARSET_1");
+		a = derefActorSafe(getTalkingActor(), "displayDialog");
 
 	StringTab saveStr = _string[0];
 	if (a && _string[0].overhead) {
 		int s;
-		_string[0].xpos = a->getPos().x - _virtscr[kMainVirtScreen].xstart;
+		_string[0].xpos = a->getPos().x + (_screenWidth / 2) - camera._cur.x;
 		s = a->_scalex * a->_talkPosX / 255;
 		_string[0].xpos += (a->_talkPosX - s) / 2 + s;
 
-		_string[0].ypos = a->getPos().y - a->getElevation() - _screenTop;
+		_string[0].ypos = a->getPos().y - a->getElevation() + (_screenHeight / 2) - camera._cur.y;
 		s = a->_scaley * a->_talkPosY / 255;
 		_string[0].ypos += (a->_talkPosY - s) / 2 + s;
 
@@ -590,8 +699,10 @@ void ScummEngine_v7::CHARSET_1() {
 		_charset->_startLeft = _charset->_left = _string[0].xpos;
 		_charset->_right = _string[0].right;
 		_charset->_center = _string[0].center;
-		memcpy(_charsetColorMap, _charsetData[_charset->getCurID()], 4);
 	}
+
+	if (_game.version == 7 && _charset->getCurID() != -1)
+		memcpy(_charsetColorMap, _charsetData[_charset->getCurID()], _game.id == GID_DIG ? sizeof(_charsetColorMap) : 4);
 
 	if (usingOldSystem && a && a->_charset) {
 		_charset->setCurID(a->_charset);
@@ -599,11 +710,16 @@ void ScummEngine_v7::CHARSET_1() {
 		_charset->setCurID(_string[0].charset);
 	}
 
+#ifdef USE_TTS
+	Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
+	if (_talkDelay || (ttsMan && ttsMan->isSpeaking()))
+#else
 	if (_talkDelay)
+#endif
 		return;
 
 	if ((!usingOldSystem && VAR(VAR_HAVE_MSG)) || (usingOldSystem && _haveMsg != 1)) {
-		if ((_sound->_sfxMode & 2) == 0) {
+		if ((_sound->_digiSndMode & DIGI_SND_MODE_TALKIE) == 0) {
 			stopTalk();
 		}
 		return;
@@ -656,7 +772,7 @@ void ScummEngine_v7::CHARSET_1() {
 			if (c == 13) {
 				// New line
 				if (subtitleLine != subtitleBuffer) {
-					addSubtitleToQueue(subtitleBuffer, subtitlePos, _charsetColor, _charset->getCurID(), false, false);
+					addSubtitleToQueue(subtitleBuffer, subtitlePos, _charsetColor, _charset->getCurID(), _haveActorSpeechMsg, false);
 					subtitleLine = subtitleBuffer;
 				}
 
@@ -680,7 +796,7 @@ void ScummEngine_v7::CHARSET_1() {
 		}
 
 		if (subtitleLine != subtitleBuffer) {
-			addSubtitleToQueue(subtitleBuffer, subtitlePos, _charsetColor, _charset->getCurID(), false, false);
+			addSubtitleToQueue(subtitleBuffer, subtitlePos, _charsetColor, _charset->getCurID(), _haveActorSpeechMsg, false);
 		}
 	} else {
 		_talkDelay = VAR(VAR_DEFAULT_TALK_DELAY);

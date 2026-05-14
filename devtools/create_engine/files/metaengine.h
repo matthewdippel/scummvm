@@ -22,10 +22,9 @@
 #ifndef XYZZY_METAENGINE_H
 #define XYZZY_METAENGINE_H
 
-#include "common/achievements.h"
 #include "engines/advancedDetector.h"
 
-class XyzzyMetaEngine : public AdvancedMetaEngine {
+class XyzzyMetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 public:
 	const char *getName() const override;
 
@@ -37,6 +36,8 @@ public:
 	 * Used by e.g. the launcher to determine whether to enable the Load button.
 	 */
 	bool hasFeature(MetaEngineFeature f) const override;
+
+	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override;
 };
 
-#endif
+#endif // XYZZY_METAENGINE_H

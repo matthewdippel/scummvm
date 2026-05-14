@@ -29,22 +29,24 @@
 #include "ags/shared/ac/game_setup_struct.h"
 #include "ags/engine/ac/global_character.h"
 #include "ags/engine/ac/global_display.h"
+#include "ags/engine/ac/global_inventory_item.h"
 #include "ags/engine/ac/global_room.h"
 #include "ags/engine/ac/mouse.h"
+#include "ags/shared/ac/sprite_cache.h"
 #include "ags/engine/ac/sys_events.h"
+#include "ags/engine/ac/timer.h"
+#include "ags/engine/ac/dynobj/cc_character.h"
+#include "ags/engine/ac/dynobj/cc_inventory.h"
 #include "ags/engine/debugging/debug_log.h"
 #include "ags/engine/gui/gui_dialog.h"
 #include "ags/shared/gui/gui_main.h"
 #include "ags/engine/main/game_run.h"
-#include "ags/engine/platform/base/ags_platform_driver.h"
-#include "ags/shared/ac/sprite_cache.h"
-#include "ags/engine/script/runtime_script_value.h"
-#include "ags/engine/ac/dynobj/cc_character.h"
-#include "ags/engine/ac/dynobj/cc_inventory.h"
-#include "ags/shared/util/math.h"
 #include "ags/engine/media/audio/audio_system.h"
-#include "ags/engine/ac/timer.h"
+#include "ags/engine/platform/base/ags_platform_driver.h"
+#include "ags/engine/script/runtime_script_value.h"
+#include "ags/shared/util/math.h"
 #include "ags/shared/util/wgt2_allg.h"
+
 #include "ags/shared/debugging/out.h"
 #include "ags/engine/script/script_api.h"
 #include "ags/engine/script/script_runtime.h"
@@ -222,13 +224,14 @@ void InventoryScreen::Prepare() {
 	// the engine to be used in the built-in inventory window.
 	// If they did not exist engine first fell back to sprites 0, 1, 2 instead.
 	// Fun fact: this fallback does not seem to be intentional, and was a
-	// coincidental result of SpriteCache incorrectly remembering "last seeked
+	// coincidental result of SpriteCache incorrectly remembering "last seek'd
 	// sprite" as 2041/2042/2043 while in fact stream was after sprite 0.
-	if (_GP(spriteset)[2041] == nullptr || _GP(spriteset)[2042] == nullptr || _GP(spriteset)[2043] == nullptr)
+	if (!_GP(spriteset).DoesSpriteExist(2041) || !_GP(spriteset).DoesSpriteExist(2042) || !_GP(spriteset).DoesSpriteExist(2043)) {
 		debug_script_warn("InventoryScreen: one or more of the inventory screen graphics (sprites 2041, 2042, 2043) does not exist, fallback to sprites 0, 1, 2 instead");
-	btn_look_sprite = _GP(spriteset)[2041] != nullptr ? 2041 : 0;
-	btn_select_sprite = _GP(spriteset)[2042] != nullptr ? 2042 : (_GP(spriteset)[1] != nullptr ? 1 : 0);
-	btn_ok_sprite = _GP(spriteset)[2043] != nullptr ? 2043 : (_GP(spriteset)[2] != nullptr ? 2 : 0);
+	}
+	btn_look_sprite = _GP(spriteset).DoesSpriteExist(2041) ? 2041 : 0;
+	btn_select_sprite = _GP(spriteset).DoesSpriteExist(2042) ? 2042 : (_GP(spriteset).DoesSpriteExist(1) ? 1 : 0);
+	btn_ok_sprite = _GP(spriteset).DoesSpriteExist(2043) ? 2043 : (_GP(spriteset).DoesSpriteExist(2) ? 2 : 0);
 
 	break_code = 0;
 }
@@ -252,7 +255,7 @@ int InventoryScreen::Redraw() {
 	}
 
 	for (int i = 0; i < _GP(charextra)[_GP(game).playercharacter].invorder_count; ++i) {
-		if (_GP(game).invinfo[_GP(charextra)[_GP(game).playercharacter].invorder[i]].name[0] != 0) {
+		if (!_GP(game).invinfo[_GP(charextra)[_GP(game).playercharacter].invorder[i]].name.IsEmpty()) {
 			dii[numitems].num = _GP(charextra)[_GP(game).playercharacter].invorder[i];
 			dii[numitems].sprnum = _GP(game).invinfo[_GP(charextra)[_GP(game).playercharacter].invorder[i]].pic;
 			int snn = dii[numitems].sprnum;
@@ -285,7 +288,6 @@ int InventoryScreen::Redraw() {
 
 	Bitmap *ds = prepare_gui_screen(windowxp, windowyp, windowwid, windowhit, true);
 	Draw(ds);
-	//ags_domouse(DOMOUSE_ENABLE);
 	set_mouse_cursor(cmode);
 	wasonitem = -1;
 	return 0;
@@ -346,10 +348,17 @@ bool InventoryScreen::Run() {
 	// Run() can be called in a loop, so keep events going.
 	sys_evt_process_pending();
 
-	KeyInput kgn;
-	if (run_service_key_controls(kgn) && !_GP(play).IsIgnoringInput()) {
-		return false; // end inventory screen loop
+	// Handle all the buffered key events
+	bool do_break = false;
+	while (ags_keyevent_ready()) {
+		KeyInput ki;
+		if (run_service_key_controls(ki) && !_GP(play).IsIgnoringInput() && !IsAGSServiceKey(ki.Key)) {
+			ags_clear_input_buffer();
+			do_break = true; // end inventory screen loop
+		}
 	}
+	if (do_break)
+		return false;
 
 	update_audio_system_on_game_loop();
 	refresh_gui_screen();
@@ -361,26 +370,25 @@ bool InventoryScreen::Run() {
 	int isonitem = ((my - bartop) / highest) * ICONSPERLINE + (mx - barxp) / widest;
 	if (my <= bartop) isonitem = -1;
 	else if (isonitem >= 0) isonitem += top_item;
-	if ((isonitem < 0) | (isonitem >= numitems) | (isonitem >= top_item + num_visible_items))
+	if ((isonitem < 0) || (isonitem >= numitems) || (isonitem >= top_item + num_visible_items))
 		isonitem = -1;
 
-	int mclick, mwheelz;
-	if (!run_service_mb_controls(mclick, mwheelz) || _GP(play).IsIgnoringInput()) {
-		mclick = MouseNone;
+	eAGSMouseButton mbut;
+	int mwheelz;
+	if (!run_service_mb_controls(mbut, mwheelz) || _GP(play).IsIgnoringInput()) {
+		mbut = kMouseNone;
 	}
 
-	if (mclick == MouseLeft) {
-		if ((my < 0) | (my > windowhit) | (mx < 0) | (mx > windowwid))
+	if (mbut == kMouseLeft) {
+		if ((my < 0) || (my > windowhit) || (mx < 0) || (mx > windowwid))
 			return true; // continue inventory screen loop
 		if (my < buttonyp) {
 			int clickedon = isonitem;
 			if (clickedon < 0) return true; // continue inventory screen loop
-			_G(evblocknum) = dii[clickedon].num;
 			_GP(play).used_inv_on = dii[clickedon].num;
 
 			if (cmode == MODE_LOOK) {
-				//ags_domouse(DOMOUSE_DISABLE);
-				run_event_block_inv(dii[clickedon].num, 0);
+				RunInventoryInteraction(dii[clickedon].num, MODE_LOOK);
 				// in case the script did anything to the screen, redraw it
 				UpdateGameOnce();
 
@@ -394,8 +402,7 @@ bool InventoryScreen::Run() {
 				int activeinvwas = _G(playerchar)->activeinv;
 				_G(playerchar)->activeinv = toret;
 
-				//ags_domouse(DOMOUSE_DISABLE);
-				run_event_block_inv(dii[clickedon].num, 3);
+				RunInventoryInteraction(dii[clickedon].num, MODE_USE);
 
 				// if the script didn't change it, then put it back
 				if (_G(playerchar)->activeinv == toret)
@@ -427,14 +434,12 @@ bool InventoryScreen::Run() {
 				if (my < buttonyp + get_fixed_pixel_size(2) + ARROWBUTTONWID) {
 					if (top_item > 0) {
 						top_item -= ICONSPERLINE;
-						//ags_domouse(DOMOUSE_DISABLE);
 
 						break_code = Redraw();
 						return break_code == 0;
 					}
 				} else if ((my < buttonyp + get_fixed_pixel_size(4) + ARROWBUTTONWID * 2) && (top_item + num_visible_items < numitems)) {
 					top_item += ICONSPERLINE;
-					//ags_domouse(DOMOUSE_DISABLE);
 
 					break_code = Redraw();
 					return break_code == 0;
@@ -455,7 +460,7 @@ bool InventoryScreen::Run() {
 			}
 			set_mouse_cursor(cmode);
 		}
-	} else if (mclick == MouseRight) {
+	} else if (mbut == kMouseRight) {
 		if (cmode == CURS_ARROW)
 			cmode = MODE_LOOK;
 		else
@@ -463,13 +468,11 @@ bool InventoryScreen::Run() {
 		toret = -1;
 		set_mouse_cursor(cmode);
 	} else if (isonitem != wasonitem) {
-		//ags_domouse(DOMOUSE_DISABLE);
 		RedrawOverItem(get_gui_screen(), isonitem);
-		//ags_domouse(DOMOUSE_ENABLE);
 	}
 	wasonitem = isonitem;
 
-	update_polled_stuff_if_runtime();
+	update_polled_stuff();
 
 	WaitForNextFrame();
 
@@ -588,22 +591,25 @@ RuntimeScriptValue Sc_InvWindow_SetTopItem(void *self, const RuntimeScriptValue 
 }
 
 
-
 void RegisterInventoryWindowAPI() {
-	ccAddExternalObjectFunction("InvWindow::ScrollDown^0", Sc_InvWindow_ScrollDown);
-	ccAddExternalObjectFunction("InvWindow::ScrollUp^0", Sc_InvWindow_ScrollUp);
-	ccAddExternalObjectFunction("InvWindow::get_CharacterToUse", Sc_InvWindow_GetCharacterToUse);
-	ccAddExternalObjectFunction("InvWindow::set_CharacterToUse", Sc_InvWindow_SetCharacterToUse);
-	ccAddExternalObjectFunction("InvWindow::geti_ItemAtIndex", Sc_InvWindow_GetItemAtIndex);
-	ccAddExternalObjectFunction("InvWindow::get_ItemCount", Sc_InvWindow_GetItemCount);
-	ccAddExternalObjectFunction("InvWindow::get_ItemHeight", Sc_InvWindow_GetItemHeight);
-	ccAddExternalObjectFunction("InvWindow::set_ItemHeight", Sc_InvWindow_SetItemHeight);
-	ccAddExternalObjectFunction("InvWindow::get_ItemWidth", Sc_InvWindow_GetItemWidth);
-	ccAddExternalObjectFunction("InvWindow::set_ItemWidth", Sc_InvWindow_SetItemWidth);
-	ccAddExternalObjectFunction("InvWindow::get_ItemsPerRow", Sc_InvWindow_GetItemsPerRow);
-	ccAddExternalObjectFunction("InvWindow::get_RowCount", Sc_InvWindow_GetRowCount);
-	ccAddExternalObjectFunction("InvWindow::get_TopItem", Sc_InvWindow_GetTopItem);
-	ccAddExternalObjectFunction("InvWindow::set_TopItem", Sc_InvWindow_SetTopItem);
+	ScFnRegister invwindow_api[] = {
+		{"InvWindow::ScrollDown^0", API_FN_PAIR(InvWindow_ScrollDown)},
+		{"InvWindow::ScrollUp^0", API_FN_PAIR(InvWindow_ScrollUp)},
+		{"InvWindow::get_CharacterToUse", API_FN_PAIR(InvWindow_GetCharacterToUse)},
+		{"InvWindow::set_CharacterToUse", API_FN_PAIR(InvWindow_SetCharacterToUse)},
+		{"InvWindow::geti_ItemAtIndex", API_FN_PAIR(InvWindow_GetItemAtIndex)},
+		{"InvWindow::get_ItemCount", API_FN_PAIR(InvWindow_GetItemCount)},
+		{"InvWindow::get_ItemHeight", API_FN_PAIR(InvWindow_GetItemHeight)},
+		{"InvWindow::set_ItemHeight", API_FN_PAIR(InvWindow_SetItemHeight)},
+		{"InvWindow::get_ItemWidth", API_FN_PAIR(InvWindow_GetItemWidth)},
+		{"InvWindow::set_ItemWidth", API_FN_PAIR(InvWindow_SetItemWidth)},
+		{"InvWindow::get_ItemsPerRow", API_FN_PAIR(InvWindow_GetItemsPerRow)},
+		{"InvWindow::get_RowCount", API_FN_PAIR(InvWindow_GetRowCount)},
+		{"InvWindow::get_TopItem", API_FN_PAIR(InvWindow_GetTopItem)},
+		{"InvWindow::set_TopItem", API_FN_PAIR(InvWindow_SetTopItem)},
+	};
+
+	ccAddExternalFunctions361(invwindow_api);
 }
 
 } // namespace AGS3

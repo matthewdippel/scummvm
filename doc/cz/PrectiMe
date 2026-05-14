@@ -204,6 +204,8 @@ Hry od Adventuresoft/Horrorsoft (AGOS):
      Waxworks                                    [waxworks]
 
 Hry od Coktel Vision (GOB):
+	 Adibou 1									 [adibou1]
+	 Adibou 2									 [adibou2]
      Bargon Attack                               [bargon]
      Fascination                                 [fascination]
      Geisha                                      [geisha]
@@ -289,7 +291,7 @@ Hry od Sierra Entertainment (SCI):
 Další hry:
      3 Skulls of the Toltecs                     [toltecs]
      Amazon: Guardians of Eden                   [access]
-     Beavis and Butt-head in Virtual Stupidity   [bbvs]
+     Beavis and Butt-Head in Virtual Stupidity   [bbvs]
      Blue Force                                  [blueforce]
      Broken Sword: The Return of the Templars    [sword25]
      Bud Tucker in Double Trouble                [tucker]
@@ -334,7 +336,7 @@ Další hry:
      TeenAgent                                   [teenagent]
      Toonstruck                                  [toon]
      Tony Tough and the Night of Roasted Moths   [tony]
-     Touche: The Adventures of the Fifth
+     Touché: The Adventures of the Fifth
          Musketeer                               [touche]
      U.F.O.s / Gnap: Der Schurke aus dem All     [gnap]
      Voyeur                                      [voyeur]
@@ -1096,7 +1098,7 @@ Beneath a Steel Sky
     it  - Italština
     pt  - Portugalština
     es  - Španělština
-    se  - Švédština
+    sv  - Švédština
 
 Broken Sword
     en  - Angličtina (výchozí)
@@ -1311,7 +1313,7 @@ ScummVM podporuje různé zkratky ve hře. Liší se mezi různými hrami SCUMM 
   TeenAgent
     F5                     - Zobrazí Globální Menu
 
-  Touche: The Adventures of the Fifth Musketeer:
+  Touché: The Adventures of the Fifth Musketeer:
     Ctrl-f                 - Zapnout rychlý režim
     F5                     - Zobrazit možnosti
     F9                     - Zapnout režim rychlé chůze
@@ -1350,7 +1352,7 @@ Uložené hry jsou na některých platformách standardně umístěny do součas
 
 Platformy, které v současnosti mají jiné výchozí složky jsou:
     macOS:
-    $HOME/Documents/ScummVM Savegames/
+    $HOME/Library/Application Support/ScummVM/Savegames/
 
     Jiné unixy:
     Řídíme se specifikacemi základního adresáře XDG. To znamená, že nastavení lze nalézt v:
@@ -1861,7 +1863,7 @@ Jsou rozpoznávána následující klíčová slova:
     gameid             řetězec  Skutečné id hry. Užitečné, pokud máte několik verzí stejné hry a chcete pro ně různé přezdívky. Viz příklad.
     description        řetězec  Popis hry jak se zobrazí ve spouštěči.
     language           řetězec  Určí jazyk (en, us, de, fr, it, pt, es,
-                                jp, zh, kr, se, gb, hb, cz, ru)
+                                jp, zh, kr, sv, gb, hb, cz, ru)
     speech_mute        boolean  Pokud true, řeč je ztlumena
     subtitles          boolean  Pokud true jsou titulky zapnuty.
     talkspeed          číslo    Zpoždění textu v hrách SCUMM, nebo rychlost textu v jiných hrách.
@@ -2095,7 +2097,7 @@ Na Windows můžete určit USE_WINDBG a připojit WinDbg pro procházení ladíc
       Přečtěte si prosím:
       <https://wiki.scummvm.org/index.php/Compiling_ScummVM/Dreamcast>
 
-   Sony Playstation:
+   Sony PlayStation:
    * Sony PlayStation 2
       Přečtěte si prosím:
       <https://wiki.scummvm.org/index.php/Compiling_ScummVM/PlayStation_2>

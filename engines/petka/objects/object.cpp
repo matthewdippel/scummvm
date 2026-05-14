@@ -19,7 +19,7 @@
  *
  */
 
-#include "common/ini-file.h"
+#include "common/formats/ini-file.h"
 #include "common/stream.h"
 #include "common/system.h"
 #include "common/events.h"
@@ -53,7 +53,7 @@ QVisibleObject::QVisibleObject()
 	: _resourceId(-1), _z(240) {}
 
 QMessageObject::QMessageObject() {
-	_id = -1;
+	_id = (uint16)-1;
 	_status = 0;
 	_time = 0;
 	_dialogColor = -1;
@@ -65,6 +65,11 @@ QMessageObject::QMessageObject() {
 	_loopedSound = false;
 	_startSound = false;
 	_reaction = nullptr;
+
+	_x = _y = _walkX = _walkY = 0;
+	_frame = 0;
+	_sound = nullptr;
+	_reactionId = 0;
 }
 
 void QMessageObject::processMessage(const QMessage &msg) {

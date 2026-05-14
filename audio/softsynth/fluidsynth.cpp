@@ -30,6 +30,9 @@
 // prior scummsys.h inclusion and thus forbidden.h
 #ifdef USE_FLUIDLITE
 #include <fluidlite.h>
+
+#define FLUID_OK (0)
+#define FLUID_FAILED (-1)
 #else
 #include <fluidsynth.h>
 #endif
@@ -39,20 +42,25 @@
 #include "common/error.h"
 #include "common/stream.h"
 #include "common/system.h"
+#include "common/archive.h"
 #include "common/textconsole.h"
 #include "common/translation.h"
 #include "audio/musicplugin.h"
 #include "audio/mpu401.h"
 #include "audio/softsynth/emumidi.h"
 #include "gui/message.h"
-#if defined(IPHONE_IOS7) && defined(IPHONE_SANDBOXED)
-#include "backends/platform/ios7/ios7_common.h"
+#include "backends/fs/fs-factory.h"
+#ifdef ANDROID_BACKEND
+#include "backends/fs/android/android-fs-factory.h"
 #endif
 
 // We assume here Fluidsynth minor will never be above 255 and
 // that micro versions won't break API compatibility
+// Older versions of FluidLite used FLUIDSYNTH_VERSION and now use FLUIDLITE_VERSION
 #if defined(FLUIDSYNTH_VERSION_MAJOR) && defined(FLUIDSYNTH_VERSION_MINOR)
 #define FS_API_VERSION ((FLUIDSYNTH_VERSION_MAJOR << 8) | FLUIDSYNTH_VERSION_MINOR)
+#elif defined(FLUIDLITE_VERSION_MAJOR) && defined(FLUIDLITE_VERSION_MINOR)
+#define FS_API_VERSION ((FLUIDLITE_VERSION_MAJOR << 8) | FLUIDLITE_VERSION_MINOR)
 #else
 #define FS_API_VERSION 0
 #endif
@@ -105,6 +113,8 @@ protected:
 public:
 	MidiDriver_FluidSynth(Audio::Mixer *mixer);
 
+	static Common::Path getSoundFontPath(bool *exists = nullptr);
+
 	int open() override;
 	void close() override;
 	void send(uint32 b) override;
@@ -113,13 +123,7 @@ public:
 	MidiChannel *getPercussionChannel() override;
 
 	void setEngineSoundFont(Common::SeekableReadStream *soundFontData) override;
-	bool acceptsSoundFontData() override {
-#if FS_API_VERSION >= 0x0200
-		return true;
-#else
-		return false;
-#endif
-	}
+	bool acceptsSoundFontData() override;
 
 	// AudioStream API
 	bool isStereo() const override { return true; }
@@ -173,7 +177,69 @@ void MidiDriver_FluidSynth::setStr(const char *name, const char *val) {
 
 // Soundfont memory loader callback functions.
 
-#if FS_API_VERSION >= 0x0200
+#if defined(USE_FLUIDLITE) && FS_API_VERSION >= 0x0102
+
+#define FS_HAS_STREAM_SUPPORT
+
+// FluidLite calls fopen and fclose callback twice which causes a double delete
+// So, use a holder which will take care of use count
+// Luckily the open() calls are not intermixed and we don't need to maintain state
+struct fluidlite_stream_holder {
+	Common::SeekableReadStream *stream;
+	unsigned int openCounter;
+};
+
+static void *SoundFontMemLoader_open(fluid_fileapi_t *fileapi, const char *filename) {
+	fluidlite_stream_holder *holder;
+	if (filename[0] != '&') {
+		return nullptr;
+	}
+	sscanf(filename, "&%p", (void **)&holder);
+
+	// Reset the file cursor
+	holder->stream->seek(0, SEEK_SET);
+	holder->openCounter++;
+	return holder;
+}
+
+static int SoundFontMemLoader_read(void *buf, int count, void *handle) {
+	fluidlite_stream_holder *holder = (fluidlite_stream_holder *)handle;
+	return holder->stream->read(buf, count) == (uint32)count ? FLUID_OK : FLUID_FAILED;
+}
+
+static int SoundFontMemLoader_seek(void *handle, long offset, int origin) {
+	fluidlite_stream_holder *holder = (fluidlite_stream_holder *)handle;
+	return holder->stream->seek(offset, origin) ? FLUID_OK : FLUID_FAILED;
+}
+
+static int SoundFontMemLoader_close(void *handle) {
+	fluidlite_stream_holder *holder = (fluidlite_stream_holder *)handle;
+	if (!--holder->openCounter) {
+		delete holder->stream;
+		delete holder;
+	}
+	return FLUID_OK;
+}
+
+static long SoundFontMemLoader_tell(void *handle) {
+	fluidlite_stream_holder *holder = (fluidlite_stream_holder *)handle;
+	return holder->stream->pos();
+}
+
+static const fluid_fileapi_t SoundFontMemLoader_callbacks = {
+  NULL,
+  NULL,
+  SoundFontMemLoader_open,
+  SoundFontMemLoader_read,
+  SoundFontMemLoader_seek,
+  SoundFontMemLoader_close,
+  SoundFontMemLoader_tell
+};
+
+#elif FS_API_VERSION >= 0x0200
+
+#define FS_HAS_STREAM_SUPPORT
+
 static void *SoundFontMemLoader_open(const char *filename) {
 	void *p;
 	if (filename[0] != '&') {
@@ -211,7 +277,57 @@ static long SoundFontMemLoader_tell(void *handle) {
 #endif
 	return ((Common::SeekableReadStream *) handle)->pos();
 }
-#endif
+
+#endif // USE_FLUIDLITE
+
+Common::Path MidiDriver_FluidSynth::getSoundFontPath(bool *exists) {
+	Common::Path path = ConfMan.getPath("soundfont");
+	if (path.empty()) {
+		if (exists)
+			*exists = false;
+		return path;
+	}
+
+	Common::FSNode fileNode(path);
+	if (fileNode.exists()) {
+		if (exists)
+			*exists = true;
+		// Return the full system path to the soundfont
+		return Common::Path(g_system->getFilesystemFactory()->getSystemFullPath(path.toString(Common::Path::kNativeSeparator)), Common::Path::kNativeSeparator);
+	}
+
+	// Then check with soundfontpath
+	if (ConfMan.hasKey("soundfontpath")) {
+		Common::FSNode dirNode(ConfMan.getPath("soundfontpath"));
+		if (dirNode.exists() && dirNode.isDirectory()) {
+			fileNode = dirNode.getChild(path.baseName());
+			if (fileNode.exists()) {
+				if (exists)
+					*exists = true;
+				return fileNode.getPath();
+			}
+		}
+	}
+
+	// Finally look for it with SearchMan
+	Common::ArchiveMemberDetailsList files;
+	SearchMan.listMatchingMembers(files, path);
+	for (Common::ArchiveMemberDetails file : files) {
+		Common::FSDirectory* dir = dynamic_cast<Common::FSDirectory*>(SearchMan.getArchive(file.arcName));
+		if (!dir)
+			continue;
+		fileNode = dir->getFSNode().getChild(file.arcMember->getPathInArchive().toString(Common::Path::kNativeSeparator));
+		if (fileNode.exists()) {
+			if (exists)
+				*exists = true;
+			return fileNode.getPath();
+		}
+	}
+
+	if (exists)
+		*exists = false;
+	return path;
+}
 
 int MidiDriver_FluidSynth::open() {
 	if (_isOpen)
@@ -223,19 +339,33 @@ int MidiDriver_FluidSynth::open() {
 	fluid_set_log_function(FLUID_INFO, logHandler, nullptr);
 	fluid_set_log_function(FLUID_DBG, logHandler, nullptr);
 
-#if FS_API_VERSION >= 0x0200
+#ifdef FS_HAS_STREAM_SUPPORT
 	// When provided with in-memory SoundFont data, only use the configured
 	// SoundFont instead if it's explicitly configured on the current game.
 	bool isUsingInMemorySoundFontData = _engineSoundFontData && !ConfMan.getActiveDomain()->contains("soundfont");
 #else
-	bool isUsingInMemorySoundFontData = false;
+	const bool isUsingInMemorySoundFontData = false;
 #endif
 
-	if (!isUsingInMemorySoundFontData && !ConfMan.hasKey("soundfont")) {
+	if (!isUsingInMemorySoundFontData && ConfMan.get("soundfont").empty()) {
 		GUI::MessageDialog dialog(_("FluidSynth requires a 'soundfont' setting. Please specify it in ScummVM GUI on MIDI tab. Music is off."));
 		dialog.runModal();
 		return MERR_DEVICE_NOT_AVAILABLE;
 	}
+
+#if (defined(EMSCRIPTEN) || defined(ANDROID_BACKEND)) && defined(FS_HAS_STREAM_SUPPORT)
+	// In Android, when using SAF we need to wrap IO to make it work
+	// We can only do this with FluidSynth 2.0
+	if (!isUsingInMemorySoundFontData 
+#if defined(ANDROID_BACKEND)
+		&& AndroidFilesystemFactory::instance().hasSAF()
+#endif
+		) {
+		Common::FSNode fsnode(getSoundFontPath());
+		_engineSoundFontData = fsnode.createReadStream();
+		isUsingInMemorySoundFontData = _engineSoundFontData != nullptr;
+	}
+#endif
 
 	_settings = new_fluid_settings();
 
@@ -297,7 +427,7 @@ int MidiDriver_FluidSynth::open() {
 
 		double reverbRoomSize = (double)ConfMan.getInt("fluidsynth_reverb_roomsize") / 100.0;
 		double reverbDamping = (double)ConfMan.getInt("fluidsynth_reverb_damping") / 100.0;
-		int reverbWidth = ConfMan.getInt("fluidsynth_reverb_width");
+		double reverbWidth = ConfMan.getInt("fluidsynth_reverb_width") / 10.0;
 		double reverbLevel = (double)ConfMan.getInt("fluidsynth_reverb_level") / 100.0;
 
 #if FS_API_VERSION >= 0x0202
@@ -331,11 +461,22 @@ int MidiDriver_FluidSynth::open() {
 
 	fluid_synth_set_interp_method(_synth, -1, interpMethod);
 
-	const char *soundfont = !isUsingInMemorySoundFontData ?
-			ConfMan.get("soundfont").c_str() : Common::String::format("&%p", (void *)_engineSoundFontData).c_str();
+	Common::String soundfont;
 
-#if FS_API_VERSION >= 0x0200
+#if defined(FS_HAS_STREAM_SUPPORT)
 	if (isUsingInMemorySoundFontData) {
+#if defined(USE_FLUIDLITE)
+		fluidlite_stream_holder *holder = new fluidlite_stream_holder;
+		holder->stream = _engineSoundFontData;
+		holder->openCounter = 0;
+
+		fluid_sfloader_t *soundFontMemoryLoader = new_fluid_defsfloader();
+		soundFontMemoryLoader->fileapi = const_cast<fluid_fileapi_t *>(&SoundFontMemLoader_callbacks);
+		fluid_synth_add_sfloader(_synth, soundFontMemoryLoader);
+
+		soundfont = Common::String::format("&%p", (void *)holder);
+#else
+		// Fluidsynth 2.0+
 		fluid_sfloader_t *soundFontMemoryLoader = new_fluid_defsfloader(_settings);
 		fluid_sfloader_set_callbacks(soundFontMemoryLoader,
 									 SoundFontMemLoader_open,
@@ -344,27 +485,20 @@ int MidiDriver_FluidSynth::open() {
 									 SoundFontMemLoader_tell,
 									 SoundFontMemLoader_close);
 		fluid_synth_add_sfloader(_synth, soundFontMemoryLoader);
-	}
-#endif
 
-#if defined(IPHONE_IOS7) && defined(IPHONE_SANDBOXED)
-	if (!isUsingInMemorySoundFontData) {
-		// HACK: Due to the sandbox on non-jailbroken iOS devices, we need to deal
-		// with the chroot filesystem. All the path selected by the user are
-		// relative to the Document directory. So, we need to adjust the path to
-		// reflect that.
-		Common::String soundfont_fullpath = iOS7_getDocumentsDir();
-		soundfont_fullpath += soundfont;
-		_soundFont = fluid_synth_sfload(_synth, soundfont_fullpath.c_str(), 1);
-	} else {
-		_soundFont = fluid_synth_sfload(_synth, soundfont, 1);
-	}
-#else
-	_soundFont = fluid_synth_sfload(_synth, soundfont, 1);
+		soundfont = Common::String::format("&%p", (void *)_engineSoundFontData);
 #endif
+	} else
+#endif // FS_HAS_STREAM_SUPPORT
+	{
+//		soundfont = ConfMan.get("soundfont");
+		soundfont = getSoundFontPath().toString(Common::Path::kNativeSeparator);
+	}
+
+	_soundFont = fluid_synth_sfload(_synth, soundfont.c_str(), 1);
 
 	if (_soundFont == -1) {
-		GUI::MessageDialog dialog(Common::U32String::format(_("FluidSynth: Failed loading custom SoundFont '%s'. Music is off."), soundfont));
+		GUI::MessageDialog dialog(Common::U32String::format(_("FluidSynth: Failed loading custom SoundFont '%s'. Music is off."), soundfont.c_str()));
 		dialog.runModal();
 		return MERR_DEVICE_NOT_AVAILABLE;
 	}
@@ -383,8 +517,14 @@ void MidiDriver_FluidSynth::close() {
 
 	_mixer->stopHandle(_mixerSoundHandle);
 
-	if (_soundFont != -1)
-		fluid_synth_sfunload(_synth, _soundFont, 1);
+	/*
+	 * Don't delete the soundfont before cleaning up
+	 * Some parts of it are still in use and cause a timer thread to be
+	 * created to postpone the cleanup.
+	 * The "embedded" OS abstraction layer introduced in Fluidsynth 2.5 does
+	 * not supported threads and this causes a segfault when the final cleanup happens
+	 * just below.
+	 */
 
 	delete_fluid_synth(_synth);
 	delete_fluid_settings(_settings);
@@ -453,6 +593,13 @@ void MidiDriver_FluidSynth::setEngineSoundFont(Common::SeekableReadStream *sound
 	_engineSoundFontData = soundFontData;
 }
 
+bool MidiDriver_FluidSynth::acceptsSoundFontData() {
+#ifdef FS_HAS_STREAM_SUPPORT
+	return true;
+#else
+	return false;
+#endif
+}
 
 // Plugin interface
 
@@ -467,6 +614,7 @@ public:
 	}
 
 	MusicDevices getDevices() const override;
+	bool checkDevice(MidiDriver::DeviceHandle, int flags, bool quiet) const override;
 	Common::Error createInstance(MidiDriver **mididriver, MidiDriver::DeviceHandle = 0) const override;
 };
 
@@ -474,6 +622,17 @@ MusicDevices FluidSynthMusicPlugin::getDevices() const {
 	MusicDevices devices;
 	devices.push_back(MusicDevice(this, "", MT_GM));
 	return devices;
+}
+
+bool FluidSynthMusicPlugin::checkDevice(MidiDriver::DeviceHandle, int flags, bool quiet) const {
+#ifdef FS_HAS_STREAM_SUPPORT
+	if (flags & MDCK_SUPPLIED_SOUND_FONT)
+		return true;
+#endif
+
+	bool exists = false;
+	Common::Path sfPath = MidiDriver_FluidSynth::getSoundFontPath(&exists);
+	return !sfPath.empty() && exists;
 }
 
 Common::Error FluidSynthMusicPlugin::createInstance(MidiDriver **mididriver, MidiDriver::DeviceHandle) const {

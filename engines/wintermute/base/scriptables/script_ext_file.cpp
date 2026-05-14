@@ -32,9 +32,12 @@
 #include "engines/wintermute/base/scriptables/script.h"
 #include "engines/wintermute/utils/utils.h"
 #include "engines/wintermute/base/base_game.h"
+#include "engines/wintermute/base/base_engine.h"
 #include "engines/wintermute/base/base_file_manager.h"
+#include "engines/wintermute/base/file/base_savefile_manager_file.h"
 #include "engines/wintermute/platform_osystem.h"
 #include "engines/wintermute/base/scriptables/script_ext_file.h"
+#include "engines/wintermute/dcgf.h"
 
 // Note: This code is completely untested, as I have yet to find a game that uses SXFile.
 
@@ -71,8 +74,7 @@ SXFile::~SXFile() {
 
 //////////////////////////////////////////////////////////////////////////
 void SXFile::cleanup() {
-	delete[] _filename;
-	_filename = nullptr;
+	SAFE_DELETE_ARRAY(_filename);
 	close();
 }
 
@@ -80,13 +82,12 @@ void SXFile::cleanup() {
 //////////////////////////////////////////////////////////////////////////
 void SXFile::close() {
 	if (_readFile) {
-		BaseFileManager::getEngineInstance()->closeFile(_readFile);
+		_game->_fileManager->closeFile(_readFile);
 		_readFile = nullptr;
 	}
 	if (_writeFile) {
 		_writeFile->finalize();
-		delete _writeFile;
-		_writeFile = nullptr;
+		SAFE_DELETE(_writeFile);
 	}
 	_mode = 0;
 	_textMode = false;
@@ -94,7 +95,7 @@ void SXFile::close() {
 
 //////////////////////////////////////////////////////////////////////////
 const char *SXFile::scToString() {
-	if (_filename) {
+	if (_filename && _filename[0]) {
 		return _filename;
 	} else {
 		return "[file object]";
@@ -128,9 +129,9 @@ bool SXFile::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack, 
 			_mode = 1;
 		}
 		if (_mode == 1) {
-			_readFile = BaseFileManager::getEngineInstance()->openFile(_filename);
+			_readFile = _game->_fileManager->openFile(_filename);
 			if (!_readFile) {
-				//script->runtimeError("File.%s: Error opening file '%s' for reading.", Name, _filename);
+				//script->runtimeError("File.%s: Error opening file '%s' for reading.", name, _filename);
 				close();
 			} else {
 				_textMode = strcmp(name, "OpenAsText") == 0;
@@ -151,7 +152,7 @@ bool SXFile::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack, 
 			}
 
 			if (!_writeFile) {
-				//script->runtimeError("File.%s: Error opening file '%s' for writing.", Name, _filename);
+				//script->runtimeError("File.%s: Error opening file '%s' for writing.", name, _filename);
 				close();
 			} else {
 				_textMode = strcmp(name, "OpenAsText") == 0;
@@ -198,9 +199,7 @@ bool SXFile::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack, 
 	else if (strcmp(name, "Delete") == 0) {
 		stack->correctParams(0);
 		close();
-		warning("SXFile-Method: \"Delete\" not supported");
-		//stack->pushBool(BasePlatform::deleteFile(_filename) != false);
-		stack->pushBool(false);
+		stack->pushBool(sfmFileRemove(_filename));
 		return STATUS_OK;
 	}
 
@@ -363,9 +362,9 @@ bool SXFile::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack, 
 			stack->pushNULL();
 			return STATUS_OK;
 		}
-		bool val;
-		if (_readFile->read(&val, sizeof(bool)) == sizeof(bool)) {
-			stack->pushBool(val);
+		byte val;
+		if (_readFile->read(&val, sizeof(byte))) {
+			stack->pushBool(val != 0);
 		} else {
 			stack->pushNULL();
 		}
@@ -442,8 +441,7 @@ bool SXFile::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack, 
 			stack->pushNULL();
 			return STATUS_OK;
 		}
-		float val;
-		WRITE_UINT32(&val, _readFile->readUint32LE());
+		float val = _readFile->readFloatLE();
 		if (!_readFile->err()) {
 			stack->pushFloat(val);
 		} else {
@@ -456,16 +454,15 @@ bool SXFile::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack, 
 	//////////////////////////////////////////////////////////////////////////
 	// ReadDouble
 	//////////////////////////////////////////////////////////////////////////
-	else if (strcmp(name, "ReadDouble") == 0) { // TODO: Solve reading a 8 byte double.
-		error("SXFile::ReadDouble - Not endian safe yet");
+	else if (strcmp(name, "ReadDouble") == 0) {
 		stack->correctParams(0);
 		if (_textMode || !_readFile) {
 			script->runtimeError("File.%s: File must be open for reading in binary mode.", name);
 			stack->pushNULL();
 			return STATUS_OK;
 		}
-		double val;
-		if (_readFile->read(&val, sizeof(double)) == sizeof(double)) {
+		double val = _readFile->readDoubleLE();
+		if (!_readFile->err()) {
 			stack->pushFloat(val);
 		} else {
 			stack->pushNULL();
@@ -598,16 +595,15 @@ bool SXFile::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack, 
 	// WriteDouble
 	//////////////////////////////////////////////////////////////////////////
 	else if (strcmp(name, "WriteDouble") == 0) {
-		error("SXFile::WriteDouble - Not endian safe yet");
 		stack->correctParams(1);
-		/* double val = */ stack->pop()->getFloat();
+		double val = stack->pop()->getFloat();
 
 		if (_textMode || !_writeFile) {
 			script->runtimeError("File.%s: File must be open for writing in binary mode.", name);
 			stack->pushBool(false);
 			return STATUS_OK;
 		}
-		//fwrite(&val, sizeof(val), 1, (FILE *)_writeFile);
+		_writeFile->writeDoubleLE(val);
 		stack->pushBool(true);
 
 		return STATUS_OK;
@@ -640,13 +636,13 @@ bool SXFile::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack, 
 
 
 //////////////////////////////////////////////////////////////////////////
-ScValue *SXFile::scGetProperty(const Common::String &name) {
+ScValue *SXFile::scGetProperty(const char *name) {
 	_scValue->setNULL();
 
 	//////////////////////////////////////////////////////////////////////////
 	// Type (RO)
 	//////////////////////////////////////////////////////////////////////////
-	if (name == "Type") {
+	if (strcmp(name, "Type") == 0) {
 		_scValue->setString("file");
 		return _scValue;
 	}
@@ -654,7 +650,7 @@ ScValue *SXFile::scGetProperty(const Common::String &name) {
 	//////////////////////////////////////////////////////////////////////////
 	// Filename (RO)
 	//////////////////////////////////////////////////////////////////////////
-	if (name == "Filename") {
+	if (strcmp(name, "Filename") == 0) {
 		_scValue->setString(_filename);
 		return _scValue;
 	}
@@ -662,7 +658,7 @@ ScValue *SXFile::scGetProperty(const Common::String &name) {
 	//////////////////////////////////////////////////////////////////////////
 	// Position (RO)
 	//////////////////////////////////////////////////////////////////////////
-	else if (name == "Position") {
+	else if (strcmp(name, "Position") == 0) {
 		_scValue->setInt(getPos());
 		return _scValue;
 	}
@@ -670,7 +666,7 @@ ScValue *SXFile::scGetProperty(const Common::String &name) {
 	//////////////////////////////////////////////////////////////////////////
 	// Length (RO)
 	//////////////////////////////////////////////////////////////////////////
-	else if (name == "Length") {
+	else if (strcmp(name, "Length") == 0) {
 		_scValue->setInt(getLength());
 		return _scValue;
 	}
@@ -678,7 +674,7 @@ ScValue *SXFile::scGetProperty(const Common::String &name) {
 	//////////////////////////////////////////////////////////////////////////
 	// TextMode (RO)
 	//////////////////////////////////////////////////////////////////////////
-	else if (name == "TextMode") {
+	else if (strcmp(name, "TextMode") == 0) {
 		_scValue->setBool(_textMode);
 		return _scValue;
 	}
@@ -686,7 +682,7 @@ ScValue *SXFile::scGetProperty(const Common::String &name) {
 	//////////////////////////////////////////////////////////////////////////
 	// AccessMode (RO)
 	//////////////////////////////////////////////////////////////////////////
-	else if (name == "AccessMode") {
+	else if (strcmp(name, "AccessMode") == 0) {
 		_scValue->setInt(_mode);
 		return _scValue;
 	} else {
@@ -703,12 +699,12 @@ bool SXFile::scSetProperty(const char *name, ScValue *value) {
 	//////////////////////////////////////////////////////////////////////////
 	if (strcmp(name, "Length")==0) {
 	    int origLength = _length;
-	    _length = max(value->getInt(0), 0);
+	    _length = MAX(value->getInt(0), 0);
 
 	    char propName[20];
 	    if (_length < OrigLength) {
 	        for(int i=_length; i<OrigLength; i++) {
-	            sprintf(PropName, "%d", i);
+	            Common::sprintf_s(PropName, "%d", i);
 	            _values->DeleteProp(PropName);
 	        }
 	    }
@@ -735,7 +731,9 @@ bool SXFile::setPos(uint32 pos, int whence) {
 	if (_mode == 1 && _readFile) {
 		return _readFile->seek(pos, whence);
 	} else if ((_mode == 2 || _mode == 3) && _writeFile) {
-		error("SXFile - seeking in WriteFile not supported");
+		if (BaseEngine::instance().getGameId() != "royalmahjong") {
+			error("SXFile - seeking in WriteFile not supported");
+		}
 		return false;
 //		return fseek((FILE *)_writeFile, pos, (int)origin) == 0;
 	} else {
@@ -750,12 +748,12 @@ uint32 SXFile::getLength() {
 	} else if ((_mode == 2 || _mode == 3) && _writeFile) {
 		error("SXFile - reading length for WriteFile not supported");
 		return 0;
-		/*
-		        uint32 currentPos = ftell((FILE *)_writeFile);
-		        fseek((FILE *)_writeFile, 0, SEEK_END);
-		        int ret = ftell((FILE *)_writeFile);
-		        fseek((FILE *)_writeFile, CurrentPos, SEEK_SET);
-		        return Ret;*/
+/*
+		uint32 currentPos = ftell((FILE *)_writeFile);
+		fseek((FILE *)_writeFile, 0, SEEK_END);
+		int ret = ftell((FILE *)_writeFile);
+		fseek((FILE *)_writeFile, CurrentPos, SEEK_SET);
+		return Ret;*/
 	} else {
 		return 0;
 	}
@@ -784,7 +782,7 @@ bool SXFile::persist(BasePersistenceManager *persistMgr) {
 		if (_mode != 0) {
 			// open for reading
 			if (_mode == 1) {
-				_readFile = BaseFileManager::getEngineInstance()->openFile(_filename);
+				_readFile = _game->_fileManager->openFile(_filename);
 				if (!_readFile) {
 					close();
 				}
@@ -821,7 +819,8 @@ Common::WriteStream *SXFile::openForWrite(const Common::String &filename, bool b
 
 // Should replace fopen(..., "ab+") and fopen(..., "a+")
 Common::WriteStream *SXFile::openForAppend(const Common::String &filename, bool binary) {
-	error("SXFile::openForAppend - WriteFiles not supported");
+	warning("SXFile::openForAppend - WriteFiles with limited support as non-append mode");
+	return BaseFileManager::getEngineInstance()->openFileForWrite(_filename);
 }
 
 } // End of namespace Wintermute

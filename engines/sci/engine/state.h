@@ -19,8 +19,8 @@
  *
  */
 
-#ifndef SCI_INCLUDE_ENGINE_H
-#define SCI_INCLUDE_ENGINE_H
+#ifndef SCI_ENGINE_STATE_H
+#define SCI_ENGINE_STATE_H
 
 #include "common/scummsys.h"
 #include "common/array.h"
@@ -98,13 +98,11 @@ struct SciCallOrigin {
 };
 
 struct EngineState : public Common::Serializable {
-public:
 	EngineState(SegManager *segMan);
 	~EngineState() override;
 
 	void saveLoadWithSerializer(Common::Serializer &ser) override;
 
-public:
 	SegManager *_segMan; /**< The segment manager */
 
 	/* Non-VM information */
@@ -116,13 +114,10 @@ public:
 	uint16 wait(uint16 ticks);
 	void sleep(uint16 ticks);
 
-#ifdef ENABLE_SCI32
-	uint32 _eventCounter; /**< total times kGetEvent was invoked since the last call to kFrameOut */
-#endif
-	uint32 _paletteSetIntensityCounter; /**< total times kPaletteSetIntensity was invoked since the last call to kGameIsRestarting or kWait */
+	uint32 _eventCounter; /**< total times kGetEvent was invoked since the last call to kGameIsRestarting(0) or kWait or kFrameOut */
+	uint32 _paletteSetIntensityCounter; /**< total times kPaletteSetIntensity was invoked since the last call to kGameIsRestarting(0) or kWait */
 	uint32 _throttleLastTime; /**< last time kAnimate was invoked */
 	bool _throttleTrigger;
-	bool _gameIsBenchmarking;
 
 	/* Kernel File IO stuff */
 
@@ -147,7 +142,6 @@ public:
 	Common::Point _cursorWorkaroundPoint;
 	Common::Rect _cursorWorkaroundRect;
 
-public:
 	/* VM Information */
 
 	Common::List<ExecStack> _executionStack; /**< The execution stack */
@@ -196,6 +190,7 @@ public:
 	int gcCountDown; /**< Number of kernel calls until next gc */
 
 	MessageState *_msgState;
+	void initMessageState();
 
 	// MemorySegment provides access to a 256-byte block of memory that remains
 	// intact across restarts and restores
@@ -219,8 +214,15 @@ public:
 	 * Determines whether the given object method is in the current stack.
 	 */
 	bool callInStack(const reg_t object, const Selector selector) const;
+
+	/**
+	 * Returns the game's version string from its global variable.
+	 * Most games initialize this to a string embedded in a script resource,
+	 * or the contents of the VERSION file in the game directory.
+	 */
+	Common::String getGameVersionFromGlobal() const;
 };
 
 } // End of namespace Sci
 
-#endif // SCI_INCLUDE_ENGINE_H
+#endif // SCI_ENGINE_STATE_H

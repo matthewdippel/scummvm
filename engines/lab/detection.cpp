@@ -31,7 +31,7 @@
 #include "lab/detection.h"
 
 static const PlainGameDescriptor lab_setting[] = {
-	{ "lab", "Labyrinth of Time" },
+	{ "lab", "The Labyrinth of Time" },
 	{ nullptr, nullptr }
 };
 
@@ -94,24 +94,24 @@ static const char *const directoryGlobs[] = {
 
 
 
-class LabMetaEngineDetection : public AdvancedMetaEngineDetection {
+class LabMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	LabMetaEngineDetection() : AdvancedMetaEngineDetection(labDescriptions, sizeof(ADGameDescription), lab_setting) {
+	LabMetaEngineDetection() : AdvancedMetaEngineDetection(labDescriptions, lab_setting) {
 		_maxScanDepth = 4;
 		_directoryGlobs = directoryGlobs;
 		_flags = kADFlagUseExtraAsHint;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "lab";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Labyrinth of Time";
 	}
 
 	const char *getOriginalCopyright() const override {
-		return "Labyrinth of Time (C) 2004 The Wyrmkeep Entertainment Co. and Terra Nova Development";
+		return "The Labyrinth of Time (C) 2004 The Wyrmkeep Entertainment Co. and Terra Nova Development";
 	}
 };
 

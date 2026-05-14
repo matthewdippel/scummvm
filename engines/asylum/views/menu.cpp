@@ -26,6 +26,8 @@
 
 #include "common/keyboard.h"
 
+#include "graphics/palette.h"
+
 #include "asylum/views/menu.h"
 
 #include "asylum/resources/actor.h"
@@ -77,6 +79,9 @@ Menu::Menu(AsylumEngine *vm): _vm(vm) {
 	// Savegames
 	_prefixWidth = 0;
 	_loadingDuringStartup = false;
+
+	// Thumbnails
+	_thumbnailIndex = -1;
 
 	// Credits
 	_creditsFrameIndex = 0;
@@ -734,6 +739,39 @@ void Menu::updateNewGame() {
 	getText()->draw(MAKE_RESOURCE(kResourcePackText, 1323));
 }
 
+bool Menu::hasThumbnail(int index) {
+	if (getSaveLoad()->hasSavegame(index + _startIndex))
+		return _vm->getMetaEngine()->querySaveMetaInfos(_vm->getTargetName().c_str(), index + _startIndex).getThumbnail();
+
+	return false;
+}
+
+void Menu::readThumbnail() {
+	if (_thumbnailSurface.getPixels())
+		_thumbnailSurface.free();
+
+	Graphics::PaletteLookup paletteLookup(getScreen()->getPalette(), 256);
+	SaveStateDescriptor desc = _vm->getMetaEngine()->querySaveMetaInfos(_vm->getTargetName().c_str(), _thumbnailIndex + _startIndex);
+	const Graphics::Surface *thumbnail = desc.getThumbnail();
+	int w = thumbnail->w, h = thumbnail->h;
+
+	_thumbnailSurface.create(w, h, Graphics::PixelFormat::createFormatCLUT8());
+	for (int i = 0; i < w; i++)
+		for (int j = 0; j < h; j++) {
+			byte r, g, b;
+			thumbnail->format.colorToRGB(thumbnail->getPixel(i, j), r, g, b);
+			_thumbnailSurface.setPixel(i, j, paletteLookup.findBestColor(r, g, b));
+		}
+}
+
+void Menu::showThumbnail() {
+	int x, y;
+	x = _thumbnailIndex < 6 ? 150 : 470;
+	y = 179 + (_thumbnailIndex % 6) * 29;
+
+	getScreen()->draw(_thumbnailSurface, x, y);
+}
+
 void Menu::updateLoadGame() {
 	Common::Point cursor = getCursor()->position();
 
@@ -743,8 +781,8 @@ void Menu::updateLoadGame() {
 		getText()->loadFont(kFontYellow);
 		getText()->drawCentered(Common::Point(10, 100), 620, MAKE_RESOURCE(kResourcePackText, 1329));
 
-		snprintf((char *)&text, sizeof(text), "%s ?", getSaveLoad()->getName()->c_str());
-		getText()->drawCentered(Common::Point(10, 134), 620, (char *)&text);
+		snprintf(text, sizeof(text), "%s ?", getSaveLoad()->getName()->c_str());
+		getText()->drawCentered(Common::Point(10, 134), 620, text);
 
 		if (cursor.x < 247 || cursor.x > (247 + getText()->getWidth(MAKE_RESOURCE(kResourcePackText, 1330)))
 		 || cursor.y < 273 || cursor.y > (273 + 24))
@@ -769,6 +807,7 @@ void Menu::updateLoadGame() {
 	getText()->loadFont(kFontYellow);
 	getText()->drawCentered(Common::Point(10, 100), 620, MAKE_RESOURCE(kResourcePackText, 1325));
 
+	int current = -1;
 	if (_dword_455C78) {
 		getText()->drawCentered(Common::Point(10,      190), 620, MAKE_RESOURCE(kResourcePackText, 1332));
 		getText()->drawCentered(Common::Point(10, 190 + 29), 620, MAKE_RESOURCE(kResourcePackText, 1333));
@@ -791,17 +830,19 @@ void Menu::updateLoadGame() {
 			if (index + _startIndex >= 25)
 				break;
 
-			snprintf((char *)&text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
+			snprintf(text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
 
-			if (cursor.x < 30 || cursor.x > (30 + getText()->getWidth((char *)&text))
+			if (cursor.x < 30 || cursor.x > (30 + getText()->getWidth(text))
 			 || cursor.y < y  || cursor.y > (y + 24)) {
 				getText()->loadFont(kFontYellow);
 			} else {
 				getText()->loadFont(kFontBlue);
+				if (hasThumbnail(index))
+					current = index;
 			}
 
 			getText()->setPosition(Common::Point(30, y));
-			getText()->draw((char *)&text);
+			getText()->draw(text);
 
 			++index;
 		}
@@ -812,17 +853,19 @@ void Menu::updateLoadGame() {
 			if (index + _startIndex >= 25)
 				break;
 
-			snprintf((char *)&text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
+			snprintf(text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
 
-			if (cursor.x < 350 || cursor.x > (350 + getText()->getWidth((char *)&text))
+			if (cursor.x < 350 || cursor.x > (350 + getText()->getWidth(text))
 				|| cursor.y < y   || cursor.y > (y + 24)) {
 				getText()->loadFont(kFontYellow);
 			} else {
 				getText()->loadFont(kFontBlue);
+				if (hasThumbnail(index))
+					current = index;
 			}
 
 			getText()->setPosition(Common::Point(350, y));
-			getText()->draw((char *)&text);
+			getText()->draw(text);
 
 			++index;
 		}
@@ -860,6 +903,18 @@ void Menu::updateLoadGame() {
 
 	getText()->setPosition(Common::Point(550, 340));
 	getText()->draw(MAKE_RESOURCE(kResourcePackText, 1327));
+
+	if (current == -1) {
+		_thumbnailIndex = -1;
+		return;
+	}
+
+	if (current != _thumbnailIndex) {
+		_thumbnailIndex = current;
+		readThumbnail();
+	}
+
+	showThumbnail();
 }
 
 void Menu::updateSaveGame() {
@@ -871,8 +926,8 @@ void Menu::updateSaveGame() {
 		getText()->loadFont(kFontYellow);
 		getText()->drawCentered(Common::Point(10, 100), 620, MAKE_RESOURCE(kResourcePackText, 1339));
 
-		snprintf((char *)&text, sizeof(text), "%s ?", getSaveLoad()->getName()->c_str());
-		getText()->drawCentered(Common::Point(10, 134), 620, (char *)&text);
+		snprintf(text, sizeof(text), "%s ?", getSaveLoad()->getName()->c_str());
+		getText()->drawCentered(Common::Point(10, 134), 620, text);
 
 		if (cursor.x < 247 || cursor.x > (247 + getText()->getWidth(MAKE_RESOURCE(kResourcePackText, 1340)))
 		 || cursor.y < 273 || cursor.y > (273 + 24))
@@ -916,10 +971,10 @@ void Menu::updateSaveGame() {
 			if (index + _startIndex >= 25)
 				break;
 
-			snprintf((char *)&text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
+			snprintf(text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
 
 			if (!_isEditingSavegameName) {
-				if (cursor.x < 30 || cursor.x > (30 + getText()->getWidth((char *)&text))
+				if (cursor.x < 30 || cursor.x > (30 + getText()->getWidth(text))
 				 || cursor.y < y  || cursor.y > (y + 24))
 					getText()->loadFont(kFontYellow);
 				else
@@ -932,13 +987,13 @@ void Menu::updateSaveGame() {
 			}
 
 			getText()->setPosition(Common::Point(30, y));
-			getText()->draw((char *)&text);
+			getText()->draw(text);
 
 			// Draw underscore
 			if (_isEditingSavegameName) {
 				if (getSaveLoad()->getIndex() == (uint32)(index + _startIndex)) {
 					if (_caretBlink < 6)
-						getText()->drawChar('_');
+						getText()->drawASCII('_');
 
 					_caretBlink = (_caretBlink + 1) % 12;
 				}
@@ -953,10 +1008,10 @@ void Menu::updateSaveGame() {
 			if (index + _startIndex >= 25)
 				break;
 
-			snprintf((char *)&text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
+			snprintf(text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
 
 			if (!_isEditingSavegameName) {
-				if (cursor.x < 350 || cursor.x > (350 + getText()->getWidth((char *)&text))
+				if (cursor.x < 350 || cursor.x > (350 + getText()->getWidth(text))
 				 || cursor.y < y   || cursor.y > (y + 24))
 					getText()->loadFont(kFontYellow);
 				else
@@ -969,13 +1024,13 @@ void Menu::updateSaveGame() {
 			}
 
 			getText()->setPosition(Common::Point(350, y));
-			getText()->draw((char *)&text);
+			getText()->draw(text);
 
 			// Draw underscore
 			if (_isEditingSavegameName) {
 				if (getSaveLoad()->getIndex() == (uint32)(index + _startIndex)) {
 					if (_caretBlink < 6)
-						getText()->drawChar('_');
+						getText()->drawASCII('_');
 
 					_caretBlink = (_caretBlink + 1) % 12;
 				}
@@ -1031,8 +1086,8 @@ void Menu::updateDeleteGame() {
 		getText()->loadFont(kFontYellow);
 		getText()->drawCentered(Common::Point(10, 100), 620, MAKE_RESOURCE(kResourcePackText, 1349));
 
-		snprintf((char *)&text, sizeof(text), "%s ?", getSaveLoad()->getName()->c_str());
-		getText()->drawCentered(Common::Point(10, 134), 620, (char *)&text);
+		snprintf(text, sizeof(text), "%s ?", getSaveLoad()->getName()->c_str());
+		getText()->drawCentered(Common::Point(10, 134), 620, text);
 
 		if (cursor.x < 247 || cursor.x > (247 + getText()->getWidth(MAKE_RESOURCE(kResourcePackText, 1350)))
 		 || cursor.y < 273 || cursor.y > (273 + 24))
@@ -1064,16 +1119,16 @@ void Menu::updateDeleteGame() {
 		if (index + _startIndex >= 25)
 			break;
 
-		snprintf((char *)&text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
+		snprintf(text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
 
-		if (cursor.x < 30 || cursor.x > (30 + getText()->getWidth((char *)&text))
+		if (cursor.x < 30 || cursor.x > (30 + getText()->getWidth(text))
 		 || cursor.y < y  || cursor.y > (y + 24))
 			getText()->loadFont(kFontYellow);
 		else
 			getText()->loadFont(kFontBlue);
 
 		getText()->setPosition(Common::Point(30, y));
-		getText()->draw((char *)&text);
+		getText()->draw(text);
 
 		++index;
 	}
@@ -1084,16 +1139,16 @@ void Menu::updateDeleteGame() {
 		if (index + _startIndex >= 25)
 			break;
 
-		snprintf((char *)&text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
+		snprintf(text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
 
-		if (cursor.x < 350 || cursor.x > (350 + getText()->getWidth((char *)&text))
+		if (cursor.x < 350 || cursor.x > (350 + getText()->getWidth(text))
 		 || cursor.y < y   || cursor.y > (y + 24))
 			getText()->loadFont(kFontYellow);
 		else
 			getText()->loadFont(kFontBlue);
 
 		getText()->setPosition(Common::Point(350, y));
-		getText()->draw((char *)&text);
+		getText()->draw(text);
 
 		++index;
 	}
@@ -1140,8 +1195,8 @@ void Menu::updateViewMovies() {
 
 	if (!_dword_455C78) {
 		getText()->loadFont(kFontYellow);
-		snprintf((char *)&text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1352)), getSharedData()->cdNumber);
-		getText()->drawCentered(Common::Point(10, 100), 620, (char *)&text2);
+		snprintf(text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1352)), getSharedData()->cdNumber);
+		getText()->drawCentered(Common::Point(10, 100), 620, text2);
 
 		//////////////////////////////////////////////////////////////////////////
 		// First column
@@ -1151,19 +1206,19 @@ void Menu::updateViewMovies() {
 				break;
 
 			if (_movieList[index] != -1) {
-				snprintf((char *)&text, sizeof(text), "%d. %s", index + 1, getText()->get(MAKE_RESOURCE(kResourcePackText, 1359 + _movieList[index])));
-				snprintf((char *)&text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1356)), moviesCd[_movieList[index]]);
-				strcat((char *)&text, (char *)&text2);
+				snprintf(text, sizeof(text), "%d. %s", index + 1, getText()->get(MAKE_RESOURCE(kResourcePackText, 1359 + _movieList[index])));
+				snprintf(text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1356)), moviesCd[_movieList[index]]);
+				Common::strcat_s(text, text2);
 
 				if (getCursor()->isHidden()
-				 || cursor.x < 30 || cursor.x > (30 + getText()->getWidth((char *)&text))
+				 || cursor.x < 30 || cursor.x > (30 + getText()->getWidth(text))
 				 || cursor.y < y || cursor.y > (y + 24))
 					getText()->loadFont(kFontYellow);
 				else
 					getText()->loadFont(kFontBlue);
 
 				getText()->setPosition(Common::Point(30, y));
-				getText()->draw((char *)&text);
+				getText()->draw(text);
 			}
 
 			++index;
@@ -1176,19 +1231,19 @@ void Menu::updateViewMovies() {
 				break;
 
 			if (_movieList[index] != -1) {
-				snprintf((char *)&text, sizeof(text), "%d. %s", index + 1, getText()->get(MAKE_RESOURCE(kResourcePackText, 1359 + _movieList[index])));
-				snprintf((char *)&text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1356)), moviesCd[_movieList[index]]);
-				strcat((char *)&text, (char *)&text2);
+				snprintf(text, sizeof(text), "%d. %s", index + 1, getText()->get(MAKE_RESOURCE(kResourcePackText, 1359 + _movieList[index])));
+				snprintf(text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1356)), moviesCd[_movieList[index]]);
+				Common::strcat_s(text, text2);
 
 				if (getCursor()->isHidden()
-					|| cursor.x < 350 || cursor.x > (350 + getText()->getWidth((char *)&text))
+					|| cursor.x < 350 || cursor.x > (350 + getText()->getWidth(text))
 					|| cursor.y < y || cursor.y > (y + 24))
 					getText()->loadFont(kFontYellow);
 				else
 					getText()->loadFont(kFontBlue);
 
 				getText()->setPosition(Common::Point(350, y));
-				getText()->draw((char *)&text);
+				getText()->draw(text);
 			}
 
 			index++;
@@ -1244,12 +1299,12 @@ void Menu::updateViewMovies() {
 	}
 
 	getText()->loadFont(kFontYellow);
-	snprintf((char *)&text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1357)), getSharedData()->cdNumber);
+	snprintf(text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1357)), getSharedData()->cdNumber);
 	getText()->drawCentered(Common::Point(10, 100), 620, text2);
 
-	Common::strlcpy((char *)&text, getText()->get(MAKE_RESOURCE(kResourcePackText, 1359 + _movieIndex)), sizeof(text));
-	snprintf((char *)&text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1356)), moviesCd[_movieIndex]);
-	strcat((char *)&text, (char *)&text2);
+	Common::strlcpy(text, getText()->get(MAKE_RESOURCE(kResourcePackText, 1359 + _movieIndex)), sizeof(text));
+	snprintf(text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1356)), moviesCd[_movieIndex]);
+	Common::strcat_s(text, text2);
 	getText()->drawCentered(Common::Point(10, 134), 620, text);
 
 	getText()->drawCentered(Common::Point(10, 168), 620, getText()->get(MAKE_RESOURCE(kResourcePackText, 1358)));
@@ -1322,11 +1377,11 @@ void Menu::updateAudioOptions() {
 
 		switchFont(cursor.x < 350 || cursor.x > (sizeMinus + 350) || cursor.y < (29 * volumeIndex + 150) || cursor.y > (29 * (volumeIndex + 6)));
 		getText()->setPosition(Common::Point(350, (int16)(29 * volumeIndex + 150)));
-		getText()->draw("-");
+		getText()->drawASCII('-');
 
 		switchFont(cursor.x < (sizeMinus + 360) || cursor.x > (sizeMinus + sizePlus + 360) || cursor.y < (29 * volumeIndex + 150) || cursor.y > (29 * (volumeIndex + 6)));
 		getText()->setPosition(Common::Point(sizeMinus + 360, (int16)(29 * volumeIndex + 150)));
-		getText()->draw("+");
+		getText()->drawASCII('+');
 
 		switch (volumeIndex) {
 		default:
@@ -1361,10 +1416,10 @@ void Menu::updateAudioOptions() {
 		getText()->setPosition(Common::Point(sizePlus + sizeMinus + 365, (int16)(29 * volumeIndex + 150)));
 		if (volumeValue > 0) {
 			for (int32 i = 0; i < volumeValue; i++)
-				getText()->drawChar(']');
+				getText()->drawASCII(']');
 
 			if (volumeValue == 20)
-				getText()->drawChar('*');
+				getText()->drawASCII('*');
 		} else if (volumeIndex) {
 			getText()->draw(MAKE_RESOURCE(kResourcePackText, 1429));
 		}
@@ -1408,20 +1463,20 @@ void Menu::updateSettings() {
 
 	switchFont(cursor.x < 350 || cursor.x > (sizeMinus + 350) || cursor.y < 150 || cursor.y > 174);
 	getText()->setPosition(Common::Point(350, 150));
-	getText()->draw("-");
+	getText()->drawASCII('-');
 
 	switchFont(cursor.x < (sizeMinus + 360) || cursor.x > (sizeMinus + sizePlus + 360) || cursor.y < 150 || cursor.y > 174);
 	getText()->setPosition(Common::Point(sizeMinus + 360, 150));
-	getText()->draw("+");
+	getText()->drawASCII('+');
 
 	getText()->setPosition(Common::Point(sizeMinus + sizePlus + 365, 150));
 	getText()->loadFont(kFontYellow);
 	if (Config.gammaLevel) {
 		for (int32 i = 0; i < Config.gammaLevel; i++)
-			getText()->drawChar(']');
+			getText()->drawASCII(']');
 
 		if (Config.gammaLevel == 8)
-			getText()->drawChar('*');
+			getText()->drawASCII('*');
 	} else {
 		getText()->draw(MAKE_RESOURCE(kResourcePackText, 1435));
 	}
@@ -1433,11 +1488,11 @@ void Menu::updateSettings() {
 
 	switchFont(cursor.x < 350 || cursor.x > (sizeMinus + 350) || cursor.y < 179 || cursor.y > 203);
 	getText()->setPosition(Common::Point(350, 179));
-	getText()->draw("-");
+	getText()->drawASCII('-');
 
 	switchFont(cursor.x < (sizeMinus + 360) || cursor.x > (sizeMinus + sizePlus + 360) || cursor.y < 179 || cursor.y > 203);
 	getText()->setPosition(Common::Point(sizeMinus + 360, 179));
-	getText()->draw("+");
+	getText()->drawASCII('+');
 
 	getText()->setPosition(Common::Point(sizeMinus + sizePlus + 365, 179));
 	getText()->loadFont(kFontYellow);
@@ -1445,11 +1500,55 @@ void Menu::updateSettings() {
 		getText()->draw(MAKE_RESOURCE(kResourcePackText, 1436));
 	} else {
 		for (int32 i = 5; i > Config.performance; --i) // This has ] augmenting when pressing - which is a bit convoluted (perf == speed == more ])
-			getText()->drawChar(']');
+			getText()->drawASCII(']');
 
 		if (!Config.performance)
-			getText()->draw('*');
+			getText()->drawASCII('*');
 	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Animations speed
+	const char *animationsSpeed;
+	switch (_vm->getLanguage()) {
+	case Common::DE_DEU:
+		animationsSpeed = "Animationen Geschwindigkeit";
+		break;
+	case Common::ES_ESP:
+		animationsSpeed = "Velocidad de animaciones";
+		break;
+	case Common::FR_FRA:
+		animationsSpeed = "Vitesse d'animations";
+		break;
+	case Common::IT_ITA:
+		animationsSpeed = "Velocit\xc3\xa0 di animazioni";
+		break;
+	case Common::PL_POL:
+		animationsSpeed = "Szybko\xc5\x9b\xc4\x87 animacji";
+		break;
+	case Common::RU_RUS:
+		animationsSpeed = "\x91\xaa\xae\xe0\xae\xe1\xe2\xec\x20\xa0\xad\xa8\xac\xa0\xe6\xa8\xa9";
+		break;
+	default:
+		animationsSpeed = "Animations speed";
+		break;
+	}
+
+	getText()->loadFont(kFontYellow);
+	getText()->draw(Common::Point(320, 209), animationsSpeed);
+
+	switchFont(cursor.x < 350 || cursor.x > (sizeMinus + 350) || cursor.y < 209 || cursor.y > 233);
+	getText()->setPosition(Common::Point(350, 209));
+	getText()->drawASCII('-');
+
+	switchFont(cursor.x < (sizeMinus + 360) || cursor.x > (sizeMinus + sizePlus + 360) || cursor.y < 209 || cursor.y > 233);
+	getText()->setPosition(Common::Point(sizeMinus + 360, 209));
+	getText()->drawASCII('+');
+
+	getText()->setPosition(Common::Point(sizeMinus + sizePlus + 365, 209));
+	getText()->loadFont(kFontYellow);
+
+	for (int i = 1; i <= Config.animationsSpeed; i++)
+		getText()->drawASCII(']');
 
 	//////////////////////////////////////////////////////////////////////////
 	// Back to main menu
@@ -1480,7 +1579,7 @@ void Menu::updateKeyboardConfig() {
 			getText()->loadFont(kFontBlue);
 
 			if (_caretBlink < 6)
-				getText()->drawChar('_');
+				getText()->drawASCII('_');
 
 			_caretBlink = (_caretBlink + 1) % 12;
 		} else {
@@ -1638,9 +1737,9 @@ void Menu::clickLoadGame() {
 			if (index + _startIndex + 6 > 24)
 				break;
 
-			snprintf((char *)&text, sizeof(text), "%d. %s", index + _startIndex + 7, getSaveLoad()->getName((uint32)(index + _startIndex + 6)).c_str());
+			snprintf(text, sizeof(text), "%d. %s", index + _startIndex + 7, getSaveLoad()->getName((uint32)(index + _startIndex + 6)).c_str());
 
-			if (cursor.x <= (350 + getText()->getWidth((char *)&text))
+			if (cursor.x <= (350 + getText()->getWidth(text))
 			 && cursor.y >= y
 			 && cursor.y <= (y + 24)) {
 				uint32 saveIndex = (uint32)(index + _startIndex + 6);
@@ -1656,9 +1755,9 @@ void Menu::clickLoadGame() {
 			if (index + _startIndex > 24)
 				break;
 
-			snprintf((char *)&text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
+			snprintf(text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
 
-			if (cursor.x <= (30 + getText()->getWidth((char *)&text))
+			if (cursor.x <= (30 + getText()->getWidth(text))
 			 && cursor.y >= y
 			 && cursor.y <= (y + 24)) {
 				uint32 saveIndex = (uint32)(index + _startIndex);
@@ -1740,9 +1839,9 @@ void Menu::clickSaveGame() {
 			if (index + _startIndex + 6 > 24)
 				break;
 
-			snprintf((char *)&text, sizeof(text), "%d. %s", index + _startIndex + 7, getSaveLoad()->getName((uint32)(index + _startIndex + 6)).c_str());
+			snprintf(text, sizeof(text), "%d. %s", index + _startIndex + 7, getSaveLoad()->getName((uint32)(index + _startIndex + 6)).c_str());
 
-			if (cursor.x <= (350 + getText()->getWidth((char *)&text))
+			if (cursor.x <= (350 + getText()->getWidth(text))
 			 && cursor.y >= y
 			 && cursor.y <= (y + 24)
 			 && getScene()
@@ -1766,9 +1865,9 @@ void Menu::clickSaveGame() {
 			if (index + _startIndex > 24)
 				break;
 
-			snprintf((char *)&text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
+			snprintf(text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
 
-			if (cursor.x <= (30 + getText()->getWidth((char *)&text))
+			if (cursor.x <= (30 + getText()->getWidth(text))
 			 && cursor.y >= y
 			 && cursor.y <= (y + 24)
 			 && getScene()
@@ -1854,9 +1953,9 @@ void Menu::clickDeleteGame() {
 			if (index + _startIndex + 6 > 24)
 				break;
 
-			snprintf((char *)&text, sizeof(text), "%d. %s", index + _startIndex + 7, getSaveLoad()->getName((uint32)(index + _startIndex + 6)).c_str());
+			snprintf(text, sizeof(text), "%d. %s", index + _startIndex + 7, getSaveLoad()->getName((uint32)(index + _startIndex + 6)).c_str());
 
-			if (cursor.x <= (350 + getText()->getWidth((char *)&text))
+			if (cursor.x <= (350 + getText()->getWidth(text))
 			 && cursor.y >= y
 			 && cursor.y <= (y + 24)) {
 				uint32 saveIndex = (uint32)(index + _startIndex);
@@ -1872,9 +1971,9 @@ void Menu::clickDeleteGame() {
 			if (index + _startIndex > 24)
 				break;
 
-			snprintf((char *)&text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
+			snprintf(text, sizeof(text), "%d. %s", index + _startIndex + 1, getSaveLoad()->getName((uint32)(index + _startIndex)).c_str());
 
-			if (cursor.x <= (30 + getText()->getWidth((char *)&text))
+			if (cursor.x <= (30 + getText()->getWidth(text))
 			 && cursor.y >= y
 			 && cursor.y <= (y + 24)) {
 				uint32 saveIndex = (uint32)(index + _startIndex);
@@ -1943,11 +2042,11 @@ void Menu::clickViewMovies() {
 			if (_movieList[index + _startIndex + 6] == -1)
 				break;
 
-			snprintf((char *)&text, sizeof(text), "%d. %s", index + 1, getText()->get(MAKE_RESOURCE(kResourcePackText, 1359 + _movieList[index])));
-			snprintf((char *)&text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1356)), moviesCd[_movieList[index]]);
-			strcat((char *)&text, (char *)&text2);
+			snprintf(text, sizeof(text), "%d. %s", index + 1, getText()->get(MAKE_RESOURCE(kResourcePackText, 1359 + _movieList[index])));
+			snprintf(text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1356)), moviesCd[_movieList[index]]);
+			Common::strcat_s(text, text2);
 
-			if (cursor.x <= (350 + getText()->getWidth((char *)&text))
+			if (cursor.x <= (350 + getText()->getWidth(text))
 			 && cursor.y >= y
 			 && cursor.y <= (y + 24)) {
 				uint32 movieIndex = (uint32)(index + _startIndex  + 6);
@@ -1968,11 +2067,11 @@ void Menu::clickViewMovies() {
 			if (_movieList[index + _startIndex] == -1)
 				break;
 
-			snprintf((char *)&text, sizeof(text), "%d. %s", index + 1, getText()->get(MAKE_RESOURCE(kResourcePackText, 1359 + _movieList[index])));
-			snprintf((char *)&text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1356)), moviesCd[_movieList[index]]);
-			strcat((char *)&text, (char *)&text2);
+			snprintf(text, sizeof(text), "%d. %s", index + 1, getText()->get(MAKE_RESOURCE(kResourcePackText, 1359 + _movieList[index])));
+			snprintf(text2, sizeof(text2), getText()->get(MAKE_RESOURCE(kResourcePackText, 1356)), moviesCd[_movieList[index]]);
+			Common::strcat_s(text, text2);
 
-			if (cursor.x <= (30 + getText()->getWidth((char *)&text))
+			if (cursor.x <= (30 + getText()->getWidth(text))
 			 && cursor.y >= y
 			 && cursor.y <= (y + 24)) {
 
@@ -2215,6 +2314,28 @@ void Menu::clickSettings() {
 
 		Config.gammaLevel += 1;
 		getScreen()->setGammaLevel(MAKE_RESOURCE(kResourcePackShared, 17));
+
+		return;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Animations speed minus
+	if (cursor.x >= 350 && cursor.x <= (sizeMinus + 350) && cursor.y >= 209 && cursor.y <= 233) {
+		if (Config.animationsSpeed == 1)
+			return;
+
+		Config.animationsSpeed--;
+
+		return;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Animations speed plus
+	if (cursor.x >= (sizeMinus + 360) && cursor.x <= (sizeMinus + sizePlus + 360) && cursor.y >= 209 && cursor.y <= 233) {
+		if (Config.animationsSpeed == 9)
+			return;
+
+		Config.animationsSpeed++;
 
 		return;
 	}

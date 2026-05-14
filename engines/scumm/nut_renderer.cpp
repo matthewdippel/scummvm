@@ -58,10 +58,10 @@ NutRenderer::~NutRenderer() {
 	delete[] _2byteColorTable;
 }
 
-void smush_decode_codec1(byte *dst, const byte *src, int left, int top, int width, int height, int pitch);
+void smushDecodeRLE(byte *dst, const byte *src, int left, int top, int width, int height, int pitch);
 
 void NutRenderer::codec1(byte *dst, const byte *src, int width, int height, int pitch) {
-	smush_decode_codec1(dst, src, 0, 0, width, height, pitch);
+	smushDecodeRLE(dst, src, 0, 0, width, height, pitch);
 	for (int i = 0; i < width * height; i++)
 		_paletteMap[dst[i]] = 1;
 }
@@ -101,21 +101,23 @@ void NutRenderer::codec21(byte *dst, const byte *src, int width, int height, int
 }
 
 void NutRenderer::loadFont(const char *filename) {
-	ScummFile file;
-	_vm->openFile(file, filename);
-	if (!file.isOpen()) {
+	ScummFile *file = _vm->instantiateScummFile();
+
+	_vm->openFile(*file, filename);
+	if (!file->isOpen()) {
 		error("NutRenderer::loadFont() Can't open font file: %s", filename);
 	}
 
-	uint32 tag = file.readUint32BE();
+	uint32 tag = file->readUint32BE();
 	if (tag != MKTAG('A','N','I','M')) {
 		error("NutRenderer::loadFont() there is no ANIM chunk in font header");
 	}
 
-	uint32 length = file.readUint32BE();
+	uint32 length = file->readUint32BE();
 	byte *dataSrc = new byte[length];
-	file.read(dataSrc, length);
-	file.close();
+	file->read(dataSrc, length);
+	file->close();
+	delete file;
 
 	if (READ_BE_UINT32(dataSrc) != MKTAG('A','H','D','R')) {
 		error("NutRenderer::loadFont() there is no AHDR chunk in font header");
@@ -459,9 +461,6 @@ int NutRenderer::draw2byte(byte *buffer, Common::Rect &clipRect, int x, int y, i
 
 	const byte *src = _vm->get2byteCharPtr(chr);
 
-	if (width <= 0 || height <= 0)
-		return 0;
-
 	if (minY) {
 		src += ((minY * _vm->_2byteWidth) >> 3);
 		buffer += (minY * pitch);
@@ -476,7 +475,9 @@ int NutRenderer::draw2byte(byte *buffer, Common::Rect &clipRect, int x, int y, i
 	byte bits = *src;
 	const byte *origSrc = src;
 
-	for (int step = 0; step < _2byteSteps; ++step) {
+	int startFrame = (_2byteSteps == 4 && col == 0) ? _2byteSteps - 1 : 0;
+
+	for (int step = startFrame; step < _2byteSteps; ++step) {
 		int offX = MAX<int>(x + _2byteShadowXOffsetTable[step], clipRect.left);
 		int offY = MAX<int>(y + _2byteShadowYOffsetTable[step], clipRect.top);
 		byte drawColor = _2byteColorTable[step];

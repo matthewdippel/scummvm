@@ -70,13 +70,12 @@ const char *opcodeNames[] = {
 #endif	// REDUCE_MEMORY_USAGE
 
 void DebugState::updateActiveBreakpointTypes() {
-	int type = 0;
+	_activeBreakpointTypes = 0;
 	for (Common::List<Breakpoint>::iterator bp = _breakpoints.begin(); bp != _breakpoints.end(); ++bp) {
-		if (bp->_action != BREAK_NONE)
-			type |= bp->_type;
+		if (bp->_action != BREAK_NONE) {
+			_activeBreakpointTypes |= bp->_type;
+		}
 	}
-
-	_activeBreakpointTypes = type;
 }
 
 // Disassembles one command from the heap, returns address of next command or 0 if a ret was encountered.
@@ -153,6 +152,11 @@ reg_t disassemble(EngineState *s, reg_t pos, const Object *obj, bool printBWTag,
 #endif
 
 	static const char *defaultSeparator = "\t\t; ";
+	
+	// Provide additional selector name context for push0, push1, push2 opcodes.
+	if (opcode >= op_push0 && opcode <= op_push2) {
+		debugN("\t%s%s", defaultSeparator, kernel->getSelectorName(opcode - op_push0).c_str());
+	}
 
 	i = 0;
 	while (g_sci->_opcode_formats[opcode][i]) {
@@ -256,6 +260,7 @@ reg_t disassemble(EngineState *s, reg_t pos, const Object *obj, bool printBWTag,
 					separator = ", ";
 				}
 
+				// Provide additional selector name context for pushi opcodes.
 				if (opcode == op_pushi && param_value < kernel->getSelectorNamesSize()) {
 					debugN("%s%s", separator, kernel->getSelectorName(param_value).c_str());
 				}
@@ -316,8 +321,12 @@ reg_t disassemble(EngineState *s, reg_t pos, const Object *obj, bool printBWTag,
 			} else {
 				if (getSciVersion() == SCI_VERSION_3)
 					debugN("\t(%s)", g_sci->getKernel()->getSelectorName(param_value).c_str());
-				else
-					debugN("\t(%s)", g_sci->getKernel()->getSelectorName(obj->propertyOffsetToId(s->_segMan, param_value)).c_str());
+				else {
+					int propertySelector = obj->propertyOffsetToId(s->_segMan, param_value);
+					if (propertySelector != -1) {
+						debugN("\t(%s)", g_sci->getKernel()->getSelectorName(propertySelector).c_str());
+					}
+				}
 			}
 		}
 	}
@@ -345,7 +354,6 @@ reg_t disassemble(EngineState *s, reg_t pos, const Object *obj, bool printBWTag,
 			int restmod = s->r_rest;
 			int stackframe = (scr[pos.getOffset() + 1] >> 1) + restmod;
 			reg_t *sb = s->xs->sp;
-			uint16 selector;
 			reg_t fun_ref;
 
 			while (stackframe > 0) {
@@ -358,7 +366,7 @@ reg_t disassemble(EngineState *s, reg_t pos, const Object *obj, bool printBWTag,
 				else if (opcode == op_self)
 					called_obj_addr = s->xs->objp;
 
-				selector = sb[- stackframe].getOffset();
+				uint16 selector = sb[- stackframe].getOffset();
 
 				name = s->_segMan->getObjectName(called_obj_addr);
 
@@ -439,7 +447,6 @@ bool isJumpOpcode(EngineState *s, reg_t pos, reg_t& jumpTarget) {
 		return false;
 	}
 }
-
 
 void SciEngine::scriptDebug() {
 	EngineState *s = _gamestate;
@@ -617,7 +624,7 @@ void Kernel::dissectScript(int scriptNumber, Vocabulary *vocab) {
 	Resource *script = _resMan->findResource(ResourceId(kResourceTypeScript, scriptNumber), false);
 
 	if (!script) {
-		warning("dissectScript(): Script not found!\n");
+		warning("dissectScript(): Script not found");
 		return;
 	}
 
@@ -710,7 +717,6 @@ void Kernel::dissectScript(int scriptNumber, Vocabulary *vocab) {
 			debugN("Unsupported!\n");
 			return;
 		}
-
 	}
 
 	debugN("Script ends without terminator\n");
@@ -881,7 +887,6 @@ bool SciEngine::checkKernelBreakpoint(const Common::String &name) {
 
 	return found;
 }
-
 
 void debugSelectorCall(reg_t send_obj, Selector selector, int argc, StackPtr argp, ObjVarRef &varp, reg_t funcp, SegManager *segMan, SelectorType selectorType) {
 	int activeBreakpointTypes = g_sci->_debugState._activeBreakpointTypes;
@@ -1119,7 +1124,7 @@ void logBacktrace() {
 		int paramc, totalparamc;
 
 		switch (call.type) {
-		case EXEC_STACK_TYPE_CALL: // Normal function
+		case EXEC_STACK_TYPE_CALL: // Script function
 			con->debugPrintf(" %x: script %d - ", i, s->_segMan->getScript(call.addr.pc.getSegment())->getScriptNumber());
 
 			if (call.debugSelector != -1) {
@@ -1255,10 +1260,5 @@ bool printObject(reg_t pos) {
 
 	return true;
 }
-
-
-
-
-
 
 } // End of namespace Sci

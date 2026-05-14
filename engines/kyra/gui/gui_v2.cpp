@@ -32,7 +32,6 @@ namespace Kyra {
 GUI_v2::GUI_v2(KyraEngine_v2 *vm) : GUI_v1(vm), _vm(vm), _screen(vm->screen_v2()) {
 	_backUpButtonList = _specialProcessButton = nullptr;
 	_buttonListChanged = false;
-	_lastScreenUpdate = 0;
 	_flagsModifier = 0;
 
 	_currentMenu = nullptr;
@@ -47,12 +46,20 @@ GUI_v2::GUI_v2(KyraEngine_v2 *vm) : GUI_v1(vm), _vm(vm), _screen(vm->screen_v2()
 	_saveMenuFont = Screen::FID_8_FNT;
 	_saveMenuCursor = Common::Rect(1, 1, 7, 8);
 	_saveLoadNumSlots = 5;
+	_isChoiceMenu = _isOptionsMenu = _madeSave = _loadedSave = _restartGame = _reloadTemporarySave = false;
+	_noLoadProcess = _noSaveProcess = _choice = _finishNameInput = _cancelNameInput = false;
+	_saveSlot = _slotToDelete = 0;
 
 	if (vm->game() == GI_KYRA2 && vm->gameFlags().lang == Common::ZH_TWN) {
 		_saveMenuFont = Screen::FID_CHINESE_FNT;
 		_saveMenuCursor = Common::Rect(0, 0, 8, 14);
 		_saveLoadNumSlots = 4;
 	}
+
+	if (vm->gameFlags().lang == Common::Language::ZH_TWN && vm->game() == GI_LOL) {
+		_saveMenuFont = Screen::FID_CHINESE_FNT;
+	}
+
 }
 
 Button *GUI_v2::addButtonToList(Button *list, Button *newButton) {
@@ -475,7 +482,7 @@ void GUI_v2::setupSavegameNames(Menu &menu, int num) {
 			menu.item[i].saveSlot = _saveSlots[i + _savegameOffset];
 			menu.item[i].enabled = true;
 			menu.item[i].useItemString = true;
-			menu.item[i].itemString = s;
+			menu.item[i].itemString = Common::move(s);
 			delete in;
 		}
 	}
@@ -844,10 +851,8 @@ bool GUI_v2::checkSavegameDescription(const char *buffer, int size) {
 	if (buffer[0] == 0)
 		return false;
 	for (int i = 0; i < size; ++i) {
-		if (buffer[i] != 0x20)
+		if (buffer[i] != ' ')
 			return true;
-		else if (buffer[i] == 0x00)
-			return false;
 	}
 	return false;
 }

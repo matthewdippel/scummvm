@@ -28,6 +28,9 @@
 #include "common/str.h"
 #include "common/rect.h"
 
+#include "graphics/pixelformat.h"
+#include "graphics/renderer.h"
+
 #include "engines/grim/material.h"
 
 namespace Graphics {
@@ -56,16 +59,6 @@ class Sprite;
 class Texture;
 class Overlay;
 
-/**
- * The Color-formats used for bitmaps in Grim Fandango/Escape From Monkey Island
- */
-enum colorFormat {
-	BM_RGB565 = 1,    // Grim Fandango
-	BM_RGB1555 = 2,   // EMI-PS2
-	BM_RGBA = 3,      // EMI-PC (Also internal Material-format for Grim)
-	BM_BGR888 = 4,    // EMI-TGA-materials (888)
-	BM_BGRA = 5       // EMI-TGA-materials with alpha
-};
 class GfxBase {
 public:
 	GfxBase();
@@ -107,8 +100,10 @@ public:
 
 	/**
 	 *  Swap the buffers, making the drawn screen visible
+	 *
+	 *  @param opportunistic True when the flip can be avoided to spare CPU
 	 */
-	virtual void flipBuffer() = 0;
+	virtual void flipBuffer(bool opportunistic = false) = 0;
 
 	/**
 	 * FIXME: The implementations of these functions (for Grim and EMI, respectively)
@@ -226,6 +221,8 @@ public:
 	virtual void drawPolygon(const PrimitiveObject *primitive) = 0;
 	virtual void drawDimPlane() {};
 
+	virtual const Graphics::PixelFormat getMovieFormat() const = 0;
+
 	/**
 	 * Prepare a movie-frame for drawing
 	 * performing any necessary conversion
@@ -237,6 +234,7 @@ public:
 	 * @see releaseMovieFrame
 	 */
 	virtual void prepareMovieFrame(Graphics::Surface *frame) = 0;
+	virtual void prepareMovieFrame(Graphics::Surface *frame, const byte *palette);
 	virtual void drawMovieFrame(int offsetX, int offsetY) = 0;
 
 	/**
@@ -266,6 +264,8 @@ public:
 	virtual void createSpecialtyTexture(uint id, const uint8 *data, int width, int height);
 	virtual void createSpecialtyTextureFromScreen(uint id, uint8 *data, int x, int y, int width, int height) = 0;
 
+	Graphics::RendererType type;
+
 	static Math::Matrix4 makeLookMatrix(const Math::Vector3d& pos, const Math::Vector3d& interest, const Math::Vector3d& up);
 	static Math::Matrix4 makeProjMatrix(float fov, float nclip, float fclip);
 	Texture *getSpecialtyTexturePtr(uint id) { if (id >= _numSpecialtyTextures) return nullptr; return &_specialtyTextures[id]; };
@@ -281,7 +281,7 @@ protected:
 	static const int _globalHeight = 1080;
 	static const int _globalWidth = 1920;
 	float _scaleW, _scaleH;
-	float _globalScaleW, _globalScaleH;
+	float _globalScaleW = 1.0f, _globalScaleH = 1.0f;
 	int _screenWidth, _screenHeight;
 	Shadow *_currentShadowArray;
 	unsigned char _shadowColorR;

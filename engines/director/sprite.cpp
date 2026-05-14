@@ -22,13 +22,14 @@
 #include "graphics/macgui/macwidget.h"
 
 #include "director/director.h"
-#include "director/castmember.h"
 #include "director/frame.h"
 #include "director/movie.h"
 #include "director/score.h"
 #include "director/sprite.h"
-#include "director/lingo/lingo.h"
-#include "director/lingo/lingo-object.h"
+#include "director/castmember/castmember.h"
+#include "director/castmember/digitalvideo.h"
+#include "director/castmember/shape.h"
+#include "director/castmember/text.h"
 
 namespace Director {
 
@@ -37,6 +38,14 @@ Sprite::Sprite(Frame *frame) {
 	_score = _frame ? _frame->getScore() : nullptr;
 	_movie = _score ? _score->getMovie() : nullptr;
 
+	_matte = nullptr;
+	_puppet = false;
+	_autoPuppet = kAPNone; // Based on Director in a Nutshell, page 15
+	reset();
+}
+
+void Sprite::reset() {
+	_copyBackMask = static_cast<uint32>(kSCBNoMask);
 	_scriptId = CastMemberID(0, 0);
 	_colorcode = 0;
 	_blendAmount = 0;
@@ -49,8 +58,10 @@ Sprite::Sprite(Frame *frame) {
 	_spriteType = kInactiveSprite;
 	_inkData = 0;
 	_ink = kInkTypeCopy;
-	_trails = 0;
+	_trails = false;
 
+	if (_matte)
+		delete _matte;
 	_matte = nullptr;
 	_cast = nullptr;
 
@@ -59,15 +70,21 @@ Sprite::Sprite(Frame *frame) {
 	_height = 0;
 	_moveable = false;
 	_editable = false;
-	_puppet = false;
 	_immediate = false;
 	_backColor = g_director->_wm->_colorWhite;
-	_foreColor = g_director->_wm->_colorBlack;
-
-	_blend = 0;
+	_foreColor = g_director->_wm->_colorWhite;
 
 	_volume = 0;
-	_stretch = 0;
+	_stretch = false;
+
+	_spriteListIdx = 0; // D6+
+
+	// D7+
+	_flags = 0;
+	_fgColorG = _fgColorB = 0;
+	_bgColorG = _bgColorB = 0;
+	_angleRot = 0;
+	_angleSkew = 0;
 }
 
 Sprite& Sprite::operator=(const Sprite &sprite) {
@@ -75,8 +92,7 @@ Sprite& Sprite::operator=(const Sprite &sprite) {
 		return *this;
 	}
 
-	this->~Sprite();
-
+	_copyBackMask = sprite._copyBackMask;
 	_frame = sprite._frame;
 	_score = sprite._score;
 	_movie = sprite._movie;
@@ -96,6 +112,9 @@ Sprite& Sprite::operator=(const Sprite &sprite) {
 	_trails = sprite._trails;
 
 	_cast = sprite._cast;
+
+	if (_matte)
+		delete _matte;
 	_matte = nullptr;
 
 	_thickness = sprite._thickness;
@@ -105,16 +124,42 @@ Sprite& Sprite::operator=(const Sprite &sprite) {
 	_moveable = sprite._moveable;
 	_editable = sprite._editable;
 	_puppet = sprite._puppet;
+	_autoPuppet = sprite._autoPuppet;
 	_immediate = sprite._immediate;
 	_backColor = sprite._backColor;
 	_foreColor = sprite._foreColor;
 
-	_blend = sprite._blend;
-
 	_volume = sprite._volume;
 	_stretch = sprite._stretch;
 
+	_spriteInfo = sprite._spriteInfo;
+	_spriteListIdx = sprite._spriteListIdx;
+
+	_flags = sprite._flags;
+	_fgColorG = sprite._fgColorG;
+	_fgColorB = sprite._fgColorB;
+	_bgColorG = sprite._bgColorG;
+	_bgColorB = sprite._bgColorB;
+	_angleRot = sprite._angleRot;
+	_angleSkew = sprite._angleSkew;
+
+	_behaviors = sprite._behaviors;
+
 	return *this;
+}
+
+bool Sprite::operator==(const Sprite &sprite) {
+	return _spriteType == sprite._spriteType &&
+		_castId == sprite._castId &&
+		_startPoint == sprite._startPoint &&
+		_width == sprite._width &&
+		_height == sprite._height &&
+		_ink == sprite._ink &&
+		_foreColor == sprite._foreColor &&
+		_backColor == sprite._backColor &&
+		_blendAmount == sprite._blendAmount &&
+		_ink == sprite._ink &&
+		(_thickness | kTTweened) == (sprite._thickness | kTTweened);
 }
 
 Sprite::Sprite(const Sprite &sprite) {
@@ -149,26 +194,28 @@ void Sprite::createQDMatte() {
 	Common::Rect fillAreaRect((int)srcRect.width(), (int)srcRect.height());
 	Graphics::MacPlotData plotFill(&tmp, nullptr, &g_director->getPatterns(), getPattern(), 0, 0, 1, g_director->_wm->_colorBlack);
 
+	Graphics::Primitives &primitives = g_director->_wm->getDrawPrimitives();
+
 	// it's the same for filled and outlined qd shape when we are using floodfill, so we use filled rect directly since it won't be affected by line size.
 	switch (_spriteType) {
 	case kOutlinedRectangleSprite:
 	case kRectangleSprite:
-		Graphics::drawFilledRect1(fillAreaRect, g_director->_wm->_colorBlack, g_director->_wm->getDrawPixel(), &plotFill);
+		primitives.drawFilledRect1(fillAreaRect, g_director->_wm->_colorBlack, &plotFill);
 		break;
 	case kOutlinedRoundedRectangleSprite:
 	case kRoundedRectangleSprite:
-		Graphics::drawRoundRect1(fillAreaRect, 12, g_director->_wm->_colorBlack, true, g_director->_wm->getDrawPixel(), &plotFill);
+		primitives.drawRoundRect1(fillAreaRect, 12, g_director->_wm->_colorBlack, true, &plotFill);
 		break;
 	case kOutlinedOvalSprite:
 	case kOvalSprite:
-		Graphics::drawEllipse(fillAreaRect.left, fillAreaRect.top, fillAreaRect.right, fillAreaRect.bottom, g_director->_wm->_colorBlack, true, g_director->_wm->getDrawPixel(), &plotFill);
+		primitives.drawEllipse(fillAreaRect.left, fillAreaRect.top, fillAreaRect.right, fillAreaRect.bottom, g_director->_wm->_colorBlack, true, &plotFill);
 		break;
 	case kLineBottomTopSprite:
 	case kLineTopBottomSprite:
-		warning("Sprite::createQDMatte doesn't support creating matte for type %d", _spriteType);
+		warning("Sprite::createQDMatte doesn't support creating matte for type %d (%s)", _spriteType, spriteType2str(_spriteType));
 		break;
 	default:
-		warning("Sprite::createQDMatte Expected shape type but got type %d", _spriteType);
+		warning("Sprite::createQDMatte Expected shape type but got type %d (%s)", _spriteType, spriteType2str(_spriteType));
 	}
 
 	Graphics::Surface surface;
@@ -210,7 +257,7 @@ MacShape *Sprite::getShape() {
 	shape->spriteType = _spriteType;
 	shape->foreColor = _foreColor;
 	shape->backColor = _backColor;
-	shape->lineSize = _thickness & 0x3;
+	shape->lineSize = _thickness & kTThickness;
 	shape->pattern = getPattern();
 	shape->tile = nullptr;
 	shape->tileRect = nullptr;
@@ -244,13 +291,6 @@ MacShape *Sprite::getShape() {
 		default:
 			break;
 		}
-
-		if (g_director->getVersion() >= 400) {
-			shape->foreColor = sc->getForeColor();
-			shape->backColor = sc->getBackColor();
-			shape->lineSize = sc->_lineThickness;
-			shape->ink = sc->_ink;
-		}
 	}
 
 	// for outlined shapes, line thickness of 1 means invisible.
@@ -265,8 +305,7 @@ uint32 Sprite::getBackColor() {
 
 	switch (_cast->_type) {
 	case kCastText:
-	case kCastButton:
-	case kCastShape: {
+	case kCastButton: {
 		return _cast->getBackColor();
 	}
 	default:
@@ -280,8 +319,7 @@ uint32 Sprite::getForeColor() {
 
 	switch (_cast->_type) {
 	case kCastText:
-	case kCastButton:
-	case kCastShape: {
+	case kCastButton: {
 		return _cast->getForeColor();
 	}
 	default:
@@ -289,43 +327,11 @@ uint32 Sprite::getForeColor() {
 	}
 }
 
-Common::Point Sprite::getRegistrationOffset() {
-	Common::Point result(0, 0);
+bool Sprite::getEditable() {
 	if (!_cast)
-		return result;
+		return _editable;
 
-	switch (_cast->_type) {
-	case kCastBitmap:
-		{
-			BitmapCastMember *bc = (BitmapCastMember *)(_cast);
-
-			// stretch the offset
-			if (!_stretch && (_width != bc->_initialRect.width() || _height != bc->_initialRect.height())) {
-				result.x = (bc->_initialRect.left - bc->_regX) * _width / bc->_initialRect.width();
-				result.y = (bc->_initialRect.top - bc->_regY) * _height / bc->_initialRect.height();
-			} else {
-				result.x = bc->_initialRect.left - bc->_regX;
-				result.y = bc->_initialRect.top - bc->_regY;
-			}
-		}
-		break;
-	case kCastDigitalVideo:
-	case kCastFilmLoop:
-		result.x = _cast->_initialRect.width() >> 1;
-		result.y = _cast->_initialRect.height() >> 1;
-		break;
-	default:
-		break;
-	}
-	return result;
-}
-
-void Sprite::updateEditable() {
-	if (!_cast)
-		return;
-
-	if (!_puppet)
-		_editable = _editable || _cast->isEditable();
+	return _editable || _cast->isEditable();
 }
 
 bool Sprite::respondsToMouse() {
@@ -334,6 +340,12 @@ bool Sprite::respondsToMouse() {
 
 	if (_cast && _cast->_type == kCastButton)
 		return true;
+
+	// TODO: Check if we need to check against individual events like below
+	if (g_director->getVersion() >= 600) {
+		if (_behaviors.size() > 0)
+			return true;
+	}
 
 	ScriptContext *spriteScript = _movie->getScriptContext(kScoreScript, _scriptId);
 	if (spriteScript && (spriteScript->_eventHandlers.contains(kEventGeneric)
@@ -356,8 +368,8 @@ bool Sprite::isActive() {
 	if (_cast && _cast->_type == kCastButton)
 		return true;
 
-	return _movie->getScriptContext(kScoreScript, _scriptId) != nullptr
-			|| _movie->getScriptContext(kCastScript, _castId) != nullptr;
+	return (_movie->getScriptContext(kScoreScript, _scriptId) != nullptr)
+			|| (_movie->getScriptContext(kCastScript, _castId) != nullptr);
 }
 
 bool Sprite::shouldHilite() {
@@ -431,19 +443,93 @@ void Sprite::setPattern(uint16 pattern) {
 	}
 }
 
+void Sprite::setAutoPuppet(AutoPuppetProperty property, bool value) {
+	// Skip this if we're not in D6 or above (auto-puppet is introduced in D6)
+	if (_puppet || g_director->getVersion() < 600)
+		return;
+
+	if (value)
+		_autoPuppet |= (1 << property);
+	else
+		_autoPuppet &= ~(1 << property);
+}
+
+bool Sprite::getAutoPuppet(AutoPuppetProperty property) {
+	return (_autoPuppet & (1 << property)) != 0;
+}
+
+void Sprite::setWidth(int w) {
+	_width = MAX<int>(w, 0);
+
+	// Based on Director in a Nutshell, page 15
+	setAutoPuppet(kAPWidth, true);
+}
+
+void Sprite::setHeight(int h) {
+	_height = MAX<int>(h, 0);
+
+	// Based on Director in a Nutshell, page 15
+	setAutoPuppet(kAPHeight, true);
+}
+
+Common::Rect Sprite::getBbox(bool unstretched) {
+	Common::Rect result(_width, _height);
+	// If this is a cast member, use the cast member's getBbox function
+	// so we start with a rect containing the correct registration offset.
+	if (_cast)
+		result = _cast->getBbox(_width, _height);
+
+	// The origin of the rect should be at the registration offset,
+	// e.g. for bitmap sprites this defaults to the centre.
+	// Now we move the rect to the correct spot.
+	Common::Point startPos = _startPoint;
+	result.translate(startPos.x, startPos.y);
+	return result;
+
+}
+
+void Sprite::setBbox(int l, int t, int r, int b) {
+	_width = r - l;
+	_height = b - t;
+
+	Common::Rect source(_width, _height);
+	if (_cast) {
+		source = _cast->getBbox(_width, _height);
+	}
+	_startPoint.x = (int16)(l - source.left);
+	_startPoint.y = (int16)(t - source.top);
+
+	if (_width <= 0 || _height <= 0)
+		_width = _height = 0;
+
+	// Based on Director in a Nutshell, page 15
+	setAutoPuppet(kAPBbox, true);
+}
+
+Common::Point Sprite::getPosition() {
+	return _startPoint;
+}
+
+void Sprite::setPosition(int x, int y) {
+	_startPoint = Common::Point(x, y);
+
+	// Based on Director in a Nutshell, page 15
+	setAutoPuppet(kAPLoc, true);
+}
+
 bool Sprite::checkSpriteType() {
 	// check whether the sprite type match the cast type
 	// if it doesn't match, then we treat it as transparent
 	// this happens in warlock-mac data/stambul/c up
-	if (_spriteType == kBitmapSprite && _cast->_type != kCastBitmap) {
-		if (debugChannelSet(2, kDebugImages))
+	if (_spriteType == kBitmapSprite && !(_cast->_type == kCastBitmap || _cast->_type == kCastFilmLoop)) {
+		if (debugChannelSet(4, kDebugImages))
 			warning("Sprite::checkSpriteType: Didn't render sprite due to the sprite type mismatch with cast type");
 		return false;
 	}
 	return true;
 }
 
-void Sprite::setCast(CastMemberID memberID) {
+void Sprite::setCast(CastMemberID memberID, bool replaceDims) {
 	/**
 	 * There are two things we need to take into account here:
 	 *   1. The cast member's type
@@ -460,7 +546,7 @@ void Sprite::setCast(CastMemberID memberID) {
 	_castId = memberID;
 	_cast = _movie->getCastMember(_castId);
 	//As QDShapes don't have an associated cast, we must not change their _SpriteType.
-	if (g_director->getVersion() >= 400 && !isQDShape())
+	if (g_director->getVersion() >= 400 && !isQDShape() && _castId != CastMemberID(0, 0))
 		_spriteType = kCastMemberSprite;
 
 	if (_cast) {
@@ -474,41 +560,146 @@ void Sprite::setCast(CastMemberID memberID) {
 			case kCastText:
 				_spriteType = kTextSprite;
 				break;
+			case kCastButton:
+				{
+					TextCastMember *text = (TextCastMember *)_cast;
+					switch (text->_buttonType) {
+					case kTypeButton:
+						_spriteType = kButtonSprite;
+						break;
+					case kTypeCheckBox:
+						_spriteType = kCheckboxSprite;
+						break;
+					case kTypeRadio:
+						_spriteType = kRadioButtonSprite;
+						break;
+					default:
+						break;
+					}
+					break;
+				}
 			default:
 				break;
 			}
 		}
 
-		// TODO: Respect sprite width/height settings. Need to determine how to read
-		// them properly.
-		Common::Rect dims = _cast->getInitialRect();
-		// strange logic here, need to be fixed
-		switch (_cast->_type) {
-		case kCastBitmap:
-			// for the stretched sprites, we need the original size to get the correct bbox offset.
-			// there are two stretch situation here.
-			// 1. stretch happened when creating the widget, there is no lingo participated. we will use the original sprite size to create widget. check copyStretchImg
-			// 2. stretch set by lingo. this time we need to store the original dims because we will create the original sprite and stretch it when bliting. check inkBlitStretchSurface
-			{
-				if (!(_inkData & 0x80) || _stretch) {
-					_width = dims.width();
-					_height = dims.height();
-				}
+		if (replaceDims) {
+			Common::Rect dims = _cast->getInitialRect();
+			switch (_cast->_type) {
+			case kCastShape:
+			case kCastText:
+				break;
+			case kCastBitmap:
+			default:
+				_width = dims.width();
+				_height = dims.height();
+				break;
 			}
-			break;
-		case kCastShape:
-		case kCastText: 	// fall-through
-			break;
-		default:
-			_width = dims.width();
-			_height = dims.height();
-			break;
 		}
 
 	} else {
-		if (_castId.member != 0 && debugChannelSet(kDebugImages, 2))
+		if (_castId.member != 0 && debugChannelSet(4, kDebugImages))
 			warning("Sprite::setCast(): %s is null", memberID.asString().c_str());
 	}
 }
+
+
+Common::String Sprite::formatInfo() {
+	return Common::String::format("castId: %s, [inkData: 0x%02x [ink: %s, trails: %d, stretch: %d, line: %d], %dx%d@%d,%d type: %d (%s) fg: %08x bg: %08x], script: %s, colorcode: 0x%x, blendAmount: 0x%x, unk3: 0x%x, puppet: %d, moveable: %d",
+		_castId.asString().c_str(), _inkData,
+		inkType2str(_ink), _trails, _stretch, _thickness,
+		_width, _height, _startPoint.x, _startPoint.y,
+		_spriteType, spriteType2str(_spriteType), _foreColor, _backColor,
+		_scriptId.asString().c_str(), _colorcode, _blendAmount, _unk3,
+		_puppet, _moveable);
+}
+
+void Sprite::replaceFrom(Sprite *nextSprite) {
+	if (!nextSprite)
+		return;
+
+	if (nextSprite->_copyBackMask & kSCBScriptId)
+		_scriptId = nextSprite->_scriptId;
+	// Copy all the behavior scripts
+	_behaviors = nextSprite->_behaviors;
+	_spriteInfo = nextSprite->_spriteInfo;
+	if (nextSprite->_copyBackMask & kSCBSpriteListIdx)
+		_spriteListIdx = nextSprite->_spriteListIdx;
+
+	if (_puppet) {
+		// Whole sprite is in puppet mode.
+		// The only thing we want to copy over is the script ID.
+		return;
+	}
+
+	// If the cast member is the same, persist the editable flag
+	bool editable = nextSprite->_editable;
+	if (_castId == nextSprite->_castId) {
+		editable = _editable;
+	}
+
+	bool immediate = _immediate;
+
+	// Copy over all the sprite fields from one to another.
+	// For D6+, exclude individual fields with autopuppet switched on
+	if (nextSprite->_copyBackMask & kSCBSpriteType)
+		_spriteType = nextSprite->_spriteType;
+
+	if (nextSprite->_copyBackMask & kSCBEnabled)
+		_enabled = nextSprite->_enabled;
+
+	if (!getAutoPuppet(kAPInk) && (nextSprite->_copyBackMask & kSCBInk)) {
+		_inkData = nextSprite->_inkData;
+		_ink = nextSprite->_ink;
+		_trails = nextSprite->_trails;
+		_stretch = nextSprite->_stretch;
+	}
+	if (!getAutoPuppet(kAPForeColor) && (nextSprite->_copyBackMask & kSCBForeColor)) {
+		_foreColor = nextSprite->_foreColor;
+		_fgColorB = nextSprite->_fgColorB;
+		_fgColorG = nextSprite->_fgColorG;
+	}
+	if (!getAutoPuppet(kAPBackColor) && (nextSprite->_copyBackMask & kSCBBackColor)) {
+		_backColor = nextSprite->_backColor;
+		_bgColorB = nextSprite->_bgColorB;
+		_bgColorG = nextSprite->_bgColorG;
+	}
+	if (!getAutoPuppet(kAPCast)) {
+		if (nextSprite->_copyBackMask & kSCBCastId) {
+			_castId = nextSprite->_castId;
+			_cast = nextSprite->_cast;
+		}
+		if (nextSprite->_copyBackMask & kSCBSpriteListIdx)
+			_spriteListIdx = nextSprite->_spriteListIdx;
+	}
+	if (!getAutoPuppet(kAPLoc) && (nextSprite->_copyBackMask & kSCBStartPoint)) {
+		_startPoint = nextSprite->_startPoint;
+	}
+	// height and width seem to be copied back if the cast ID changes (e.g. intro of sabotenman)
+	if (!getAutoPuppet(kAPHeight) && ((nextSprite->_copyBackMask & kSCBCastId) || (nextSprite->_copyBackMask & kSCBHeight))) {
+		_height = nextSprite->_height;
+	}
+	if (!getAutoPuppet(kAPWidth) && ((nextSprite->_copyBackMask & kSCBCastId) || (nextSprite->_copyBackMask & kSCBWidth))) {
+		_width = nextSprite->_width;
+	}
+	if (!getAutoPuppet(kAPMoveable) && (nextSprite->_copyBackMask & kSCBMoveable)) {
+		_colorcode = nextSprite->_colorcode;
+		_editable = nextSprite->_editable;
+		_moveable = nextSprite->_moveable;
+	}
+	if (nextSprite->_copyBackMask & kSCBBlendAmount)
+		_blendAmount = nextSprite->_blendAmount;
+	if (nextSprite->_copyBackMask & kSCBThickness)
+		_thickness = nextSprite->_thickness;
+	if (nextSprite->_copyBackMask & kSCBPattern)
+		_pattern = nextSprite->_pattern;
+
+	// Persist the immediate flag
+	_immediate = immediate;
+
+	_editable = editable;
+
+}
+
 
 } // End of namespace Director

@@ -21,6 +21,7 @@
 
 #include "common/savefile.h"
 
+#include "graphics/cursorman.h"
 #include "graphics/thumbnail.h"
 
 #include "toltecs/toltecs.h"
@@ -179,7 +180,7 @@ void ToltecsEngine::loadgame(const char *filename) {
 	_mouseDisabled = in->readUint16LE();
 
 	_system->warpMouse(_mouseX, _mouseY);
-	_system->showMouse(_mouseDisabled == 0);
+	CursorMan.showMouse(_mouseDisabled == 0);
 
 	_palette->loadState(in);
 	_script->loadState(in);
@@ -220,7 +221,7 @@ Common::String ToltecsEngine::getSavegameFilename(const Common::String &target, 
 	assert(num >= 0 && num <= 999);
 
 	char extension[5];
-	sprintf(extension, "%03d", num);
+	Common::sprintf_s(extension, "%03d", num);
 
 	return target + "." + extension;
 }

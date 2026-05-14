@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_SCRIPT_H
@@ -74,13 +80,13 @@ public:
 	char  *peekString(int32 offset = 0);
 
 	// Expression parsing functions
-	int16 readVarIndex(uint16 *size = 0, uint16 *type = 0);
+	uint16 readVarIndex(uint16 *size = 0, uint16 *type = 0);
 	int16 readValExpr(byte stopToken = 99);
 	int16 readExpr(byte stopToken, byte *type);
 	void  skipExpr(char stopToken);
 
 	// Higher-level expression parsing functions
-	char  evalExpr(int16 *pRes);
+	char  evalExpr(int32 *pRes);
 	bool  evalBool();
 	int32 evalInt();
 
@@ -118,6 +124,9 @@ public:
 	/** Push the current script position and branch to the specified offset. */
 	void call(uint32 offset);
 
+	/** Override a byte into the loaded script data (used for some script bugs workarounds) */
+	void writeByte(int32 offset, byte v);
+
 	// Fixed properties
 	uint8  getVersionMajor   () const;
 	uint8  getVersionMinor   () const;
@@ -132,6 +141,8 @@ public:
 	uint16 getFunctionOffset (uint8 function) const;
 
 	static uint32 getVariablesCount(const char *fileName, GobEngine *vm);
+
+	int32 _currentOpcodePos = 0; // for debugging purposes only
 
 private:
 	struct CallEntry {

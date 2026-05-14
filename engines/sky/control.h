@@ -198,7 +198,7 @@ public:
 	void saveDescriptions(const Common::StringArray &list);
 
 private:
-	int displayMessage(const char *altButton, const char *message, ...) GCC_PRINTF(3, 4);
+	int displayMessage(MSVC_PRINTF const char *message, ...) GCC_PRINTF(2, 3);
 
 	void initPanel();
 	void removePanel();
@@ -213,7 +213,7 @@ private:
 	void delay(unsigned int amount);
 
 	void animClick(ConResource *pButton);
-	bool getYesNo(char *text);
+	bool getYesNo(char *text, uint bufSize);
 	void buttonControl(ConResource *pButton);
 	uint16 handleClick(ConResource *pButton);
 	uint16 doMusicSlide();
@@ -296,7 +296,7 @@ private:
 
 	ControlStatus *_statusBar;
 
-	static char _quitTexts[18][35];
+	static char _quitTexts[20][45];
 	static uint8 _crossImg[594];
 };
 

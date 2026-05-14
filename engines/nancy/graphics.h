@@ -22,13 +22,14 @@
 #ifndef NANCY_GRAPHICS_H
 #define NANCY_GRAPHICS_H
 
+#include "common/path.h"
+
 #include "graphics/screen.h"
 
 #include "engines/nancy/font.h"
 
 namespace Nancy {
 
-class NancyEngine;
 class RenderObject;
 
 // Graphics class that handles multilayered surface rendering with minimal redraw
@@ -37,46 +38,69 @@ public:
 	GraphicsManager();
 
 	void init();
-	void draw();
+	void draw(bool updateScreen = true);
+
+	void loadFonts(Common::SeekableReadStream *chunkStream);
 
 	void addObject(RenderObject *object);
 	void removeObject(RenderObject *object);
 	void clearObjects();
 
 	void redrawAll();
+	void suppressNextDraw();
 
 	const Font *getFont(uint id) const { return id < _fonts.size() ? &_fonts[id] : nullptr; }
 	const Graphics::Screen *getScreen() { return &_screen; }
 
-	const Graphics::PixelFormat &getInputPixelFormat();
+	const Graphics::PixelFormat &getInputPixelFormat(uint bpp = 16);
 	const Graphics::PixelFormat &getScreenPixelFormat();
-	uint getTransColor();
+	const Graphics::PixelFormat &getTransparentPixelFormat();
+	uint32 getTransColor() { return _transColor; }
 
-	static void loadSurfacePalette(Graphics::ManagedSurface &inSurf, const Common::String paletteFilename);
-	static void loadSurfacePalette(Graphics::ManagedSurface &inSurf, const Common::String paletteFilename, uint paletteStart, uint paletteSize);
+	Graphics::ManagedSurface &getAutotextSurface(uint16 id) { return _autotextSurfaces.getOrCreateVal(id); }
+	Common::Rect &getAutotextSurfaceBounds(uint16 id) { return _autotextSurfaceBounds.getOrCreateVal(id); }
+
+	void grabViewportObjects(Common::Array<RenderObject *> &inArray);
+	void screenshotScreen(Graphics::ManagedSurface &inSurf);
+
+	static void loadSurfacePalette(Graphics::ManagedSurface &inSurf, const Common::Path &paletteFilename, uint paletteStart = 0, uint paletteSize = 256);
 	static void copyToManaged(const Graphics::Surface &src, Graphics::ManagedSurface &dst, bool verticalFlip = false, bool doubleSize = false);
 	static void copyToManaged(void *src, Graphics::ManagedSurface &dst, uint srcW, uint srcH, const Graphics::PixelFormat &format, bool verticalFlip = false, bool doubleSize = false);
 
+	static void rotateBlit(const Graphics::ManagedSurface &src, Graphics::ManagedSurface &dest, byte rotation);
+	static void crossDissolve(const Graphics::ManagedSurface &from, const Graphics::ManagedSurface &to, byte alpha, const Common::Rect &rect, Graphics::ManagedSurface &inResult);
+
+	bool getIsSuppressed() const { return _isSuppressed; }
+
 	// Debug
-	void debugDrawToScreen(const Graphics::Surface &surf);
+	void debugDrawToScreen(const Graphics::ManagedSurface &surf);
 
 	Graphics::ManagedSurface _object0;
 
-	Graphics::PixelFormat _screenPixelFormat;
 
 private:
-	void loadFonts();
 	void blitToScreen(const RenderObject &src, Common::Rect dest);
 
 	static int objectComparator(const void *a, const void *b);
 
 	Common::SortedArray<RenderObject *> _objects;
 
-	Graphics::PixelFormat _inputPixelFormat;
+	Graphics::PixelFormat _inputPixelFormat16, _inputPixelFormat24, _inputPixelFormat32;
+	Graphics::PixelFormat _screenPixelFormat;
 	Graphics::PixelFormat _clut8Format;
+	Graphics::PixelFormat _transparentPixelFormat;
 
 	Graphics::Screen _screen;
 	Common::Array<Font> _fonts;
+
+	Common::List<Common::Rect> _dirtyRects;
+
+	Common::HashMap<uint16, Graphics::ManagedSurface> _autotextSurfaces;
+	Common::HashMap<uint16, Common::Rect> _autotextSurfaceBounds;
+
+	uint32 _transColor = 0;
+
+	bool _isSuppressed;
 };
 
 } // End of namespace Nancy

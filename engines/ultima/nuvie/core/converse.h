@@ -22,7 +22,7 @@
 #ifndef NUVIE_CORE_CONVERSE_H
 #define NUVIE_CORE_CONVERSE_H
 
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 #include "ultima/shared/std/containers.h"
 #include "ultima/nuvie/actors/actor.h"
 #include "ultima/nuvie/gui/widgets/msg_scroll.h"
@@ -47,14 +47,7 @@ class ConverseInterpret;
 class ConverseSpeech;
 class ConvScript;
 
-using Std::string;
-
-
-#define CONVERSE_GUMP_DEFAULT   0
-#define CONVERSE_GUMP_U7_STYLE  1
-#define CONVERSE_GUMP_WOU_STYLE 2
-
-uint8 get_converse_gump_type_from_config(Configuration *config);
+ConverseGumpType get_converse_gump_type_from_config(const Configuration *config);
 
 typedef uint32 converse_value; // any single value read from a script
 typedef unsigned char *convscript_buffer;
@@ -91,8 +84,8 @@ class Converse {
 	friend class U6ConverseInterpret;
 
 	// game system objects from nuvie
-	Configuration *config;
-	GameClock *clock;
+	const Configuration *config;
+	GameClock *_clock;
 	ActorManager *actors;
 	ObjManager *objects;
 	Player *player;
@@ -110,14 +103,14 @@ class Converse {
 	Actor *npc;
 	uint8 npc_num;
 	uint8 script_num; //this could differ from npc_num when talking to guards or wisps etc.
-	Std::string _name, _desc;
+	Common::String _name, _desc;
 
 	bool active; // running npc script? (either paused or unpaused)
 	bool need_input; // waiting for text input
 	bool party_all_the_time; // force NPCs to join player's party?
 
-	string in_str; // last input from player
-	string out_str; // text that is to be printed
+	Common::String in_str; // last input from player
+	Common::String out_str; // text that is to be printed
 	char *allowed_input; // characters requested for single-character input
 
 	char aname[16]; // return from npc_name()
@@ -134,49 +127,49 @@ class Converse {
 public:
 	Converse();
 	~Converse();
-	void init(Configuration *cfg, nuvie_game_t t, MsgScroll *s, ActorManager *a,
+	void init(const Configuration *cfg, nuvie_game_t t, MsgScroll *s, ActorManager *a,
 	          GameClock *c, Player *p, ViewManager *v, ObjManager *o);
 
 	uint32 get_script_num(uint8 a);
-	void load_conv(const Std::string &convfilename);
+	void load_conv(const Common::String &convfilename);
 	uint32 load_conv(uint8 a);
 	void unload_conv() {
 		delete src;
-		src = NULL;
+		src = nullptr;
 	}
 	ConvScript *load_script(uint32 n);
 	ConverseInterpret *new_interpreter();
 
 	bool start(Actor *a) {
-		return (start(a->get_actor_num()));
+		return start(a->get_actor_num());
 	}
 	bool start(uint8 n);
 	void continue_script();
 	void stop();
 
-	bool running()    {
-		return (active);
+	bool running() const {
+		return active;
 	}
 	bool is_waiting_for_scroll() {
 		return scroll->get_page_break();
 	}
 	void unwait();
-	void poll_input(const char *allowed = NULL, bool nonblock = true);
+	void poll_input(const char *allowed = nullptr, bool nonblock = true);
 	bool override_input();
 	void collect_input();
 
 	bool input();
-	void print(const char *s = NULL);
-	const Std::string &get_input()  {
+	void print(const char *s = nullptr);
+	const Common::String &get_input() const {
 		return in_str;
 	}
-	const Std::string &get_output() {
+	const Common::String &get_output() const {
 		return out_str;
 	}
-	void set_input(Std::string s) {
+	void set_input(Common::String s) {
 		in_str = s;
 	}
-	void set_output(Std::string s) {
+	void set_output(Common::String s) {
 		out_str = s;
 	}
 
@@ -185,7 +178,7 @@ public:
 	}
 	const char *npc_name(uint8 num);
 	void show_portrait(uint8 n);
-	converse_value get_var(uint8 varnum) {
+	converse_value get_var(uint8 varnum) const {
 		return (varnum <= U6TALK_VAR__LAST_ ? variables[varnum].cv : 0x00);
 	}
 	const char *get_svar(uint8 varnum);
@@ -230,7 +223,7 @@ public:
 	~ConvScript();
 
 	void read_script();
-	bool loaded() {
+	bool loaded() const {
 		return ((buf && buf_len));    // script is loaded?
 	}
 
@@ -257,14 +250,14 @@ public:
 		skip(offset);
 	}
 
-	uint32 pos()                    {
-		return (buf_pt - buf);
+	uint32 pos() const {
+		return buf_pt - buf;
 	}
-	bool overflow(uint32 ptadd = 0) {
+	bool overflow(uint32 ptadd = 0) const {
 		return (((pos() + ptadd) >= buf_len));
 	}
 	convscript_buffer get_buffer(uint32 ptadd = 0) {
-		return ((!ptadd || (ptadd < buf_len)) ? buf + ptadd : NULL);
+		return ((!ptadd || (ptadd < buf_len)) ? buf + ptadd : nullptr);
 	}
 };
 

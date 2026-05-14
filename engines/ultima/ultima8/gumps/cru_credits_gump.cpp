@@ -19,20 +19,21 @@
  *
  */
 
-#include "common/config-manager.h"
-#include "image/bmp.h"
-
 #include "ultima/ultima8/gumps/cru_credits_gump.h"
 
-#include "ultima/ultima8/ultima8.h"
-#include "ultima/ultima8/kernel/mouse.h"
-#include "ultima/ultima8/graphics/render_surface.h"
-#include "ultima/ultima8/graphics/palette_manager.h"
-#include "ultima/ultima8/graphics/fonts/rendered_text.h"
-#include "ultima/ultima8/graphics/fonts/font.h"
-#include "ultima/ultima8/graphics/fonts/font_manager.h"
-#include "ultima/ultima8/graphics/fonts/shape_font.h"
+#include "common/config-manager.h"
+#include "common/stream.h"
+#include "image/bmp.h"
 #include "ultima/ultima8/audio/music_process.h"
+#include "ultima/ultima8/gfx/fonts/font.h"
+#include "ultima/ultima8/gfx/fonts/font_manager.h"
+#include "ultima/ultima8/gfx/fonts/rendered_text.h"
+#include "ultima/ultima8/gfx/fonts/shape_font.h"
+#include "ultima/ultima8/gfx/palette_manager.h"
+#include "ultima/ultima8/gfx/render_surface.h"
+#include "ultima/ultima8/gfx/texture.h"
+#include "ultima/ultima8/kernel/mouse.h"
+#include "ultima/ultima8/ultima8.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -51,15 +52,20 @@ CruCreditsGump::CruCreditsGump(Common::SeekableReadStream *txtrs,
 		_timer(0), _background(nullptr), _nextScreenStart(0), _screenNo(-1)
 {
 	Image::BitmapDecoder decoder;
-	_background = RenderSurface::CreateSecondaryRenderSurface(640, 480);
-	_background->Fill32(0xFF000000, 0, 0, 640, 480); // black background
+	Graphics::Screen *sc = Ultima8Engine::get_instance()->getScreen();
+	_background = new RenderSurface(640, 480, sc->format);
+
+	uint32 color = TEX32_PACK_RGB(0, 0, 0);
+	_background->fill32(color, 0, 0, 640, 480); // black background
 
 	if (decoder.loadStream(*bmprs)) {
 		// This does an extra copy via the ManagedSurface, but it's a once-off.
 		const Graphics::Surface *bmpsurf = decoder.getSurface();
-		Graphics::ManagedSurface *ms = new Graphics::ManagedSurface(bmpsurf);
-		ms->setPalette(decoder.getPalette(), decoder.getPaletteStartIndex(), decoder.getPaletteColorCount());
-		_background->Blit(ms, 0, 0, 640, 480, 0, 0);
+		Graphics::ManagedSurface ms;
+		ms.copyFrom(*bmpsurf);
+		ms.setPalette(decoder.getPalette().data(), 0, decoder.getPalette().size());
+		Common::Rect srcRect(640, 480);
+		_background->Blit(ms, srcRect, 0, 0);
 	} else {
 		warning("couldn't load bitmap background for credits.");
 	}
@@ -104,16 +110,15 @@ CruCreditsGump::CruCreditsGump(Common::SeekableReadStream *txtrs,
 CruCreditsGump::~CruCreditsGump() {
 	delete _background;
 
-	for (Common::Array<RenderedText *>::iterator iter = _currentLines.begin(); iter != _currentLines.end(); iter++) {
-		delete *iter;
+	for (auto *line : _currentLines) {
+		delete line;
 	}
 }
 
 void CruCreditsGump::InitGump(Gump *newparent, bool take_focus) {
 	ModalGump::InitGump(newparent, take_focus);
 
-	Mouse::get_instance()->pushMouseCursor();
-	Mouse::get_instance()->setMouseCursor(Mouse::MOUSE_NONE);
+	Mouse::get_instance()->pushMouseCursor(Mouse::MOUSE_NONE);
 
 	MusicProcess *musicproc = MusicProcess::get_instance();
 	if (musicproc) {
@@ -149,9 +154,8 @@ void CruCreditsGump::run() {
 	}
 
 	_nextScreenStart += _screens[_screenNo]._delay;
-	for (Common::Array<RenderedText *>::iterator iter = _currentLines.begin();
-		 iter != _currentLines.end(); iter++) {
-		delete *iter;
+	for (auto *line : _currentLines) {
+		delete line;
 	}
 	_currentLines.clear();
 
@@ -168,23 +172,23 @@ void CruCreditsGump::run() {
 	if (pal && nameshapefont)
 		nameshapefont->setPalette(pal);
 
-	for (Common::Array<CredLine>::const_iterator iter = lines.begin();
-		 iter != lines.end(); iter++) {
-		Font *linefont = (iter->_lineType == kCredTitle) ? titlefont : namefont;
+	for (const auto &line : lines) {
+		Font *linefont = (line._lineType == kCredTitle) ? titlefont : namefont;
 		if (!linefont) {
 			// shouldn't happen.. just to be sure?
-			warning("can't render credits line type %d, font is null", iter->_lineType);
+			warning("can't render credits line type %d, font is null", line._lineType);
 			break;
 		}
 
 		unsigned int remaining;
-		RenderedText *rendered = linefont->renderText(iter->_text, remaining, 640, 0, Font::TEXT_CENTER);
+		RenderedText *rendered = linefont->renderText(line._text, remaining, 640, 0, Font::TEXT_CENTER);
 		_currentLines.push_back(rendered);
 	}
 }
 
 void CruCreditsGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool scaled) {
-	surf->Blit(_background->getRawSurface(), 0, 0, 640, 480, 0, 0);
+	Common::Rect srcRect(640, 480);
+	surf->Blit(*_background->getRawSurface(), srcRect, 0, 0);
 
 	unsigned int nlines = _currentLines.size();
 	if (!nlines)
@@ -197,9 +201,8 @@ void CruCreditsGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool scal
 	int total = nlines * (height + vlead);
 	int yoffset = 240 - total / 2;
 
-	for (Common::Array<RenderedText *>::iterator iter = _currentLines.begin();
-		 iter != _currentLines.end(); iter++) {
-		(*iter)->draw(surf, 0, yoffset);
+	for (auto *line : _currentLines) {
+		line->draw(surf, 0, yoffset);
 		yoffset += (height + vlead);
 	}
 }

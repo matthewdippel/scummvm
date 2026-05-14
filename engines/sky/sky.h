@@ -23,9 +23,11 @@
 #define SKY_SKY_H
 
 
+#include "common/array.h"
 #include "common/error.h"
 #include "common/keyboard.h"
 #include "engines/engine.h"
+#include "graphics/big5.h"
 
 /**
  * This is the namespace of the Sky engine.
@@ -47,6 +49,7 @@ struct SystemVars {
 	uint16 currentMusic;
 	bool pastIntro;
 	bool paused;
+	bool textDirRTL;
 };
 
 class Sound;
@@ -99,8 +102,8 @@ public:
 
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::String getSaveStateName(int slot) const override {
 		return Common::String::format("SKY-VM.%03d", slot);
 	}
@@ -109,10 +112,14 @@ public:
 	static void *_itemList[300];
 	static SystemVars *_systemVars;
 	static const char *shortcutsKeymapId;
+	uint32 _chineseTraditionalOffsets[8];
+	char *_chineseTraditionalBlock;
+	Graphics::Big5Font *_big5Font;
 
 protected:
 	// Engine APIs
 	Common::Error init();
+	bool loadChineseTraditional();
 	Common::Error go();
 	Common::Error run() override {
 		Common::Error err;

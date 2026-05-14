@@ -54,12 +54,37 @@ namespace Scumm {
 
 #define TRK_TYPE_MASK 0xC0
 
+#define SAUD_OP_INIT          1
+#define SAUD_OP_UPDATE_HEADER 2
+#define SAUD_OP_SET_PARAM     3
+#define SAUD_OP_INCR_PARAM    4
+#define SAUD_OP_SET_OFFSET    6
+#define SAUD_OP_SET_LENGTH    7
+#define SAUD_OP_COMPARE_GT    8
+#define SAUD_OP_COMPARE_LT    9
+#define SAUD_OP_COMPARE_EQ    10
+#define SAUD_OP_COMPARE_NE    11
+
+#define SAUD_VALUEID_ALL_VOLS 0xFF
+#define SAUD_VALUEID_TRK_VOL  0xFE
+#define SAUD_VALUEID_TRK_PAN  0xFD
+
+#define TRK_USERID_SPEECH 1
+#define TRK_USERID_MUSIC  2
+#define TRK_USERID_SFX    3
+
+#define SMUSH_CODEC_RLE          1
+#define SMUSH_CODEC_RLE_ALT      3
+#define SMUSH_CODEC_UNCOMPRESSED 20
+#define SMUSH_CODEC_DELTA_BLOCKS 37
+#define SMUSH_CODEC_DELTA_GLYPHS 47
+
 class ScummEngine_v7;
 class SmushFont;
 class SmushMixer;
 class StringResource;
-class Codec37Decoder;
-class Codec47Decoder;
+class SmushDeltaBlocksDecoder;
+class SmushDeltaGlyphsDecoder;
 class IMuseDigital;
 class Insane;
 
@@ -105,11 +130,12 @@ private:
 	Insane *_insane;
 	int32 _nbframes;
 	int16 _deltaPal[0x300];
+	int32 _shiftedDeltaPal[0x300];
 	byte _pal[0x300];
 	SmushFont *_sf[5];
 	StringResource *_strings;
-	Codec37Decoder *_codec37;
-	Codec47Decoder *_codec47;
+	SmushDeltaBlocksDecoder *_deltaBlocksCodec;
+	SmushDeltaGlyphsDecoder *_deltaGlyphsCodec;
 	Common::SeekableReadStream *_base;
 	uint32 _baseSize;
 	byte *_frameBuffer;
@@ -180,6 +206,9 @@ public:
 	void setGroupVolume(int groupId, int volValue);
 	void processDispatches(int16 feedSize);
 	bool isAudioCallbackEnabled();
+	byte *getVideoPalette();
+	void setCurVideoFlags(int16 flags);
+
 
 protected:
 	int _width, _height;
@@ -188,6 +217,7 @@ protected:
 	bool _paused;
 	uint32 _pauseStartTime;
 	uint32 _pauseTime;
+	int16 _curVideoFlags = 0;
 
 	void insanity(bool);
 	void setPalette(const byte *palette);
@@ -209,9 +239,7 @@ private:
 	void handleAnimHeader(int32 subSize, Common::SeekableReadStream &);
 	void handleFrame(int32 frameSize, Common::SeekableReadStream &);
 	void handleNewPalette(int32 subSize, Common::SeekableReadStream &);
-#ifdef USE_ZLIB
 	void handleZlibFrameObject(int32 subSize, Common::SeekableReadStream &b);
-#endif
 	void handleFrameObject(int32 subSize, Common::SeekableReadStream &);
 	void handleSAUDChunk(uint8 *srcBuf, uint32 size, int groupId, int vol, int pan, int16 flags, int trkId, int index, int maxFrames);
 	void handleStore(int32 subSize, Common::SeekableReadStream &);

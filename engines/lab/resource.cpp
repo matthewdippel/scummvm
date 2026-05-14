@@ -51,7 +51,7 @@ void Resource::readStaticText() {
 	delete labTextFile;
 }
 
-TextFont *Resource::getFont(const Common::String fileName) {
+TextFont *Resource::getFont(const Common::String &fileName) {
 	// TODO: Add support for the font format of the Amiga version
 	Common::File *dataFile = openDataFile(fileName, MKTAG('V', 'G', 'A', 'F'));
 
@@ -73,7 +73,7 @@ TextFont *Resource::getFont(const Common::String fileName) {
 	return textfont;
 }
 
-Common::String Resource::getText(const Common::String fileName) {
+Common::String Resource::getText(const Common::String &fileName) {
 	Common::File *dataFile = openDataFile(fileName);
 
 	uint32 count = dataFile->size();
@@ -92,7 +92,7 @@ Common::String Resource::getText(const Common::String fileName) {
 	return str;
 }
 
-void Resource::readRoomData(const Common::String fileName) {
+void Resource::readRoomData(const Common::String &fileName) {
 	Common::File *dataFile = openDataFile(fileName, MKTAG('D', 'O', 'R', '1'));
 
 	_vm->_manyRooms = dataFile->readUint16LE();
@@ -111,7 +111,7 @@ void Resource::readRoomData(const Common::String fileName) {
 	delete dataFile;
 }
 
-InventoryData *Resource::readInventory(const Common::String fileName) {
+InventoryData *Resource::readInventory(const Common::String &fileName) {
 	Common::File *dataFile = openDataFile(fileName, MKTAG('I', 'N', 'V', '1'));
 
 	_vm->_numInv = dataFile->readUint16LE();
@@ -143,7 +143,7 @@ void Resource::readViews(uint16 roomNum) {
 	delete dataFile;
 }
 
-Common::String Resource::translateFileName(const Common::String filename) {
+Common::Path Resource::translateFileName(const Common::String &filename) {
 	Common::String upperFilename;
 
 	// The DOS and Windows version aren't looking for the right file,
@@ -213,10 +213,10 @@ Common::String Resource::translateFileName(const Common::String filename) {
 
 	fileNameStrFinal += upperFilename;
 
-	return fileNameStrFinal;
+	return Common::Path(fileNameStrFinal);
 }
 
-Common::File *Resource::openDataFile(const Common::String filename, uint32 fileHeader) {
+Common::File *Resource::openDataFile(const Common::String &filename, uint32 fileHeader) {
 	Common::File *dataFile = new Common::File();
 	dataFile->open(translateFileName(filename));
 
@@ -224,15 +224,16 @@ Common::File *Resource::openDataFile(const Common::String filename, uint32 fileH
 		// The DOS version is known to have some missing files
 		if (_vm->getPlatform() == Common::kPlatformDOS) {
 			warning("Incomplete DOS version, skipping file %s", filename.c_str());
+			delete dataFile;
 			return nullptr;
 		} else
-			error("openDataFile: Couldn't open %s (%s)", translateFileName(filename).c_str(), filename.c_str());
+			error("openDataFile: Couldn't open %s (%s)", translateFileName(filename).toString().c_str(), filename.c_str());
 	}
 	if (fileHeader > 0) {
 		uint32 headerTag = dataFile->readUint32BE();
 		if (headerTag != fileHeader) {
 			dataFile->close();
-			error("openDataFile: Unexpected header in %s (%s) - expected: %d, got: %d", translateFileName(filename).c_str(), filename.c_str(), fileHeader, headerTag);
+			error("openDataFile: Unexpected header in %s (%s) - expected: %d, got: %d", translateFileName(filename).toString().c_str(), filename.c_str(), fileHeader, headerTag);
 		}
 	}
 

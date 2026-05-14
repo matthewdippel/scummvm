@@ -14,8 +14,8 @@ class SpanTestSuite : public CxxTest::TestSuite {
 	class SiblingSpanImpl : public Common::SpanImpl<ValueType, Derived> {
 		typedef Common::SpanImpl<ValueType, Derived> super_type;
 	public:
-		COMMON_SPAN_TYPEDEFS
-		SiblingSpanImpl() : super_type() {}
+		COMMON_SPAN_TYPEDEFS;
+		SiblingSpanImpl() = default;
 		SiblingSpanImpl(pointer data_, size_type size_) : super_type(data_, size_) {}
 	};
 
@@ -23,8 +23,8 @@ class SpanTestSuite : public CxxTest::TestSuite {
 	class SiblingSpan : public SiblingSpanImpl<ValueType, SiblingSpan> {
 		typedef SiblingSpanImpl<ValueType, ::SpanTestSuite::SiblingSpan> super_type;
 	public:
-		COMMON_SPAN_TYPEDEFS
-		SiblingSpan() : super_type() {}
+		COMMON_SPAN_TYPEDEFS;
+		SiblingSpan() = default;
 		SiblingSpan(pointer data_, size_type size_) : super_type(data_, size_) {}
 	};
 
@@ -32,8 +32,8 @@ class SpanTestSuite : public CxxTest::TestSuite {
 	class SubSpanImpl : public Common::NamedSpanImpl<ValueType, Derived> {
 		typedef Common::NamedSpanImpl<ValueType, Derived> super_type;
 	public:
-		COMMON_SPAN_TYPEDEFS
-		SubSpanImpl() : super_type() {}
+		COMMON_SPAN_TYPEDEFS;
+		SubSpanImpl() = default;
 		SubSpanImpl(pointer data_,
 					size_type size_,
 					const Common::String &name_ = Common::String(),
@@ -48,8 +48,8 @@ class SpanTestSuite : public CxxTest::TestSuite {
 	class SubSpan : public SubSpanImpl<ValueType, SubSpan> {
 		typedef SubSpanImpl<ValueType, ::SpanTestSuite::SubSpan> super_type;
 	public:
-		COMMON_SPAN_TYPEDEFS
-		SubSpan() : super_type() {}
+		COMMON_SPAN_TYPEDEFS;
+		SubSpan() = default;
 		SubSpan(pointer data_,
 				size_type size_,
 				const Common::String &name_ = Common::String(),
@@ -263,7 +263,7 @@ public:
 			}
 
 			TS_ASSERT_EQUALS((bool)owner2, true);
-			owner2.release();
+			owner2.clear();
 			TS_ASSERT_EQUALS((bool)owner2, false);
 		}
 
@@ -280,7 +280,7 @@ public:
 			}
 
 			TS_ASSERT_EQUALS((bool)owner2, true);
-			owner2.release();
+			owner2.clear();
 			TS_ASSERT_EQUALS((bool)owner2, false);
 		}
 
@@ -327,9 +327,10 @@ public:
 
 		{
 			TS_ASSERT_EQUALS((bool)owner, true);
-			void *dataPtr = owner->data();
+			byte *dataPtr = owner->data();
 			TS_ASSERT_EQUALS(owner.release(), dataPtr);
 			TS_ASSERT_EQUALS((bool)owner, false);
+			delete[] dataPtr;
 		}
 	}
 
@@ -359,7 +360,7 @@ public:
 			}
 
 			TS_ASSERT_EQUALS((bool)owner2, true);
-			owner2.release();
+			owner2.clear();
 			TS_ASSERT_EQUALS((bool)owner2, false);
 		}
 
@@ -401,9 +402,10 @@ public:
 
 		{
 			TS_ASSERT_EQUALS((bool)owner, true);
-			void *dataPtr = owner->data();
+			byte *dataPtr = owner->data();
 			TS_ASSERT_EQUALS(owner.release(), dataPtr);
 			TS_ASSERT_EQUALS((bool)owner, false);
+			delete[] dataPtr;
 		}
 	}
 
@@ -657,7 +659,7 @@ public:
 		TS_ASSERT(span.checkInvalidBounds(2, -4)); // negative overflow (-2)
 		TS_ASSERT(span.checkInvalidBounds(0, 10)); // delta positive overflow
 
-		const Common::Span<byte>::difference_type big = 1L << (8 * sizeof(Common::Span<byte>::difference_type) - 1);
+		const Common::Span<byte>::difference_type big = (Common::Span<byte>::difference_type)1 << (8 * sizeof(Common::Span<byte>::difference_type) - 1);
 		TS_ASSERT(span.checkInvalidBounds(big, 0));
 		TS_ASSERT(span.checkInvalidBounds(0, big));
 		TS_ASSERT(span.checkInvalidBounds(big, big));
@@ -685,7 +687,7 @@ public:
 	}
 
 	void test_span_comparators() {
-		byte data[2];
+		byte data[2] = { 0 };
 		Common::Span<const byte> span0(data, sizeof(data));
 		Common::Span<const byte> span1(data, sizeof(data));
 		Common::Span<const byte> span2(data, sizeof(data) - 1);

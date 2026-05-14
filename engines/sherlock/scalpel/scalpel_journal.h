@@ -26,6 +26,7 @@
 #include "sherlock/saveload.h"
 #include "common/scummsys.h"
 #include "common/array.h"
+#include "common/events.h"
 #include "common/rect.h"
 #include "common/str-array.h"
 #include "common/stream.h"
@@ -51,16 +52,6 @@ public:
 	Common::String _fixedTextFirstPage;
 	Common::String _fixedTextLastPage;
 	Common::String _fixedTextPrintText;
-
-	byte _hotkeyExit;
-	byte _hotkeyBack10;
-	byte _hotkeyUp;
-	byte _hotkeyDown;
-	byte _hotkeyAhead10;
-	byte _hotkeySearch;
-	byte _hotkeyFirstPage;
-	byte _hotkeyLastPage;
-	byte _hotkeyPrintText;
 
 	Common::String _fixedTextSearchExit;
 	Common::String _fixedTextSearchBackward;
@@ -91,6 +82,9 @@ private:
 	 * Returns the button, if any, that is under the specified position
 	 */
 	JournalButton getHighlightedButton(const Common::Point &pt);
+
+	Common::Rect getSearchButtonRect(int idx);
+	Common::Point getSearchButtonTextPoint(int idx);
 public:
 	ScalpelJournal(SherlockEngine *vm);
 	~ScalpelJournal() override {}
@@ -103,7 +97,7 @@ public:
 	/**
 	 * Handle events whilst the journal is being displayed
 	 */
-	bool handleEvents(int key);
+	bool handleEvents(Common::CustomEventType action);
 public:
 	/**
 	 * Draw the journal background, frame, and interface buttons
@@ -120,6 +114,9 @@ public:
 	 * can then read the journal to review them
 	 */
 	void record(int converseNum, int statementNum, bool replyOnly = false) override;
+
+	Common::Rect getButtonRect(JournalButton btn);
+	Common::Point getButtonTextPoint(JournalButton btn);
 };
 
 } // End of namespace Scalpel

@@ -30,6 +30,7 @@
 #include "common/rendermode.h"
 #include "common/stream.h"
 #include "common/ptr.h"
+#include "common/error.h"
 
 class OSystem;
 
@@ -49,10 +50,10 @@ struct ScreenDim {
 	uint16 sy;
 	uint16 w;
 	uint16 h;
-	uint16 unk8;
-	uint16 unkA;
-	uint16 unkC;
-	uint16 unkE;
+	uint16 col1;
+	uint16 col2;
+	uint16 line;
+	uint16 column;
 };
 
 /**
@@ -66,6 +67,7 @@ public:
 	 */
 	enum Type {
 		kASCII = 0,
+		kJIS_X0201,
 		kSJIS,
 		kBIG5,
 		kJohab
@@ -271,6 +273,7 @@ public:
 	void drawChar(uint16 c, byte *dst, int pitch, int) const override;
 
 protected:
+	uint32 getGlyphDataSize() const { return _glyphDataSize; }
 	uint16 _textColor[2];
 	bool _pixelColorShading;
 	const uint8 *_colorMap;
@@ -364,6 +367,32 @@ private:
 	void processColorMap() override;
 };
 
+#ifdef ENABLE_LOL
+
+class ChineseOneByteFontLoL final : public ChineseFont {
+public:
+	ChineseOneByteFontLoL(int pitch) : ChineseFont(pitch, 8, 14, 8, 16, 0, 0) { _pixelColorShading = false; }
+	void setStyles(int styles) override {}
+
+private:
+	bool hasGlyphForCharacter(uint16 c) const override { return !(c & 0x80); }
+	uint32 getFontOffset(uint16 c) const override { return (c & 0x7F) * 14; }
+	void processColorMap() override;
+};
+
+class ChineseTwoByteFontLoL final : public ChineseFont {
+public:
+	ChineseTwoByteFontLoL(int pitch) : ChineseFont(pitch, 16, 14, 16, 16, 0, 0) { _pixelColorShading = false; }
+	void setStyles(int styles) override {}
+
+private:
+	bool hasGlyphForCharacter(uint16 c) const override { return (c & 0x80) && getFontOffset(c) < getGlyphDataSize(); }
+	uint32 getFontOffset(uint16 c) const override;
+	void processColorMap() override;
+};
+
+#endif
+
 class ChineseOneByteFontHOF final : public ChineseFont {
 public:
 	ChineseOneByteFontHOF(int pitch) : ChineseFont(pitch, 8, 14, 9, 15, 0, 0) {}
@@ -382,6 +411,26 @@ private:
 	void processColorMap() override;
 };
 
+class KoreanOneByteFontHOF final : public ChineseFont {
+public:
+	KoreanOneByteFontHOF(int pitch) : ChineseFont(pitch, 8, 9, 8, 10, 0, 0) {}
+	Type getType() const override { return kJohab; }
+private:
+	bool hasGlyphForCharacter(uint16 c) const override { return !(c & 0x80); }
+	uint32 getFontOffset(uint16 c) const override { return (c & 0x7F) * 9; }
+	void processColorMap() override;
+};
+
+class KoreanTwoByteFontHOF final : public ChineseFont {
+public:
+	KoreanTwoByteFontHOF(int pitch) : ChineseFont(pitch, 10, 9, 10, 10, 0, 0) {}
+	Type getType() const override { return kJohab; }
+private:
+	bool hasGlyphForCharacter(uint16 c) const override { return (c & 0x80); }
+	uint32 getFontOffset(uint16 c) const override;
+	void processColorMap() override;
+};
+
 class MultiSubsetFont final : public Font {
 public:
 	MultiSubsetFont(Common::Array<Font*> *subsets) : Font(), _subsets(subsets) {}
@@ -393,7 +442,7 @@ public:
 	// already been filled. It will then try the next slot. So, unlike other fonts the
 	// subset fonts cannot be allowed to call the load method as often as they want
 	// (which we never did anyway - we only ever load each font exactly one time).
-	// But this also means that different 
+	// But this also means that different
 	bool load(Common::SeekableReadStream &data) override;
 
 	void setStyles(int styles) override;
@@ -592,7 +641,7 @@ public:
 
 	// init
 	virtual bool init();
-	virtual void setResolution();
+	virtual Common::Error setResolution();
 	virtual void enableHiColorMode(bool enabled);
 
 	// refresh
@@ -693,6 +742,7 @@ public:
 
 	void setTextMarginRight(int x) { _textMarginRight = x; }
 	uint16 _textMarginRight;
+	bool _overdrawMargin;
 
 	const ScreenDim *_curDim;
 
@@ -798,6 +848,7 @@ protected:
 	template<bool noXor> static void wrapped_decodeFrameDeltaPage(uint8 *dst, const uint8 *src, const int pitch);
 
 	uint8 *_pagePtrs[16];
+	const uint8 *_pagePtrsBuff;
 	uint8 *_sjisOverlayPtrs[SCREEN_OVLS_NUM];
 	uint8 _pageMapping[SCREEN_PAGE_NUM];
 
@@ -870,16 +921,20 @@ protected:
 	KyraEngine_v1 *_vm;
 
 	// shape
+	typedef void (Screen::*DsPlotFunc)(uint8*, uint8);
+	typedef int (Screen::*DsMarginSkipFunc)(uint8*&, const uint8*&, int&);
+	typedef void (Screen::*DsLineFunc)(uint8*&, const uint8*&, const DsPlotFunc, int&, int16);
+
 	int drawShapeMarginNoScaleUpwind(uint8 *&dst, const uint8 *&src, int &cnt);
 	int drawShapeMarginNoScaleDownwind(uint8 *&dst, const uint8 *&src, int &cnt);
 	int drawShapeMarginScaleUpwind(uint8 *&dst, const uint8 *&src, int &cnt);
 	int drawShapeMarginScaleDownwind(uint8 *&dst, const uint8 *&src, int &cnt);
 	int drawShapeSkipScaleUpwind(uint8 *&dst, const uint8 *&src, int &cnt);
 	int drawShapeSkipScaleDownwind(uint8 *&dst, const uint8 *&src, int &cnt);
-	void drawShapeProcessLineNoScaleUpwind(uint8 *&dst, const uint8 *&src, int &cnt, int16 scaleState);
-	void drawShapeProcessLineNoScaleDownwind(uint8 *&dst, const uint8 *&src, int &cnt, int16 scaleState);
-	void drawShapeProcessLineScaleUpwind(uint8 *&dst, const uint8 *&src, int &cnt, int16 scaleState);
-	void drawShapeProcessLineScaleDownwind(uint8 *&dst, const uint8 *&src, int &cnt, int16 scaleState);
+	void drawShapeProcessLineNoScaleUpwind(uint8 *&dst, const uint8 *&src, const DsPlotFunc plot, int &cnt, int16);
+	void drawShapeProcessLineNoScaleDownwind(uint8 *&dst, const uint8 *&src, const DsPlotFunc plot, int &cnt, int16);
+	void drawShapeProcessLineScaleUpwind(uint8 *&dst, const uint8 *&src, const DsPlotFunc plot, int &cnt, int16 scaleState);
+	void drawShapeProcessLineScaleDownwind(uint8 *&dst, const uint8 *&src, const DsPlotFunc plot, int &cnt, int16 scaleState);
 
 	void drawShapePlotType0(uint8 *dst, uint8 cmd);
 	void drawShapePlotType1(uint8 *dst, uint8 cmd);
@@ -900,15 +955,6 @@ protected:
 	void drawShapePlotType37(uint8 *dst, uint8 cmd);
 	void drawShapePlotType48(uint8 *dst, uint8 cmd);
 	void drawShapePlotType52(uint8 *dst, uint8 cmd);
-
-	typedef int (Screen::*DsMarginSkipFunc)(uint8 *&dst, const uint8 *&src, int &cnt);
-	typedef void (Screen::*DsLineFunc)(uint8 *&dst, const uint8 *&src, int &cnt, int16 scaleState);
-	typedef void (Screen::*DsPlotFunc)(uint8 *dst, uint8 cmd);
-
-	DsMarginSkipFunc _dsProcessMargin;
-	DsMarginSkipFunc _dsScaleSkip;
-	DsLineFunc _dsProcessLine;
-	DsPlotFunc _dsPlot;
 
 	const uint8 *_dsShapeFadingTable;
 	int _dsShapeFadingLevel;

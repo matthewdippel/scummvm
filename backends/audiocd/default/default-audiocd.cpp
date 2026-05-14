@@ -25,6 +25,7 @@
 #include "common/file.h"
 #include "common/system.h"
 #include "common/util.h"
+#include "common/formats/cue.h"
 
 DefaultAudioCDManager::DefaultAudioCDManager() {
 	_cd.playing = false;
@@ -83,10 +84,10 @@ bool DefaultAudioCDManager::existExtractedCDAudioFiles(uint track) {
 	Common::Array<Common::String> trackNames;
 	fillPotentialTrackNames(trackNames, track);
 
-	for (Common::Array<Common::String>::iterator i = trackNames.begin(); i != trackNames.end(); ++i) {
+	for (auto &trackName : trackNames) {
 		for (const char **ext = extensions; *ext; ++ext) {
-			const Common::String &filename = Common::String::format("%s.%s", i->c_str(), *ext);
-			if (Common::File::exists(filename)) {
+			const Common::String &filename = Common::String::format("%s.%s", trackName.c_str(), *ext);
+			if (Common::File::exists(Common::Path(filename, '/'))) {
 				return true;
 			}
 		}
@@ -111,8 +112,10 @@ bool DefaultAudioCDManager::play(int track, int numLoops, int startFrame, int du
 		fillPotentialTrackNames(trackNames, track);
 		Audio::SeekableAudioStream *stream = nullptr;
 
-		for (Common::Array<Common::String>::iterator i = trackNames.begin(); !stream && i != trackNames.end(); ++i) {
-			stream = Audio::SeekableAudioStream::openStreamFile(*i);
+		for (auto &trackName : trackNames) {
+			stream = Audio::SeekableAudioStream::openStreamFile(Common::Path(trackName, '/'));
+			if (stream)
+				break;
 		}
 
 		if (stream != nullptr) {
@@ -132,6 +135,28 @@ bool DefaultAudioCDManager::play(int track, int numLoops, int startFrame, int du
 	}
 
 	return false;
+}
+
+bool DefaultAudioCDManager::playAbsolute(int startFrame, int numLoops, int duration, bool onlyEmulate,
+		Audio::Mixer::SoundType soundType, const char *cuesheet) {
+
+	Common::File cuefile;
+	if (!cuefile.open(cuesheet)) {
+		return false;
+	}
+	Common::String cuestring = cuefile.readString(0, cuefile.size());
+	Common::CueSheet cue(cuestring.c_str());
+
+	Common::CueSheet::CueTrack *track = cue.getTrackAtFrame(startFrame);
+	if (track == nullptr) {
+		warning("Unable to locate track for frame %i", startFrame);
+		return false;
+	} else {
+		warning("Playing from frame %i", startFrame);
+	}
+	int firstFrame = track->indices[0] == -1 ? track->indices[1] : track->indices[0];
+
+	return play(track->number, numLoops, startFrame - firstFrame, duration, onlyEmulate);
 }
 
 void DefaultAudioCDManager::stop() {
@@ -196,7 +221,7 @@ bool DefaultAudioCDManager::openRealCD() {
 
 	// If not an integer, treat as a drive path
 	if (endPos == cdrom.c_str())
-		return openCD(cdrom);
+		return openCD(Common::Path::fromConfig(cdrom));
 
 	if (drive < 0)
 		return false;

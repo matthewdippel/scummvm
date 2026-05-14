@@ -21,29 +21,28 @@
 
 #include "common/system.h"
 #include "common/memstream.h"
+#include "graphics/macgamma.h"
+#include "graphics/paletteman.h"
 #include "graphics/macgui/macwindowmanager.h"
 
 #include "director/director.h"
 #include "director/cast.h"
-#include "director/castmember.h"
 #include "director/movie.h"
 #include "director/images.h"
+#include "director/picture.h"
 #include "director/window.h"
+#include "director/castmember/bitmap.h"
 
 namespace Director {
 
 #include "director/graphics-data.h"
 
 /**
- * The sprites colors are in reverse order with respect to the ids in director.
- * The palette is in reverse order, this eases the code for loading files.
- * All other color ids can be converted with: 255 - colorId.
+ * Used to upgrade to 32-bit color if required.
  **/
 uint32 DirectorEngine::transformColor(uint32 color) {
 	if (_pixelformat.bytesPerPixel == 1)
-		return 255 - color;
-
-	color = 255 - color;
+		return color;
 
 	return _wm->findBestColor(_currentPalette[color * 3], _currentPalette[color * 3 + 1], _currentPalette[color * 3 + 2]);
 }
@@ -62,8 +61,10 @@ void DirectorEngine::loadPatterns() {
 	for (int i = 0; i < ARRAYSIZE(builtinTiles); i++) {
 		Common::MemoryReadStream stream(builtinTiles[i].ptr, builtinTiles[i].size);
 
-		_builtinTiles[i].img = new BITDDecoder(builtinTiles[i].w, builtinTiles[i].h, 8, builtinTiles[i].w, macPalette, kFileVer300);
-		_builtinTiles[i].img->loadStream(stream);
+		auto decoder = new BITDDecoder(builtinTiles[i].w, builtinTiles[i].h, 8, builtinTiles[i].w, macPalette, kFileVer300);
+		decoder->loadStream(stream);
+		_builtinTiles[i].img = new Picture(*decoder);
+		delete decoder;
 
 		_builtinTiles[i].rect = Common::Rect(0, 0, builtinTiles[i].w, builtinTiles[i].h);
 	}
@@ -74,7 +75,7 @@ Graphics::MacPatterns &DirectorEngine::getPatterns() {
 	return _director3QuickDrawPatterns;
 }
 
-Image::ImageDecoder *DirectorEngine::getTile(int num) {
+Picture *DirectorEngine::getTile(int num) {
 	TilePatternEntry *tile = &getCurrentMovie()->getCast()->_tiles[num];
 
 	if (tile->bitmapId.isNull())
@@ -91,12 +92,12 @@ Image::ImageDecoder *DirectorEngine::getTile(int num) {
 
 	if (member->_type != kCastBitmap) {
 		warning("BUILDBOT: DirectorEngine::getTile(%d) VWTL refers to incorrect cast %s type %s", num,
-				tile->bitmapId.asString().c_str(), castTypeToString(member->_type).c_str());
+				tile->bitmapId.asString().c_str(), castType2str(member->_type));
 
 		return _builtinTiles[num].img;
 	}
 
-	return ((BitmapCastMember *)member)->_img;
+	return ((BitmapCastMember *)member)->_picture;
 }
 
 const Common::Rect &DirectorEngine::getTileRect(int num) {
@@ -109,67 +110,161 @@ const Common::Rect &DirectorEngine::getTileRect(int num) {
 }
 
 void DirectorEngine::loadDefaultPalettes() {
-	_loadedPalettes[kClutSystemMac] = PaletteV4(kClutSystemMac, macPalette, 256);
-	_loadedPalettes[kClutRainbow] = PaletteV4(kClutRainbow, rainbowPalette, 256);
-	_loadedPalettes[kClutGrayscale] = PaletteV4(kClutGrayscale, grayscalePalette, 256);
-	_loadedPalettes[kClutPastels] = PaletteV4(kClutPastels, pastelsPalette, 256);
-	_loadedPalettes[kClutVivid] = PaletteV4(kClutVivid, vividPalette, 256);
-	_loadedPalettes[kClutNTSC] = PaletteV4(kClutNTSC, ntscPalette, 256);
-	_loadedPalettes[kClutMetallic] = PaletteV4(kClutMetallic, metallicPalette, 256);
-	_loadedPalettes[kClutSystemWin] = PaletteV4(kClutSystemWin, winPalette, 256);
+	_loadedPalettes[CastMemberID(kClutSystemMac, -1)] = PaletteV4(CastMemberID(kClutSystemMac, -1), macPalette, 256);
+	_loadedPalettes[CastMemberID(kClutRainbow, -1)] = PaletteV4(CastMemberID(kClutRainbow, -1), rainbowPalette, 256);
+	_loadedPalettes[CastMemberID(kClutGrayscale, -1)] = PaletteV4(CastMemberID(kClutGrayscale, -1), grayscalePalette, 256);
+	_loadedPalettes[CastMemberID(kClutPastels, -1)] = PaletteV4(CastMemberID(kClutPastels, -1), pastelsPalette, 256);
+	_loadedPalettes[CastMemberID(kClutVivid, -1)] = PaletteV4(CastMemberID(kClutVivid, -1), vividPalette, 256);
+	_loadedPalettes[CastMemberID(kClutNTSC, -1)] = PaletteV4(CastMemberID(kClutNTSC, -1), ntscPalette, 256);
+	_loadedPalettes[CastMemberID(kClutMetallic, -1)] = PaletteV4(CastMemberID(kClutMetallic, -1), metallicPalette, 256);
+	_loadedPalettes[CastMemberID(kClutSystemWin, -1)] = PaletteV4(CastMemberID(kClutSystemWin, -1), winPalette, 256);
+	_loadedPalettes[CastMemberID(kClutSystemWinD5, -1)] = PaletteV4(CastMemberID(kClutSystemWinD5, -1), winD5Palette, 256);
+
+	_loaded16Palettes[CastMemberID(kClutSystemMac, -1)] = PaletteV4(CastMemberID(kClutSystemMac, -1), mac16Palette, 16);
+	_loaded16Palettes[CastMemberID(kClutRainbow, -1)] = PaletteV4(CastMemberID(kClutRainbow, -1), rainbow16Palette, 16);
+	_loaded16Palettes[CastMemberID(kClutGrayscale, -1)] = PaletteV4(CastMemberID(kClutGrayscale, -1), grayscale16Palette, 16);
+	_loaded16Palettes[CastMemberID(kClutPastels, -1)] = PaletteV4(CastMemberID(kClutPastels, -1), pastels16Palette, 16);
+	_loaded16Palettes[CastMemberID(kClutVivid, -1)] = PaletteV4(CastMemberID(kClutVivid, -1), vivid16Palette, 16);
+	_loaded16Palettes[CastMemberID(kClutNTSC, -1)] = PaletteV4(CastMemberID(kClutNTSC, -1), ntsc16Palette, 16);
+	_loaded16Palettes[CastMemberID(kClutMetallic, -1)] = PaletteV4(CastMemberID(kClutMetallic, -1), metallic16Palette, 16);
+	_loaded16Palettes[CastMemberID(kClutSystemWin, -1)] = PaletteV4(CastMemberID(kClutSystemWin, -1), win16Palette, 16);
+	_loaded16Palettes[CastMemberID(kClutSystemWinD5, -1)] = PaletteV4(CastMemberID(kClutSystemWinD5, -1), winD516Palette, 16);
+
+	_loaded4Palette = PaletteV4(CastMemberID(kClutGrayscale, -1), grayscale4Palette, 4);
 }
 
-PaletteV4 *DirectorEngine::getPalette(int id) {
+PaletteV4 *DirectorEngine::getPalette(CastMemberID id) {
+	if (id.isNull())
+		return nullptr;
+
+	// Reference to internal palettes
+	if (id.member < 0)
+		id.castLib = -1; // Ensure we use the default palette set
+
 	if (!_loadedPalettes.contains(id)) {
-		warning("DirectorEngine::addPalette(): Palette %d not found", id);
+		warning("DirectorEngine::getPalette(): Palette %s not found, hash %x", id.asString().c_str(), id.hash());
 		return nullptr;
 	}
 
 	return &_loadedPalettes[id];
 }
 
-void DirectorEngine::addPalette(int id, byte *palette, int length) {
-	if (id < 0) {
-		warning("DirectorEngine::addPalette(): Negative palette ids reserved for default palettes");
+bool DirectorEngine::hasPalette(CastMemberID id) {
+	// Reference to internal palettes
+	if (id.member < 0)
+		id.castLib = -1; // Ensure we use the default palette set
+
+	return _loadedPalettes.contains(id);
+}
+
+void DirectorEngine::addPalette(CastMemberID &id, const byte *palette, int length) {
+	if (id.castLib < 0) {
+		warning("DirectorEngine::addPalette(): Negative cast library ids reserved for default palettes");
 		return;
 	} else if (_loadedPalettes.contains(id)) {
 		delete[] _loadedPalettes[id].palette;
 	}
 
-	_loadedPalettes[id] = PaletteV4(id, palette, length);
+	debugC(3, kDebugLoading, "DirectorEngine::addPalette(): Registered palette %s of size %d, hash: %x", id.asString().c_str(), length, id.hash());
+	byte *palCopy = new byte[length * 3]; // freed by clearPalettes()
+	memcpy(palCopy, palette, length * 3);
+
+	_loadedPalettes[id] = PaletteV4(id, palCopy, length);
 }
 
-bool DirectorEngine::setPalette(int id) {
-	if (id == 0) {
+bool DirectorEngine::setPalette(const CastMemberID &id) {
+	if (id.isNull()) {
 		// Palette id of 0 is unused
-		return false;
-	} else if (!_loadedPalettes.contains(id)) {
-		warning("setPalette(): no palette with matching id %d", id);
 		return false;
 	}
 
-	PaletteV4 pal = _loadedPalettes[id];
-	setPalette(pal.palette, pal.length);
-
+	PaletteV4 *pal = getPalette(id);
+	if (!pal)
+		return false;
+	debugC(5, kDebugImages, "DirectorEngine::setPalettes(): setting palette %d, %d", id.member, id.castLib);
+	setPalette(pal->palette, pal->length);
 	return true;
 }
 
-void DirectorEngine::setPalette(byte *palette, uint16 count) {
-	// Pass the palette to OSystem only for 8bpp mode
-	if (_pixelformat.bytesPerPixel == 1)
-		_system->getPaletteManager()->setPalette(palette, 0, count);
+void DirectorEngine::setPalette(const byte *palette, uint16 count) {
 
-	_currentPalette = palette;
+	memset(_currentPalette, 0, 768);
+	memmove(_currentPalette, palette, count * 3);
 	_currentPaletteLength = count;
 
-	_wm->passPalette(palette, count);
+	if (debugChannelSet(8, kDebugImages)) {
+		Common::String palData;
+		for (size_t i = 0; i < (size_t)_currentPaletteLength; i++) {
+			palData += Common::String::format("%02X%02X%02X", _currentPalette[3 * i], _currentPalette[3 * i + 1], _currentPalette[3 * i + 2]);
+		}
+		debugC(8, kDebugImages, "DirectorEngine::setPalette(): Setting current palette: %s", palData.c_str());
+	}
+
+	syncPalette();
+}
+
+void DirectorEngine::shiftPalette(int startIndex, int endIndex, bool reverse) {
+	if (startIndex == endIndex)
+		return;
+
+	if (startIndex > endIndex)
+		return;
+
+	byte temp[3] = { 0, 0, 0 };
+	int span = endIndex - startIndex + 1;
+	if (reverse) {
+		memcpy(temp, _currentPalette + 3 * startIndex, 3);
+		memmove(_currentPalette + 3 * startIndex,
+			_currentPalette + 3 * startIndex + 3,
+			(span - 1) * 3);
+		memcpy(_currentPalette + 3 * endIndex, temp, 3);
+	} else {
+		memcpy(temp, _currentPalette + 3 * endIndex, 3);
+		memmove(_currentPalette + 3 * startIndex + 3,
+			_currentPalette + 3 * startIndex,
+			(span - 1) * 3);
+		memcpy(_currentPalette + 3 * startIndex, temp, 3);
+	}
+
+	if (debugChannelSet(8, kDebugImages)) {
+		Common::String palData;
+		for (size_t i = 0; i < (size_t)_currentPaletteLength; i++) {
+			palData += Common::String::format("%02X%02X%02X", _currentPalette[3 * i], _currentPalette[3 * i + 1], _currentPalette[3 * i + 2]);
+		}
+		debugC(8, kDebugImages, "DirectorEngine::shiftPalette(): Rotating current palette (start: %d, end: %d, reverse: %d): %s", startIndex, endIndex, reverse, palData.c_str());
+	}
+
+	syncPalette();
+}
+
+void DirectorEngine::syncPalette() {
+	byte paletteBuf[768];
+	if (_gammaCorrection) {
+		for (size_t i = 0; i < (size_t)_currentPaletteLength*3; i++) {
+			paletteBuf[i] = Graphics::macGammaCorrectionLookUp[_currentPalette[i]];
+		}
+	} else {
+		memcpy(paletteBuf, _currentPalette, _currentPaletteLength*3);
+	}
+
+	// Pass the palette to OSystem only for 8bpp mode
+	if (_pixelformat.bytesPerPixel == 1)
+		_system->getPaletteManager()->setPalette(paletteBuf, 0, _currentPaletteLength);
+
+	_wm->passPalette(paletteBuf, _currentPaletteLength);
 }
 
 void DirectorEngine::clearPalettes() {
-	for (Common::HashMap<int, PaletteV4>::iterator it = _loadedPalettes.begin(); it != _loadedPalettes.end(); ++it) {
-		if (it->_value.id > 0)
+	// FIXME: Ideally we would run this every time we switch movie; but that would need to take
+	// into account e.g. shared casts that haven't changed, multiple windows...
+	for (auto it = _loadedPalettes.begin(); it != _loadedPalettes.end(); ++it) {
+		if (it->_value.id.castLib > 0) {
+			debugC(5, kDebugImages, "DirectorEngine::clearPalettes(): erasing palette %d, %d", it->_value.id.member, it->_value.id.castLib);
 			delete[] it->_value.palette;
+			_loadedPalettes.erase(it);
+		}
 	}
+	_lastPalette = CastMemberID();
 }
 
 void DirectorEngine::setCursor(DirectorCursor type) {
@@ -190,17 +285,33 @@ void DirectorEngine::draw() {
 }
 
 template <typename T>
-void inkDrawPixel(int x, int y, int src, void *data) {
+class InkPrimitives final : public Graphics::Primitives {
+public:
+	constexpr InkPrimitives() {}
+	void drawPoint(int x, int y, uint32 src, void *data) override;
+private:
+	inline void decomposeColor(Graphics::MacWindowManager *wm, uint32 color, byte &r, byte &g, byte &b) {
+		if (sizeof(T) == sizeof(byte)) {
+			wm->getPaletteEntry(color, r, g, b);
+		} else {
+			wm->_pixelformat.colorToRGB(color, r, g, b);
+		}
+	}
+};
+
+template <typename T>
+void InkPrimitives<T>::drawPoint(int x, int y, uint32 src, void *data) {
 	DirectorPlotData *p = (DirectorPlotData *)data;
 	Graphics::MacWindowManager *wm = p->d->_wm;
 
 	if (!p->destRect.contains(x, y))
 		return;
 
-	T dst;
+
+	T *dst;
 	uint32 tmpDst;
 
-	dst = (T)p->dst->getBasePtr(x, y);
+	dst = (T *)p->dst->getBasePtr(x, y);
 
 	if (p->ms) {
 		if (p->ms->pd->thickness > 1) {
@@ -215,7 +326,7 @@ void inkDrawPixel(int x, int y, int src, void *data) {
 			for (y = y1; y < y2; y++)
 				for (x = x1; x < x2; x++)
 					if (x >= 0 && x < p->ms->pd->surface->w && y >= 0 && y < p->ms->pd->surface->h) {
-						inkDrawPixel<T>(x, y, src, data);
+						drawPoint(x, y, src, data);
 					}
 
 			p->ms->pd->thickness = prevThickness;
@@ -226,12 +337,12 @@ void inkDrawPixel(int x, int y, int src, void *data) {
 			int x1 = p->ms->tileRect->left + (p->ms->pd->fillOriginX + x) % p->ms->tileRect->width();
 			int y1 = p->ms->tileRect->top  + (p->ms->pd->fillOriginY + y) % p->ms->tileRect->height();
 
-			src = p->ms->tile->getSurface()->getPixel(x1, y1);
+			src = p->ms->tile->_surface.getPixel(x1, y1);
 		} else {
 			// Get the pixel that macDrawPixel will give us, but store it to apply the
 			// ink later
 			tmpDst = *dst;
-			(wm->getDrawPixel())(x, y, src, p->ms->pd);
+			wm->getDrawPrimitives().drawPoint(x, y, src, p->ms->pd);
 			src = *dst;
 
 			*dst = tmpDst;
@@ -241,42 +352,41 @@ void inkDrawPixel(int x, int y, int src, void *data) {
 		byte rSrc, gSrc, bSrc;
 		byte rDst, gDst, bDst;
 
-		wm->decomposeColor(src, rSrc, gSrc, bSrc);
-		wm->decomposeColor(*dst, rDst, gDst, bDst);
+		decomposeColor(wm, src, rSrc, gSrc, bSrc);
+		decomposeColor(wm, *dst, rDst, gDst, bDst);
 
-		double alpha = (double)p->alpha / 100.0;
-		rDst = static_cast<byte>((rSrc * alpha) + (rDst * (1.0 - alpha)));
-		gDst = static_cast<byte>((gSrc * alpha) + (gDst * (1.0 - alpha)));
-		bDst = static_cast<byte>((bSrc * alpha) + (bDst * (1.0 - alpha)));
-
+		rDst = lerpByte(rSrc, rDst, p->alpha, 255);
+		gDst = lerpByte(gSrc, gDst, p->alpha, 255);
+		bDst = lerpByte(bSrc, bDst, p->alpha, 255);
 		*dst = wm->findBestColor(rDst, gDst, bDst);
 		return;
 	}
 
  	switch (p->ink) {
 	case kInkTypeBackgndTrans:
-		if ((uint32)src == p->backColor)
-			break;
-		// fall through
+		if (p->srfMask) {
+			// If there's a mask, we already dealing with transparency, so just copy the pixel.
+			 *dst = src;
+		} else {
+			if (p->oneBitImage) {
+				// One-bit images have a slightly different rendering algorithm for BackgndTrans.
+				// Foreground colour is used, and background colour is ignored.
+				*dst = (src == p->colorBlack) ? p->foreColor : *dst;
+			} else {
+				*dst = (src == p->backColor) ? *dst : src;
+			}
+		}
+		break;
 	case kInkTypeMatte:
+		// fall through
 	case kInkTypeMask:
 		// Only unmasked pixels make it here, so copy them straight
+	case kInkTypeBlend:
+		// If there's a blend factor set, it's dealt with in the alpha handling block.
+		// Otherwise, treat it like a Matte image.
 	case kInkTypeCopy: {
 		if (p->applyColor) {
-			// TODO: Improve the efficiency of this composition
-			byte rSrc, gSrc, bSrc;
-			byte rDst, gDst, bDst;
-			byte rFor, gFor, bFor;
-			byte rBak, gBak, bBak;
-
-			wm->decomposeColor(src, rSrc, gSrc, bSrc);
-			wm->decomposeColor(*dst, rDst, gDst, bDst);
-			wm->decomposeColor(p->foreColor, rFor, gFor, bFor);
-			wm->decomposeColor(p->backColor, rBak, gBak, bBak);
-
-			*dst = wm->findBestColor((rSrc | rFor) & (~rSrc | rBak),
-									 (gSrc | gFor) & (~gSrc | gBak),
-									 (bSrc | bFor) & (~bSrc | bBak));
+			*dst = (src == p->colorBlack) ? p->foreColor : ((src == p->colorWhite) ? p->backColor : *dst);
 		} else {
 			*dst = src;
 		}
@@ -284,73 +394,131 @@ void inkDrawPixel(int x, int y, int src, void *data) {
 	}
 	case kInkTypeNotCopy:
 		if (p->applyColor) {
-			// TODO: Improve the efficiency of this composition
-			byte rSrc, gSrc, bSrc;
-			byte rDst, gDst, bDst;
-			byte rFor, gFor, bFor;
-			byte rBak, gBak, bBak;
-
-			wm->decomposeColor(src, rSrc, gSrc, bSrc);
-			wm->decomposeColor(*dst, rDst, gDst, bDst);
-			wm->decomposeColor(p->foreColor, rFor, gFor, bFor);
-			wm->decomposeColor(p->backColor, rBak, gBak, bBak);
-
-			*dst = wm->findBestColor((~rSrc | rFor) & (rSrc | rBak),
-									 (~gSrc | gFor) & (gSrc | gBak),
-									 (~bSrc | bFor) & (bSrc | bBak));
+			if (sizeof(T) == 1) {
+				*dst = (src == p->colorBlack) ? p->backColor : ((src == p->colorWhite) ? p->foreColor : src);
+			} else if (sizeof(T) == 4) {
+				// In 32-bit, apply color mode seems to just return the original src
+				// with no changes. This is different to kInkTypeCopy.
+				*dst = src;
+			}
 		} else {
-			*dst = src;
+			// Find the inverse of the colour and match it back to the palette if required
+			byte rSrc, gSrc, bSrc;
+			decomposeColor(wm, src, rSrc, gSrc, bSrc);
+
+			*dst = wm->findBestColor(~rSrc, ~gSrc, ~bSrc);
 		}
 		break;
 	case kInkTypeTransparent:
-		*dst = p->applyColor ? (~src & p->foreColor) | (*dst & src) : (*dst & src);
+		if (p->oneBitImage || p->applyColor) {
+			*dst = (src == p->colorBlack) ? p->foreColor : *dst;
+		} else {
+			if (sizeof(T) == 1) {
+				// OR dst palette index with src.
+				// Originally designed for 1-bit mode to make white pixels
+				// transparent.
+				*dst = *dst | src;
+			} else {
+				// In 32-bit mode, this is an AND.
+				*dst = *dst & src;
+			}
+		}
 		break;
 	case kInkTypeNotTrans:
-		*dst = p->applyColor ? (src & p->foreColor) | (*dst & ~src) : (*dst & ~src);
+		if (p->oneBitImage || p->applyColor) {
+			*dst = (src == p->colorWhite) ? p->foreColor : *dst;
+		} else {
+			if (sizeof(T) == 1) {
+				// OR dst palette index with the inverse of src.
+				*dst = *dst | ~src;
+			} else {
+				// In 32-bit mode, this is an AND.
+				*dst = *dst & ~(src & 0xffffff00);
+			}
+		}
 		break;
 	case kInkTypeReverse:
-		*dst ^= ~(src);
+		if (sizeof(T) == 1) {
+			// XOR dst palette index with src.
+			// Originally designed for 1-bit mode so that
+			// black pixels would appear white on a black
+			// background.
+			*dst ^= src;
+		} else {
+			// In 32-bit mode, this is the opposite??
+			*dst ^= ~(src);
+		}
 		break;
 	case kInkTypeNotReverse:
-		*dst ^= src;
+		if (sizeof(T) == 1) {
+			// XOR dst palette index with the inverse of src.
+			*dst ^= ~(src);
+		} else {
+			// In 32-bit mode, this is the opposite??
+			*dst ^= src & 0xffffff00;
+		}
 		break;
 	case kInkTypeGhost:
-		*dst = p->applyColor ? (src | p->backColor) & (*dst | ~src) : (*dst | ~src);
+		if (p->oneBitImage || p->applyColor) {
+			*dst = (src == p->colorBlack) ? p->backColor : *dst;
+		} else {
+			if (sizeof(T) == 1) {
+				// AND dst palette index with the inverse of src.
+				// Originally designed for 1-bit mode so that
+				// black pixels would be invisible until they were
+				// over a black background, showing as white.
+				*dst = *dst & ~src;
+			} else {
+				// In 32-bit mode, OR dst RGBA with inverse src
+				*dst = *dst | ~src;
+			}
+		}
 		break;
 	case kInkTypeNotGhost:
-		*dst = p->applyColor ? (~src | p->backColor) & (*dst | src) : *dst | src;
+		if (p->oneBitImage || p->applyColor) {
+			*dst = (src == p->colorWhite) ? p->backColor : *dst;
+		} else {
+			if (sizeof(T) == 1) {
+				// AND dst palette index with src.
+				*dst = *dst & src;
+			} else {
+				// In 32-bit mode, OR dst RGBA with src
+				*dst = *dst | src;
+			}
+		}
 		break;
-		// Arithmetic ink types
 	default: {
+		// Arithmetic ink types, based on real color values
 		byte rSrc, gSrc, bSrc;
 		byte rDst, gDst, bDst;
 
-		wm->decomposeColor(src, rSrc, gSrc, bSrc);
-		wm->decomposeColor(*dst, rDst, gDst, bDst);
+		decomposeColor(wm, src, rSrc, gSrc, bSrc);
+		decomposeColor(wm, *dst, rDst, gDst, bDst);
 
 		switch (p->ink) {
-		case kInkTypeBlend:
-				*dst = wm->findBestColor((rSrc + rDst) / 2, (gSrc + gDst) / 2, (bSrc + bDst) / 2);
-			break;
 		case kInkTypeAddPin:
-				*dst = wm->findBestColor(MIN((rSrc + rDst), 0xff), MIN((gSrc + gDst), 0xff), MIN((bSrc + bDst), 0xff));
+			// Add src to dst, but pinning each channel so it can't go above 0xff.
+			*dst = wm->findBestColor(rDst + MIN(0xff - rDst, (int)rSrc), gDst + MIN(0xff - gDst, (int)gSrc), bDst + MIN(0xff - bDst, (int)bSrc));
 			break;
 		case kInkTypeAdd:
-			// in basilisk, D3.1 is exactly using this method, adding color directly without preventing the overflow.
-			// but i think min(src + dst, 255) will give us a better visual effect
-				*dst = wm->findBestColor(rSrc + rDst, gSrc + gDst, bSrc + bDst);
+			// Add src to dst, allowing each channel to overflow and wrap around.
+			*dst = wm->findBestColor(rDst + rSrc, gDst + gSrc, bDst + bSrc);
 			break;
 		case kInkTypeSubPin:
-				*dst = wm->findBestColor(MAX(rSrc - rDst, 0), MAX(gSrc - gDst, 0), MAX(bSrc - bDst, 0));
+			// Subtract src from dst, but pinning each channel so it can't go below 0x00.
+			*dst = wm->findBestColor(MAX(rDst - rSrc, 1) - 1, MAX(gDst - gSrc, 1) - 1, MAX(bDst - bSrc, 1) - 1);
 			break;
 		case kInkTypeLight:
-				*dst = wm->findBestColor(MAX(rSrc, rDst), MAX(gSrc, gDst), MAX(bSrc, bDst));
+			// Pick the higher of src and dst for each channel, lightening the image.
+			*dst = wm->findBestColor(MAX(rSrc, rDst), MAX(gSrc, gDst), MAX(bSrc, bDst));
 			break;
 		case kInkTypeSub:
-				*dst = wm->findBestColor(abs(rSrc - rDst) % 0xff + 1, abs(gSrc - gDst) % 0xff + 1, abs(bSrc - bDst) % 0xff + 1);
+			// Subtract src from dst, allowing each channel to underflow and wrap around.
+			*dst = wm->findBestColor(rDst - rSrc, gDst - gSrc, bDst - bSrc);
 			break;
 		case kInkTypeDark:
-				*dst = wm->findBestColor(MIN(rSrc, rDst), MIN(gSrc, gDst), MIN(bSrc, bDst));
+			// Pick the lower of src and dst for each channel, darkening the image.
+			*dst = wm->findBestColor(MIN(rSrc, rDst), MIN(gSrc, gDst), MIN(bSrc, bDst));
 			break;
 		default:
 			break;
@@ -359,24 +527,62 @@ void inkDrawPixel(int x, int y, int src, void *data) {
 	}
 }
 
-Graphics::MacDrawPixPtr DirectorEngine::getInkDrawPixel() {
+Graphics::Primitives *DirectorEngine::getInkPrimitives() {
+	if (!_primitives) {
+		if (_pixelformat.bytesPerPixel == 1)
+			_primitives = new InkPrimitives<byte>();
+		else
+			_primitives = new InkPrimitives<uint32>();
+	}
+
+	return _primitives;
+}
+
+uint32 DirectorEngine::getColorBlack() {
 	if (_pixelformat.bytesPerPixel == 1)
-		return &inkDrawPixel<byte *>;
+		// needs to be the last entry in the palette.
+		// we can't use findBestColor, as it might
+		// pick a different entry that's also black.
+		return 0xff;
 	else
-		return &inkDrawPixel<uint32 *>;
+		// send RGB through findBestColor to avoid endian issues
+		return _wm->findBestColor(0, 0, 0);
+}
+
+uint32 DirectorEngine::getColorWhite() {
+	if (_pixelformat.bytesPerPixel == 1)
+		// needs to be the first entry in the palette.
+		// we can't use findBestColor, as it might
+		// pick a different entry that's also white.
+		return 0x00;
+	else
+		// send RGB through findBestColor to avoid endian issues
+		return _wm->findBestColor(255, 255, 255);
 }
 
 void DirectorPlotData::setApplyColor() {
+	// Director has two ways of rendering an ink setting.
+	// The default is to incorporate the full range of colors in the image.
+	// "applyColor" is used to denote the other option; reduce the image
+	// to some combination of the currently set foreground and background color.
 	applyColor = false;
 
-	if (foreColor != colorBlack) {
-		if (ink != kInkTypeGhost && ink != kInkTypeNotGhost)
-			applyColor = true;
-	}
-
-	if (backColor != colorWhite) {
-		if (ink != kInkTypeTransparent && ink != kInkTypeNotTrans && ink != kInkTypeBackgndTrans)
-			applyColor = true;
+	switch (ink) {
+	case kInkTypeMatte:
+	case kInkTypeMask:
+	case kInkTypeCopy:
+	case kInkTypeNotCopy:
+		applyColor = (foreColor != colorBlack) || (backColor != colorWhite);
+		break;
+	case kInkTypeTransparent:
+	case kInkTypeNotTrans:
+	case kInkTypeBackgndTrans:
+	case kInkTypeGhost:
+	case kInkTypeNotGhost:
+		applyColor = !((foreColor == colorBlack) && (backColor == colorWhite));
+		break;
+	default:
+		break;
 	}
 }
 
@@ -384,7 +590,7 @@ uint32 DirectorPlotData::preprocessColor(uint32 src) {
 	// HACK: Right now this method is just used for adjusting the colourization on text
 	// sprites, as it would be costly to colourize the chunks on the fly each
 	// time a section needs drawing. It's ugly but mostly works.
-	if (sprite == kTextSprite) {
+	if (sprite == kTextSprite || sprite == kButtonSprite || sprite == kCheckboxSprite || sprite == kRadioButtonSprite) {
 		switch(ink) {
 		case kInkTypeMask:
 			src = (src == backColor ? foreColor : 0xff);
@@ -428,7 +634,7 @@ void DirectorPlotData::inkBlitShape(Common::Rect &srcRect) {
 	case kInkTypeNotGhost:
 		return;
 	case kInkTypeReverse:
-		ms->foreColor = 0;
+		ms->foreColor = 255;
 		ms->backColor = 0;
 		break;
 	default:
@@ -459,10 +665,12 @@ void DirectorPlotData::inkBlitShape(Common::Rect &srcRect) {
 	strokeRect.moveTo(srcRect.left, srcRect.top);
 	Graphics::MacPlotData plotStroke(dst, nullptr, &d->getPatterns(), strokePattern, strokeRect.left + wpos.x, strokeRect.top + wpos.y, ms->lineSize, ms->backColor);
 
+	Graphics::Primitives *primitives = g_director->getInkPrimitives();
+
 	switch (ms->spriteType) {
 	case kRectangleSprite:
 		ms->pd = &plotFill;
-		Graphics::drawFilledRect1(fillAreaRect, ms->foreColor, d->getInkDrawPixel(), this);
+		primitives->drawFilledRect1(fillAreaRect, ms->foreColor, this);
 		// fall through
 	case kOutlinedRectangleSprite:
 		// if we have lineSize <= 0, means we are not drawing anything. so we may return directly.
@@ -473,11 +681,11 @@ void DirectorPlotData::inkBlitShape(Common::Rect &srcRect) {
 		if (!outline)
 			ms->tile = nullptr;
 
-		Graphics::drawRect1(strokeRect, ms->foreColor, d->getInkDrawPixel(), this);
+		primitives->drawRect1(strokeRect, ms->foreColor, this);
 		break;
 	case kRoundedRectangleSprite:
 		ms->pd = &plotFill;
-		Graphics::drawRoundRect1(fillAreaRect, 12, ms->foreColor, true, d->getInkDrawPixel(), this);
+		primitives->drawRoundRect1(fillAreaRect, 12, ms->foreColor, true, this);
 		// fall through
 	case kOutlinedRoundedRectangleSprite:
 		if (ms->lineSize <= 0)
@@ -487,11 +695,11 @@ void DirectorPlotData::inkBlitShape(Common::Rect &srcRect) {
 		if (!outline)
 			ms->tile = nullptr;
 
-		Graphics::drawRoundRect1(strokeRect, 12, ms->foreColor, false, d->getInkDrawPixel(), this);
+		primitives->drawRoundRect1(strokeRect, 12, ms->foreColor, false, this);
 		break;
 	case kOvalSprite:
 		ms->pd = &plotFill;
-		Graphics::drawEllipse(fillAreaRect.left, fillAreaRect.top, fillAreaRect.right, fillAreaRect.bottom, ms->foreColor, true, d->getInkDrawPixel(), this);
+		primitives->drawEllipse(fillAreaRect.left, fillAreaRect.top, fillAreaRect.right, fillAreaRect.bottom, ms->foreColor, true, this);
 		// fall through
 	case kOutlinedOvalSprite:
 		if (ms->lineSize <= 0)
@@ -501,15 +709,15 @@ void DirectorPlotData::inkBlitShape(Common::Rect &srcRect) {
 		if (!outline)
 			ms->tile = nullptr;
 
-		Graphics::drawEllipse(strokeRect.left, strokeRect.top, strokeRect.right, strokeRect.bottom, ms->foreColor, false, d->getInkDrawPixel(), this);
+		primitives->drawEllipse(strokeRect.left, strokeRect.top, strokeRect.right, strokeRect.bottom, ms->foreColor, false, this);
 		break;
 	case kLineTopBottomSprite:
 		ms->pd = &plotStroke;
-		Graphics::drawLine(strokeRect.left, strokeRect.top, strokeRect.right, strokeRect.bottom, ms->foreColor, d->getInkDrawPixel(), this);
+		primitives->drawLine(strokeRect.left, strokeRect.top, strokeRect.right, strokeRect.bottom, ms->foreColor, this);
 		break;
 	case kLineBottomTopSprite:
 		ms->pd = &plotStroke;
-		Graphics::drawLine(strokeRect.left, strokeRect.bottom, strokeRect.right, strokeRect.top, ms->foreColor, d->getInkDrawPixel(), this);
+		primitives->drawLine(strokeRect.left, strokeRect.bottom, strokeRect.right, strokeRect.top, ms->foreColor, this);
 		break;
 	default:
 		warning("DirectorPlotData::inkBlitShape: Expected shape type but got type %d", ms->spriteType);
@@ -520,72 +728,84 @@ void DirectorPlotData::inkBlitSurface(Common::Rect &srcRect, const Graphics::Sur
 	if (!srf)
 		return;
 
+	if (mask && srfMask)
+		error("DirectorPlotData::inkBlitSurface: Masking not supported on surfaces with separate mask");
+
 	// TODO: Determine why colourization causes problems in Warlock
-	if (sprite == kTextSprite)
+	if (sprite == kTextSprite || sprite == kButtonSprite || sprite == kCheckboxSprite || sprite == kRadioButtonSprite)
 		applyColor = false;
+
+	Common::Rect srfClip = srf->getBounds();
+	bool failedBoundsCheck = false;
+
+	// FAST PATH: if we're not doing any per-pixel ops,
+	// use the stock blitter. Your CPU will thank you.
+	if (!applyColor && !alpha && !ms) {
+		Common::Rect offsetRect(
+			Common::Point(abs(srcRect.left - destRect.left), abs(srcRect.top - destRect.top)),
+			destRect.width(),
+			destRect.height()
+		);
+		offsetRect.clip(srfClip);
+		switch (ink) {
+		case kInkTypeCopy:
+			if (!mask) {
+				dst->blitFrom(*srf, offsetRect, destRect);
+				return;
+			}
+			break;
+		default:
+			break;
+		}
+	}
+
+	// For blit efficiency, surfaces passed here need to be the same
+	// format as the window manager. Most of the time this is
+	// the job of BitmapCastMember::createWidget.
+
+	Graphics::Primitives *primitives = g_director->getInkPrimitives();
 
 	srcPoint.y = abs(srcRect.top - destRect.top);
 	for (int i = 0; i < destRect.height(); i++, srcPoint.y++) {
-		if (d->_wm->_pixelformat.bytesPerPixel == 1) {
-			srcPoint.x = abs(srcRect.left - destRect.left);
-			const byte *msk = mask ? (const byte *)mask->getBasePtr(srcPoint.x, srcPoint.y) : nullptr;
+		srcPoint.x = abs(srcRect.left - destRect.left);
+		const byte *msk = mask ? (const byte *)mask->getBasePtr(srcPoint.x, srcPoint.y) : nullptr;
 
-			for (int j = 0; j < destRect.width(); j++, srcPoint.x++) {
-				if (!mask || (msk && !(*msk++))) {
-					(d->getInkDrawPixel())(destRect.left + j, destRect.top + i,
-											preprocessColor(*((byte *)srf->getBasePtr(srcPoint.x, srcPoint.y))), this);
-				}
+		if (srfMask) {
+			if (srcPoint.y >= srfMask->h)
+				continue;
+
+			msk = (const byte *)srfMask->getBasePtr(srcPoint.x, srcPoint.y);
+		}
+
+		for (int j = 0; j < destRect.width(); j++, srcPoint.x++) {
+			if (!srfClip.contains(srcPoint)) {
+				failedBoundsCheck = true;
+				continue;
 			}
-		} else {
-			srcPoint.x = abs(srcRect.left - destRect.left);
-			const uint32 *msk = mask ? (const uint32 *)mask->getBasePtr(srcPoint.x, srcPoint.y) : nullptr;
 
-			for (int j = 0; j < destRect.width(); j++, srcPoint.x++) {
-				if (!mask || (msk && !(*msk++))) {
-					(d->getInkDrawPixel())(destRect.left + j, destRect.top + i,
-											preprocessColor(*((uint32 *)srf->getBasePtr(srcPoint.x, srcPoint.y))), this);
+			// Do not try render beyond the mask bounds
+			if (srfMask && (srcPoint.x >= srfMask->w))
+				continue;
+
+			if (!(mask || srfMask) || (msk && (*msk++))) {
+				if (d->_wm->_pixelformat.bytesPerPixel == 1) {
+					primitives->drawPoint(destRect.left + j, destRect.top + i,
+										preprocessColor(*((byte *)srf->getBasePtr(srcPoint.x, srcPoint.y))), this);
+				} else {
+					primitives->drawPoint(destRect.left + j, destRect.top + i,
+										preprocessColor(*((uint32 *)srf->getBasePtr(srcPoint.x, srcPoint.y))), this);
 				}
 			}
 		}
 	}
-}
 
-void DirectorPlotData::inkBlitStretchSurface(Common::Rect &srcRect, const Graphics::Surface *mask) {
-	if (!srf)
-		return;
-
-	// TODO: Determine why colourization causes problems in Warlock
-	if (sprite == kTextSprite)
-		applyColor = false;
-
-	int scaleX = SCALE_THRESHOLD * srcRect.width() / destRect.width();
-	int scaleY = SCALE_THRESHOLD * srcRect.height() / destRect.height();
-
-	srcPoint.y = abs(srcRect.top - destRect.top);
-
-	for (int i = 0, scaleYCtr = 0; i < destRect.height(); i++, scaleYCtr += scaleY, srcPoint.y++) {
-		if (d->_wm->_pixelformat.bytesPerPixel == 1) {
-			srcPoint.x = abs(srcRect.left - destRect.left);
-			const byte *msk = mask ? (const byte *)mask->getBasePtr(srcPoint.x, srcPoint.y) : nullptr;
-
-			for (int xCtr = 0, scaleXCtr = 0; xCtr < destRect.width(); xCtr++, scaleXCtr += scaleX, srcPoint.x++) {
-				if (!mask || !(*msk++)) {
-				(d->getInkDrawPixel())(destRect.left + xCtr, destRect.top + i,
-										preprocessColor(*((byte *)srf->getBasePtr(scaleXCtr / SCALE_THRESHOLD, scaleYCtr / SCALE_THRESHOLD))), this);
-				}
-			}
-		} else {
-			srcPoint.x = abs(srcRect.left - destRect.left);
-			const uint32 *msk = mask ? (const uint32 *)mask->getBasePtr(srcPoint.x, srcPoint.y) : nullptr;
-
-			for (int xCtr = 0, scaleXCtr = 0; xCtr < destRect.width(); xCtr++, scaleXCtr += scaleX, srcPoint.x++) {
-				if (!mask || !(*msk++)) {
-				(d->getInkDrawPixel())(destRect.left + xCtr, destRect.top + i,
-										preprocessColor(*((int *)srf->getBasePtr(scaleXCtr / SCALE_THRESHOLD, scaleYCtr / SCALE_THRESHOLD))), this);
-				}
-			}
-		}
+	if (failedBoundsCheck) {
+		warning("DirectorPlotData::inkBlitSurface: Out of bounds - srfClip: %d,%d,%d,%d, srcRect: %d,%d,%d,%d, dstRect: %d,%d,%d,%d",
+				srfClip.left, srfClip.top, srfClip.right, srfClip.bottom,
+				srcRect.left, srcRect.top, srcRect.right, srcRect.bottom,
+				destRect.left, destRect.top, destRect.right, destRect.bottom);
 	}
+
 }
 
 } // End of namespace Director

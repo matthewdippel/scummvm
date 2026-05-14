@@ -79,35 +79,37 @@ void MidiParser_SH::parseNextEvent(EventInfo &info) {
 
 //	warning("parseNextEvent");
 
+	const byte *playPos = _position._subtracks[0]._playPos;
+
 	// there is no delta right at the start of the music data
 	// this order is essential, otherwise notes will get delayed or even go missing
-	if (_position._playPos != _tracks[0]) {
-		info.delta = *(_position._playPos++);
+	if (playPos != _tracks[0][0]) {
+		info.delta = *(playPos++);
 	} else {
 		info.delta = 0;
 	}
 
-	info.start = _position._playPos;
+	info.start = playPos;
 
-	info.event = *_position._playPos++;
+	info.event = *(playPos++);
 	//warning("Event %x", info.event);
-	_position._runningStatus = info.event;
+	_position._subtracks[0]._runningStatus = info.event;
 
 	switch (info.command()) {
 	case 0xC: { // program change
-		int idx = *_position._playPos++;
+		int idx = *playPos++;
 		info.basic.param1 = idx & 0x7f;
 		info.basic.param2 = 0;
 		}
 		break;
 	case 0xD:
-		info.basic.param1 = *_position._playPos++;
+		info.basic.param1 = *(playPos++);
 		info.basic.param2 = 0;
 		break;
 
 	case 0xB:
-		info.basic.param1 = *_position._playPos++;
-		info.basic.param2 = *_position._playPos++;
+		info.basic.param1 = *(playPos++);
+		info.basic.param2 = *(playPos++);
 		info.length = 0;
 		break;
 
@@ -115,8 +117,8 @@ void MidiParser_SH::parseNextEvent(EventInfo &info) {
 	case 0x9:
 	case 0xA:
 	case 0xE:
-		info.basic.param1 = *(_position._playPos++);
-		info.basic.param2 = *(_position._playPos++);
+		info.basic.param1 = *(playPos++);
+		info.basic.param2 = *(playPos++);
 		if (info.command() == 0x9 && info.basic.param2 == 0) {
 			// NoteOn with param2==0 is a NoteOff
 			info.event = info.channel() | 0x80;
@@ -127,7 +129,7 @@ void MidiParser_SH::parseNextEvent(EventInfo &info) {
 		if (info.event == 0xFF) {
 			error("SysEx META event 0xFF");
 
-			byte type = *(_position._playPos++);
+			byte type = *(playPos++);
 			switch(type) {
 			case 0x2F:
 				// End of Track
@@ -137,7 +139,7 @@ void MidiParser_SH::parseNextEvent(EventInfo &info) {
 				return;
 			case 0x51:
 				warning("TODO: 0xFF / 0x51");
-				return;
+				break;
 			default:
 				warning("TODO: 0xFF / %x Unknown", type);
 				break;
@@ -146,17 +148,17 @@ void MidiParser_SH::parseNextEvent(EventInfo &info) {
 			// Official End-Of-Track signal
 			debugC(kDebugLevelMusic, "Music: System META event 0xFC");
 
-			byte type = *(_position._playPos++);
+			byte type = *(playPos++);
 			switch (type) {
 			case 0x80: // end of track, triggers looping
 				debugC(kDebugLevelMusic, "Music: META event triggered looping");
 				jumpToTick(0, true, true, false);
-				break;
+				return;
 			case 0x81: // end of track, stop playing
 				debugC(kDebugLevelMusic, "Music: META event triggered music stop");
 				stopPlaying();
 				unloadMusic();
-				break;
+				return;
 			default:
 				error("MidiParser_SH::parseNextEvent: Unknown META event 0xFC type %x", type);
 				break;
@@ -170,9 +172,11 @@ void MidiParser_SH::parseNextEvent(EventInfo &info) {
 		warning("MidiParser_SH::parseNextEvent: Unsupported event code %x", info.event);
 		break;
 	}// switch (info.command())
+
+	_position._subtracks[0]._playPos = playPos;
 }
 
-bool MidiParser_SH::loadMusic(byte *musData, uint32 musDataSize) {
+bool MidiParser_SH::loadMusic(const byte *musData, uint32 musDataSize) {
 	Common::StackLock lock(_mutex);
 
 	debugC(kDebugLevelMusic, "Music: loadMusic()");
@@ -181,8 +185,8 @@ bool MidiParser_SH::loadMusic(byte *musData, uint32 musDataSize) {
 	_musData     = musData;
 	_musDataSize = musDataSize;
 
-	byte *headerPtr = _musData + 12; // skip over the already checked SPACE header
-	byte *pos       = headerPtr;
+	const byte *headerPtr = _musData + 12; // skip over the already checked SPACE header
+	const byte *pos       = headerPtr;
 
 	uint16 headerSize = READ_LE_UINT16(headerPtr);
 	assert(headerSize == 0x7F); // Security check
@@ -194,7 +198,8 @@ bool MidiParser_SH::loadMusic(byte *musData, uint32 musDataSize) {
 	_trackEnd = _musData + _musDataSize;
 
 	_numTracks = 1;
-	_tracks[0] = pos;
+	_numSubtracks[0] = 1;
+	_tracks[0][0] = pos;
 
 	_ppqn = 1;
 	setTempo(16667);
@@ -255,6 +260,9 @@ Music::Music(SherlockEngine *vm, Audio::Mixer *mixer) : _vm(vm), _mixer(mixer) {
 			if (ConfMan.getBool("native_mt32")) {
 				_midiDriver = MidiDriver_MT32_create();
 				_musicType = MT_MT32;
+			} else {
+				_midiDriver = MidiDriver_SH_AdLib_create();
+				_musicType = MT_ADLIB;
 			}
 			break;
 		default:
@@ -392,6 +400,14 @@ bool Music::loadSong(const Common::String &songName) {
 
 void Music::syncMusicSettings() {
 	_musicOn = !ConfMan.getBool("mute") && !ConfMan.getBool("music_mute");
+
+	// MIDI synth output is registered with the mixer as kPlainSoundType
+	// (hardcoded in audio/chip.cpp and audio/softsynth/). Map the music
+	// volume to kPlainSoundType so that the Music slider controls MIDI
+	// playback. Engine::defaultSyncSoundSettings() resets kPlainSoundType
+	// to max, so this override must run after it.
+	_musicVolume = ConfMan.getInt("music_volume");
+	_vm->_mixer->setVolumeForSoundType(Audio::Mixer::kPlainSoundType, _musicVolume);
 }
 
 bool Music::playMusic(const Common::String &name) {
@@ -407,7 +423,7 @@ bool Music::playMusic(const Common::String &name) {
 			return false;
 
 		Common::String midiMusicName = (IS_SERRATED_SCALPEL) ? name + ".MUS" : name + ".XMI";
-		Common::SeekableReadStream *stream = _vm->_res->load(midiMusicName, "MUSIC.LIB");
+		Common::SeekableReadStream *stream = _vm->_res->load(Common::Path(midiMusicName), "MUSIC.LIB");
 
 		byte *midiMusicData     = new byte[stream->size()];
 		int32 midiMusicDataSize = stream->size();
@@ -476,7 +492,8 @@ bool Music::playMusic(const Common::String &name) {
 	} else {
 		// 3DO: sample based
 		Audio::AudioStream *musicStream;
-		Common::String digitalMusicName = "music/" + name + "_MW22.aifc";
+		Common::Path digitalMusicName("music/");
+		digitalMusicName.appendInPlace(name + "_MW22.aifc");
 
 		if (isPlaying()) {
 			_mixer->stopHandle(_digitalMusicHandle);
@@ -484,14 +501,15 @@ bool Music::playMusic(const Common::String &name) {
 
 		Common::File *digitalMusicFile = new Common::File();
 		if (!digitalMusicFile->open(digitalMusicName)) {
-			warning("playMusic: can not open 3DO music '%s'", digitalMusicName.c_str());
+			warning("playMusic: can not open 3DO music '%s'", digitalMusicName.toString().c_str());
+			delete digitalMusicFile;
 			return false;
 		}
 
 		// Try to load the given file as AIFF/AIFC
 		musicStream = Audio::makeAIFFStream(digitalMusicFile, DisposeAfterUse::YES);
 		if (!musicStream) {
-			warning("playMusic: can not load 3DO music '%s'", digitalMusicName.c_str());
+			warning("playMusic: can not load 3DO music '%s'", digitalMusicName.toString().c_str());
 			return false;
 		}
 		_mixer->playStream(Audio::Mixer::kMusicSoundType, &_digitalMusicHandle, musicStream);
@@ -582,13 +600,14 @@ void Music::setMusicVolume(int volume) {
 	_musicVolume = volume;
 	_musicOn = volume > 0;
 	_vm->_mixer->setVolumeForSoundType(Audio::Mixer::kMusicSoundType, volume);
+	_vm->_mixer->setVolumeForSoundType(Audio::Mixer::kPlainSoundType, volume);
 }
 
 void Music::getSongNames(Common::StringArray &songs) {
 	songs.clear();
 	if (IS_SERRATED_SCALPEL) {
 		if (IS_3DO) {
-			Common::FSDirectory gameDirectory(ConfMan.get("path"));
+			Common::FSDirectory gameDirectory(ConfMan.getPath("path"));
 			Common::FSDirectory *musicDirectory = gameDirectory.getSubDirectory("music");
 			Common::ArchiveMemberList files;
 

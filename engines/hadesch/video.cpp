@@ -31,7 +31,7 @@
 #include "audio/decoders/aiff.h"
 #include "hadesch/pod_file.h"
 #include "hadesch/baptr.h"
-#include "common/translation.h"
+#include "common/macresman.h"
 
 static const int kVideoMaxW = 1280;
 static const int kVideoMaxH = 480;
@@ -119,7 +119,7 @@ VideoRoom::VideoRoom(const Common::String &dir, const Common::String &pod,
 		     const Common::String &assetMapFile) : _layers(layerComparator) {
 	Common::String podPath = g_vm->getCDScenesPath() + dir + "/" + pod + ".pod";
 	_podFile = Common::SharedPtr<PodFile>(new PodFile(podPath));
-	_podFile->openStore(podPath);
+	_podFile->openStore(Common::Path(podPath));
 	_smkPath = g_vm->getCDScenesPath() + dir;
 	Common::SharedPtr<Common::SeekableReadStream> assetMapStream(assetMapFile != "" ? openFile(assetMapFile) : nullptr);
 	if (assetMapStream) {
@@ -176,37 +176,37 @@ void VideoRoom::disableHotzone(const Common::String &name) {
 }
 
 void VideoRoom::setLayerEnabled(const LayerId &name, bool val) {
-	for (Common::SortedArray<Layer>::iterator it = _layers.begin(); it != _layers.end(); it++) {
-		if (it->name == name)
-			it->isEnabled = val;
+	for (auto &layer : _layers) {
+		if (layer.name == name)
+			layer.isEnabled = val;
 	}
 }
 
 void VideoRoom::setLayerParallax(const LayerId &name, int val) {
-	for (Common::SortedArray<Layer>::iterator it = _layers.begin(); it != _layers.end(); it++) {
-		if (it->name == name)
-			it->parallax = val;
+	for (auto &layer : _layers) {
+		if (layer.name == name)
+			layer.parallax = val;
 	}
 }
 
 void VideoRoom::setColorScale(const LayerId &name, int val) {
-	for (Common::SortedArray<Layer>::iterator it = _layers.begin(); it != _layers.end(); it++) {
-		if (it->name == name)
-			it->colorScale = val;
+	for (auto &layer : _layers) {
+		if (layer.name == name)
+			layer.colorScale = val;
 	}
 }
 
 void VideoRoom::setScale(const LayerId &name, int val) {
-	for (Common::SortedArray<Layer>::iterator it = _layers.begin(); it != _layers.end(); it++) {
-		if (it->name == name)
-			it->scale = val;
+	for (auto &layer : _layers) {
+		if (layer.name == name)
+			layer.scale = val;
 	}
 }
 
 int VideoRoom::getNumFrames(const LayerId &name) {
-	for (Common::SortedArray<Layer>::iterator it = _layers.begin(); it != _layers.end(); it++) {
-		if (it->name == name)
-			return it->renderable->getNumFrames();
+	for (auto &layer : _layers) {
+		if (layer.name == name)
+			return layer.renderable->getNumFrames();
 	}
 
 	return 0;
@@ -239,8 +239,8 @@ void VideoRoom::startAnimationInternal(const LayerId &name, int zValue, int mspe
 	}
 	// This is slow but should rarely happen
 	if (!modifiedZ.empty()) {
-		for (Common::Array<Layer>::iterator it = modifiedZ.begin(); it != modifiedZ.end(); it++) {
-			_layers.insert(*it);
+		for (auto &it : modifiedZ) {
+			_layers.insert(it);
 		}
 	}
 }
@@ -254,9 +254,9 @@ void VideoRoom::selectFrame(const LayerId &name, int zValue, int frame, Common::
 }
 
 PodImage VideoRoom::getLayerFrame(const Hadesch::LayerId &name) {
-	for (Common::SortedArray<Layer>::iterator it = _layers.begin(); it != _layers.end(); it++) {
-		if (it->name == name) {
-			return it->renderable->getFrame(g_vm->getCurrentTime());
+	for (auto &layer : _layers) {
+		if (layer.name == name) {
+			return layer.renderable->getFrame(g_vm->getCurrentTime());
 		}
 	}
 
@@ -264,9 +264,9 @@ PodImage VideoRoom::getLayerFrame(const Hadesch::LayerId &name) {
 }
 
 int VideoRoom::getAnimFrameNum(const Hadesch::LayerId &name) {
-	for (Common::SortedArray<Layer>::iterator it = _layers.begin(); it != _layers.end(); it++) {
-		if (it->name == name) {
-			return it->renderable->getAnimationFrameNum(g_vm->getCurrentTime());
+	for (auto &layer : _layers) {
+		if (layer.name == name) {
+			return layer.renderable->getAnimationFrameNum(g_vm->getCurrentTime());
 		}
 	}
 
@@ -274,9 +274,9 @@ int VideoRoom::getAnimFrameNum(const Hadesch::LayerId &name) {
 }
 
 void VideoRoom::stopAnim(const LayerId &name) {
-	for (Common::SortedArray<Layer>::iterator it = _layers.begin(); it != _layers.end(); it++) {
-		if (it->name == name) {
-			it->isEnabled = false;
+	for (auto &layer : _layers) {
+		if (layer.name == name) {
+			layer.isEnabled = false;
 		}
 	}
 	for (unsigned i = 0; i < _anims.size(); i++) {
@@ -298,8 +298,8 @@ void VideoRoom::purgeAnim(const LayerId &name) {
 
 void VideoRoom::dumpLayers() {
 	debug("Current layers:");
-	for (Common::SortedArray<Layer>::iterator it = _layers.begin(); it != _layers.end(); it++) {
-		debug("   %s %s", it->name.getDebug().c_str(), it->isEnabled ? "enabled" : "disabled");
+	for (auto &layer : _layers) {
+		debug("   %s %s", layer.name.getDebug().c_str(), layer.isEnabled ? "enabled" : "disabled");
 	}
 }
 
@@ -323,8 +323,8 @@ void VideoRoom::unpause() {
 }
 
 bool VideoRoom::doesLayerExist(const LayerId &name) {
-	for (Common::SortedArray<Layer>::iterator it = _layers.begin(); it != _layers.end(); it++) {
-		if (it->name == name) {
+	for (auto &layer : _layers) {
+		if (layer.name == name) {
 			return true;
 		}
 	}
@@ -332,9 +332,9 @@ bool VideoRoom::doesLayerExist(const LayerId &name) {
 }
 
 bool VideoRoom::isAnimationFinished(const LayerId &name, int time) {
-	for (Common::SortedArray<Layer>::iterator it = _layers.begin(); it != _layers.end(); it++) {
-		if (it->name == name) {
-			return it->renderable->isAnimationFinished(time);
+	for (auto &layer : _layers) {
+		if (layer.name == name) {
+			return layer.renderable->isAnimationFinished(time);
 		}
 	}
 
@@ -551,9 +551,9 @@ void VideoRoom::nextFrame(Common::SharedPtr<GfxContext> context, int time, bool 
 		if (stopped) {
 			g_system->getMixer()->stopHandle(_anims[i]._soundHandle);
 			if (_anims[i]._keepLastFrame)
-				for (Common::SortedArray<Layer>::iterator it = _layers.begin(); it != _layers.end(); it++)
-					if (it->name == _anims[i]._animName)
-						it->renderable->selectFrame(-1);
+				for (auto &layer : _layers)
+					if (layer.name == _anims[i]._animName)
+						layer.renderable->selectFrame(-1);
 		}
 
 		if ((soundFinished && animFinished && subFinished) || stopped) {
@@ -758,12 +758,13 @@ void VideoRoom::playVideo(const Common::String &name, int zValue,
 	Common::SharedPtr<Video::SmackerDecoder> decoder
 	  = Common::SharedPtr<Video::SmackerDecoder>(new Video::SmackerDecoder());
 
-	Common::File *file = new Common::File;
 	Common::String mappedName = _assetMap.get(name, 1);
 	if (mappedName == "") {
 		mappedName = name;
 	}
-	if (!file->open(_smkPath + "/" + mappedName + ".SMK") || !decoder->loadStream(file)) {
+	Common::SeekableReadStream *stream = Common::MacResManager::openFileOrDataFork(Common::Path(_smkPath + "/" + mappedName + ".SMK"));
+
+	if (!stream || !decoder->loadStream(stream)) {
 		debug("Video file %s can't be opened", name.c_str());
 		g_vm->handleEvent(callbackEvent);
 		return;

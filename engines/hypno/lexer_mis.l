@@ -1,3 +1,4 @@
+%top{
 /* ScummVM - Graphic Adventure Engine
  *
  * ScummVM is the legal property of its developers, whose names
@@ -19,6 +20,23 @@
  *
  */
 
+#define YY_NO_UNISTD_H
+#define FORBIDDEN_SYMBOL_EXCEPTION_FILE
+#define FORBIDDEN_SYMBOL_EXCEPTION_fprintf
+#define FORBIDDEN_SYMBOL_EXCEPTION_fwrite
+#define FORBIDDEN_SYMBOL_EXCEPTION_fread
+#define FORBIDDEN_SYMBOL_EXCEPTION_stdin
+#define FORBIDDEN_SYMBOL_EXCEPTION_stdout
+#define FORBIDDEN_SYMBOL_EXCEPTION_stderr
+#define FORBIDDEN_SYMBOL_EXCEPTION_exit
+#define FORBIDDEN_SYMBOL_EXCEPTION_getc
+
+#include "hypno/hypno.h"
+#include "hypno/grammar.h"
+#include "hypno/tokens_mis.h"
+
+}
+
 %option noyywrap
 %option noinput
 %option nounput
@@ -27,16 +45,6 @@
 
 %option outfile="engines/hypno/lexer_mis.cpp"
 %option prefix="HYPNO_MIS_"
-
-%{
-#define YY_NO_UNISTD_H
-#define FORBIDDEN_SYMBOL_ALLOW_ALL
-
-#include "hypno/hypno.h"
-#include "hypno/grammar.h"
-#include "hypno/tokens_mis.h"
-
-%}
 
 %%
 \;.+						/* return COMMENT; */
@@ -93,6 +101,9 @@ GS_[A-Z_0-9]+				HYPNO_MIS_lval.s = scumm_strdup(HYPNO_MIS_text); return GSSWITC
 
 namespace Hypno {
 
+extern Common::Array<uint32> *smenu_idx;
+extern HotspotsStack *stack;
+
 int parse_mis(const char *code) {
 	YY_BUFFER_STATE bp;
 	yy_delete_buffer(YY_CURRENT_BUFFER);
@@ -100,6 +111,10 @@ int parse_mis(const char *code) {
 	yy_switch_to_buffer(bp);
 	HYPNO_MIS_parse();
 	yy_delete_buffer(bp);
+	delete smenu_idx;
+	smenu_idx = nullptr;
+	delete stack;
+	stack = nullptr;
 	return 0;
 }
 

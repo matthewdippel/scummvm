@@ -28,17 +28,18 @@
 namespace MTropolis {
 
 struct ElementLoaderContext {
-	ElementLoaderContext(Runtime *elc_runtime, size_t elc_streamIndex);
+	ElementLoaderContext(Runtime *pRuntime, Project *pProject, size_t pStreamIndex);
 
+	Project *project;
 	Runtime *runtime;
 	size_t streamIndex;
 };
 
-struct IElementFactory : public IInterfaceBase {
-	virtual Common::SharedPtr<Element> createElement(ElementLoaderContext &context, const Data::DataObject &dataObject) const = 0;
+struct SIElementFactory {
+	Common::SharedPtr<Element> (*createElement)(ElementLoaderContext &context, const Data::DataObject &dataObject);
 };
 
-IElementFactory *getElementFactoryForDataObjectType(Data::DataObjectTypes::DataObjectType dataObjectType);
+SIElementFactory *getElementFactoryForDataObjectType(Data::DataObjectTypes::DataObjectType dataObjectType);
 
 } // End of namespace MTropolis
 

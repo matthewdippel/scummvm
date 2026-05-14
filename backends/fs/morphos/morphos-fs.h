@@ -68,19 +68,19 @@ protected:
 
 public:
 	/**
-	 * Creates an MorphOSFilesystemNode with the root node as path.
+	 * Creates a MorphOSFilesystemNode with the root node as path.
 	 */
 	MorphOSFilesystemNode();
 
 	/**
-	 * Creates an MorphOSFilesystemNode for a given path.
+	 * Creates a MorphOSFilesystemNode for a given path.
 	 *
 	 * @param path Common::String with the path the new node should point to.
 	 */
 	MorphOSFilesystemNode(const Common::String &p);
 
 	/**
-	 * Creates an MorphOSFilesystemNode given its lock and display name.
+	 * Creates a MorphOSFilesystemNode given its lock and display name.
 	 *
 	 * @param pLock BPTR to the lock.
 	 * @param pDisplayName name to be used for display, in case not supplied the FilePart() of the filename will be used.
@@ -115,7 +115,7 @@ public:
 	AbstractFSNode *getParent() const override;
 
 	Common::SeekableReadStream *createReadStream() override;
-	Common::SeekableWriteStream *createWriteStream() override;
+	Common::SeekableWriteStream *createWriteStream(bool atomic) override;
 	bool createDirectory() override;
 };
 

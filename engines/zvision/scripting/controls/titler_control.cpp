@@ -20,15 +20,12 @@
  */
 
 #include "common/scummsys.h"
-
-#include "zvision/scripting/controls/titler_control.h"
-
-#include "zvision/zvision.h"
-#include "zvision/text/text.h"
-#include "zvision/scripting/script_manager.h"
-#include "zvision/graphics/render_manager.h"
-
 #include "common/stream.h"
+#include "zvision/zvision.h"
+#include "zvision/graphics/render_manager.h"
+#include "zvision/scripting/script_manager.h"
+#include "zvision/scripting/controls/titler_control.h"
+#include "zvision/text/text.h"
 
 namespace ZVision {
 
@@ -47,16 +44,15 @@ TitlerControl::TitlerControl(ZVision *engine, uint32 key, Common::SeekableReadSt
 
 	while (!stream.eos() && !line.contains('}')) {
 		if (param.matchString("string_resource_file", true)) {
-			readStringsFile(values);
+			readStringsFile(Common::Path(values));
 		} else if (param.matchString("rectangle", true)) {
 			int x;
 			int y;
 			int x2;
 			int y2;
 
-			sscanf(values.c_str(), "%d %d %d %d", &x, &y, &x2, &y2);
-
-			_rectangle = Common::Rect(x, y, x2, y2);
+			if (sscanf(values.c_str(), "%d %d %d %d", &x, &y, &x2, &y2) == 4)
+				_rectangle = Common::Rect(x, y, x2, y2);
 		}
 
 		line = stream.readLine();
@@ -87,10 +83,10 @@ void TitlerControl::setString(int strLine) {
 	}
 }
 
-void TitlerControl::readStringsFile(const Common::String &fileName) {
+void TitlerControl::readStringsFile(const Common::Path &fileName) {
 	Common::File file;
-	if (!_engine->getSearchManager()->openFile(file, fileName)) {
-		warning("String_resource_file %s could could be opened", fileName.c_str());
+	if (!file.open(fileName)) {
+		warning("String_resource_file %s could could be opened", fileName.toString().c_str());
 		return;
 	}
 
@@ -98,7 +94,7 @@ void TitlerControl::readStringsFile(const Common::String &fileName) {
 
 	while (!file.eos()) {
 
-		Common::String line = readWideLine(file);
+		Common::String line = readWideLine(file).encode();
 		_strings.push_back(line);
 	}
 	file.close();

@@ -40,6 +40,8 @@
 #include "sword2/sound.h"
 #include "sword2/animation.h"
 
+#include "gui/error.h"
+
 namespace Sword2 {
 
 int32 Logic::fnTestFunction(int32 *params) {
@@ -114,7 +116,7 @@ int32 Logic::fnRegisterMouse(int32 *params) {
 	// params:	0 pointer to ObjectMouse or 0 for no write to mouse
 	//		  list
 
-	_vm->_mouse->registerMouse(decodePtr(params[0]), NULL);
+	_vm->_mouse->registerMouse(decodePtr(params[0]), nullptr);
 	return IR_CONT;
 }
 
@@ -733,7 +735,7 @@ int32 Logic::fnWalkToTalkToMega(int32 *params) {
 
 int32 Logic::fnFadeDown(int32 *params) {
 	// NONE means up! can only be called when screen is fully faded up -
-	// multiple calls wont have strange effects
+	// multiple calls won't have strange effects
 
 	// params:	none
 
@@ -896,7 +898,7 @@ int32 Logic::fnISpeak(int32 *params) {
 
 			_animId = READ_LE_UINT32(anim_table + 4 * obMega.getCurDir());
 		} else {
-			// No animation choosen
+			// No animation chosen
 			_animId = 0;
 		}
 
@@ -2035,7 +2037,7 @@ int32 Logic::fnAddWalkGrid(int32 *params) {
 	// DON'T EVER KILL GEORGE!
 	if (readVar(ID) != CUR_PLAYER_ID) {
 		// Need to call this in case it wasn't called in script!
-		fnAddToKillList(NULL);
+		fnAddToKillList(nullptr);
 	}
 
 	_router->addWalkGrid(params[0]);
@@ -2125,16 +2127,16 @@ int32 Logic::fnPlaySequence(int32 *params) {
 
 	// add the appropriate file extension & play it
 
-	strcpy(filename, (const char *)decodePtr(params[0]));
+	Common::strcpy_s(filename, (const char *)decodePtr(params[0]));
 	if (Sword2Engine::isPsx() && readVar(DEMO) && strcmp(filename, "enddemo") == 0) {
-		strcpy(filename, "rdemo");
+		Common::strcpy_s(filename, "rdemo");
 	}
 
 	// Write to walkthrough file (zebug0.txt)
 	debug(5, "PLAYING SEQUENCE \"%s\"", filename);
 
 	// don't want to carry on streaming game music when cutscene starts!
-	fnStopMusic(NULL);
+	fnStopMusic(nullptr);
 
 	// pause sfx during sequence
 	_vm->_sound->pauseFx();
@@ -2143,14 +2145,18 @@ int32 Logic::fnPlaySequence(int32 *params) {
 
 	_moviePlayer = makeMoviePlayer(filename, _vm, _vm->_system, frameCount);
 
-	if (_moviePlayer && _moviePlayer->load(filename)) {
-		_moviePlayer->play(_sequenceTextList, _sequenceTextLines, _smackerLeadIn, _smackerLeadOut);
+	if (_moviePlayer) {
+		Common::Error err = _moviePlayer->load(filename);
+		if (err.getCode() == Common::kNoError)
+			_moviePlayer->play(_sequenceTextList, _sequenceTextLines, _smackerLeadIn, _smackerLeadOut);
+		else
+			GUI::displayErrorDialog(err);
 	}
 
 	_sequenceTextLines = 0;
 
 	delete _moviePlayer;
-	_moviePlayer = NULL;
+	_moviePlayer = nullptr;
 
 	// unpause sound fx again, in case we're staying in same location
 	_vm->_sound->unpauseFx();
@@ -2158,7 +2164,7 @@ int32 Logic::fnPlaySequence(int32 *params) {
 	_smackerLeadIn = 0;
 	_smackerLeadOut = 0;
 
-	// now clear the screen in case the Sequence was quitted (using ESC)
+	// now clear the screen in case the Sequence was quit (using ESC)
 	// rather than fading down to black
 
 	_vm->_screen->clearScene();

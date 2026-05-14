@@ -32,7 +32,8 @@ using namespace Shared;
 using namespace Engine;
 
 void RemoveOverlay(int ovrid) {
-	if (find_overlay_of_type(ovrid) < 0) quit("!RemoveOverlay: invalid overlay id passed");
+	if (!get_overlay(ovrid))
+		quit("!RemoveOverlay: invalid overlay id passed");
 	remove_screen_overlay(ovrid);
 }
 
@@ -46,35 +47,35 @@ int CreateTextOverlay(int xx, int yy, int wii, int fontid, int text_color, const
 
 	if (xx != OVR_AUTOPLACE) {
 		data_to_game_coords(&xx, &yy);
+		// NOTE: this is ugly, but OVR_AUTOPLACE here suggests that width is already in game coords
 		wii = data_to_game_coord(wii);
 	} else  // allow DisplaySpeechBackground to be shrunk
 		allowShrink = 1;
 
 	auto *over = Overlay_CreateTextCore(false, xx, yy, wii, fontid, text_color, text, disp_type, allowShrink);
+	assert((disp_type < OVER_FIRSTFREE) || (disp_type == over->type));
 	return over ? over->type : 0;
 }
 
 void SetTextOverlay(int ovrid, int xx, int yy, int wii, int fontid, int text_color, const char *text) {
-	RemoveOverlay(ovrid);
-	const int disp_type = ovrid;
-	if (CreateTextOverlay(xx, yy, wii, fontid, text_color, text, disp_type) != ovrid)
-		quit("SetTextOverlay internal error: inconsistent type ids");
+	auto *over = get_overlay(ovrid);
+	if (!over)
+		quit("!SetTextOverlay: invalid overlay ID specified");
+	Overlay_SetText(*over, xx, yy, wii, fontid, text_color, text);
 }
 
 void MoveOverlay(int ovrid, int newx, int newy) {
 	data_to_game_coords(&newx, &newy);
 
-	int ovri = find_overlay_of_type(ovrid);
-	if (ovri < 0) quit("!MoveOverlay: invalid overlay ID specified");
-	_GP(screenover)[ovri].x = newx;
-	_GP(screenover)[ovri].y = newy;
+	auto *over = get_overlay(ovrid);
+	if (!over)
+		quit("!MoveOverlay: invalid overlay ID specified");
+	over->x = newx;
+	over->y = newy;
 }
 
 int IsOverlayValid(int ovrid) {
-	if (find_overlay_of_type(ovrid) < 0)
-		return 0;
-
-	return 1;
+	return (get_overlay(ovrid) != nullptr) ? 1 : 0;
 }
 
 } // namespace AGS3

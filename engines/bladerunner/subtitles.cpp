@@ -28,6 +28,7 @@
 #include "bladerunner/time.h"
 
 #include "common/debug.h"
+#include "common/unicode-bidi.h"
 
 #include "graphics/font.h"
 #include "graphics/fonts/ttf.h"
@@ -257,8 +258,8 @@ void Subtitles::init(void) {
 		_useUTF8 = false;
 	} else if (_subtitlesInfo.fontType == Subtitles::kSubtitlesFontTypeTTF) {
 #if defined(USE_FREETYPE2)
-		Common::ScopedPtr<Common::SeekableReadStream> stream(_vm->getResourceStream(_subtitlesInfo.fontName));
-		_font = Graphics::loadTTFFont(*stream, 18);
+		Common::SeekableReadStream *stream = _vm->getResourceStream(_subtitlesInfo.fontName);
+		_font = Graphics::loadTTFFont(stream, DisposeAfterUse::YES, 18);
 		_useUTF8 = true;
 #else
 		warning("Subtitles require a TTF font but this ScummVM build doesn't support it.");
@@ -311,7 +312,7 @@ void Subtitles::xcReload() {
 
 	for (int i = 0; i < kxcStringCount; ++i) {
 		int j = _vm->_rnd.getRandomNumberRng(i, kxcStringCount - 1);
-		SWAP<Common::String>(_xcStrings[i], _subtitlesEXC[j]);
+		SWAP<Common::String>(_xcStrings[i], _xcStrings[j]);
 	}
 
 	for (int i = 0; i < kxcLineCount; ++i) {
@@ -403,7 +404,7 @@ void Subtitles::loadOuttakeSubsText(const Common::String &outtakesName, int fram
 	      || fileIdx == 2
 	      || (fileIdx == 3 && (uint32)frame < 1200))) {
 		// "WSTLGO" or "BRLOGO" or "INTRO" affected
-		// NOTE fileIdx indexes the SUBTITLES_FILENAME_PREFIXES array
+		// NOTE fileIdx is indexing the SUBTITLES_FILENAME_PREFIXES array
 		return;
 	}
 
@@ -658,12 +659,13 @@ void Subtitles::draw(Graphics::Surface &s) {
 					_font->drawString(&s, _subtitlesDataActive[i].lines[j], 0, y, s.w, 0, Graphics::kTextAlignCenter);
 					break;
 				case Subtitles::kSubtitlesFontTypeTTF:
-					_font->drawString(&s, _subtitlesDataActive[i].lines32[j], -1, y    , s.w, s.format.RGBToColor(  0,   0,   0), Graphics::kTextAlignCenter);
-					_font->drawString(&s, _subtitlesDataActive[i].lines32[j],  0, y - 1, s.w, s.format.RGBToColor(  0,   0,   0), Graphics::kTextAlignCenter);
-					_font->drawString(&s, _subtitlesDataActive[i].lines32[j],  1, y    , s.w, s.format.RGBToColor(  0,   0,   0), Graphics::kTextAlignCenter);
-					_font->drawString(&s, _subtitlesDataActive[i].lines32[j],  0, y + 1, s.w, s.format.RGBToColor(  0,   0,   0), Graphics::kTextAlignCenter);
+					Common::U32String line32 = Common::convertBiDiU32String(_subtitlesDataActive[i].lines32[j]).visual;
+					_font->drawString(&s, line32, -1, y    , s.w, s.format.RGBToColor(  0,   0,   0), Graphics::kTextAlignCenter);
+					_font->drawString(&s, line32,  0, y - 1, s.w, s.format.RGBToColor(  0,   0,   0), Graphics::kTextAlignCenter);
+					_font->drawString(&s, line32,  1, y    , s.w, s.format.RGBToColor(  0,   0,   0), Graphics::kTextAlignCenter);
+					_font->drawString(&s, line32,  0, y + 1, s.w, s.format.RGBToColor(  0,   0,   0), Graphics::kTextAlignCenter);
 
-					_font->drawString(&s, _subtitlesDataActive[i].lines32[j],  0, y    , s.w, s.format.RGBToColor(255, 255, 255), Graphics::kTextAlignCenter);
+					_font->drawString(&s, line32,  0, y    , s.w, s.format.RGBToColor(255, 255, 255), Graphics::kTextAlignCenter);
 					break;
 				}
 			}

@@ -53,6 +53,17 @@ class RewindableAudioStream;
  */
 namespace Tucker {
 
+enum TUCKERAction {
+	kActionNone,
+	kActionSkipSpeech,
+	kActionFastMode,
+	kActionPause,
+	kActionTogglePanelStyle,
+	kActionToggleTextSpeech,
+	kActionHelp,
+	kActionEscape
+};
+
 enum CursorStyle {
 	kCursorNormal     = 0,
 	kCursorTalk       = 1,
@@ -745,8 +756,8 @@ protected:
 	}
 
 	bool canLoadOrSave() const;
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	virtual bool existsSavegame();
 
 	void handleIntroSequence();

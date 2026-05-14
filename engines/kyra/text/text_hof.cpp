@@ -80,11 +80,17 @@ void TextDisplayer_HoF::printCustomCharacterText(const char *text, int x, int y,
 char *TextDisplayer_HoF::preprocessString(const char *str) {
 	if (str != _talkBuffer) {
 		assert(strlen(str) < sizeof(_talkBuffer) - 1);
-		strcpy(_talkBuffer, str);
+		Common::strlcpy(_talkBuffer, str, sizeof(_talkBuffer));
 	}
 
 	if (_vm->gameFlags().lang == Common::ZH_TWN)
 		return _talkBuffer;
+
+	// Korean fan translation: delegate to base class which already handles
+	// 2-byte character width measurement with FID_KOREAN_FNT and has
+	// correct maxTextWidth limits for Korean text.
+	if (_vm->gameFlags().lang == Common::KO_KOR)
+		return TextDisplayer::preprocessString(_talkBuffer);
 
 	char *p = _talkBuffer;
 	while (*p) {
@@ -424,7 +430,7 @@ void KyraEngine_HoF::randomSceneChat() {
 
 void KyraEngine_HoF::updateDlgBuffer() {
 	static const char suffixTalkie[] = "EFG";
-	static const char suffixTowns[] = "G  J";
+	static const char suffixTowns[] = "G  J K";
 
 	if (_currentChapter == _npcTalkChpIndex && _mainCharacter.dlgIndex == _npcTalkDlgIndex)
 		return;
@@ -434,11 +440,18 @@ void KyraEngine_HoF::updateDlgBuffer() {
 
 	Common::String filename = Common::String::format("CH%.02d-S%.02d.DL", _currentChapter, _npcTalkDlgIndex);
 
-	const char *suffix = _flags.isTalkie ? suffixTalkie : suffixTowns;
-	if (_flags.platform != Common::kPlatformDOS || _flags.isTalkie)
-		filename += suffix[_lang];
-	else
-		filename += 'G';
+	// Korean fan translation always uses .DLK regardless of talkie/platform.
+	// suffixTalkie[] = "EFG" only covers _lang 0-2; _lang=5 (KO_KOR) would
+	// be an out-of-bounds read, so we handle it explicitly before the lookup.
+	if (_flags.lang == Common::KO_KOR) {
+		filename += 'K';
+	} else {
+		const char *suffix = _flags.isTalkie ? suffixTalkie : suffixTowns;
+		if (_flags.platform != Common::kPlatformDOS || _flags.isTalkie)
+			filename += suffix[_lang];
+		else
+			filename += 'G';
+	}
 
 	delete[] _dlgBuffer;
 	_dlgBuffer = _res->fileData(filename.c_str(), nullptr);
@@ -536,10 +549,8 @@ void KyraEngine_HoF::processDialogue(int dlgOffset, int vocH, int csEntry) {
 					objectChat(str, 0, vocHi, vocLo);
 				} else {
 					if (activeTimSequence != nextTimSequence) {
-						if (activeTimSequence > -1) {
+						if (activeTimSequence > -1)
 							deinitTalkObject(activeTimSequence);
-							activeTimSequence = -1;
-						}
 						initTalkObject(nextTimSequence);
 						activeTimSequence = nextTimSequence;
 					}
@@ -558,20 +569,13 @@ void KyraEngine_HoF::processDialogue(int dlgOffset, int vocH, int csEntry) {
 void KyraEngine_HoF::initTalkObject(int index) {
 	TalkObject &object = _talkObjectList[index];
 
-	char STAFilename[13];
-	char ENDFilename[13];
+	Common::String STAFilename = Common::String(object.filename) + "_STA.TIM";
+	_TLKFilename = Common::String(object.filename) + "_TLK.TIM";
+	Common::String ENDFilename = Common::String(object.filename) + "_END.TIM";
 
-	strcpy(STAFilename, object.filename);
-	strcpy(_TLKFilename, object.filename);
-	strcpy(ENDFilename, object.filename);
-
-	strcat(STAFilename + 4, "_STA.TIM");
-	strcat(_TLKFilename + 4, "_TLK.TIM");
-	strcat(ENDFilename + 4, "_END.TIM");
-
-	_currentTalkSections.STATim = _tim->load(STAFilename, &_timOpcodes);
-	_currentTalkSections.TLKTim = _tim->load(_TLKFilename, &_timOpcodes);
-	_currentTalkSections.ENDTim = _tim->load(ENDFilename, &_timOpcodes);
+	_currentTalkSections.STATim = _tim->load(STAFilename.c_str(), &_timOpcodes);
+	_currentTalkSections.TLKTim = _tim->load(_TLKFilename.c_str(), &_timOpcodes);
+	_currentTalkSections.ENDTim = _tim->load(ENDFilename.c_str(), &_timOpcodes);
 
 	if (object.scriptId != -1) {
 		_specialSceneScriptStateBackup[object.scriptId] = _specialSceneScriptState[object.scriptId];
@@ -620,7 +624,7 @@ void KyraEngine_HoF::npcChatSequence(const Common::String &str, int objectId, in
 	objectChatInit(str, objectId, vocHigh, vocLow);
 
 	if (!_currentTalkSections.TLKTim)
-		_currentTalkSections.TLKTim = _tim->load(_TLKFilename, &_timOpcodes);
+		_currentTalkSections.TLKTim = _tim->load(_TLKFilename.c_str(), &_timOpcodes);
 
 	setNextIdleAnimTimer();
 

@@ -147,9 +147,11 @@ Common::Error KyraEngine_HoF::loadGameState(int slot) {
 
 	int loadedZTable = _characterShapeFile;
 
-	Common::SeekableSubReadStreamEndian in(saveFile, saveFile->pos(), saveFile->size(), !header.originalSave, DisposeAfterUse::YES);
+	Common::SeekableReadStreamEndianWrapper in(saveFile, !header.originalSave, DisposeAfterUse::YES);
 
 	_screen->hideMouse();
+	_screen->fadeToBlack(10);
+	_screen->fillRect(0, 0, 319, 143, 0, 0);
 
 	if (!header.originalSave) {
 		_timer->loadDataFromFile(in, header.version);

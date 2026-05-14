@@ -29,7 +29,7 @@
 #ifndef AUDIO_QUICKTIME_INTERN_H
 #define AUDIO_QUICKTIME_INTERN_H
 
-#include "common/quicktime.h"
+#include "common/formats/quicktime.h"
 #include "common/scummsys.h"
 #include "common/types.h"
 
@@ -53,7 +53,7 @@ public:
 	 * Load a QuickTime audio file
 	 * @param filename	the filename to load
 	 */
-	bool loadAudioFile(const Common::String &filename);
+	bool loadAudioFile(const Common::Path &filename);
 
 	/**
 	 * Load a QuickTime audio file from a SeekableReadStream

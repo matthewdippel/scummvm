@@ -26,11 +26,13 @@
 #include "sherlock/scalpel/scalpel_fixed_text.h"
 #include "sherlock/scalpel/scalpel.h"
 
+#include "backends/keymapper/keymapper.h"
+
 namespace Sherlock {
 
 namespace Scalpel {
 
-static const int SETUP_POINTS[12][4]  = {
+static const int SETUP_POINTS_INTL[12][4]  = {
 	{ 4, 154, 101, 53 },		// Exit
 	{ 4, 165, 101, 53 },		// Music Toggle
 	{ 219, 165, 316, 268 },		// Voice Toggle
@@ -45,7 +47,64 @@ static const int SETUP_POINTS[12][4]  = {
 	{ 219, 187, 316, 268 }		// _key Pad Accel. Toggle
 };
 
+// Different from original to accommodate hotkeys
+static const int SETUP_POINTS_ZH[12][4]  = {
+	{ 3, 159, 73, 38 },		// Exit // OK
+	{ 3, 178, 73, 38 },		// Music Toggle // OK
+	{ 0, 0, 0, 0 },		// Voice Toggle
+	{ 74, 178, 145, 109 },		// Sound Effects Toggle // OK
+	{ 146, 178, 233, 191 },		// Help Button Left/Right // OK
+	{ 0, 0, 0, 0 },		// New Font Style // OK
+	{ 0, 0, 0, 0 },		// Joystick Toggle // OK
+	{ 0, 0, 0, 0 },		// Calibrate Joystick // OK
+	{ 234, 159, 317, 276 },		// Fade Style // OK
+	{ 146, 159, 233, 191 },		// Window Open Style // OK
+	{ 74, 159, 145, 109 }, 		// Portraits Toggle // OK
+	{ 234, 178, 317, 276 }		// _key Pad Accel. Toggle
+};
+
 /*----------------------------------------------------------------*/
+
+bool Settings::doesButtonExist(int num) const {
+	if (_vm->getLanguage() == Common::Language::ZH_TWN)
+		return num != 2 && num != 5 && num != 6 && num != 7;
+	return true;
+}
+
+void Settings::makeButtonNumDisabled(int num, const Common::String &s) {
+	if (!doesButtonExist(num))
+		return;
+
+	ScalpelScreen &screen = *(ScalpelScreen *)_vm->_screen;
+	makeButtonNum(num, s);
+	screen.buttonPrint(getButtonTextPoint(num), COMMAND_NULL, false, s);
+}
+
+Common::Rect Settings::getButtonRect(int num) const {
+	if (_vm->getLanguage() == Common::Language::ZH_TWN) {
+		return Common::Rect(SETUP_POINTS_ZH[num][0], SETUP_POINTS_ZH[num][1],
+				    SETUP_POINTS_ZH[num][2], SETUP_POINTS_ZH[num][1] + 19);
+	} else {
+		return Common::Rect(SETUP_POINTS_INTL[num][0], SETUP_POINTS_INTL[num][1],
+				    SETUP_POINTS_INTL[num][2], SETUP_POINTS_INTL[num][1] + 10);
+	}
+}
+
+void Settings::makeButtonNum(int num, const Common::String &s) {
+	if (!doesButtonExist(num))
+		return;
+
+	ScalpelScreen &screen = *(ScalpelScreen *)_vm->_screen;
+	screen.makeButton(getButtonRect(num), getButtonTextPoint(num), s);
+}
+
+Common::Point Settings::getButtonTextPoint(int num) const {
+	if (_vm->getLanguage() == Common::Language::ZH_TWN) {
+		return Common::Point(SETUP_POINTS_ZH[num][3], SETUP_POINTS_ZH[num][1] + 2);
+	} else {
+		return Common::Point(SETUP_POINTS_INTL[num][3], SETUP_POINTS_INTL[num][1]);
+	}
+}
 
 void Settings::drawInterface(bool flag) {
 	People &people = *_vm->_people;
@@ -66,103 +125,97 @@ void Settings::drawInterface(bool flag) {
 	}
 
 	tempStr = FIXED(Settings_Exit);
-	_hotkeyExit = toupper(tempStr.firstChar());
-	screen.makeButton(Common::Rect(SETUP_POINTS[0][0], SETUP_POINTS[0][1], SETUP_POINTS[0][2], SETUP_POINTS[0][1] + 10),
-		SETUP_POINTS[0][3], tempStr);
+	_actionExit = kActionScalpelSettingsExit;
+	makeButtonNum(0, tempStr);
 
 	if (music._musicOn) {
 		tempStr = FIXED(Settings_MusicOn);
 	} else {
 		tempStr = FIXED(Settings_MusicOff);
 	}
-	_hotkeyMusic = toupper(tempStr.firstChar());
-	screen.makeButton(Common::Rect(SETUP_POINTS[1][0], SETUP_POINTS[1][1], SETUP_POINTS[1][2], SETUP_POINTS[1][1] + 10),
-		SETUP_POINTS[1][3], tempStr);
+	_actionMusic = kActionScalpelSettingsToggleMusic;
+	makeButtonNum(1, tempStr);
 
 	if (people._portraitsOn) {
 		tempStr = FIXED(Settings_PortraitsOn);
 	} else {
 		tempStr = FIXED(Settings_PortraitsOff);
 	}
-	_hotkeyPortraits = toupper(tempStr.firstChar());
-	screen.makeButton(Common::Rect(SETUP_POINTS[10][0], SETUP_POINTS[10][1], SETUP_POINTS[10][2], SETUP_POINTS[10][1] + 10),
-		SETUP_POINTS[10][3], tempStr);
+	_actionPortraits = kActionScalpelSettingsTogglePortraits;
+	makeButtonNum(10, tempStr);
 
 	// WORKAROUND: We don't support the joystick in ScummVM, so draw the next two buttons as disabled
 	tempStr = FIXED(Settings_JoystickOff);
-	screen.makeButton(Common::Rect(SETUP_POINTS[6][0], SETUP_POINTS[6][1], SETUP_POINTS[6][2], SETUP_POINTS[6][1] + 10),
-		SETUP_POINTS[6][3], tempStr);
-	screen.buttonPrint(Common::Point(SETUP_POINTS[6][3], SETUP_POINTS[6][1]), COMMAND_NULL, false, tempStr);
+	makeButtonNumDisabled(6, tempStr);
 
 	tempStr = FIXED(Settings_NewFontStyle);
-	_hotkeyNewFontStyle = toupper(tempStr.firstChar());
-	screen.makeButton(Common::Rect(SETUP_POINTS[5][0], SETUP_POINTS[5][1], SETUP_POINTS[5][2], SETUP_POINTS[5][1] + 10),
-		SETUP_POINTS[5][3], tempStr);
+	_actionNewFontStyle = kActionScalpelSettingsChangeFontStyle;
+	makeButtonNum(5, tempStr);
 
 	if (sound._digitized) {
 		tempStr = FIXED(Settings_SoundEffectsOn);
 	} else {
 		tempStr = FIXED(Settings_SoundEffectsOff);
 	}
-	_hotkeySoundEffects = toupper(tempStr.firstChar());
-	screen.makeButton(Common::Rect(SETUP_POINTS[3][0], SETUP_POINTS[3][1], SETUP_POINTS[3][2], SETUP_POINTS[3][1] + 10),
-		SETUP_POINTS[3][3], tempStr);
+	_actionSoundEffects = kActionScalpelSettingsToggleSoundEffects;
+	makeButtonNum(3, tempStr);
 
 	if (ui._slideWindows) {
 		tempStr = FIXED(Settings_WindowsSlide);
 	} else {
 		tempStr = FIXED(Settings_WindowsAppear);
 	}
-	_hotkeyWindows = toupper(tempStr.firstChar());
-	screen.makeButton(Common::Rect(SETUP_POINTS[9][0], SETUP_POINTS[9][1], SETUP_POINTS[9][2], SETUP_POINTS[9][1] + 10),
-		SETUP_POINTS[9][3], tempStr);
+	_actionWindows = kActionScalpelSettingsToggleWindowsMode;
+	makeButtonNum(9, tempStr);
 
 	tempStr = FIXED(Settings_CalibrateJoystick);
-	screen.makeButton(Common::Rect(SETUP_POINTS[7][0], SETUP_POINTS[7][1], SETUP_POINTS[7][2], SETUP_POINTS[7][1] + 10),
-		SETUP_POINTS[7][3], tempStr);
-	screen.buttonPrint(Common::Point(SETUP_POINTS[7][3], SETUP_POINTS[7][1]), COMMAND_NULL, false, tempStr);
+	makeButtonNumDisabled(7, tempStr);
 
 	if (ui._helpStyle) {
 		tempStr = FIXED(Settings_AutoHelpRight);
 	} else {
 		tempStr = FIXED(Settings_AutoHelpLeft);
 	}
-	_hotkeyAutoHelp = toupper(tempStr.firstChar());
-	screen.makeButton(Common::Rect(SETUP_POINTS[4][0], SETUP_POINTS[4][1], SETUP_POINTS[4][2], SETUP_POINTS[4][1] + 10),
-		SETUP_POINTS[4][3], tempStr);
+	_actionAutoHelp = kActionScalpelSettingsChangeAutohelpLoc;
+	makeButtonNum(4, tempStr);
 
 	if (sound._voices) {
 		tempStr = FIXED(Settings_VoicesOn);
 	} else {
 		tempStr = FIXED(Settings_VoicesOff);
 	}
-	_hotkeyVoices = toupper(tempStr.firstChar());
-	screen.makeButton(Common::Rect(SETUP_POINTS[2][0], SETUP_POINTS[2][1], SETUP_POINTS[2][2], SETUP_POINTS[2][1] + 10),
-		SETUP_POINTS[2][3], tempStr);
+	_actionVoices = kActionScalpelSettingsToggleVoices;
+	makeButtonNum(2, tempStr);
 
 	if (screen._fadeStyle) {
 		tempStr = FIXED(Settings_FadeByPixel);
 	} else {
 		tempStr = FIXED(Settings_FadeDirectly);
 	}
-	_hotkeyFade = toupper(tempStr.firstChar());
-	screen.makeButton(Common::Rect(SETUP_POINTS[8][0], SETUP_POINTS[8][1], SETUP_POINTS[8][2], SETUP_POINTS[8][1] + 10),
-		SETUP_POINTS[8][3], tempStr);
+	_actionFade = kActionScalpelSettingsChangeFadeMode;
+	makeButtonNum(8, tempStr);
+
+	if (screen._fadeStyle) {
+		// German version uses a different action for fade modes
+		if (_vm->getLanguage() == Common::Language::DE_DEU)
+			_actionFade = kActionScalpelSettingsFadeByPixels;
+	} else {
+		if (_vm->getLanguage() == Common::Language::DE_DEU)
+			_actionFade = kActionScalpelSettingsFadeDirectly;
+	}
 
 	tempStr = FIXED(Settings_KeyPadSlow);
-	screen.makeButton(Common::Rect(SETUP_POINTS[11][0], SETUP_POINTS[11][1], SETUP_POINTS[11][2], SETUP_POINTS[11][1] + 10),
-		SETUP_POINTS[11][3], tempStr);
-	screen.buttonPrint(Common::Point(SETUP_POINTS[11][3], SETUP_POINTS[11][1]), COMMAND_NULL, false, tempStr);
+	makeButtonNumDisabled(11, tempStr);
 
-	_hotkeysIndexed[0] = _hotkeyExit;
-	_hotkeysIndexed[1] = _hotkeyMusic;
-	_hotkeysIndexed[2] = _hotkeyVoices;
-	_hotkeysIndexed[3] = _hotkeySoundEffects;
-	_hotkeysIndexed[4] = _hotkeyAutoHelp;
-	_hotkeysIndexed[5] = _hotkeyNewFontStyle;
-	_hotkeysIndexed[8] = _hotkeyFade;
-	_hotkeysIndexed[9] = _hotkeyWindows;
-	_hotkeysIndexed[10] = _hotkeyPortraits;
+	_actionsIndexed[0] = _actionExit;
+	_actionsIndexed[1] = _actionMusic;
+	_actionsIndexed[2] = _actionVoices;
+	_actionsIndexed[3] = _actionSoundEffects;
+	_actionsIndexed[4] = _actionAutoHelp;
+	_actionsIndexed[5] = _actionNewFontStyle;
+	_actionsIndexed[8] = _actionFade;
+	_actionsIndexed[9] = _actionWindows;
+	_actionsIndexed[10] = _actionPortraits;
 
 	// Show the window immediately, or slide it on-screen
 	if (!flag) {
@@ -178,7 +231,7 @@ void Settings::drawInterface(bool flag) {
 	}
 }
 
-int Settings::drawButtons(const Common::Point &pt, int _key) {
+int Settings::drawButtons(const Common::Point &pt, Common::CustomEventType action) {
 	Events &events = *_vm->_events;
 	People &people = *_vm->_people;
 	ScalpelScreen &screen = *(ScalpelScreen *)_vm->_screen;
@@ -190,9 +243,10 @@ int Settings::drawButtons(const Common::Point &pt, int _key) {
 	Common::String tempStr;
 
 	for (int idx = 0; idx < 12; ++idx) {
-		if ((pt.x > SETUP_POINTS[idx][0] && pt.x < SETUP_POINTS[idx][2] && pt.y > SETUP_POINTS[idx][1]
-				&& pt.y < (SETUP_POINTS[idx][1] + 10) && (events._pressed || events._released))
-				|| (_key == toupper(_hotkeysIndexed[idx]))) {
+		if (!doesButtonExist(idx))
+			continue;
+		if ((getButtonRect(idx).contains(pt) && (events._pressed || events._released))
+				|| (action == _actionsIndexed[idx])) {
 			found = idx;
 			color = COMMAND_HIGHLIGHTED;
 		} else {
@@ -268,7 +322,7 @@ int Settings::drawButtons(const Common::Point &pt, int _key) {
 		default:
 			continue;
 		}
-		screen.buttonPrint(Common::Point(SETUP_POINTS[idx][3], SETUP_POINTS[idx][1]), color, true, tempStr);
+		screen.buttonPrint(getButtonTextPoint(idx), color, true, tempStr);
 	}
 
 	return found;
@@ -289,12 +343,16 @@ void Settings::show(SherlockEngine *vm) {
 	Settings settings(vm);
 	settings.drawInterface(false);
 
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->getKeymap("scalpel")->setEnabled(false);
+	keymapper->getKeymap("scalpel-settings")->setEnabled(true);
+
 	do {
 		if (ui._menuCounter)
 			ui.whileMenuCounter();
 
 		int found = -1;
-		ui._key = -1;
+		ui._action = kActionNone;
 
 		scene.doBgAnim();
 		if (talk._talkToAbort)
@@ -303,31 +361,30 @@ void Settings::show(SherlockEngine *vm) {
 		events.setButtonState();
 		Common::Point pt = events.mousePos();
 
-		if (events._pressed || events._released || events.kbHit()) {
+		if (events._pressed || events._released || events.actionHit()) {
 			ui.clearInfo();
-			ui._key = -1;
+			ui._action = kActionNone;
 
-			if (events.kbHit()) {
-				Common::KeyState keyState = events.getKey();
-				ui._key = toupper(keyState.ascii);
+			if (events.actionHit()) {
+				ui._action = events.getAction();
 
-				if (ui._key == Common::KEYCODE_RETURN || ui._key == Common::KEYCODE_SPACE) {
+				if (ui._action == kActionScalpelSettingsSelect) {
 					events._pressed = false;
 					events._oldButtons = 0;
-					ui._keyPress = '\0';
+					ui._actionPress = kActionNone;
 					events._released = true;
 				}
 			}
 
 			// Handle highlighting button under mouse
-			found = settings.drawButtons(pt, ui._key);
+			found = settings.drawButtons(pt, ui._action);
 		}
 
-		if ((found == 0 && events._released) || (ui._key == settings._hotkeyExit || ui._key == Common::KEYCODE_ESCAPE))
+		if ((found == 0 && events._released) || (ui._action == settings._actionExit))
 			// Exit
 			break;
 
-		if ((found == 1 && events._released) || ui._key == settings._hotkeyMusic) {
+		if ((found == 1 && events._released) || ui._action == settings._actionMusic) {
 			// Toggle music
 			music._musicOn = !music._musicOn;
 			if (!music._musicOn)
@@ -339,27 +396,27 @@ void Settings::show(SherlockEngine *vm) {
 			settings.drawInterface(true);
 		}
 
-		if ((found == 2 && events._released) || ui._key == settings._hotkeyVoices) {
+		if ((found == 2 && events._released) || ui._action == settings._actionVoices) {
 			sound._voices = !sound._voices;
 			updateConfig = true;
 			settings.drawInterface(true);
 		}
 
-		if ((found == 3 && events._released) || ui._key == settings._hotkeySoundEffects) {
+		if ((found == 3 && events._released) || ui._action == settings._actionSoundEffects) {
 			// Toggle sound effects
 			sound._digitized = !sound._digitized;
 			updateConfig = true;
 			settings.drawInterface(true);
 		}
 
-		if ((found == 4 && events._released) || ui._key == settings._hotkeyAutoHelp) {
+		if ((found == 4 && events._released) || ui._action == settings._actionAutoHelp) {
 			// Help button style
 			ui._helpStyle = !ui._helpStyle;
 			updateConfig = true;
 			settings.drawInterface(true);
 		}
 
-		if ((found == 5 && events._released) || ui._key == settings._hotkeyNewFontStyle) {
+		if ((found == 5 && events._released) || ui._action == settings._actionNewFontStyle) {
 			// New font style
 			int fontNum = screen.fontNumber() + 1;
 			if (fontNum == 3)
@@ -370,21 +427,21 @@ void Settings::show(SherlockEngine *vm) {
 			settings.drawInterface(true);
 		}
 
-		if ((found == 8 && events._released) || ui._key == settings._hotkeyFade) {
+		if ((found == 8 && events._released) || ui._action == settings._actionFade) {
 			// Toggle fade style
 			screen._fadeStyle = !screen._fadeStyle;
 			updateConfig = true;
 			settings.drawInterface(true);
 		}
 
-		if ((found == 9 && events._released) || ui._key == settings._hotkeyWindows) {
+		if ((found == 9 && events._released) || ui._action == settings._actionWindows) {
 			// Window style
 			ui._slideWindows = !ui._slideWindows;
 			updateConfig = true;
 			settings.drawInterface(true);
 		}
 
-		if ((found == 10 && events._released) || ui._key == settings._hotkeyPortraits) {
+		if ((found == 10 && events._released) || ui._action == settings._actionPortraits) {
 			// Toggle portraits being shown
 			people._portraitsOn = !people._portraitsOn;
 			updateConfig = true;
@@ -394,13 +451,16 @@ void Settings::show(SherlockEngine *vm) {
 
 	ui.banishWindow();
 
+	keymapper->getKeymap("scalpel-settings")->setEnabled(false);
+	keymapper->getKeymap("scalpel")->setEnabled(true);
+
 	if (updateConfig)
 		vm->saveConfig();
 
-	ui._keyPress = '\0';
-	ui._keyboardInput = false;
+	ui._actionPress = kActionNone;
+	ui._actionInput = false;
 	ui._windowBounds.top = CONTROLS_Y1;
-	ui._key = -1;
+	ui._action = (Common::CustomEventType) -1;
 }
 
 } // End of namespace Scalpel

@@ -25,7 +25,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <sys/stat.h>
-#ifdef _MSC_VER
+#ifdef _WIN32
 #include <windows.h>
 #else
 #include <unistd.h>
@@ -41,16 +41,31 @@ char engineLowercase[MAX_ENGINE_NAME_LENGTH];
 
 // List of files to be copied to create engine
 static const char *const FILENAMES[] = {
-	"configure.engine", "console.cpp", "console.h",
-	"credits.pl", "detection.cpp", "detection.h",
-	"detection_tables.h", "metaengine.cpp",
-	"metaengine.h", "module.mk", "xyzzy.cpp",
-	"xyzzy.h", nullptr
+	"files/configure.engine", "files/console.cpp", "files/console.h",
+	"files/credits.pl", "files/detection.cpp", "files/detection.h",
+	"files/detection_tables.h", "files/metaengine.cpp",
+	"files/metaengine.h", "files/module.mk", "files/xyzzy.cpp",
+	"files/xyzzy.h", "files/POTFILES", nullptr
 };
-const char *const ENGINES = "create_project ..\\.. --use-canonical-lib-names --msvc\n";
+
+static const char *const FILENAMES_EVENTS[] = {
+	"files/configure.engine", "files/console.cpp", "files/console.h",
+	"files/credits.pl", "files/detection.cpp", "files/detection.h",
+	"files/detection_tables.h",
+	"files_events/events.cpp", "files_events/events.h",
+	"files_events/messages.cpp", "files_events/messages.h",
+	"files/metaengine.cpp", "files/metaengine.h",
+	"files_events/module.mk", "files_events/xyzzy.cpp",
+	"files_events/xyzzy.h", "files/POTFILES", "files_events/views.h",
+	"files_events/view.cpp", "files_events/view.h",
+	"files_events/view1.cpp", "files_events/view1.h",
+	nullptr
+};
+
+const char *const ENGINES = "create_project ..\\.. --msvc\n";
 
 bool fileExists(const char *name) {
-#ifdef _MSC_VER
+#ifdef _WIN32
 	return (GetFileAttributesA(name) != INVALID_FILE_ATTRIBUTES);
 #else
 	return (!access(name, F_OK));
@@ -58,8 +73,8 @@ bool fileExists(const char *name) {
 }
 
 bool createDirectory(const char *name) {
-#ifdef _MSC_VER
-	return CreateDirectoryA(name);
+#ifdef _WIN32
+	return CreateDirectoryA(name, nullptr);
 #else
 	return (!mkdir(name, 0755));
 #endif
@@ -108,14 +123,16 @@ void process_file(FILE *in, FILE *out) {
 }
 
 // Copies and processes the specified file
-void process_file(const char *filename, const char *prefix, const char *prefix2) {
+void process_file(const char *filePath, const char *prefix, const char *prefix2) {
 	char srcFilename[MAX_LINE_LENGTH], destFilename[MAX_LINE_LENGTH];
-	sprintf(srcFilename, "%s/files/%s", prefix2, filename);
+	const char *filename = strchr(filePath, '/') + 1;
+
+	snprintf(srcFilename, MAX_LINE_LENGTH, "%s/%s", prefix2, filePath);
 	if (!strncmp(filename, "xyzzy.", 6))
-		sprintf(destFilename, "%s/engines/%s/%s.%s",
+		snprintf(destFilename, MAX_LINE_LENGTH, "%s/engines/%s/%s.%s",
 			prefix, engineLowercase, engineLowercase, filename + 6);
 	else
-		sprintf(destFilename, "%s/engines/%s/%s",
+		snprintf(destFilename, MAX_LINE_LENGTH, "%s/engines/%s/%s",
 			prefix, engineLowercase, filename);
 
 	printf("Creating file %s...", destFilename);
@@ -148,13 +165,13 @@ void create_batch_file(const char *prefix) {
 	char line[MAX_LINE_LENGTH];
 	char destFilename[MAX_LINE_LENGTH];
 
-	sprintf(destFilename, "%s/dists/msvc/create_msvc.bat", prefix);
+	snprintf(destFilename, MAX_LINE_LENGTH, "%s/dists/msvc/create_msvc.bat", prefix);
 	if (!(in = fopen(destFilename, "r"))) {
 		printf("Could not open create_msvc.bat\n");
 		exit(0);
 	}
 
-	sprintf(destFilename, "%s/dists/msvc/%s.bat", prefix, engineLowercase);
+	snprintf(destFilename, MAX_LINE_LENGTH, "%s/dists/msvc/%s.bat", prefix, engineLowercase);
 
 	printf("Creating file %s...", destFilename);
 	fflush(stdout);
@@ -167,8 +184,8 @@ void create_batch_file(const char *prefix) {
 	// Get each line until there are none left
 	while (fgets(line, MAX_LINE_LENGTH, in)) {
 		if (!strcmp(line, ENGINES)) {
-			sprintf(line + strlen(line) - 1,
-				" --disable-all-engines --enable-engine=%s\n",
+			snprintf(line + strlen(line) - 1, MAX_LINE_LENGTH - strlen(line) + 1,
+				" --disable-all-engines --disable-detection-full --enable-engine=%s\n",
 				engineLowercase);
 		}
 
@@ -183,10 +200,13 @@ void create_batch_file(const char *prefix) {
 }
 
 int main(int argc, char *argv[]) {
-	if (argc != 2) {
+	if (argc < 2) {
 		printf("Please specify engine name as a parameter\n");
+		printf("With an optional -events to create an events based engine.\n");
 		return 0;
 	}
+
+	bool isEvents = (argc == 3) && !strcmp(argv[2], "-events");
 
 	// Set up different cased engine names
 	for (size_t i = 0; i < strlen(argv[1]) + 1; ++i) {
@@ -212,19 +232,21 @@ int main(int argc, char *argv[]) {
 
 	// Create a directory for the new engine
 	char folder[MAX_LINE_LENGTH];
-	sprintf(folder, "%s/engines/%s", prefix, engineLowercase);
+	snprintf(folder, MAX_LINE_LENGTH, "%s/engines/%s", prefix, engineLowercase);
 
 	printf("Creating directory %s...", folder);
 	fflush(stdout);
 
 	if (!createDirectory(folder)) {
 		printf("Could not create engine folder.\n");
+		perror(folder);
 		return 0;
 	}
 	printf("done\n");
 
 	// Process the files
-	for (const char *const *filename = FILENAMES; *filename; ++filename)
+	const char *const *filenames = isEvents ? FILENAMES_EVENTS : FILENAMES;
+	for (const char *const *filename = filenames; *filename; ++filename)
 		process_file(*filename, prefix, prefix2);
 
 	create_batch_file(prefix);

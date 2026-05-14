@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/str.h"
@@ -259,11 +265,6 @@ void Goblin::drawObjects() {
 			objDesc->dirtyBottom =
 			    MAX(objDesc->bottom, _vm->_scenery->_toRedrawBottom);
 		}
-
-		objDesc->dirtyLeft = 0;
-		objDesc->dirtyRight = 319;
-		objDesc->dirtyTop = 0;
-		objDesc->dirtyBottom = 199;
 	}
 
 	sortByOrder(_objList);
@@ -1915,6 +1916,10 @@ void Goblin::updateLayer2(Mult::Mult_AnimData *animData) {
 	default:
 		break;
 	}
+}
+
+void Goblin::setGoblinState(Mult::Mult_Object *obj, int16 animState) {
+	warning("Goblin::setGoblinState not implemented");
 }
 
 } // End of namespace Gob

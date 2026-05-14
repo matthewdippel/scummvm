@@ -55,6 +55,9 @@ enum MusicType {
 	MT_TOWNS,			// FM-TOWNS
 	MT_PC98,			// PC98
 	MT_SEGACD,			// SegaCD
+	MT_MACINTOSH,		// Apple Macintosh
+
+	// All devices after this one are treated as MIDI devices
 	MT_GM,				// General MIDI
 	MT_MT32,			// MT-32
 	MT_GS,				// Roland GS
@@ -78,21 +81,31 @@ enum MusicType {
  * @todo Rename MidiDriverFlags to MusicDriverFlags
  */
 enum MidiDriverFlags {
-	MDT_NONE        = 0,
-	MDT_PCSPK       = 1 << 0,		// PC Speaker: Maps to MT_PCSPK and MT_PCJR
-	MDT_CMS         = 1 << 1,		// Creative Music System / Gameblaster: Maps to MT_CMS
-	MDT_PCJR        = 1 << 2,		// Tandy/PC Junior driver
-	MDT_ADLIB       = 1 << 3,		// AdLib: Maps to MT_ADLIB
-	MDT_C64         = 1 << 4,
-	MDT_AMIGA       = 1 << 5,
-	MDT_APPLEIIGS   = 1 << 6,
-	MDT_TOWNS       = 1 << 7,		// FM-TOWNS: Maps to MT_TOWNS
-	MDT_PC98        = 1 << 8,		// PC-98: Maps to MT_PC98
-	MDT_SEGACD		= 1 << 9,
-	MDT_MIDI        = 1 << 10,		// Real MIDI
-	MDT_PREFER_MT32 = 1 << 11,		// MT-32 output is preferred
-	MDT_PREFER_GM   = 1 << 12,		// GM output is preferred
-	MDT_PREFER_FLUID= 1 << 13		// FluidSynth driver is preferred
+	MDT_NONE				= 0,
+	MDT_PCSPK				= 1 << 0,		// PC Speaker: Maps to MT_PCSPK and MT_PCJR
+	MDT_CMS					= 1 << 1,		// Creative Music System / Gameblaster: Maps to MT_CMS
+	MDT_PCJR				= 1 << 2,		// Tandy/PC Junior driver
+	MDT_ADLIB				= 1 << 3,		// AdLib: Maps to MT_ADLIB
+	MDT_C64					= 1 << 4,
+	MDT_AMIGA				= 1 << 5,
+	MDT_APPLEIIGS			= 1 << 6,
+	MDT_TOWNS				= 1 << 7,		// FM-TOWNS: Maps to MT_TOWNS
+	MDT_PC98				= 1 << 8,		// PC-98: Maps to MT_PC98
+	MDT_SEGACD				= 1 << 9,
+	MDT_MIDI				= 1 << 10,		// Real MIDI
+	MDT_PREFER_MT32			= 1 << 11,		// MT-32 output is preferred
+	MDT_PREFER_GM			= 1 << 12,		// GM output is preferred
+	MDT_PREFER_FLUID		= 1 << 13,		// FluidSynth driver is preferred
+	MDT_MACINTOSH			= 1 << 14,
+
+	MDT_SUPPLIED_SOUND_FONT = 1 << 15,		// Engine will supply sound font (allows checkDevice to pass if it would fail due to missing sound font)
+};
+
+enum MidiDriverCheckFlags {
+	MDCK_NONE					= 0,
+
+	MDCK_SUPPLIED_SOUND_FONT	= 1 << 0,	// Sound font will be supplied by the engine
+	MDCK_AUTO					= 1 << 1,	// Driver is being checked for automatic selection (i.e. MIDI device is set to "auto")
 };
 
 /**
@@ -153,6 +166,8 @@ public:
 
 	static const uint8 MT32_PITCH_BEND_SENSITIVITY_DEFAULT = 0x0C;
 	static const uint8 GM_PITCH_BEND_SENSITIVITY_DEFAULT = 0x02;
+	// Default reverb value on the Roland SC-55
+	static const uint8 GM_REVERB_DEFAULT = 0x28;
 
 	static const uint8 GS_RHYTHM_FIRST_NOTE = 0x1B;
 	static const uint8 GS_RHYTHM_LAST_NOTE = 0x58;
@@ -199,7 +214,7 @@ public:
 	 * do NOT include the leading 0xF0 and the trailing 0xF7.
 	 *
 	 * Furthermore, the maximal supported length of a SysEx
-	 * is 264 bytes. Passing longer buffers can lead to
+	 * is 268 bytes. Passing longer buffers can lead to
 	 * undefined behavior (most likely, a crash).
 	 */
 	virtual void sysEx(const byte *msg, uint16 length) { }
@@ -219,14 +234,14 @@ public:
 	virtual uint16 sysExNoDelay(const byte *msg, uint16 length) { sysEx(msg, length); return 0; }
 
 	// TODO: Document this.
-	virtual void metaEvent(byte type, byte *data, uint16 length) { }
+	virtual void metaEvent(byte type, const byte *data, uint16 length) { }
 
 	/**
 	 * Send a meta event from a specific source. If the MIDI driver
 	 * does not support multiple sources, the source parameter is
 	 * ignored.
 	 */
-	virtual void metaEvent(int8 source, byte type, byte *data, uint16 length) { metaEvent(type, data, length); }
+	virtual void metaEvent(int8 source, byte type, const byte *data, uint16 length) { metaEvent(type, data, length); }
 
 	/**
 	 * Stops all currently active notes. Specify stopSustainedNotes if
@@ -324,8 +339,16 @@ public:
 	/** Find the music driver matching the given driver name/description. */
 	static DeviceHandle getDeviceHandle(const Common::String &identifier);
 
-	/** Check whether the device with the given handle is available. */
-	static bool checkDevice(DeviceHandle handle);
+	/** Check whether the device with the given handle is available.
+	 *
+	 * @param handle A device handle to check.
+	 * @param flags A mask of flags from MidiDriverFlags to check with.
+	 * @param quiet If true, then failure produces no warnings.
+	 *              If false, then failure throws a warning.
+	 *
+	 * @return True if the device is expected to be available, false if not.
+	 */
+	static bool checkDevice(DeviceHandle handle, int flags, bool quiet);
 
 	/** Get the music type matching the given device handle, or MT_AUTO if there is no match. */
 	static MusicType getMusicType(DeviceHandle handle);
@@ -498,8 +521,6 @@ public:
 	 */
 	void sendGMReset();
 
-	virtual void sysEx_customInstrument(byte channel, uint32 type, const byte *instr) { }
-
 	// Timing functions - MidiDriver now operates timers
 	virtual void setTimerCallback(void *timer_param, Common::TimerManager::TimerProc timer_proc) = 0;
 
@@ -540,15 +561,16 @@ public:
 	virtual void panPosition(byte value) { controlChange(MidiDriver::MIDI_CONTROLLER_PANNING, value); }
 	virtual void pitchBendFactor(byte value) = 0;
 	virtual void transpose(int8 value) {}
-	virtual void detune(byte value) { controlChange(17, value); }
+	virtual void detune(int16 value) { controlChange(17, value & 0xff); }
 	virtual void priority(byte value) { }
 	virtual void sustain(bool value) { controlChange(MidiDriver::MIDI_CONTROLLER_SUSTAIN, value ? 1 : 0); }
 	virtual void effectLevel(byte value) { controlChange(MidiDriver::MIDI_CONTROLLER_REVERB, value); }
 	virtual void chorusLevel(byte value) { controlChange(MidiDriver::MIDI_CONTROLLER_CHORUS, value); }
+	virtual void bankSelect(byte bank) {}
 	virtual void allNotesOff() { controlChange(MidiDriver::MIDI_CONTROLLER_ALL_NOTES_OFF, 0); }
 
 	// SysEx messages
-	virtual void sysEx_customInstrument(uint32 type, const byte *instr) = 0;
+	virtual void sysEx_customInstrument(uint32 type, const byte *instr, uint32 dataSize) = 0;
 };
 /** @} */
 #endif

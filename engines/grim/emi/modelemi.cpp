@@ -20,7 +20,6 @@
  */
 
 #include "common/endian.h"
-#include "common/foreach.h"
 
 #include "engines/grim/debug.h"
 #include "engines/grim/grim.h"
@@ -98,7 +97,7 @@ void EMIModel::setTex(uint32 index) {
 }
 
 void EMIModel::loadMesh(Common::SeekableReadStream *data) {
-	//int strLength = 0; // Usefull for PS2-strings
+	//int strLength = 0; // Useful for PS2-strings
 
 	Common::String nameString = readLAString(data);
 
@@ -324,7 +323,7 @@ void EMIModel::updateLighting(const Math::Matrix4 &modelToWorld) {
 
 	Actor *actor = _costume->getOwner();
 
-	foreach(Light *l, g_grim->getCurrSet()->getLights(actor->isInOverworld())) {
+	for (Light *l : g_grim->getCurrSet()->getLights(actor->isInOverworld())) {
 		if (l->_enabled) {
 			activeLights.push_back(l);
 			if (l->_type == Light::Ambient)
@@ -369,7 +368,7 @@ void EMIModel::updateLighting(const Math::Matrix4 &modelToWorld) {
 					if (cosAngle < 0.0f)
 						continue;
 
-					float angle = acos(fminf(cosAngle, 1.0f));
+					float angle = acos(MIN(cosAngle, 1.0f));
 					if (angle > l->_penumbraangle)
 						continue;
 

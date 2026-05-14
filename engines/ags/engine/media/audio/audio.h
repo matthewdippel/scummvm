@@ -22,7 +22,7 @@
 #ifndef AGS_ENGINE_MEDIA_AUDIO_AUDIO_H
 #define AGS_ENGINE_MEDIA_AUDIO_AUDIO_H
 
-#include "ags/lib/std/array.h"
+#include "common/std/array.h"
 #include "ags/engine/media/audio/audio_defines.h"
 #include "ags/shared/ac/dynobj/script_audio_clip.h"
 #include "ags/engine/ac/dynobj/script_audio_channel.h"
@@ -72,6 +72,8 @@ ScriptAudioChannel *play_audio_clip(ScriptAudioClip *clip, int priority, int rep
 ScriptAudioChannel *play_audio_clip_by_index(int audioClipIndex);
 void        stop_and_destroy_channel_ex(int chid, bool resetLegacyMusicSettings);
 void        stop_and_destroy_channel(int chid);
+// Exports missing AudioChannel objects to script (for importing older saves)
+void		export_missing_audiochans();
 
 // ***** BACKWARDS COMPATIBILITY WITH OLD AUDIO SYSTEM ***** //
 int         get_old_style_number_for_sound(int sound_number);
@@ -98,6 +100,8 @@ void        play_next_queued();
 int         calculate_max_volume();
 // add/remove the volume drop to the audio channels while speech is playing
 void        apply_volume_drop_modifier(bool applyModifier);
+// syncs logical audio channels with the audio backend state
+void        sync_audio_playback();
 // Update the music, and advance the crossfade on a step
 // (this should only be called once per game loop);
 void        update_audio_system_on_game_loop();

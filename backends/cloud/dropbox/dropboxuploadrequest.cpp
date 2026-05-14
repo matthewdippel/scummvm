@@ -24,10 +24,10 @@
 #include "backends/cloud/dropbox/dropboxtokenrefresher.h"
 #include "backends/cloud/iso8601.h"
 #include "backends/cloud/storage.h"
-#include "backends/networking/curl/connectionmanager.h"
-#include "backends/networking/curl/curljsonrequest.h"
-#include "backends/networking/curl/networkreadstream.h"
-#include "common/json.h"
+#include "backends/networking/http/connectionmanager.h"
+#include "backends/networking/http/httpjsonrequest.h"
+#include "backends/networking/http/networkreadstream.h"
+#include "common/formats/json.h"
 
 namespace Cloud {
 namespace Dropbox {
@@ -35,7 +35,7 @@ namespace Dropbox {
 #define DROPBOX_API_FILES_UPLOAD "https://content.dropboxapi.com/2/files/upload"
 #define DROPBOX_API_FILES_UPLOAD_SESSION "https://content.dropboxapi.com/2/files/upload_session/"
 
-DropboxUploadRequest::DropboxUploadRequest(DropboxStorage *storage, Common::String path, Common::SeekableReadStream *contents, Storage::UploadCallback callback, Networking::ErrorCallback ecb):
+DropboxUploadRequest::DropboxUploadRequest(DropboxStorage *storage, const Common::String &path, Common::SeekableReadStream *contents, Storage::UploadCallback callback, Networking::ErrorCallback ecb):
 	Networking::Request(nullptr, ecb), _storage(storage), _savePath(path), _contentsStream(contents), _uploadCallback(callback),
 	_workingRequest(nullptr), _ignoreCallback(false) {
 	start();
@@ -108,9 +108,9 @@ void DropboxUploadRequest::uploadNextPart() {
 	}
 
 	Common::JSONValue value(jsonRequestParameters);
-	Networking::JsonCallback callback = new Common::Callback<DropboxUploadRequest, Networking::JsonResponse>(this, &DropboxUploadRequest::partUploadedCallback);
-	Networking::ErrorCallback failureCallback = new Common::Callback<DropboxUploadRequest, Networking::ErrorResponse>(this, &DropboxUploadRequest::partUploadedErrorCallback);
-	Networking::CurlJsonRequest *request = new DropboxTokenRefresher(_storage, callback, failureCallback, url.c_str());
+	Networking::JsonCallback callback = new Common::Callback<DropboxUploadRequest, const Networking::JsonResponse &>(this, &DropboxUploadRequest::partUploadedCallback);
+	Networking::ErrorCallback failureCallback = new Common::Callback<DropboxUploadRequest, const Networking::ErrorResponse &>(this, &DropboxUploadRequest::partUploadedErrorCallback);
+	Networking::HttpJsonRequest *request = new DropboxTokenRefresher(_storage, callback, failureCallback, url.c_str());
 	request->addHeader("Authorization: Bearer " + _storage->accessToken());
 	request->addHeader("Content-Type: application/octet-stream");
 	request->addHeader("Dropbox-API-Arg: " + Common::JSON::stringify(&value));
@@ -122,17 +122,17 @@ void DropboxUploadRequest::uploadNextPart() {
 	_workingRequest = ConnMan.addRequest(request);
 }
 
-void DropboxUploadRequest::partUploadedCallback(Networking::JsonResponse response) {
+void DropboxUploadRequest::partUploadedCallback(const Networking::JsonResponse &response) {
 	_workingRequest = nullptr;
 	if (_ignoreCallback)
 		return;
 
 	Networking::ErrorResponse error(this, false, true, "", -1);
-	Networking::CurlJsonRequest *rq = (Networking::CurlJsonRequest *)response.request;
+	const Networking::HttpJsonRequest *rq = (const Networking::HttpJsonRequest *)response.request;
 	if (rq && rq->getNetworkReadStream())
 		error.httpResponseCode = rq->getNetworkReadStream()->httpResponseCode();
 
-	Common::JSONValue *json = response.value;
+	const Common::JSONValue *json = response.value;
 	if (json == nullptr) {
 		error.response = "Failed to parse JSON, null passed!";
 		finishError(error);
@@ -147,7 +147,7 @@ void DropboxUploadRequest::partUploadedCallback(Networking::JsonResponse respons
 		//debug(9, "%s", json->stringify(true).c_str());
 
 		if (object.contains("error") || object.contains("error_summary")) {
-			if (Networking::CurlJsonRequest::jsonContainsString(object, "error_summary", "DropboxUploadRequest")) {
+			if (Networking::HttpJsonRequest::jsonContainsString(object, "error_summary", "DropboxUploadRequest")) {
 				warning("Dropbox returned error: %s", object.getVal("error_summary")->asString().c_str());
 			}
 			error.response = json->stringify(true);
@@ -156,9 +156,9 @@ void DropboxUploadRequest::partUploadedCallback(Networking::JsonResponse respons
 			return;
 		}
 
-		if (Networking::CurlJsonRequest::jsonContainsString(object, "path_lower", "DropboxUploadRequest") &&
-			Networking::CurlJsonRequest::jsonContainsString(object, "server_modified", "DropboxUploadRequest") &&
-			Networking::CurlJsonRequest::jsonContainsIntegerNumber(object, "size", "DropboxUploadRequest")) {
+		if (Networking::HttpJsonRequest::jsonContainsString(object, "path_lower", "DropboxUploadRequest") &&
+			Networking::HttpJsonRequest::jsonContainsString(object, "server_modified", "DropboxUploadRequest") &&
+			Networking::HttpJsonRequest::jsonContainsIntegerNumber(object, "size", "DropboxUploadRequest")) {
 			//finished
 			Common::String path = object.getVal("path_lower")->asString();
 			uint32 size = object.getVal("size")->asIntegerNumber();
@@ -168,7 +168,7 @@ void DropboxUploadRequest::partUploadedCallback(Networking::JsonResponse respons
 		}
 
 		if (_sessionId == "") {
-			if (Networking::CurlJsonRequest::jsonContainsString(object, "session_id", "DropboxUploadRequest"))
+			if (Networking::HttpJsonRequest::jsonContainsString(object, "session_id", "DropboxUploadRequest"))
 				_sessionId = object.getVal("session_id")->asString();
 			needsFinishRequest = true;
 		}
@@ -184,7 +184,7 @@ void DropboxUploadRequest::partUploadedCallback(Networking::JsonResponse respons
 	delete json;
 }
 
-void DropboxUploadRequest::partUploadedErrorCallback(Networking::ErrorResponse error) {
+void DropboxUploadRequest::partUploadedErrorCallback(const Networking::ErrorResponse &error) {
 	_workingRequest = nullptr;
 	if (_ignoreCallback)
 		return;
@@ -195,7 +195,7 @@ void DropboxUploadRequest::handle() {}
 
 void DropboxUploadRequest::restart() { start(); }
 
-void DropboxUploadRequest::finishUpload(StorageFile file) {
+void DropboxUploadRequest::finishUpload(const StorageFile &file) {
 	Request::finishSuccess();
 	if (_uploadCallback)
 		(*_uploadCallback)(Storage::UploadResponse(this, file));

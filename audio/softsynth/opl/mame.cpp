@@ -22,6 +22,8 @@
  *
  */
 
+#ifndef DISABLE_MAME_OPL
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,7 +41,7 @@
 #include "common/textconsole.h"
 #include "common/util.h"
 
-#if defined(GP2X) || defined(__MAEMO__) || defined(__DS__) || defined(__MINT__) || defined(__N64__)
+#if defined(__MAEMO__) || defined(__DS__) || defined(__MINT__) || defined(__N64__)
 #include "common/config-manager.h"
 #endif
 
@@ -69,10 +71,6 @@ void OPL::reset() {
 
 void OPL::write(int a, int v) {
 	MAME::OPLWrite(_opl, a, v);
-}
-
-byte OPL::read(int a) {
-	return MAME::OPLRead(_opl, a);
 }
 
 void OPL::writeReg(int r, int v) {
@@ -546,7 +544,7 @@ inline void OPL_CALC_CH(OPL_CH *CH) {
 	}
 }
 
-/* ---------- calcrate rythm block ---------- */
+/* ---------- calcrate rhythm block ---------- */
 #define WHITE_NOISE_db 6.0
 inline void OPL_CALC_RH(FM_OPL *OPL, OPL_CH *CH) {
 	uint env_tam, env_sd, env_top, env_hh;
@@ -773,7 +771,7 @@ static void OPLCloseTable(void) {
 	free(ENV_CURVE);
 }
 
-/* CSM Key Controll */
+/* CSM Key Control */
 inline void CSMKeyControll(OPL_CH *CH) {
 	OPL_SLOT *slot1 = &CH->SLOT[SLOT1];
 	OPL_SLOT *slot2 = &CH->SLOT[SLOT2];
@@ -815,7 +813,7 @@ void OPLWriteReg(FM_OPL *OPL, int r, int v) {
 	uint block_fnum;
 
 	switch (r & 0xe0) {
-	case 0x00: /* 00-1f:controll */
+	case 0x00: /* 00-1f:control */
 		switch (r & 0x1f) {
 		case 0x01:
 			/* wave selector enable */
@@ -893,11 +891,11 @@ void OPLWriteReg(FM_OPL *OPL, int r, int v) {
 		case 0xbd:
 			/* amsep,vibdep,r,bd,sd,tom,tc,hh */
 			{
-			uint8 rkey = OPL->rythm ^ v;
+			uint8 rkey = OPL->rhythm ^ v;
 			OPL->ams_table = &AMS_TABLE[v & 0x80 ? AMS_ENT : 0];
 			OPL->vib_table = &VIB_TABLE[v & 0x40 ? VIB_ENT : 0];
-			OPL->rythm  = v & 0x3f;
-			if (OPL->rythm & 0x20) {
+			OPL->rhythm  = v & 0x3f;
+			if (OPL->rhythm & 0x20) {
 				/* BD key on/off */
 				if (rkey & 0x10) {
 					if (v & 0x10) {
@@ -1039,7 +1037,7 @@ void YM3812UpdateOne(FM_OPL *OPL, int16 *buffer, int length) {
 	int16 *buf = buffer;
 	uint amsCnt = OPL->amsCnt;
 	uint vibCnt = OPL->vibCnt;
-	uint8 rythm = OPL->rythm & 0x20;
+	uint8 rhythm = OPL->rhythm & 0x20;
 	OPL_CH *CH, *R_CH;
 
 
@@ -1048,7 +1046,7 @@ void YM3812UpdateOne(FM_OPL *OPL, int16 *buffer, int length) {
 		/* channel pointers */
 		S_CH = OPL->P_CH;
 		E_CH = &S_CH[9];
-		/* rythm slot */
+		/* rhythm slot */
 		SLOT7_1 = &S_CH[7].SLOT[SLOT1];
 		SLOT7_2 = &S_CH[7].SLOT[SLOT2];
 		SLOT8_1 = &S_CH[8].SLOT[SLOT1];
@@ -1059,7 +1057,7 @@ void YM3812UpdateOne(FM_OPL *OPL, int16 *buffer, int length) {
 		ams_table = OPL->ams_table;
 		vib_table = OPL->vib_table;
 	}
-	R_CH = rythm ? &S_CH[6] : E_CH;
+	R_CH = rhythm ? &S_CH[6] : E_CH;
 	for (i = 0; i < length; i++) {
 		/*            channel A         channel B         channel C      */
 		/* LFO */
@@ -1069,8 +1067,8 @@ void YM3812UpdateOne(FM_OPL *OPL, int16 *buffer, int length) {
 		/* FM part */
 		for (CH = S_CH; CH < R_CH; CH++)
 			OPL_CALC_CH(CH);
-		/* Rythn part */
-		if (rythm)
+		/* Rhythm part */
+		if (rhythm)
 			OPL_CALC_RH(OPL, S_CH);
 		/* limit check */
 		data = CLIP(outd[0], OPL_MINOUT, OPL_MAXOUT);
@@ -1219,7 +1217,7 @@ int OPLTimerOver(FM_OPL *OPL, int c) {
 		OPL_STATUS_SET(OPL, 0x20);
 	} else {	/* Timer A */
 		OPL_STATUS_SET(OPL, 0x40);
-		/* CSM mode key,TL controll */
+		/* CSM mode key,TL control */
 		if (OPL->mode & 0x80) {	/* CSM mode total level latch and auto key on */
 			int ch;
 			if (OPL->UpdateHandler)
@@ -1238,7 +1236,7 @@ FM_OPL *makeAdLibOPL(int rate) {
 	// We need to emulate one YM3812 chip
 	int env_bits = FMOPL_ENV_BITS_HQ;
 	int eg_ent = FMOPL_EG_ENT_HQ;
-#if defined(GP2X) || defined(__MAEMO__) || defined(__DS__) || defined(__MINT__) || defined(__N64__)
+#if defined(__MAEMO__) || defined(__DS__) || defined(__MINT__) || defined(__N64__)
 	if (ConfMan.hasKey("FM_high_quality") && ConfMan.getBool("FM_high_quality")) {
 		env_bits = FMOPL_ENV_BITS_HQ;
 		eg_ent = FMOPL_EG_ENT_HQ;
@@ -1257,3 +1255,5 @@ FM_OPL *makeAdLibOPL(int rate) {
 
 } // End of namespace MAME
 } // End of namespace OPL
+
+#endif // !DISABLE_MAME_OPL

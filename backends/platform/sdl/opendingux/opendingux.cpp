@@ -25,6 +25,7 @@
 #include "common/config-manager.h"
 #include "common/translation.h"
 
+#include "backends/graphics/opendingux/opendingux-graphics.h"
 #include "backends/platform/sdl/opendingux/opendingux.h"
 
 #include "backends/fs/posix/posix-fs-factory.h"
@@ -44,36 +45,45 @@
 #define JOYSTICK_DIR	"/sys/devices/platform/joystick"
 
 static const Common::KeyTableEntry odKeyboardButtons[] = {
+	// I18N: Hardware key
 	{ "JOY_A",		Common::KEYCODE_LCTRL,		_s("A")			},
+	// I18N: Hardware key
 	{ "JOY_B",		Common::KEYCODE_LALT,		_s("B")			},
+	// I18N: Hardware key
 	{ "JOY_X",		Common::KEYCODE_SPACE,		_s("X")			},
+	// I18N: Hardware key
 	{ "JOY_Y",		Common::KEYCODE_LSHIFT,		_s("Y")			},
+	// I18N: Hardware key
 	{ "JOY_BACK",		Common::KEYCODE_ESCAPE,		_s("Select")		},
+	// I18N: Hardware key
 	{ "JOY_START",		Common::KEYCODE_RETURN,		_s("Start")		},
+	// I18N: Hardware key
 	{ "JOY_LEFT_SHOULDER",	Common::KEYCODE_TAB,		_s("L")			},
+	// I18N: Hardware key
 	{ "JOY_RIGHT_SHOULDER", Common::KEYCODE_BACKSPACE,	_s("R")			},
-	{ "JOY_UP",		Common::KEYCODE_UP,		_s("D-pad Up")	},
-	{ "JOY_DOWN",		Common::KEYCODE_DOWN,		_s("D-pad Down")	},
-	{ "JOY_LEFT",		Common::KEYCODE_LEFT,		_s("D-pad Left")	},
-	{ "JOY_RIGHT",		Common::KEYCODE_RIGHT,		_s("D-pad Right")	},
+	{ "JOY_UP",		Common::KEYCODE_UP,		_s("D-pad up")	},
+	{ "JOY_DOWN",		Common::KEYCODE_DOWN,		_s("D-pad down")	},
+	{ "JOY_LEFT",		Common::KEYCODE_LEFT,		_s("D-pad left")	},
+	{ "JOY_RIGHT",		Common::KEYCODE_RIGHT,		_s("D-pad right")	},
 	{nullptr,			Common::KEYCODE_INVALID,	nullptr			}
 };
 
 static const Common::HardwareInputTableEntry odJoystickButtons[] = {
+	// I18N: Hardware key
 	{ "JOY_LEFT_TRIGGER",	Common::JOYSTICK_BUTTON_LEFT_STICK,	_s("L3")	 },
 	{ nullptr,		0,					nullptr		 }
 };
 
 static const Common::AxisTableEntry odJoystickAxes[] = {
-	{ "JOY_LEFT_STICK_X",  Common::JOYSTICK_AXIS_LEFT_STICK_X,  Common::kAxisTypeFull, _s("Left Stick X")  },
-	{ "JOY_LEFT_STICK_Y",  Common::JOYSTICK_AXIS_LEFT_STICK_Y,  Common::kAxisTypeFull, _s("Left Stick Y")  },
+	{ "JOY_LEFT_STICK_X",  Common::JOYSTICK_AXIS_LEFT_STICK_X,  Common::kAxisTypeFull, _s("Left stick X")  },
+	{ "JOY_LEFT_STICK_Y",  Common::JOYSTICK_AXIS_LEFT_STICK_Y,  Common::kAxisTypeFull, _s("Left stick Y")  },
 	{ nullptr,	       0,				    Common::kAxisTypeFull, nullptr	       }
 };
 
 Common::KeymapperDefaultBindings *OSystem_SDL_Opendingux::getKeymapperDefaultBindings() {
 	Common::KeymapperDefaultBindings *keymapperDefaultBindings = new Common::KeymapperDefaultBindings();
 
-	if (!Posix::assureDirectoryExists(JOYSTICK_DIR)) { 
+	if (!Posix::assureDirectoryExists(JOYSTICK_DIR)) {
 		keymapperDefaultBindings->setDefaultBinding(Common::kGlobalKeymapName, "VMOUSEUP", "JOY_UP");
 		keymapperDefaultBindings->setDefaultBinding(Common::kGlobalKeymapName, "VMOUSEDOWN", "JOY_DOWN");
 		keymapperDefaultBindings->setDefaultBinding(Common::kGlobalKeymapName, "VMOUSELEFT", "JOY_LEFT");
@@ -103,10 +113,14 @@ void OSystem_SDL_Opendingux::init() {
 }
 
 void OSystem_SDL_Opendingux::initBackend() {
+#ifdef RS90
+	ConfMan.registerDefault("fullscreen", false);
+#else
 	ConfMan.registerDefault("fullscreen", true);
+#endif
 	ConfMan.registerDefault("aspect_ratio", true);
-	ConfMan.registerDefault("themepath", "./themes");
-	ConfMan.registerDefault("extrapath", "./engine-data");
+	ConfMan.registerDefault("themepath", Common::Path("./themes"));
+	ConfMan.registerDefault("extrapath", Common::Path("./engine-data"));
 	ConfMan.registerDefault("gui_theme", "builtin");
 	ConfMan.registerDefault("scale_factor", "1");
 
@@ -117,13 +131,13 @@ void OSystem_SDL_Opendingux::initBackend() {
 		ConfMan.setBool("aspect_ratio", true);
 	}
 	if (!ConfMan.hasKey("themepath")) {
-		ConfMan.set("themepath", "./themes");
+		ConfMan.setPath("themepath", "./themes");
 	}
 	if (!ConfMan.hasKey("extrapath")) {
-		ConfMan.set("extrapath", "./engine-data");
+		ConfMan.setPath("extrapath", "./engine-data");
 	}
 	if (!ConfMan.hasKey("savepath")) {
-		ConfMan.set("savepath", SAVE_PATH);
+		ConfMan.setPath("savepath", SAVE_PATH);
 	}
 	if (!ConfMan.hasKey("gui_theme")) {
 		ConfMan.set("gui_theme", "builtin");
@@ -133,6 +147,9 @@ void OSystem_SDL_Opendingux::initBackend() {
 	}
 	if (!ConfMan.hasKey("opl_driver")) {
 		ConfMan.set("opl_driver", "db");
+	}
+	if (!ConfMan.hasKey("kbdmouse_speed")) {
+		ConfMan.setInt("kbdmouse_speed", 2);
 	}
 #ifdef LEPUS
 	if (!ConfMan.hasKey("output_rate")) {
@@ -148,25 +165,33 @@ void OSystem_SDL_Opendingux::initBackend() {
 		_savefileManager = new DefaultSaveFileManager(SAVE_PATH);
 	}
 
+	if (!_eventSource)
+		_eventSource = new SdlEventSource();
+	if (!_graphicsManager)
+		_graphicsManager = new OpenDinguxGraphicsManager(_eventSource, _window);
+
 	OSystem_SDL::initBackend();
 }
 
-Common::String OSystem_SDL_Opendingux::getDefaultConfigFileName() {
+Common::Path OSystem_SDL_Opendingux::getDefaultConfigFileName() {
 	return CONFIG_FILE;
 
 }
 
-Common::String OSystem_SDL_Opendingux::getDefaultLogFileName() {
+Common::Path OSystem_SDL_Opendingux::getDefaultLogFileName() {
 	return LOG_FILE;
 }
 
 bool OSystem_SDL_Opendingux::hasFeature(Feature f) {
-	if (f == kFeatureFullscreenMode)
+	switch (f) {
+	case kFeatureFullscreenMode:
+	case kFeatureAspectRatioCorrection:
 		return false;
-	if (f == kFeatureAspectRatioCorrection)
-		return false;
-
-	return OSystem_SDL::hasFeature(f);
+	case kFeatureKbdMouseSpeed:
+		return true;
+	default:
+		return OSystem_SDL::hasFeature(f);
+	}
 }
 
 void OSystem_SDL_Opendingux::setFeatureState(Feature f, bool enable) {
@@ -190,4 +215,3 @@ Common::HardwareInputSet *OSystem_SDL_Opendingux::getHardwareInputSet() {
 
 	return inputSet;
 }
-

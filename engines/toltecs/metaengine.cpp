@@ -26,11 +26,31 @@
 #include "common/savefile.h"
 #include "common/str-array.h"
 #include "common/system.h"
+#include "common/translation.h"
 
 #include "toltecs/toltecs.h"
 #include "toltecs/detection.h"
 
+#include "backends/keymapper/action.h"
+#include "backends/keymapper/keymapper.h"
+#include "backends/keymapper/standard-actions.h"
+
 namespace Toltecs {
+
+static const ADExtraGuiOptionsMap optionsList[] = {
+	{
+		GAMEOPTION_ORIGINAL_SAVELOAD,
+		{
+			_s("Use original save/load screens"),
+			_s("Use the original save/load screens instead of the ScummVM ones"),
+			"originalsaveload",
+			false,
+			0,
+			0
+		}
+	},
+	AD_EXTRA_GUI_OPTIONS_TERMINATOR
+};
 
 uint32 ToltecsEngine::getFeatures() const {
 	return _gameDescription->desc.flags;
@@ -42,19 +62,25 @@ Common::Language ToltecsEngine::getLanguage() const {
 
 } // End of namespace Toltecs
 
-class ToltecsMetaEngine : public AdvancedMetaEngine {
+class ToltecsMetaEngine : public AdvancedMetaEngine<Toltecs::ToltecsGameDescription> {
 public:
 	const char *getName() const override {
 		return "toltecs";
 	}
 
+	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override {
+		return Toltecs::optionsList;
+	}
+
 	bool hasFeature(MetaEngineFeature f) const override;
-	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override;
+	Common::Error createInstance(OSystem *syst, Engine **engine, const Toltecs::ToltecsGameDescription *desc) const override;
 
 	SaveStateList listSaves(const char *target) const override;
 	int getMaximumSaveSlot() const override;
-	void removeSaveState(const char *target, int slot) const override;
+	bool removeSaveState(const char *target, int slot) const override;
 	SaveStateDescriptor querySaveMetaInfos(const char *target, int slot) const override;
+
+	Common::KeymapArray initKeymaps(const char *target) const override;
 };
 
 bool ToltecsMetaEngine::hasFeature(MetaEngineFeature f) const {
@@ -76,8 +102,8 @@ bool Toltecs::ToltecsEngine::hasFeature(EngineFeature f) const {
 		(f == kSupportsSavingDuringRuntime);
 }
 
-Common::Error ToltecsMetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const {
-	*engine = new Toltecs::ToltecsEngine(syst, (const Toltecs::ToltecsGameDescription *)desc);
+Common::Error ToltecsMetaEngine::createInstance(OSystem *syst, Engine **engine, const Toltecs::ToltecsGameDescription *desc) const {
+	*engine = new Toltecs::ToltecsEngine(syst,desc);
 	return Common::kNoError;
 }
 
@@ -115,11 +141,11 @@ int ToltecsMetaEngine::getMaximumSaveSlot() const {
 	return 999;
 }
 
-void ToltecsMetaEngine::removeSaveState(const char *target, int slot) const {
+bool ToltecsMetaEngine::removeSaveState(const char *target, int slot) const {
 	Common::SaveFileManager *saveFileMan = g_system->getSavefileManager();
 	Common::String filename = Toltecs::ToltecsEngine::getSavegameFilename(target, slot);
 
-	saveFileMan->removeSavefile(filename.c_str());
+	bool success = saveFileMan->removeSavefile(filename.c_str());
 
 	Common::StringArray filenames;
 	Common::String pattern = target;
@@ -137,6 +163,8 @@ void ToltecsMetaEngine::removeSaveState(const char *target, int slot) const {
 			filename = Toltecs::ToltecsEngine::getSavegameFilename(target, ++slot);
 		}
 	}
+
+	return success;
 }
 
 SaveStateDescriptor ToltecsMetaEngine::querySaveMetaInfos(const char *target, int slot) const {
@@ -175,6 +203,67 @@ SaveStateDescriptor ToltecsMetaEngine::querySaveMetaInfos(const char *target, in
 	}
 
 	return SaveStateDescriptor();
+}
+
+Common::KeymapArray ToltecsMetaEngine::initKeymaps(const char *target) const {
+	using namespace Common;
+	using namespace Toltecs;
+
+	Keymap *engineKeyMap = new Keymap(Keymap::kKeymapTypeGame, "toltecs-default", _("Default keymappings"));
+	
+	Action *act;
+
+	act = new Action(kStandardActionLeftClick, _("Move / Select"));
+	act->setLeftClickEvent();
+	act->addDefaultInputMapping("MOUSE_LEFT");
+	act->addDefaultInputMapping("JOY_A");
+	engineKeyMap->addAction(act);
+
+	act = new Action(kStandardActionRightClick, _("Move / Perform default action"));
+	act->setRightClickEvent();
+	act->addDefaultInputMapping("MOUSE_RIGHT");
+	act->addDefaultInputMapping("JOY_B");
+	engineKeyMap->addAction(act);
+
+	act = new Action("SKIPDLG", _("Skip dialog"));
+	act->setCustomEngineActionEvent(kActionSkipDialog);
+	act->addDefaultInputMapping("SPACE");
+	act->addDefaultInputMapping("JOY_X");
+	engineKeyMap->addAction(act);
+
+	act = new Action("OPENSAVEMENU", _("Save game"));
+	act->setCustomEngineActionEvent(kActionOpenSaveMenu);
+	act->addDefaultInputMapping("F5");
+	act->addDefaultInputMapping("JOY_LEFT_SHOULDER");
+	engineKeyMap->addAction(act);
+
+	act = new Action("OPENLOADMENU", _("Load game"));
+	act->setCustomEngineActionEvent(kActionOpenLoadMenu);
+	act->addDefaultInputMapping("F7");
+	act->addDefaultInputMapping("JOY_RIGHT_SHOULDER");
+	engineKeyMap->addAction(act);
+
+	act = new Action("SKIPMOVIE", _("Skip cutscene"));
+	act->setCustomEngineActionEvent(kActionSkipMovie);
+	act->addDefaultInputMapping("ESCAPE");
+	act->addDefaultInputMapping("JOY_Y");
+	engineKeyMap->addAction(act);
+
+	act = new Action("MENUOPEN", _("Menu"));
+	act->setCustomEngineActionEvent(kActionMenuOpen);
+	act->addDefaultInputMapping("F10");
+	act->addDefaultInputMapping("JOY_START");
+	engineKeyMap->addAction(act);
+
+	act = new Action("SKIPRIDE", _("Skip ride"));
+	act->setCustomEngineActionEvent(kActionSkipRide);
+	act->addDefaultInputMapping("ESCAPE");
+	act->addDefaultInputMapping("JOY_Y");
+	engineKeyMap->addAction(act);
+
+
+	return Keymap::arrayOf(engineKeyMap);
+	
 }
 
 #if PLUGIN_ENABLED_DYNAMIC(TOLTECS)

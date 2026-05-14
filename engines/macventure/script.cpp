@@ -533,7 +533,7 @@ int16 ScriptEngine::sumChildrenAttr(int16 obj, int16 attr, bool recursive) {
 }
 
 void ScriptEngine::ensureNonzeroDivisor(int16 divisor, byte opcode) {
-	// TODO Untested, since that occassion rarely comes up.
+	// TODO: Untested, since that occasion rarely comes up.
 	if (divisor == 0) {
 		error("SCRIPT: Attempt to divide by 0 in operation %x", opcode);
 	}
@@ -835,6 +835,7 @@ void ScriptEngine::opadEQS(EngineState *state, EngineFrame *frame) {
 
 void ScriptEngine::opaeCONT(EngineState *state, EngineFrame *frame) {
 	Common::String needle = _world->getText(state->pop(), 0, 0);
+	needle.toLowercase();
 	Common::String haystack = _world->getText(state->pop(), 0, 0);
 	haystack.toLowercase();
 	state->push(haystack.contains(needle) ? 1 : 0);
@@ -842,6 +843,7 @@ void ScriptEngine::opaeCONT(EngineState *state, EngineFrame *frame) {
 
 void ScriptEngine::opafCONTW(EngineState *state, EngineFrame *frame) {
 	Common::String needle = _world->getText(state->pop(), 0, 0);
+	needle.toLowercase();
 	Common::String haystack = _world->getText(state->pop(), 0, 0);
 	haystack.toLowercase();
 	state->push(haystack.contains(needle) ? 1 : 0);

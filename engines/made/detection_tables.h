@@ -22,10 +22,9 @@
 #ifndef MADE_DETECTION_TABLES_H
 #define MADE_DETECTION_TABLES_H
 
-#include "engines/advancedDetector.h"
-#include "common/translation.h"
+#include "made/detection.h"
 
-#define GAMEOPTION_INTRO_MUSIC_DIGITAL GUIO_GAMEOPTIONS1
+#include "common/translation.h"
 
 namespace Made {
 
@@ -314,7 +313,11 @@ static const MadeGameDescription gameDescriptions[] = {
 		{
 			"rtz",
 			"Demo",
-			AD_ENTRY1("demo.dat", "2a6a1354bd5346fad4aee08e5b56caaa"),
+			{
+				{ "demo.dat", 0, "2a6a1354bd5346fad4aee08e5b56caaa", 34304 },
+				{ "demo.prj", 0, "46891bd6e5180228fe4b3253d500997b", 1675348 },
+				AD_LISTEND
+			},
 			Common::EN_ANY,
 			Common::kPlatformDOS,
 			ADGF_DEMO,
@@ -505,6 +508,42 @@ static const MadeGameDescription gameDescriptions[] = {
 	},
 
 	{
+		// The Manhole
+		{
+			"manhole",
+			"",
+			AD_ENTRY1s("manhole.dat", "2f14b5d87a862aad25701514dc282475", 119667),
+			Common::JA_JPN,
+			Common::kPlatformFMTowns,
+			ADGF_CD | ADGF_UNSTABLE,
+			GUIO1(GUIO_NOSPEECH)
+		},
+		GID_MANHOLE,
+		0,
+		GF_CD,
+		3,
+	},
+
+	{
+		// The Manhole DOS/V
+		// Platform: IBM PS-55, Sega TeraDrive or DOS/V-compatibles
+		// MADE v2.00a JAPAN PC - Copyright (c) 1990, MEDIAGENIC
+		{
+			"manhole",
+			"DOS-V",
+			AD_ENTRY1s("manhole.dat", "14522ee9139ca0823ac0cc15805e1fcc", 112303),
+			Common::JA_JPN,
+			Common::kPlatformDOS,
+			ADGF_UNSTABLE,
+			GUIO1(GUIO_NOSPEECH)
+		},
+		GID_MANHOLE,
+		0,
+		GF_FLOPPY,
+		3,
+	},
+
+	{
 		// Leather Goddesses of Phobos 2 (English)
 		{
 			"lgop2",
@@ -577,14 +616,15 @@ static const MadeGameDescription gameDescriptions[] = {
 
 	{
 		// Rodney's Funscreen
+		// MS-DOS, Win16 and Tandy VIS all share the same resource but a different player.
 		{
 			"rodney",
 			"",
-			AD_ENTRY1("rodneys.dat", "a79887dbaa47689facd7c6f09258ba5a"),
+			AD_ENTRY1s("rodneys.dat", "a79887dbaa47689facd7c6f09258ba5a", 92990),
 			Common::EN_ANY,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_NOSPEECH)
+			GUIO2(GUIO_NOSPEECH, GAMEOPTION_WINDOWS_CURSORS)
 		},
 		GID_RODNEY,
 		0,

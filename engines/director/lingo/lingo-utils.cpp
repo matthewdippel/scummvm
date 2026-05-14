@@ -19,11 +19,12 @@
  *
  */
 
+#include "director/director.h"
 #include "director/lingo/lingo.h"
 
 namespace Director {
 
-static struct CharNormProto {
+static const struct CharNormProto {
 	Common::u32char_type_t from;
 	const char *to;
 } charNormProtos[] = {
@@ -105,7 +106,7 @@ void Lingo::initCharNormalizations() {
 	for (char ch = 'A'; ch <= 'Z'; ch++) {
 		_charNormalizations[ch] = Common::U32String(Common::String(tolower(ch)), Common::kUtf8);
 	}
-	for (CharNormProto *norm = charNormProtos; norm->to; norm++) {
+	for (const CharNormProto *norm = charNormProtos; norm->to; norm++) {
 		_charNormalizations[norm->from] = Common::U32String(norm->to, Common::kUtf8);
 	}
 }

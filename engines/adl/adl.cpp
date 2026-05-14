@@ -32,7 +32,6 @@
 
 #include "engines/util.h"
 
-#include "graphics/palette.h"
 #include "graphics/thumbnail.h"
 
 #include "adl/adl.h"
@@ -121,8 +120,9 @@ bool AdlEngine::pollEvent(Common::Event &event) const {
 	return false;
 }
 
-Common::String AdlEngine::readString(Common::ReadStream &stream, byte until) const {
+Common::String AdlEngine::readString(Common::ReadStream &stream, byte until, const char *key) const {
 	Common::String str;
+	int keyLength = strlen(key);
 
 	while (1) {
 		byte b = stream.readByte();
@@ -133,8 +133,11 @@ Common::String AdlEngine::readString(Common::ReadStream &stream, byte until) con
 		if (b == until)
 			break;
 
+		if (keyLength)
+			b ^= key[str.size() % keyLength];
+
 		str += b;
-	};
+	}
 
 	return str;
 }
@@ -185,6 +188,7 @@ void AdlEngine::delay(uint32 ms) const {
 		pollEvent(event);
 		g_system->delayMillis(end - now < 16 ? end - now : 16);
 		now = g_system->getMillis();
+		g_system->updateScreen();
 	}
 }
 
@@ -233,7 +237,8 @@ Common::String AdlEngine::inputString(byte prompt) const {
 
 		if (b == ('\r' | 0x80)) {
 			s += b;
-			_display->printString(Common::String(b));
+			_display->printString(Common::String(b), false);
+			_display->sayText(s, Common::TextToSpeechManager::INTERRUPT);
 			return s;
 		}
 
@@ -252,7 +257,7 @@ Common::String AdlEngine::inputString(byte prompt) const {
 		} else {
 			if (s.size() < 255) {
 				s += b;
-				_display->printString(Common::String(b));
+				_display->printString(Common::String(b), false);
 			}
 		}
 	}
@@ -275,8 +280,10 @@ byte AdlEngine::inputKey(bool showCursor) const {
 				continue;
 
 			switch (event.kbd.keycode) {
-			case Common::KEYCODE_BACKSPACE:
 			case Common::KEYCODE_RETURN:
+				stopTextToSpeech();
+				// fall through
+			case Common::KEYCODE_BACKSPACE:
 				key = convertKey(event.kbd.keycode);
 				break;
 			default:
@@ -291,6 +298,7 @@ byte AdlEngine::inputKey(bool showCursor) const {
 
 		_display->renderText();
 		g_system->delayMillis(16);
+		g_system->updateScreen();
 	}
 
 	_display->showCursor(false);
@@ -298,11 +306,46 @@ byte AdlEngine::inputKey(bool showCursor) const {
 	return key;
 }
 
-void AdlEngine::loadWords(Common::ReadStream &stream, WordMap &map, Common::StringArray &pri) const {
+void AdlEngine::waitKey(uint32 ms, Common::KeyCode keycode) const {
+	uint32 start = g_system->getMillis();
+
+	while (!shouldQuit()) {
+		Common::Event event;
+		if (pollEvent(event)) {
+			if (event.type == Common::EVENT_KEYDOWN)
+				if (keycode == Common::KEYCODE_INVALID || keycode == event.kbd.keycode)
+					return;
+		}
+
+		if (ms && g_system->getMillis() - start >= ms)
+			return;
+
+		g_system->delayMillis(16);
+		g_system->updateScreen();
+	}
+}
+
+void AdlEngine::loadWords(Common::ReadStream &stream, WordMap &map, Common::StringArray &pri, uint count) const {
 	uint index = 0;
 
 	map.clear();
 	pri.clear();
+
+	// WORKAROUND: Several games contain one or more word lists without a terminator
+	switch (getGameType()) {
+	case GAME_TYPE_HIRES3:
+		if (&map == &_verbs)
+			count = 72;
+		else
+			count = 113;
+		break;
+	case GAME_TYPE_HIRES5:
+		if (_state.region == 15 && &map == &_nouns)
+			count = 81;
+		break;
+	default:
+		break;
+	}
 
 	while (1) {
 		++index;
@@ -327,17 +370,8 @@ void AdlEngine::loadWords(Common::ReadStream &stream, WordMap &map, Common::Stri
 		if (synonyms == 0xff)
 			break;
 
-		// WORKAROUND: Missing verb list terminator in hires3
-		if (getGameType() == GAME_TYPE_HIRES3 && index == 72 && synonyms == 0)
-			return;
-
-		// WORKAROUND: Missing noun list terminator in hires3
-		if (getGameType() == GAME_TYPE_HIRES3 && index == 113)
-			return;
-
-		// WORKAROUND: Missing noun list terminator in hires5 region 15
-		if (getGameType() == GAME_TYPE_HIRES5 && _state.region == 15 && index == 81)
-			return;
+		if (index == count)
+			break;
 
 		for (uint i = 0; i < synonyms; ++i) {
 			if (stream.read((char *)buf, IDI_WORD_SIZE) < IDI_WORD_SIZE)
@@ -403,14 +437,22 @@ void AdlEngine::removeCommand(Commands &commands, uint idx) {
 }
 
 Command &AdlEngine::getCommand(Commands &commands, uint idx) {
-	Commands::iterator cmds;
 	uint i = 0;
-	for (cmds = commands.begin(); cmds != commands.end(); ++cmds) {
+	for (auto &cmd : commands) {
 		if (i++ == idx)
-			return *cmds;
+			return cmd;
 	}
 
 	error("Command %d not found", idx);
+}
+
+void AdlEngine::removeMessage(uint idx) {
+		if (_messages[idx]) {
+			_messages[idx].reset();
+			return;
+		}
+
+		error("Message %d not found", idx);
 }
 
 void AdlEngine::checkInput(byte verb, byte noun) {
@@ -430,13 +472,11 @@ bool AdlEngine::isInputValid(byte verb, byte noun, bool &is_any) {
 }
 
 bool AdlEngine::isInputValid(const Commands &commands, byte verb, byte noun, bool &is_any) {
-	Commands::const_iterator cmd;
-
 	is_any = false;
-	for (cmd = commands.begin(); cmd != commands.end(); ++cmd) {
-		Common::ScopedPtr<ScriptEnv> env(createScriptEnv(*cmd, _state.room, verb, noun));
+	for (const auto &cmd : commands) {
+		Common::ScopedPtr<ScriptEnv> env(createScriptEnv(cmd, _state.room, verb, noun));
 		if (matchCommand(*env)) {
-			if (cmd->verb == IDI_ANY || cmd->noun == IDI_ANY)
+			if (cmd.verb == IDI_ANY || cmd.noun == IDI_ANY)
 				is_any = true;
 			return true;
 		}
@@ -507,12 +547,21 @@ void AdlEngine::loadDroppedItemOffsets(Common::ReadStream &stream, byte count) {
 	}
 }
 
+void AdlEngine::stopTextToSpeech() const {
+	Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
+	if (ttsMan != nullptr && ConfMan.getBool("tts_enabled") && ttsMan->isSpeaking()) {
+		ttsMan->stop();
+	}
+}
+
 void AdlEngine::drawPic(byte pic, Common::Point pos) const {
-	if (_roomData.pictures.contains(pic))
-		_graphics->drawPic(*_roomData.pictures[pic]->createReadStream(), pos);
-	else if (_pictures.contains(pic))
-		_graphics->drawPic(*_pictures[pic]->createReadStream(), pos);
-	else
+	if (_roomData.pictures.contains(pic)) {
+		Common::StreamPtr stream(_roomData.pictures[pic]->createReadStream());
+		_graphics->drawPic(*stream, pos);
+	} else if (_pictures.contains(pic)) {
+		Common::StreamPtr stream(_pictures[pic]->createReadStream());
+		_graphics->drawPic(*stream, pos);
+	} else
 		error("Picture %d not found", pic);
 }
 
@@ -549,6 +598,7 @@ bool AdlEngine::playTones(const Tones &tones, bool isMusic, bool allowSkip) cons
 		}
 
 		g_system->delayMillis(16);
+		g_system->updateScreen();
 	}
 
 	return false;
@@ -599,21 +649,17 @@ Room &AdlEngine::getCurRoom() {
 }
 
 const Item &AdlEngine::getItem(uint i) const {
-	Common::List<Item>::const_iterator item;
-
-	for (item = _state.items.begin(); item != _state.items.end(); ++item)
-		if (item->id == i)
-			return *item;
+	for (const auto &item : _state.items)
+		if (item.id == i)
+			return item;
 
 	error("Item %i not found", i);
 }
 
 Item &AdlEngine::getItem(uint i) {
-	Common::List<Item>::iterator item;
-
-	for (item = _state.items.begin(); item != _state.items.end(); ++item)
-		if (item->id == i)
-			return *item;
+	for (auto &item : _state.items)
+		if (item.id == i)
+			return item;
 
 	error("Item %i not found", i);
 }
@@ -633,25 +679,22 @@ void AdlEngine::setVar(uint i, byte value) {
 }
 
 void AdlEngine::takeItem(byte noun) {
-	Common::List<Item>::iterator item;
-
-	for (item = _state.items.begin(); item != _state.items.end(); ++item) {
-		if (item->noun == noun && item->room == _state.room && item->region == _state.region) {
-			if (item->state == IDI_ITEM_DOESNT_MOVE) {
+	for (auto &item : _state.items) {
+		if (item.noun == noun && item.room == _state.room && item.region == _state.region) {
+			if (item.state == IDI_ITEM_DOESNT_MOVE) {
 				printMessage(_messageIds.itemDoesntMove);
 				return;
 			}
 
-			if (item->state == IDI_ITEM_DROPPED) {
-				item->room = IDI_ANY;
+			if (item.state == IDI_ITEM_DROPPED) {
+				item.room = IDI_ANY;
 				return;
 			}
 
-			Common::Array<byte>::const_iterator pic;
-			for (pic = item->roomPictures.begin(); pic != item->roomPictures.end(); ++pic) {
-				if (*pic == getCurRoom().curPicture) {
-					item->room = IDI_ANY;
-					item->state = IDI_ITEM_DROPPED;
+			for (const auto &pic : item.roomPictures) {
+				if (pic == getCurRoom().curPicture) {
+					item.room = IDI_ANY;
+					item.state = IDI_ITEM_DROPPED;
 					return;
 				}
 			}
@@ -662,13 +705,11 @@ void AdlEngine::takeItem(byte noun) {
 }
 
 void AdlEngine::dropItem(byte noun) {
-	Common::List<Item>::iterator item;
-
-	for (item = _state.items.begin(); item != _state.items.end(); ++item) {
-		if (item->noun == noun && item->room == IDI_ANY) {
-			item->room = _state.room;
-			item->region = _state.region;
-			item->state = IDI_ITEM_DROPPED;
+	for (auto &item : _state.items) {
+		if (item.noun == noun && item.room == IDI_ANY) {
+			item.room = _state.room;
+			item.region = _state.region;
+			item.state = IDI_ITEM_DROPPED;
 			return;
 		}
 	}
@@ -744,6 +785,12 @@ Common::Error AdlEngine::run() {
 
 	init();
 	g_system->setFeatureState(OSystem::kFeatureVirtualKeyboard, true);
+
+	Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
+	if (ttsMan != nullptr) {
+		ttsMan->enable(ConfMan.getBool("tts_enabled"));
+		ttsMan->setLanguage(ConfMan.get("language"));
+	}
 
 	int saveSlot = ConfMan.getInt("save_slot");
 	if (saveSlot >= 0) {
@@ -842,13 +889,12 @@ void AdlEngine::loadState(Common::ReadStream &stream) {
 	if (size != _state.items.size())
 		error("Item count mismatch (expected %i; found %i)", _state.items.size(), size);
 
-	Common::List<Item>::iterator item;
-	for (item = _state.items.begin(); item != _state.items.end(); ++item) {
-		item->room = stream.readByte();
-		item->picture = stream.readByte();
-		item->position.x = stream.readByte();
-		item->position.y = stream.readByte();
-		item->state = stream.readByte();
+	for (auto &item : _state.items) {
+		item.room = stream.readByte();
+		item.picture = stream.readByte();
+		item.position.x = stream.readByte();
+		item.position.y = stream.readByte();
+		item.state = stream.readByte();
 	}
 
 	size = stream.readUint32BE();
@@ -904,7 +950,7 @@ Common::Error AdlEngine::loadGameState(int slot) {
 	return Common::kNoError;
 }
 
-bool AdlEngine::canLoadGameStateCurrently() {
+bool AdlEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	return _canRestoreNow;
 }
 
@@ -923,13 +969,12 @@ void AdlEngine::saveState(Common::WriteStream &stream) {
 	}
 
 	stream.writeUint32BE(_state.items.size());
-	Common::List<Item>::const_iterator item;
-	for (item = _state.items.begin(); item != _state.items.end(); ++item) {
-		stream.writeByte(item->room);
-		stream.writeByte(item->picture);
-		stream.writeByte(item->position.x);
-		stream.writeByte(item->position.y);
-		stream.writeByte(item->state);
+	for (const auto &item : _state.items) {
+		stream.writeByte(item.room);
+		stream.writeByte(item.picture);
+		stream.writeByte(item.position.x);
+		stream.writeByte(item.position.y);
+		stream.writeByte(item.state);
 	}
 
 	stream.writeUint32BE(_state.vars.size());
@@ -991,23 +1036,21 @@ Common::Error AdlEngine::saveGameState(int slot, const Common::String &desc, boo
 	return Common::kNoError;
 }
 
-bool AdlEngine::canSaveGameStateCurrently() {
+bool AdlEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	if (!_canSaveNow)
 		return false;
-
-	Commands::const_iterator cmd;
 
 	// Here we check whether or not the game currently accepts the command
 	// "SAVE GAME". This prevents saving via the GMM in situations where
 	// it wouldn't otherwise be possible to do so.
-	for (cmd = _roomData.commands.begin(); cmd != _roomData.commands.end(); ++cmd) {
-		Common::ScopedPtr<ScriptEnv> env(createScriptEnv(*cmd, _state.room, _saveVerb, _saveNoun));
+	for (const auto &cmd : _roomData.commands) {
+		Common::ScopedPtr<ScriptEnv> env(createScriptEnv(cmd, _state.room, _saveVerb, _saveNoun));
 		if (matchCommand(*env))
 			return env->op() == IDO_ACT_SAVE;
 	}
 
-	for (cmd = _roomCommands.begin(); cmd != _roomCommands.end(); ++cmd) {
-		Common::ScopedPtr<ScriptEnv> env(createScriptEnv(*cmd, _state.room, _saveVerb, _saveNoun));
+	for (const auto &cmd : _roomCommands) {
+		Common::ScopedPtr<ScriptEnv> env(createScriptEnv(cmd, _state.room, _saveVerb, _saveNoun));
 		if (matchCommand(*env))
 			return env->op() == IDO_ACT_SAVE;
 	}
@@ -1218,11 +1261,9 @@ int AdlEngine::o_varSet(ScriptEnv &e) {
 int AdlEngine::o_listInv(ScriptEnv &e) {
 	OP_DEBUG_0("\tLIST_INVENTORY()");
 
-	Common::List<Item>::const_iterator item;
-
-	for (item = _state.items.begin(); item != _state.items.end(); ++item)
-		if (item->room == IDI_ANY)
-			printString(getItemDescription(*item));
+	for (const auto &item : _state.items)
+		if (item.room == IDI_ANY)
+			printString(getItemDescription(item));
 
 	return 0;
 }
@@ -1439,10 +1480,8 @@ void AdlEngine::doActions(ScriptEnv &env) {
 }
 
 bool AdlEngine::doOneCommand(const Commands &commands, byte verb, byte noun) {
-	Commands::const_iterator cmd;
-
-	for (cmd = commands.begin(); cmd != commands.end(); ++cmd) {
-		Common::ScopedPtr<ScriptEnv> env(createScriptEnv(*cmd, _state.room, verb, noun));
+	for (const auto &cmd : commands) {
+		Common::ScopedPtr<ScriptEnv> env(createScriptEnv(cmd, _state.room, verb, noun));
 		if (matchCommand(*env)) {
 			doActions(*env);
 			return true;
@@ -1458,10 +1497,8 @@ bool AdlEngine::doOneCommand(const Commands &commands, byte verb, byte noun) {
 }
 
 void AdlEngine::doAllCommands(const Commands &commands, byte verb, byte noun) {
-	Commands::const_iterator cmd;
-
-	for (cmd = commands.begin(); cmd != commands.end(); ++cmd) {
-		Common::ScopedPtr<ScriptEnv> env(createScriptEnv(*cmd, _state.room, verb, noun));
+	for (const auto &cmd : commands) {
+		Common::ScopedPtr<ScriptEnv> env(createScriptEnv(cmd, _state.room, verb, noun));
 		if (matchCommand(*env)) {
 			doActions(*env);
 			// The original long jumps on restart, so we need to abort here

@@ -24,6 +24,7 @@
 
 #include "common/str-array.h"
 #include "graphics/macgui/macfontmanager.h"
+#include "graphics/macgui/macwindow.h"
 #include "graphics/font.h"
 
 namespace Common {
@@ -37,6 +38,50 @@ namespace Graphics {
 struct MacMenuItem;
 struct MacMenuSubMenu;
 typedef Common::Array<MacMenuItem *> ItemArray;
+
+struct MacMenuSubMenu {
+	ItemArray items;
+	Common::Rect bbox;
+	int highlight;
+	int visStart; // Visible start
+	int visEnd; // Visible end
+	int scroll;
+
+	MacMenuSubMenu() : highlight(-1), visStart(0), visEnd(0), scroll(0) {}
+
+	~MacMenuSubMenu();
+
+	void enableAllItems();
+
+	int ytoItem(int y, int itemHeight) { return MIN<int>((y - bbox.top) / itemHeight, items.size() - 1); }
+};
+
+struct MacMenuItem {
+	Common::String text;
+	Common::U32String unicodeText;
+	bool unicode;
+	int action;
+	int style;
+	char shortcut;
+	int shortcutPos;
+	bool enabled;
+	bool checked;
+	Common::Rect bbox;
+
+	MacMenuSubMenu *submenu;
+
+	MacMenuItem(const Common::String &t, int a = -1, int s = 0, char sh = 0, int sp = -1, bool e = true, bool c = false) :
+			text(t), unicode(false), action(a), style(s), shortcut(sh),
+			shortcutPos(sp), enabled(e), submenu(nullptr), checked(c) {}
+	MacMenuItem(const Common::U32String &t, int a = -1, int s = 0, char sh = 0, int sp = -1, bool e = true, bool c = false) :
+			unicodeText(t), unicode(true), action(a), style(s), shortcut(sh),
+			shortcutPos(sp), enabled(e), submenu(nullptr), checked(c) {}
+
+	~MacMenuItem() {
+		if (submenu)
+			delete submenu;
+	}
+};
 
 struct MacMenuData {
 	int menunum;
@@ -77,6 +122,9 @@ public:
 	MacMenuSubMenu *addSubMenu(MacMenuSubMenu *submenu, int index = -1);
 	int addMenuItem(MacMenuSubMenu *submenu, const Common::String &text, int action = -1, int style = 0, char shortcut = 0, bool enabled = true, bool checked = false);
 	int addMenuItem(MacMenuSubMenu *submenu, const Common::U32String &text, int action = 0, int style = 0, char shortcut = 0, bool enabled = true, bool checked = false);
+	void insertMenuItem(MacMenuSubMenu *submenu, const Common::String &text, uint pos, int action = -1, int style = 0, char shortcut = 0, bool enabled = true, bool checked = false);
+	void insertMenuItem(MacMenuSubMenu *submenu, const Common::U32String &text, uint pos, int action = 0, int style = 0, char shortcut = 0, bool enabled = true, bool checked = false);
+	void removeMenuItem(MacMenuSubMenu *submenu, uint pos);
 	void loadMenuResource(Common::MacResManager *resFork, uint16 id);
 	void loadMenuBarResource(Common::MacResManager *resFork, uint16 id);
 	void createSubMenuFromString(int id, const char *string, int commandId);
@@ -85,6 +133,8 @@ public:
 	MacMenuSubMenu *getSubmenu(MacMenuSubMenu *submenu, int index);
 
 	bool draw(ManagedSurface *g, bool forceRedraw = false) override;
+	void eventLoop();
+	bool mouseClick(int x, int y);
 	bool draw(bool forceRedraw = false) override { return false; }
 	void blit(ManagedSurface *g, Common::Rect &dest) override {}
 
@@ -93,6 +143,7 @@ public:
 	void enableCommand(int menunum, int action, bool state);
 	void enableCommand(const char *menuitem, const char *menuaction, bool state);
 	void enableCommand(const Common::U32String &menuitem, const Common::U32String &menuaction, bool state);
+	void enableAllMenus();
 	void disableAllMenus();
 
 	bool isVisible() { return _isVisible; }
@@ -100,7 +151,7 @@ public:
 
 	void printMenu(int level = 0, MacMenuSubMenu *submenu = nullptr);
 
-	void closeMenu();
+	virtual void closeMenu();
 
 	bool checkIntersects(Common::Rect &rect);
 
@@ -117,54 +168,73 @@ public:
 	void setAction(MacMenuItem *menuItem, int actionId);
 	int getAction(MacMenuItem *menuItem);
 
+	int getLastSelectedMenuItem() { return _lastActiveItem; };
+	int getLastSelectedSubmenuItem() { return _lastActiveSubItem; };
+
+	void renderSubmenu(MacMenuSubMenu *menu, bool recursive = true);
+
+	int getScrollDirection() { return _scrollDirection; }
+
+	int getDropdownItemHeight() { return _menuDropdownItemHeight; }
+
+	Common::Array<MacMenuSubMenu *> _menustack;
+
+protected:
 	Common::Rect _bbox;
+	ManagedSurface _screen;
+	ItemArray _items;
+	bool _isVisible;
+	bool _dimensionsDirty;
+	int _menuDropdownItemHeight;
+
+	int _activeItem;
+	int _activeSubItem;
+
+	bool _isModal;
+
+	void calcSubMenuBounds(MacMenuSubMenu *menu, int x, int y);
 
 private:
-	ManagedSurface _screen;
 	ManagedSurface _tempSurface;
 	TextAlign _align;
-	int _menuDropdownItemHeight;
 	int _menuLeftDropdownPadding;
 	int _menuRightDropdownPadding;
 
 private:
 	bool checkCallback(bool unicode = false);
 	const Font *getMenuFont(int slant = kMacFontRegular);
+	Common::CodePage getMenuEncoding() const;
 	const Common::String getAcceleratorString(MacMenuItem *item, const char *prefix);
 	void processTabs();
 	void processSubmenuTabs(MacMenuSubMenu *submenu);
 
 	int calcSubMenuWidth(MacMenuSubMenu *menu);
-	void calcSubMenuBounds(MacMenuSubMenu *menu, int x, int y);
-	void renderSubmenu(ManagedSurface *g, MacMenuSubMenu *menu, bool recursive = true);
 
 	bool keyEvent(Common::Event &event);
-	bool mouseClick(int x, int y);
 	bool mouseRelease(int x, int y);
 	bool mouseMove(int x, int y);
 
-	bool processMenuShortCut(byte flags, uint16 ascii);
+	bool processMenuShortCut(uint16 ascii);
 
 	void drawSubMenuArrow(ManagedSurface *dst, int x, int y, int color);
 	bool contains(int x, int y);
 
-	void eventLoop();
+	void drawScrollArrow(int arrowX, int arrowY, int direction);
 
 	MacMenuItem *findMenuItem(const Common::String &menuId, const Common::String &itemId);
 	MacMenuItem *findMenuItem(int menuId, int itemId);
 
-	ItemArray _items;
 
 	const Font *_font;
 	Font *_loadedFont;
 
-	bool _isVisible;
+	int _lastActiveItem;
+	int _lastActiveSubItem;
 
-	bool _dimensionsDirty;
+	int _selectedItem;
 
-	int _activeItem;
-	Common::Array<MacMenuSubMenu *> _menustack;
-	int _activeSubItem;
+	bool _scrollTimerActive;
+	int _scrollDirection;
 
 	void (*_ccallback)(int action, Common::String &text, void *data);
 	void (*_unicodeccallback)(int action, Common::U32String &text, void *data);

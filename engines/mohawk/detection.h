@@ -35,7 +35,19 @@ enum MohawkGameType {
 	GType_LIVINGBOOKSV2,
 	GType_LIVINGBOOKSV3,
 	GType_LIVINGBOOKSV4,
-	GType_LIVINGBOOKSV5
+	GType_LIVINGBOOKSV5,
+	GType_ZOOMBINI,
+	GType_CSWORLD,
+	GType_CSAMTRAK,
+	GType_JAMESMATH,
+	GType_TREEHOUSE,
+	GType_1STDEGREE,
+	GType_CSUSA,
+	GType_ORLY,
+	GType_ALIENTALES,
+	GType_MATHSWORKSHOP,
+	GType_WRICAMACT,
+	GType_AMAZINGWRITING,
 };
 
 #define GAMEOPTION_ME   GUIO_GAMEOPTIONS1
@@ -56,6 +68,18 @@ struct MohawkGameDescription {
 	uint8 gameType;
 	uint32 features;
 	const char *appName;
+
+	uint32 sizeBuffer() const {
+		uint32 ret = desc.sizeBuffer();
+		ret += ADDynamicDescription::strSizeBuffer(appName);
+		return ret;
+	}
+
+	void *toBuffer(void *buffer) {
+		buffer = desc.toBuffer(buffer);
+		buffer = ADDynamicDescription::strToBuffer(buffer, appName);
+		return buffer;
+	}
 };
 
 } // End of namespace Mohawk

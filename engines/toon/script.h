@@ -17,6 +17,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, MojoTouch has
+ * exclusively licensed this code on March 23th, 2024, to be used in
+ * closed-source products.
+ * Therefore, any contributions (commits) to it will also be dual-licensed.
+ *
  */
 
 #ifndef TOON_SCRIPT_H
@@ -25,7 +32,7 @@
 #include "common/stream.h"
 #include "common/array.h"
 #include "common/func.h"
-#include "common/iff_container.h"
+#include "common/formats/iff_container.h"
 
 // Based on Kyra script interpretor
 namespace Toon {
@@ -73,7 +80,7 @@ public:
 		// It seems Westwood missunderstood the 'size' field of the FORM chunk.
 		//
 		// For EMC scripts (type EMC2) it's filesize instead of filesize - 8,
-		// means accidently including the 8 bytes used by the chunk header for the FORM
+		// means accidentally including the 8 bytes used by the chunk header for the FORM
 		// chunk.
 		//
 		// For TIM scripts (type AVFS) it's filesize - 12 instead of filesize - 8,

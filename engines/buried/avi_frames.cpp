@@ -32,7 +32,7 @@
 
 namespace Buried {
 
-AVIFrames::AVIFrames(const Common::String &fileName, uint cachedFrames) {
+AVIFrames::AVIFrames(const Common::Path &fileName, uint cachedFrames) {
 	_maxCachedFrames = 0;
 	_video = nullptr;
 	_cacheEnabled = false;
@@ -48,7 +48,7 @@ AVIFrames::~AVIFrames() {
 	close();
 }
 
-bool AVIFrames::open(const Common::String &fileName, uint cachedFrames) {
+bool AVIFrames::open(const Common::Path &fileName, uint cachedFrames) {
 	if (fileName.empty())
 		return false;
 
@@ -120,26 +120,34 @@ const Graphics::Surface *AVIFrames::getFrame(int frameIndex) {
 	if (!frame)
 		return nullptr;
 
-	Graphics::Surface *copy;
-	if (frame->format == g_system->getScreenFormat()) {
-		copy = new Graphics::Surface();
-		copy->copyFrom(*frame);
-	} else {
-		copy = frame->convertTo(g_system->getScreenFormat());
+	if (_tempFrame) {
+		_tempFrame->free();
+		delete _tempFrame;
+		_tempFrame = nullptr;
 	}
 
 	if (_cacheEnabled) {
-		addFrameToCache(frameIndex, copy);
-	} else {
-		if (_tempFrame) {
-			_tempFrame->free();
-			delete _tempFrame;
+		Graphics::Surface *copy;
+
+		if (frame->format == g_system->getScreenFormat()) {
+			copy = new Graphics::Surface();
+			copy->copyFrom(*frame);
+		} else {
+			copy = frame->convertTo(g_system->getScreenFormat());
 		}
 
-		_tempFrame = copy;
+		addFrameToCache(frameIndex, copy);
+		_lastFrame = copy;
+	} else {
+		if (frame->format == g_system->getScreenFormat()) {
+			_lastFrame = frame;
+		} else {
+			_lastFrame = _tempFrame = frame->convertTo(g_system->getScreenFormat());
+		}
 	}
 
-	return copy;
+	_lastFrameIndex = frameIndex;
+	return _lastFrame;
 }
 
 Graphics::Surface *AVIFrames::getFrameCopy(int frameIndex) {
@@ -163,10 +171,10 @@ bool AVIFrames::flushFrameCache() {
 	if (_cachedFrames.empty())
 		return false;
 
-	for (FrameList::iterator it = _cachedFrames.begin(); it != _cachedFrames.end(); ++it) {
-		if (it->frame) {
-			it->frame->free();
-			delete it->frame;
+	for (auto &cachedFrame : _cachedFrames) {
+		if (cachedFrame.frame) {
+			cachedFrame.frame->free();
+			delete cachedFrame.frame;
 		}
 	}
 
@@ -174,9 +182,9 @@ bool AVIFrames::flushFrameCache() {
 }
 
 const Graphics::Surface *AVIFrames::retrieveFrameFromCache(int frameIndex) const {
-	for (FrameList::const_iterator it = _cachedFrames.begin(); it != _cachedFrames.end(); ++it)
-		if (it->index == frameIndex)
-			return it->frame;
+	for (const auto &cachedFrame : _cachedFrames)
+		if (cachedFrame.index == frameIndex)
+			return cachedFrame.frame;
 
 	return nullptr;
 }

@@ -26,8 +26,8 @@
 #include "illusions/detection.h"
 
 static const PlainGameDescriptor illusionsGames[] = {
-	{ "bbdou", "Beavis and Butt-head Do U" },
-	{ "duckman", "Duckman" },
+	{ "bbdou", "Beavis and Butt-Head: Do U." },
+	{ "duckman", "Duckman: The Graphic Adventures of a Private Dick" },
 	{ nullptr, nullptr }
 };
 
@@ -109,18 +109,18 @@ static const char * const directoryGlobs[] = {
 	nullptr
 };
 
-class IllusionsMetaEngineDetection : public AdvancedMetaEngineDetection {
+class IllusionsMetaEngineDetection : public AdvancedMetaEngineDetection<Illusions::IllusionsGameDescription> {
 public:
-	IllusionsMetaEngineDetection() : AdvancedMetaEngineDetection(Illusions::gameDescriptions, sizeof(Illusions::IllusionsGameDescription), illusionsGames) {
+	IllusionsMetaEngineDetection() : AdvancedMetaEngineDetection(Illusions::gameDescriptions, illusionsGames) {
 		_maxScanDepth = 2;
 		_directoryGlobs = directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "illusions";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Illusions";
 	}
 

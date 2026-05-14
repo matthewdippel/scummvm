@@ -27,6 +27,19 @@
 
 namespace DreamWeb {
 
+namespace {
+void initTitlesGfx() {
+	Graphics::ModeWithFormatList modes = {
+		// First try for a 640x480 mode
+		Graphics::ModeWithFormat(640, 480, Graphics::PixelFormat::createFormatCLUT8()),
+		// System doesn't support it, so fall back on 320x240 mode
+		Graphics::ModeWithFormat(320, 240, Graphics::PixelFormat::createFormatCLUT8()),
+	};
+
+	initGraphicsAny(modes);
+}
+}
+
 void DreamWebEngine::endGame() {
 	loadTempText("T83");
 	monkSpeaking();
@@ -148,7 +161,7 @@ void DreamWebEngine::bibleQuote() {
 		break;
 	}
 
-	initGraphics(640, 480);
+	initTitlesGfx();
 
 	showPCX("I00");
 	fadeScreenUps();
@@ -342,7 +355,7 @@ void DreamWebEngine::realCredits() {
 	_sound->loadRoomsSample(_roomsSample);
 	_sound->volumeSet(0);
 
-	initGraphics(640, 480);
+	initTitlesGfx();
 	hangOn(35);
 
 	showPCX("I01");

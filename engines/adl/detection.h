@@ -62,14 +62,29 @@ enum GameVersion {
 	GAME_VER_HR1_COARSE,
 	GAME_VER_HR1_VF1,
 	GAME_VER_HR1_VF2,
-	GAME_VER_HR1_PD
+	GAME_VER_HR1_PD,
+	GAME_VER_HR4_V1_0,
+	GAME_VER_HR4_V1_1,
+	GAME_VER_HR4_LNG
 };
 
 struct AdlGameDescription {
+	AD_GAME_DESCRIPTION_HELPERS(desc);
+
 	ADGameDescription desc;
 	GameType gameType;
 	GameVersion version;
 };
+
+// Mystery House was designed for monochrome display, so we default to
+// monochrome mode there. All the other games default to color mode.
+#define GAMEOPTION_COLOR_DEFAULT_OFF GUIO_GAMEOPTIONS1
+#define GAMEOPTION_SCANLINES         GUIO_GAMEOPTIONS2
+#define GAMEOPTION_COLOR_DEFAULT_ON  GUIO_GAMEOPTIONS3
+#define GAMEOPTION_NTSC              GUIO_GAMEOPTIONS4
+#define GAMEOPTION_MONO_TEXT         GUIO_GAMEOPTIONS5
+#define GAMEOPTION_APPLE2E_CURSOR    GUIO_GAMEOPTIONS6
+#define GAMEOPTION_TTS               GUIO_GAMEOPTIONS7
 
 } // End of namespace Adl
 

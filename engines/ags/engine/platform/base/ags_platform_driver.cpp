@@ -36,8 +36,8 @@
 #include "ags/engine/ac/timer.h"
 #include "ags/engine/media/audio/audio_system.h"
 #include "ags/lib/system/datetime.h"
-#include "ags/lib/std/algorithm.h"
-#include "ags/lib/std/thread.h"
+#include "common/std/algorithm.h"
+#include "common/std/thread.h"
 #include "ags/globals.h"
 
 #if defined (AGS_HAS_CD_AUDIO)
@@ -92,7 +92,11 @@ void AGSPlatformDriver::AdjustWindowStyleForFullscreen() {
 void AGSPlatformDriver::AdjustWindowStyleForWindowed() {
 }
 
-void AGSPlatformDriver::ValidateWindowSize(int & /*x*/, int & /*y*/, bool /*borderless*/) const {
+Size AGSPlatformDriver::ValidateWindowSize(const Size &sz, bool borderless) const {
+	// TODO: ScummVM screen limits are hardcoded to 9999x9999
+	// in sys_get_desktop_resolution
+	Size w(9999,9999);
+	return w;
 }
 
 void AGSPlatformDriver::PlayVideo(const char *name, int skip, int flags) {

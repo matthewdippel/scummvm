@@ -25,6 +25,7 @@
 #include "image/codecs/codec.h"
 
 #include "common/hashmap.h"
+#include "graphics/palette.h"
 
 namespace Image {
 
@@ -45,17 +46,17 @@ struct CDToonsBlock {
 class CDToonsDecoder : public Codec {
 public:
 	CDToonsDecoder(uint16 width, uint16 height);
-	~CDToonsDecoder();
+	~CDToonsDecoder() override;
 
-	Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream);
-	Graphics::PixelFormat getPixelFormat() const { return Graphics::PixelFormat::createFormatCLUT8(); }
-	bool containsPalette() const { return true; }
-	const byte *getPalette() { _dirtyPalette = false; return _palette; }
-	bool hasDirtyPalette() const { return _dirtyPalette; }
+	Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream) override;
+	Graphics::PixelFormat getPixelFormat() const override { return Graphics::PixelFormat::createFormatCLUT8(); }
+	bool containsPalette() const override { return true; }
+	const byte *getPalette() override { _dirtyPalette = false; return _palette.data(); }
+	bool hasDirtyPalette() const override { return _dirtyPalette; }
 
 private:
 	Graphics::Surface *_surface;
-	byte _palette[256 * 3];
+	Graphics::Palette _palette;
 	bool _dirtyPalette;
 	uint16 _currentPaletteId;
 

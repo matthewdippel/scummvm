@@ -43,18 +43,20 @@ public:
 	void init() override;
 	void initBackend() override;
 	void addSysArchivesToSearchSet(Common::SearchSet &s, int priority = 0) override;
+	void updateStartSettings(const Common::String &executable, Common::String &command, Common::StringMap &settings, Common::StringArray& additionalArgs) override;
 
 #ifdef USE_OPENGL
 	GraphicsManagerType getDefaultGraphicsManager() const override;
 #endif
 
 	// Default paths
-	Common::String getDefaultIconsPath() override;
-	Common::String getScreenshotsPath() override;
+	Common::Path getDefaultIconsPath() override;
+	Common::Path getDefaultDLCsPath() override;
+	Common::Path getScreenshotsPath() override;
 
 protected:
-	Common::String getDefaultConfigFileName() override;
-	Common::String getDefaultLogFileName() override;
+	Common::Path getDefaultConfigFileName() override;
+	Common::Path getDefaultLogFileName() override;
 
 	// Override createAudioCDManager() to get our Mac-specific
 	// version.

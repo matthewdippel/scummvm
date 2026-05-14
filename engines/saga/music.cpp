@@ -36,6 +36,7 @@
 #include "audio/decoders/mp3.h"
 #include "audio/decoders/raw.h"
 #include "audio/decoders/vorbis.h"
+#include "audio/mods/mod_xm_s3m.h"
 #include "audio/softsynth/fmtowns_pc98/towns_pc98_driver.h"
 #include "common/config-manager.h"
 #include "common/file.h"
@@ -51,7 +52,9 @@ Music::Music(SagaEngine *vm, Audio::Mixer *mixer) : _vm(vm), _mixer(mixer), _par
 	_currentVolume = 0;
 	_currentMusicBuffer = nullptr;
 
-	if (_vm->getPlatform() == Common::kPlatformPC98) {
+	if (_vm->getPlatform() == Common::kPlatformAmiga) {
+		_musicType = _driverType = MT_AMIGA;
+	} else if (_vm->getPlatform() == Common::kPlatformPC98) {
 		_musicType = _driverType = MT_PC98;
 
 		_driverPC98 = new TownsPC98_AudioDriver(mixer, PC98AudioPluginDriver::kType86);
@@ -95,14 +98,19 @@ Music::Music(SagaEngine *vm, Audio::Mixer *mixer) : _vm(vm), _mixer(mixer), _par
 							_("Could not find AdLib instrument definition files\n"
 							  "%s and %s. Without these files,\n"
 							  "the music will not sound the same as the original game."),
-							opl2InstDefFilename, opl3InstDefFilename),
-						_("OK"));
+							opl2InstDefFilename, opl3InstDefFilename));
 					dialog.runModal();
 
-					_driver = new MidiDriver_ADLIB_Multisource(OPL::Config::kOpl3);
+					OPL::Config::OplType oplType =
+						MidiDriver_ADLIB_Multisource::detectOplType(OPL::Config::kOpl3) ? OPL::Config::kOpl3 : OPL::Config::kOpl2;
+
+					_driver = new MidiDriver_ADLIB_Multisource(oplType);
 				}
 			} else {
-				_driver = new MidiDriver_ADLIB_Multisource(OPL::Config::kOpl3);
+				OPL::Config::OplType oplType =
+					MidiDriver_ADLIB_Multisource::detectOplType(OPL::Config::kOpl3) ? OPL::Config::kOpl3 : OPL::Config::kOpl2;
+
+				_driver = new MidiDriver_ADLIB_Multisource(oplType);
 			}
 			break;
 		case MT_MT32:
@@ -141,31 +149,6 @@ Music::Music(SagaEngine *vm, Audio::Mixer *mixer) : _vm(vm), _mixer(mixer), _par
 		if (_vm->getGameId() == GID_ITE) {
 			_musicContext = _vm->_resource->getContext(GAME_RESOURCEFILE);
 		} else if (_vm->getGameId() == GID_IHNM) {
-			// I've listened to music from both the FM and the GM
-			// file, and I've tentatively reached the conclusion
-			// that they are both General MIDI. My guess is that
-			// the FM file has been reorchestrated to sound better
-			// on AdLib and other FM synths.
-			//
-			// Sev says the AdLib music does not sound like in the
-			// original, but I still think assuming General MIDI is
-			// the right thing to do. Some music, like the End
-			// Title (song 0) sound absolutely atrocious when piped
-			// through our MT-32 to GM mapping.
-			//
-			// It is, however, quite possible that the original
-			// used a different GM to FM mapping. If the original
-			// sounded markedly better, perhaps we should add some
-			// way of replacing our stock mapping in adlib.cpp?
-			//
-			// For the composer's own recording of the End Title,
-			// see http://www.johnottman.com/
-
-			// Oddly enough, the intro music (song 1) is very
-			// different in the two files. I have no idea why.
-			// Note that the IHNM demo has only got one music file
-			// (music.rsc). It is assumed that it contains FM music
-
 			// TODO If program flow gets here, this getContext call previously
 			// returned null...
 			_musicContext = _vm->_resource->getContext(GAME_MUSICFILE_FM);
@@ -333,7 +316,9 @@ void Music::play(uint32 resourceId, MusicFlags flags) {
 
 	if (!digital) {
 		// Load MIDI/XMI resource data
-		if (_vm->getGameId() == GID_IHNM && _vm->isMacResources()) {
+		if (_vm->getGameId() == GID_ITE && _vm->getPlatform() == Common::Platform::kPlatformAmiga) {
+			playProtracker(resourceId, flags);
+		} else if (_vm->getGameId() == GID_IHNM && _vm->isMacResources()) {
 			// Load the external music file for Mac IHNM
 			playQuickTime(resourceId, flags);
 		} else {
@@ -357,8 +342,8 @@ bool Music::playDigital(uint32 resourceId, MusicFlags flags) {
 
 	// Try to open standalone digital track
 	char trackName[2][16];
-	sprintf(trackName[0], "track%d", realTrackNumber);
-	sprintf(trackName[1], "track%02d", realTrackNumber);
+	Common::sprintf_s(trackName[0], "track%d", realTrackNumber);
+	Common::sprintf_s(trackName[1], "track%02d", realTrackNumber);
 	Audio::SeekableAudioStream *stream = nullptr;
 	for (int i = 0; i < 2; ++i) {
 		stream = Audio::SeekableAudioStream::openStreamFile(trackName[i]);
@@ -380,7 +365,7 @@ bool Music::playDigital(uint32 resourceId, MusicFlags flags) {
 
 				// Digital music
 				ResourceData *resData = _digitalMusicContext->getResourceData(resourceId - 9);
-				Common::File *musicFile = _digitalMusicContext->getFile(resData);
+				Common::SeekableReadStream *musicFile = _digitalMusicContext->getFile(resData);
 				int offs = (_digitalMusicContext->isCompressed()) ? 9 : 0;
 
 				Common::SeekableSubReadStream *musicStream = new Common::SeekableSubReadStream(musicFile,
@@ -459,10 +444,25 @@ void Music::playQuickTime(uint32 resourceId, MusicFlags flags) {
 	// Handle music looping
 	_parser->property(MidiParser::mpAutoLoop, flags & MUSIC_LOOP);
 
-	const Common::String &musicName = Common::String::format("Music/Music%02x", resourceId);
+	Common::Path musicName(Common::String::format("Music/Music%02x", resourceId));
 	if (!((MidiParser_QT *)_parser)->loadFromContainerFile(musicName))
-		error("Music::playQuickTime(): Failed to load file '%s'", musicName.c_str());
+		error("Music::playQuickTime(): Failed to load file '%s'", musicName.toString().c_str());
 	_parser->setTrack(0);
+}
+
+void Music::playProtracker(uint32 resourceId, MusicFlags flags) {
+	ByteArray ba;
+
+	_vm->_resource->loadResource(_musicContext, resourceId, ba);
+
+	Common::MemoryReadStream ms(ba.getBuffer(), ba.size());
+
+	/* No reference to the 'stream' object is kept, so you can safely delete it after
+	   invoking this factory. */
+	Audio::RewindableAudioStream *amigaModStream = Audio::makeModXmS3mStream(&ms, DisposeAfterUse::NO);
+
+	_mixer->playStream(Audio::Mixer::kMusicSoundType, &_musicHandle,
+			   Audio::makeLoopingAudioStream(amigaModStream, (flags == MUSIC_LOOP ? 0 : 1)));
 }
 
 void Music::playMidi(uint32 resourceId, MusicFlags flags) {

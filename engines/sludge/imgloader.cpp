@@ -58,12 +58,12 @@ bool ImgLoader::loadImage(int num, const char *fname, Common::SeekableReadStream
 	if (dumpPng || (fname && num == -1)) {
 		// Debug code to output light map image
 		Common::DumpFile *outFile = new Common::DumpFile();
-		Common::String outName;
+		Common::Path outName;
 
 		if (dumpPng)
-			outName = Common::String::format("dumps/%s%04d.png", fname, num);
+			outName = Common::Path(Common::String::format("dumps/%s%04d.png", fname, num));
 		else
-			outName = Common::String::format("dumps/%s.png", fname);
+			outName = Common::Path(Common::String::format("dumps/%s.png", fname));
 
 		outFile->open(outName);
 		Image::writePNG(*outFile, *dest);
@@ -91,7 +91,7 @@ bool ImgLoader::loadPNGImage(Common::SeekableReadStream *stream, Graphics::Surfa
 	}
 
 	const Graphics::Surface *sourceSurface = png.getSurface();
-	Graphics::Surface *pngSurface = sourceSurface->convertTo(*g_sludge->getScreenPixelFormat(), png.getPalette());
+	Graphics::Surface *pngSurface = sourceSurface->convertTo(*g_sludge->getScreenPixelFormat(), png.getPalette().data(), png.getPalette().size());
 	dest->copyFrom(*pngSurface);
 	pngSurface->free();
 	delete pngSurface;

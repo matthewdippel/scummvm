@@ -41,8 +41,12 @@ FileStream::~FileStream() {
 	FileStream::Close();
 }
 
-bool FileStream::HasErrors() const {
-	return IsValid() && _file->err();
+bool FileStream::GetError() const {
+	if (!_file)
+		return false;
+	bool err = _file->err();
+	_file->clearErr();
+	return err;
 }
 
 void FileStream::Close() {
@@ -64,7 +68,7 @@ bool FileStream::IsValid() const {
 
 bool FileStream::EOS() const {
 	Common::ReadStream *rs = dynamic_cast<Common::ReadStream *>(_file);
-	return !rs || rs->eos();
+	return rs && rs->eos();
 }
 
 soff_t FileStream::GetLength() const {
@@ -135,7 +139,7 @@ int32_t FileStream::WriteByte(uint8_t val) {
 	return -1;
 }
 
-bool FileStream::Seek(soff_t offset, StreamSeek origin) {
+soff_t FileStream::Seek(soff_t offset, StreamSeek origin) {
 	int stdclib_origin;
 	switch (origin) {
 	case kSeekBegin:
@@ -148,11 +152,10 @@ bool FileStream::Seek(soff_t offset, StreamSeek origin) {
 		stdclib_origin = SEEK_END;
 		break;
 	default:
-		// TODO: warning to the log
-		return false;
+		return -1;
 	}
 
-	return ags_fseek(_file, (file_off_t)offset, stdclib_origin) == 0;
+	return (ags_fseek(_file, (file_off_t)offset, stdclib_origin) == 0) ? ags_ftell(_file) : -1;
 }
 
 void FileStream::Open(const String &file_name, FileOpenMode open_mode, FileWorkMode work_mode) {
@@ -163,15 +166,8 @@ void FileStream::Open(const String &file_name, FileOpenMode open_mode, FileWorkM
 
 		} else {
 			// First try to open file in game folder
-			Common::File *f = new Common::File();
-			Common::FSNode fsNode = getFSNode(file_name.GetCStr());
-
-			if (fsNode.exists() && f->open(fsNode)) {
-				_file = f;
-			} else {
-				delete f;
-				_file = nullptr;
-			}
+			Common::ArchiveMemberPtr desc = getFile(file_name.GetCStr());
+			_file = desc ? desc->createReadStream() : nullptr;
 		}
 
 	} else {
@@ -196,9 +192,10 @@ void FileStream::Open(const String &file_name, FileOpenMode open_mode, FileWorkM
 
 		if (!_file)
 			error("Invalid attempt to create file - %s", file_name.GetCStr());
+
+		_path = file_name;
 	}
 }
-
 
 String FileStream::getSaveName(const String &filename) {
 	return String(filename.GetCStr() + strlen(SAVE_FOLDER_PREFIX));

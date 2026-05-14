@@ -33,7 +33,7 @@ static const PlainGameDescriptor pinkGames[] = {
 
 #include "pink/detection_tables.h"
 
-static const char *directoryGlobs[] = {
+static const char *const directoryGlobs[] = {
 	"install",
 	nullptr
 };
@@ -48,19 +48,19 @@ static const DebugChannelDef debugFlagList[] = {
 };
 
 
-class PinkMetaEngineDetection : public AdvancedMetaEngineDetection {
+class PinkMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	PinkMetaEngineDetection() : AdvancedMetaEngineDetection(Pink::gameDescriptions, sizeof(ADGameDescription), pinkGames) {
+	PinkMetaEngineDetection() : AdvancedMetaEngineDetection(Pink::gameDescriptions, pinkGames) {
 		_gameIds = pinkGames;
 		_maxScanDepth = 2;
 		_directoryGlobs = directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "pink";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Pink Panther";
 	}
 

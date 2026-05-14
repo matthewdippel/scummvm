@@ -27,7 +27,7 @@
 //
 
 #include "ultima/ultima8/gumps/gump.h"
-#include "ultima/ultima8/graphics/fonts/font.h"
+#include "ultima/ultima8/gfx/fonts/font.h"
 #include "ultima/ultima8/misc/classtype.h"
 
 namespace Ultima {
@@ -37,11 +37,12 @@ class RenderedText;
 
 class TextWidget : public Gump {
 protected:
-	Std::string     _text;
+	Common::String     _text;
 	bool            _gameFont;
 	int             _fontNum;
 	uint32          _blendColour;
 	int32           _tx, _ty;
+	bool            _doPaging;
 
 	unsigned int    _currentStart; //!< start of currently displaying text
 	unsigned int    _currentEnd;   //!< start of remaining text
@@ -54,9 +55,10 @@ public:
 	ENABLE_RUNTIME_CLASSTYPE()
 
 	TextWidget();
-	TextWidget(int x, int y, const Std::string &txt, bool gamefont, int fontnum,
+	TextWidget(int x, int y, const Common::String &txt, bool gamefont, int fontnum,
 	           int width = 0, int height = 0,
-	           Font::TextAlign align = Font::TEXT_LEFT);
+	           Font::TextAlign align = Font::TEXT_LEFT,
+	           bool dopaging = false);
 	~TextWidget() override;
 
 	// Init the gump, call after construction
@@ -92,7 +94,7 @@ public:
 	//! get the RenderedText's vlead
 	int getVlead();
 
-	const Std::string &getText() const {
+	const Common::String &getText() const {
 		return _text;
 	}
 

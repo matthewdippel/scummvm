@@ -19,9 +19,10 @@
  *
  */
 
-#include "ultima/ultima8/misc/pent_include.h"
-
 #include "ultima/ultima8/games/game_info.h"
+
+#include "common/stream.h"
+#include "ultima/ultima8/misc/debugger.h"
 #include "ultima/ultima8/misc/util.h"
 
 namespace Ultima {
@@ -69,7 +70,7 @@ char GameInfo::getLanguageFileLetter() const {
 	switch (_type) {
 	case GAME_U8: {
 		unsigned int l = static_cast<unsigned int>(_language);
-		assert(l < (sizeof(gamelangs) / sizeof(gamelangs[0])) - 1);
+		assert(l < ARRAYSIZE(gamelangs) - 1);
 
 		return gamelangs[l].letter;
 	}
@@ -85,7 +86,7 @@ char GameInfo::getLanguageUsecodeLetter() const {
 	switch (_type) {
 	case GAME_U8: {
 		unsigned int l = static_cast<unsigned int>(_language);
-		assert(l < (sizeof(gamelangs) / sizeof(gamelangs[0])) - 1);
+		assert(l < ARRAYSIZE(gamelangs) - 1);
 
 		return gamelangs[l].usecodeletter;
 	}
@@ -97,58 +98,53 @@ char GameInfo::getLanguageUsecodeLetter() const {
 	}
 }
 
-Std::string GameInfo::getLanguage() const {
+Common::String GameInfo::getLanguage() const {
 	unsigned int l = static_cast<unsigned int>(_language);
-	assert(l < (sizeof(gamelangs) / sizeof(gamelangs[0])) - 1);
+	assert(l < ARRAYSIZE(gamelangs) - 1);
 
 	return gamelangs[l].name;
 }
 
-Std::string GameInfo::getGameTitle() const {
+Common::String GameInfo::getGameTitle() const {
 	unsigned int t = static_cast<unsigned int>(_type);
-	assert(t < (sizeof(gametypes) / sizeof(gametypes[0])) - 1);
+	assert(t < ARRAYSIZE(gametypes) - 1);
 
 	return gametypes[t].longname;
 }
 
-Std::string GameInfo::getPrintableVersion() const {
+Common::String GameInfo::getPrintableVersion() const {
 	char buf[32];
-	sprintf(buf, "%d.%02d", version / 100, version % 100);
+	Common::sprintf_s(buf, "%d.%02d", version / 100, version % 100);
 	return buf;
 }
 
-Std::string GameInfo::getPrintDetails() const {
-	Std::string ret;
+Common::String GameInfo::getPrintDetails() const {
+	Common::String ret;
 
-	Std::string title = getGameTitle();
+	Common::String title = getGameTitle();
 	if (title == "") title = "Unknown";
 
 	ret = title + ", ";
 
-	Std::string lang = getLanguage();
+	Common::String lang = getLanguage();
 	if (lang == "") lang = "Unknown";
 	ret += lang;
 
-	if (_type != GAME_PENTAGRAM_MENU) {
-		// version, md5 don't make sense for the pentagram menu
+	ret += ", version ";
+	ret += getPrintableVersion();
 
-		ret += ", version ";
-		ret += getPrintableVersion();
-
-		ret += ", md5 ";
-		ret += getPrintableMD5();
-	}
-
+	ret += ", md5 ";
+	ret += getPrintableMD5();
 	return ret;
 }
 
 
-Std::string GameInfo::getPrintableMD5() const {
-	Std::string ret;
+Common::String GameInfo::getPrintableMD5() const {
+	Common::String ret;
 
 	char buf[33];
 	for (int i = 0; i < 16; ++i) {
-		sprintf(buf + 2 * i, "%02x", _md5[i]);
+		Common::sprintf_s(buf + 2 * i, 3, "%02x", _md5[i]);
 	}
 
 	ret = buf;
@@ -159,34 +155,34 @@ Std::string GameInfo::getPrintableMD5() const {
 bool GameInfo::match(GameInfo &other, bool ignoreMD5) const {
 	if (_type != other._type) return false;
 	if (_language != other._language) return false;
-	if (version != other.version) return false;
-
 	if (ignoreMD5) return true;
 
+	// NOTE: Version and MD5 hash are not currently set
+	if (version != other.version) return false;
 	return (memcmp(_md5, other._md5, 16) == 0);
 }
 
 void GameInfo::save(Common::WriteStream *ws) {
 	unsigned int l = static_cast<unsigned int>(_language);
-	assert(l < (sizeof(gamelangs) / sizeof(gamelangs[0])) - 1);
+	assert(l < ARRAYSIZE(gamelangs) - 1);
 	unsigned int t = static_cast<unsigned int>(_type);
-	assert(t < (sizeof(gametypes) / sizeof(gametypes[0])) - 1);
+	assert(t < ARRAYSIZE(gametypes) - 1);
 
-	Std::string game = gametypes[t].shortname;
-	Std::string lang = gamelangs[l].name;
+	Common::String game = gametypes[t].shortname;
+	Common::String lang = gamelangs[l].name;
 
 	char buf[16];
-	sprintf(buf, "%d", version);
-	Std::string ver = buf;
-	Std::string md5Str = getPrintableMD5();
+	Common::sprintf_s(buf, "%d", version);
+	Common::String ver = buf;
+	Common::String md5Str = getPrintableMD5();
 
-	Std::string d = game + "," + lang + "," + ver + "," + md5Str + "\n";
+	Common::String d = game + "," + lang + "," + ver + "," + md5Str + "\n";
 	ws->write(d.c_str(), d.size());
 }
 
 bool GameInfo::load(Common::SeekableReadStream *rs, uint32 ver) {
-	Std::string s;
-	Std::vector<Std::string> parts;
+	Common::String s;
+	Common::Array<Common::String> parts;
 
 	s = rs->readLine();
 	SplitString(s, ',', parts);

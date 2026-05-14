@@ -49,7 +49,7 @@ public:
 	/**
 	 * MenuItem class
 	 */
-	MenuItem(Common::String text, short x, short y, int shortcutKey = -1);
+	MenuItem(const Common::String &text, short x, short y, int shortcutKey = -1);
 	virtual ~MenuItem() {}
 
 	virtual void activate(MenuEvent &event) {}
@@ -64,13 +64,13 @@ public:
 	bool isHighlighted() const;
 	bool isSelected() const;
 	bool isVisible() const;
-	const Std::set<int> &getShortcutKeys() const;
+	bool hasShortcutKey(int key) const;
 	bool getClosesMenu() const;
 
 	void setId(int id);
 	void setX(int x);
 	void setY(int y);
-	void setText(Common::String text);
+	void setText(const Common::String &text);
 	void setHighlighted(bool h = true);
 	void setSelected(bool s = true);
 	void setVisible(bool v = true);
@@ -85,7 +85,7 @@ protected:
 	bool _selected;
 	bool _visible;
 	int _scOffset;
-	Std::set<int> _shortcutKeys;
+	Common::Array<int> _shortcutKeys;
 	bool _closesMenu;
 };
 
@@ -95,7 +95,7 @@ protected:
  */
 class BoolMenuItem : public MenuItem {
 public:
-	BoolMenuItem(Common::String text, short xp, short yp, int shortcutKey, bool *val);
+	BoolMenuItem(const Common::String &text, short xp, short yp, int shortcutKey, bool *val);
 
 	BoolMenuItem *setValueStrings(const Common::String &onString, const Common::String &offString);
 
@@ -113,14 +113,14 @@ protected:
  */
 class StringMenuItem : public MenuItem {
 public:
-	StringMenuItem(Common::String text, short xp, short yp, int shortcutKey, Common::String *val, const Std::vector<Common::String> &validSettings);
+	StringMenuItem(const Common::String &text, short xp, short yp, int shortcutKey, Common::String *val, const Common::Array<Common::String> &validSettings);
 
 	void activate(MenuEvent &event) override;
 	Common::String getText() const override;
 
 protected:
 	Common::String *_val;
-	Std::vector<Common::String> _validSettings;
+	Common::Array<Common::String> _validSettings;
 };
 
 /**
@@ -129,7 +129,7 @@ protected:
  */
 class IntMenuItem : public MenuItem {
 public:
-	IntMenuItem(Common::String text, short xp, short yp, int shortcutKey, int *val, int min, int max, int increment, menuOutputType output = MENU_OUTPUT_INT);
+	IntMenuItem(const Common::String &text, short xp, short yp, int shortcutKey, int *val, int min, int max, int increment, menuOutputType output = MENU_OUTPUT_INT);
 
 	void activate(MenuEvent &event) override;
 	Common::String getText() const override;

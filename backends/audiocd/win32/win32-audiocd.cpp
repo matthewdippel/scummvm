@@ -27,7 +27,7 @@
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
+ * the Free Software Foundation, either version 2 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
@@ -54,20 +54,16 @@
 #include "common/array.h"
 #include "common/config-manager.h"
 #include "common/debug.h"
+#include "common/fs.h"
 #include "common/mutex.h"
 #include "common/queue.h"
 #include "common/str.h"
 #include "common/timer.h"
 
 #include <winioctl.h>
-#if _MSC_VER < 1900
-// WORKAROUND: Older versions of MSVC might not supply DDK headers by default.
-// Visual Studio 2015 contains the required headers. We use a compatability
-// header from MinGW's w32api for all older versions.
-// TODO: Limit this to the Visual Studio versions which actually require this.
-#include "msvc/ntddcdrm.h"
-#elif defined(__MINGW32__) && !defined(__MINGW64__)
+#if defined(__MINGW32_VERSION)
 // Classic MinGW uses non standard paths for DDK headers.
+// __MINGW32_VERSION is not defined by the not classic Ming-w64
 #include <ddk/ntddcdrm.h>
 #else
 #include <ntddcdrm.h>
@@ -151,10 +147,11 @@ public:
 	void close() override;
 	bool play(int track, int numLoops, int startFrame, int duration, bool onlyEmulate,
 			Audio::Mixer::SoundType soundType) override;
+	bool isDataAndCDAudioReadFromSameCD() override;
 
 protected:
 	bool openCD(int drive) override;
-	bool openCD(const Common::String &drive) override;
+	bool openCD(const Common::Path &drive) override;
 
 private:
 	bool loadTOC();
@@ -212,19 +209,24 @@ bool Win32AudioCDManager::openCD(int drive) {
 	return true;
 }
 
-bool Win32AudioCDManager::openCD(const Common::String &drive) {
+bool Win32AudioCDManager::openCD(const Common::Path &drive) {
 	// Just some bounds checking
-	if (drive.empty() || drive.size() > 3)
+	if (drive.empty())
 		return false;
 
-	if (!Common::isAlpha(drive[0]) || drive[1] != ':')
+	Common::String driveS(drive.toString(Common::Path::kNativeSeparator));
+
+	if (driveS.size() > 3)
 		return false;
 
-	if (drive[2] != 0 && drive[2] != '\\')
+	if (!Common::isAlpha(driveS[0]) || driveS[1] != ':')
+		return false;
+
+	if (driveS[2] != 0 && driveS[2] != '\\')
 		return false;
 
 	DriveList drives;
-	if (!tryAddDrive(toupper(drive[0]), drives))
+	if (!tryAddDrive(toupper(driveS[0]), drives))
 		return false;
 
 	// Construct the drive path and try to open it
@@ -357,8 +359,8 @@ Win32AudioCDManager::DriveList Win32AudioCDManager::detectDrives() {
 	// Try to get the game path's drive
 	char gameDrive = 0;
 	if (ConfMan.hasKey("path")) {
-		Common::String gamePath = ConfMan.get("path");
-		TCHAR *tGamePath = Win32::stringToTchar(gamePath);
+		Common::Path gamePath = ConfMan.getPath("path");
+		TCHAR *tGamePath = Win32::stringToTchar(gamePath.toString(Common::Path::kNativeSeparator));
 		TCHAR fullPath[MAX_PATH];
 		DWORD result = GetFullPathName(tGamePath, MAX_PATH, fullPath, nullptr);
 		free(tGamePath);
@@ -383,6 +385,27 @@ bool Win32AudioCDManager::tryAddDrive(char drive, DriveList &drives) {
 	debug(2, "Detected drive %c:\\ as a CD drive", drive);
 	drives.push_back(drive);
 	return true;
+}
+
+bool Win32AudioCDManager::isDataAndCDAudioReadFromSameCD() {
+	// It is a known bug under Windows that games that play CD audio cause
+	// ScummVM to crash if the data files are read from the same CD.
+	char driveLetter;
+	Common::Path gameDataDir(ConfMan.getPath("path"));
+	if (!gameDataDir.empty()) {
+		driveLetter = gameDataDir.toString(Common::Path::kNativeSeparator)[0];
+	} else {
+		// That's it! I give up!
+		Common::FSNode currentDir(".");
+		gameDataDir = currentDir.getPath();
+		if (!gameDataDir.empty()) {
+			driveLetter = gameDataDir.toString(Common::Path::kNativeSeparator)[0];
+		} else {
+			return false;
+		}
+	}
+
+	return Win32::isDriveCD(driveLetter);
 }
 
 AudioCDManager *createWin32AudioCDManager() {

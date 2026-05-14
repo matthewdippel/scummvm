@@ -21,6 +21,7 @@
 
 
 #include "common/config-manager.h"
+#include "scumm/music.h"
 #include "scumm/scumm.h"
 #include "scumm/scumm_v0.h"
 #include "scumm/scumm_v8.h"
@@ -185,8 +186,8 @@ void ScummEngine_v6::setupScummVars() {
 		VAR_NOSUBTITLES = 60;
 	} else {
 		VAR_VOICE_MODE = 60; // 0 is voice, 1 is voice+text, 2 is text only
-		VAR_SAVELOAD_SCRIPT = 61;
-		VAR_SAVELOAD_SCRIPT2 = 62;
+		VAR_PRE_SAVELOAD_SCRIPT = 61;
+		VAR_POST_SAVELOAD_SCRIPT = 62;
 	}
 
 	VAR_LEFTBTN_HOLD = 74;
@@ -214,9 +215,11 @@ void ScummEngine_v70he::setupScummVars() {
 	VAR_CURRENTDRIVE = 0xFF;
 	VAR_MUSIC_TIMER = 0xFF;
 
+	VAR_ERROR_FLAG = 8;
 	VAR_NUM_SOUND_CHANNELS = 9;
 	VAR_TALK_CHANNEL = 10;
 	VAR_SOUND_CHANNEL = 14;
+	VAR_EARLY_TALKIE_CALLBACK = 66;
 }
 
 #ifdef ENABLE_HE
@@ -228,6 +231,7 @@ void ScummEngine_v72he::setupScummVars() {
 	VAR_WALKTO_OBJ = 4;
 	VAR_RANDOM_NR = 5;
 
+	VAR_ERROR_FLAG = 8; // Alias of VAR_GAME_LOADED for now, which will get removed later
 	VAR_GAME_LOADED = 8;
 	VAR_EGO = 9;
 	VAR_NUM_ACTOR = 10;
@@ -270,7 +274,11 @@ void ScummEngine_v72he::setupScummVars() {
 	VAR_LAST_SOUND = 50;
 	VAR_TALK_CHANNEL = 51;
 	VAR_SOUND_CHANNEL = 52;
-
+	VAR_EARLY_CHAN_0_CALLBACK = 53;
+	VAR_EARLY_CHAN_1_CALLBACK = 54;
+	VAR_EARLY_TALKIE_CALLBACK = 55;
+	VAR_EARLY_CHAN_2_CALLBACK = 55;
+	VAR_EARLY_CHAN_3_CALLBACK = 56;
 	VAR_MEMORY_PERFORMANCE = 57;
 	VAR_VIDEO_PERFORMANCE = 58;
 	VAR_NEW_ROOM = 59;
@@ -308,36 +316,50 @@ void ScummEngine_v80he::setupScummVars() {
 
 	VAR_PLATFORM_VERSION = 79;
 	VAR_CURRENT_CHARSET = 80;
-	VAR_SOUNDCODE_TMR = 84;
+	VAR_SOUND_TOKEN_OFFSET = 84;
+	VAR_WINDEX_RUNNING = 85;
 	VAR_KEY_STATE = 86;
+	VAR_SOUND_CALLBACK_SCRIPT = 87;
 	VAR_NUM_SOUND_CHANNELS = 88;
 	VAR_COLOR_DEPTH = 89;
-	VAR_REDRAW_ALL_ACTORS = 95;
+	VAR_COLOR_BLACK = 93;
+	VAR_ALWAYS_REDRAW_ACTORS = 95;
 }
 
 void ScummEngine_v90he::setupScummVars() {
 	ScummEngine_v80he::setupScummVars();
 
-	VAR_TIMER = 97;
+	VAR_LAST_FRAME_BURN_TIME = 96;
+	VAR_LAST_FRAME_SCUMM_TIME = 97;
 	VAR_QUIT_SCRIPT = 102;
-	VAR_SCRIPT_CYCLE = 103;
-	VAR_NUM_SCRIPT_CYCLES = 104;
+	VAR_DEFAULT_SCRIPT_PRIORITY = 103;
+	VAR_LAST_SCRIPT_PRIORITY = 104;
 
 	if (_game.heversion >= 95) {
 		VAR_NUM_SPRITE_GROUPS = 105;
 		VAR_NUM_SPRITES = 106;
 		VAR_U32_VERSION = 107;
-		VAR_U32_ARRAY_UNK = 116;
-		VAR_WIZ_TCOLOR = 117;
-		VAR_RESERVED_SOUND_CHANNELS = 120;
+		VAR_U32_RESERVED = 116;
+		VAR_WIZ_TRANSPARENT_COLOR = 117;
+		VAR_OPERATION_FAILURE = 119;
+		VAR_START_DYN_SOUND_CHANNELS = 120;
 	}
 	if (_game.heversion >= 98) {
 		VAR_SKIP_RESET_TALK_ACTOR = 125;
 	}
 	if (_game.heversion >= 99) {
+#ifdef USE_ENET
+		if (_game.id == GID_FOOTBALL || _game.id == GID_BASEBALL2001 || _game.id == GID_FOOTBALL2002 ||
+			_game.id == GID_MOONBASE) {
+			VAR_REMOTE_START_SCRIPT = 98;
+			VAR_NETWORK_AVAILABLE = 100;
+			VAR_NETWORK_RECEIVE_ARRAY_SCRIPT = 101;
+		}
+#endif
 		VAR_MAIN_SCRIPT = 127;
 		VAR_NUM_PALETTES = 130;
-		VAR_NUM_UNK = 131;
+		VAR_NUM_WINDOWS = 131;
+		VAR_SPRITE_IMAGE_CHANGE_DOES_NOT_RESET_SETTINGS = 139;
 	}
 }
 
@@ -348,12 +370,17 @@ void ScummEngine_v100he::setupScummVars() {
 		VAR_REMOTE_START_SCRIPT = 98;
 		VAR_NETWORK_AVAILABLE = 100;
 		VAR_NETWORK_RECEIVE_ARRAY_SCRIPT = 101;
+	}
+
+	if (_game.id == GID_MOONBASE || _game.id == GID_BASKETBALL) {
 		VAR_U32_USER_VAR_A = 108;
 		VAR_U32_USER_VAR_B = 109;
 		VAR_U32_USER_VAR_C = 110;
 		VAR_U32_USER_VAR_D = 111;
 		VAR_U32_USER_VAR_E = 112;
 		VAR_U32_USER_VAR_F = 113;
+		VAR_U32_USER_VAR_G = 114;
+		VAR_U32_USER_VAR_H = 115;
 	}
 }
 #endif
@@ -413,8 +440,8 @@ void ScummEngine_v7::setupScummVars() {
 	VAR_INVENTORY_SCRIPT = 57;
 	VAR_CUTSCENE_START_SCRIPT = 58;
 	VAR_CUTSCENE_END_SCRIPT = 59;
-	VAR_SAVELOAD_SCRIPT = 60;
-	VAR_SAVELOAD_SCRIPT2 = 61;
+	VAR_PRE_SAVELOAD_SCRIPT = 60;
+	VAR_POST_SAVELOAD_SCRIPT = 61;
 
 	VAR_CUTSCENEEXIT_KEY = 62;
 	VAR_RESTART_KEY = 63;
@@ -558,6 +585,9 @@ void ScummEngine_v8::setupScummVars() {
 	VAR_KEYPRESS = 132;
 	VAR_BLAST_ABOVE_TEXT = 133;
 	VAR_SYNC = 134;
+
+	VAR_SAVELOAD_PAGE = 175;
+	VAR_OBJECT_LABEL_FLAG = 176;
 }
 #endif
 
@@ -701,18 +731,18 @@ void ScummEngine_v80he::resetScummVars() {
 void ScummEngine_v90he::resetScummVars() {
 	ScummEngine_v80he::resetScummVars();
 
-	VAR(VAR_SCRIPT_CYCLE) = 1;
-	VAR(VAR_NUM_SCRIPT_CYCLES) = 1;
+	VAR(VAR_DEFAULT_SCRIPT_PRIORITY) = 1;
+	VAR(VAR_LAST_SCRIPT_PRIORITY) = 1;
 
 	if (_game.heversion >= 95) {
 		VAR(VAR_NUM_SPRITE_GROUPS) = MAX(64, _numSprites / 4) - 1;
 		VAR(VAR_NUM_SPRITES) = _numSprites - 1;
-		VAR(VAR_WIZ_TCOLOR) = 5;
-		VAR(VAR_RESERVED_SOUND_CHANNELS) = 9;
+		VAR(VAR_WIZ_TRANSPARENT_COLOR) = 5;
+		VAR(VAR_START_DYN_SOUND_CHANNELS) = 9;
 	}
 	if (_game.heversion >= 98) {
 		VAR(VAR_U32_VERSION) = _logicHE->versionID();
-		VAR(VAR_U32_ARRAY_UNK) = 0;
+		VAR(VAR_U32_RESERVED) = 0;
 	}
 }
 
@@ -720,7 +750,7 @@ void ScummEngine_v99he::resetScummVars() {
 	ScummEngine_v90he::resetScummVars();
 
 	VAR(VAR_NUM_PALETTES) = _numPalettes;
-	VAR(VAR_NUM_UNK) = _numUnk;
+	VAR(VAR_NUM_WINDOWS) = _numWindows;
 
 	if (_game.heversion >= 100 && (_game.features & GF_16BIT_COLOR)) {
 		// Enable Bink video in 16bit color games
@@ -742,7 +772,7 @@ void ScummEngine_v100he::resetScummVars() {
 	ScummEngine_v99he::resetScummVars();
 
 	if (_game.id == GID_MOONBASE) {
-#ifdef USE_LIBCURL
+#ifdef USE_BASIC_NET
 		VAR(VAR_NETWORK_AVAILABLE) = 1;
 #else
 		VAR(VAR_NETWORK_AVAILABLE) = 0;
@@ -753,36 +783,7 @@ void ScummEngine_v100he::resetScummVars() {
 
 void ScummEngine::resetScummVars() {
 	if (_game.heversion < 70 && _game.version <= 6) {
-		// VAR_SOUNDCARD modes
-		// 0 PC Speaker
-		// 1 Tandy
-		// 2 CMS
-		// 3 AdLib
-		// 4 Roland
-		switch (_sound->_musicType) {
-		case MDT_NONE:
-		case MDT_PCSPK:
-			VAR(VAR_SOUNDCARD) = 0;
-			break;
-		case MDT_PCJR:
-			VAR(VAR_SOUNDCARD) = 1;
-			break;
-		case MDT_CMS:
-			VAR(VAR_SOUNDCARD) = 2;
-			break;
-		case MDT_ADLIB:
-			VAR(VAR_SOUNDCARD) = 3;
-			break;
-		default:
-			if ((_game.id == GID_MONKEY_EGA || _game.id == GID_MONKEY_VGA || (_game.id == GID_LOOM && _game.version == 3))
-			   &&  (_game.platform == Common::kPlatformDOS)) {
-				VAR(VAR_SOUNDCARD) = 4;
-			} else {
-				VAR(VAR_SOUNDCARD) = 3;
-			}
-			break;
-		}
-
+		setSoundCardVarToCurrentConfig();
 		setVideoModeVarToCurrentConfig();
 
 		if (_game.platform == Common::kPlatformMacintosh && (_game.features & GF_OLD_BUNDLE)) {
@@ -819,8 +820,8 @@ void ScummEngine::resetScummVars() {
 
 	if (VAR_DEBUGMODE != 0xFF) {
 		VAR(VAR_DEBUGMODE) = (_debugMode ? 1 : 0);
-		if (_game.heversion >= 80 && _debugMode)
-			VAR(85) = 1;
+		if (_game.heversion >= 80 && _debugMode && VAR_WINDEX_RUNNING != 0xFF)
+			VAR(VAR_WINDEX_RUNNING) = 1;
 	}
 
 	if (VAR_FADE_DELAY != 0xFF)
@@ -852,6 +853,57 @@ void ScummEngine::setVideoModeVarToCurrentConfig() {
 		VAR(VAR_VIDEOMODE) = 13;
 	else
 		VAR(VAR_VIDEOMODE) = 19;
+}
+
+void ScummEngine::setSoundCardVarToCurrentConfig() {
+	if (VAR_SOUNDCARD == 0xFF)
+		return;
+
+	switch (_sound->_musicType) {
+	case MDT_MACINTOSH:
+		switch (_game.id) {
+		case GID_INDY3:
+			VAR(VAR_SOUNDCARD) = (ConfMan.hasKey("mac_v3_low_quality_music") && ConfMan.getBool("mac_v3_low_quality_music")) ? 10 : 11;
+			break;
+		case GID_LOOM:
+			VAR(VAR_SOUNDCARD) = (ConfMan.hasKey("mac_snd_quality") && ConfMan.getInt("mac_snd_quality") > 0 && ConfMan.getInt("mac_snd_quality") < 4) ? 10 : 11;
+			break;
+		case GID_MONKEY:
+			VAR(VAR_SOUNDCARD) = 0xFFFF;
+			break;
+		default:
+			VAR(VAR_SOUNDCARD) = (_game.version >= 6) ? 0 : 4; 
+			break;
+		}
+		break;
+	// VAR_SOUNDCARD modes
+	// 0 PC Speaker
+	// 1 Tandy
+	// 2 CMS
+	// 3 AdLib
+	// 4 Roland
+	case MDT_NONE:
+	case MDT_PCSPK:
+		VAR(VAR_SOUNDCARD) = 0;
+		break;
+	case MDT_PCJR:
+		VAR(VAR_SOUNDCARD) = 1;
+		break;
+	case MDT_CMS:
+		VAR(VAR_SOUNDCARD) = 2;
+		break;
+	case MDT_ADLIB:
+		VAR(VAR_SOUNDCARD) = 3;
+		break;
+	default:
+		if ((_game.id == GID_MONKEY_EGA || _game.id == GID_MONKEY_VGA || (_game.id == GID_LOOM && _game.version == 3))
+			&& (_game.platform == Common::kPlatformDOS)) {
+			VAR(VAR_SOUNDCARD) = 4;
+		} else {
+			VAR(VAR_SOUNDCARD) = 3;
+		}
+		break;
+	}
 }
 
 } // End of namespace Scumm

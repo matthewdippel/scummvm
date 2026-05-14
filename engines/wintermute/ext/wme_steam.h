@@ -28,15 +28,15 @@
 #ifndef WINTERMUTE_SXSTEAMAPI_H
 #define WINTERMUTE_SXSTEAMAPI_H
 
-#include "common/achievements.h"
-#include "engines/wintermute/base/base_scriptable.h"
+#include "engines/achievements.h"
+#include "wintermute/base/base_scriptable.h"
 
 namespace Wintermute {
 
 class SXSteamAPI : public BaseScriptable {
 public:
 	DECLARE_PERSISTENT(SXSteamAPI, BaseScriptable)
-	ScValue *scGetProperty(const Common::String &name) override;
+	ScValue *scGetProperty(const char *name) override;
 	bool scSetProperty(const char *name, ScValue *value) override;
 	bool scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack, const char *name) override;
 	const char *scToString() override;

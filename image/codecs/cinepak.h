@@ -25,6 +25,7 @@
 #include "common/scummsys.h"
 #include "common/rect.h"
 #include "graphics/pixelformat.h"
+#include "graphics/palette.h"
 
 #include "image/codecs/codec.h"
 
@@ -45,7 +46,7 @@ struct CinepakStrip {
 	uint16 length;
 	Common::Rect rect;
 	CinepakCodebook v1_codebook[256], v4_codebook[256];
-	byte v1_dither[256 * 4 * 4 * 4], v4_dither[256 * 4 * 4 * 4];
+	uint32 v1_dither[256 * 4 * 4], v4_dither[256 * 4 * 4];
 };
 
 struct CinepakFrame {
@@ -70,16 +71,17 @@ struct CinepakFrame {
 class CinepakDecoder : public Codec {
 public:
 	CinepakDecoder(int bitsPerPixel = 24);
-	~CinepakDecoder();
+	~CinepakDecoder() override;
 
-	const Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream);
-	Graphics::PixelFormat getPixelFormat() const { return _pixelFormat; }
+	const Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream) override;
+	Graphics::PixelFormat getPixelFormat() const override { return _pixelFormat; }
+	bool setOutputPixelFormat(const Graphics::PixelFormat &format) override;
 
-	bool containsPalette() const { return _ditherPalette != 0; }
-	const byte *getPalette() { _dirtyPalette = false; return _ditherPalette; }
-	bool hasDirtyPalette() const { return _dirtyPalette; }
-	bool canDither(DitherType type) const;
-	void setDither(DitherType type, const byte *palette);
+	bool containsPalette() const override { return _ditherPalette != 0; }
+	const byte *getPalette() override { _dirtyPalette = false; return _ditherPalette.data(); }
+	bool hasDirtyPalette() const override { return _dirtyPalette; }
+	bool canDither(DitherType type) const override;
+	void setDither(DitherType type, const byte *palette) override;
 
 private:
 	CinepakFrame _curFrame;
@@ -88,18 +90,20 @@ private:
 	Graphics::PixelFormat _pixelFormat;
 	byte *_clipTable, *_clipTableBuf;
 
-	byte *_ditherPalette;
+	Graphics::Palette _ditherPalette;
 	bool _dirtyPalette;
 	byte *_colorMap;
 	DitherType _ditherType;
 
 	void initializeCodebook(uint16 strip, byte codebookType);
 	void loadCodebook(Common::SeekableReadStream &stream, uint16 strip, byte codebookType, byte chunkID, uint32 chunkSize);
-	void decodeVectors(Common::SeekableReadStream &stream, uint16 strip, byte chunkID, uint32 chunkSize);
+	void decodeVectors8(Common::SeekableReadStream &stream, uint16 strip, byte chunkID, uint32 chunkSize);
+	void decodeVectors24(Common::SeekableReadStream &stream, uint16 strip, byte chunkID, uint32 chunkSize);
 
 	byte findNearestRGB(int index) const;
 	void ditherVectors(Common::SeekableReadStream &stream, uint16 strip, byte chunkID, uint32 chunkSize);
 	void ditherCodebookQT(uint16 strip, byte codebookType, uint16 codebookIndex);
+	void ditherCodebookVFW(uint16 strip, byte codebookType, uint16 codebookIndex);
 };
 
 } // End of namespace Image

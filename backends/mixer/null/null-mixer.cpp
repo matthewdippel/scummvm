@@ -36,7 +36,7 @@ NullMixerManager::~NullMixerManager() {
 }
 
 void NullMixerManager::init() {
-	_mixer = new Audio::MixerImpl(_outputRate, _samples);
+	_mixer = new Audio::MixerImpl(_outputRate, true, _samples);
 	assert(_mixer);
 	_mixer->setReady(true);
 }
@@ -51,6 +51,10 @@ int NullMixerManager::resumeAudio() {
 	}
 	_audioSuspended = false;
 	return 0;
+}
+
+bool NullMixerManager::isNullDevice() const {
+	return true;
 }
 
 void NullMixerManager::update(uint8 callbackPeriod) {

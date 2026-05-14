@@ -33,6 +33,7 @@
 #include "common/text-to-speech.h"
 #include "common/system.h"
 #include "common/config-manager.h"
+#include "common/events.h"
 
 namespace GUI {
 
@@ -57,7 +58,8 @@ enum {
 	// The PopUpWidget for example does not want this behavior, since the
 	// mouse down will open up a new dialog which silently eats the mouse
 	// up event for its own purposes.
-	WIDGET_IGNORE_DRAG	= 1 << 10
+	WIDGET_IGNORE_DRAG	= 1 << 10,
+	WIDGET_DYN_TOOLTIP  = 1 << 11, // Widgets updates tooltip by coordinates
 };
 
 enum {
@@ -73,7 +75,9 @@ enum {
 	kTabWidget			= 'TABW',
 	kGraphicsWidget		= 'GFXW',
 	kContainerWidget	= 'CTNR',
-	kScrollContainerWidget = 'SCTR'
+	kScrollContainerWidget = 'SCTR',
+	kRichTextWidget		= 'RTXT',
+	kEEWidget			= 'EEGG',
 };
 
 enum {
@@ -111,9 +115,11 @@ private:
 public:
 	static Widget *findWidgetInChain(Widget *start, int x, int y);
 	static Widget *findWidgetInChain(Widget *start, const char *name);
+	static Widget *findWidgetInChain(Widget *w, uint32 type);
 	static bool containsWidgetInChain(Widget *start, Widget *search);
 
 public:
+	Widget(GuiObject *boss, int x, int y, int w, int h, bool scale, const Common::U32String &tooltip = Common::U32String());
 	Widget(GuiObject *boss, int x, int y, int w, int h, const Common::U32String &tooltip = Common::U32String());
 	Widget(GuiObject *boss, const Common::String &name, const Common::U32String &tooltip = Common::U32String());
 	~Widget() override;
@@ -141,6 +147,7 @@ public:
 	void handleMouseWheel(int x, int y, int direction) override { assert(_boss); _boss->handleMouseWheel(x, y, direction); }
 	virtual bool handleKeyDown(Common::KeyState state) { return false; }	// Return true if the event was handled
 	virtual bool handleKeyUp(Common::KeyState state) { return false; }	// Return true if the event was handled
+	virtual void handleOtherEvent(const Common::Event &evt) {}
 	virtual void handleTickle() {}
 
 	/** Mark the widget and its children as dirty so they are redrawn on the next screen update */
@@ -201,10 +208,11 @@ protected:
 	Common::U32String		_label;
 	Graphics::TextAlign		_align;
 	ThemeEngine::FontStyle	_font;
-	ThemeEngine::FontColor  _fontColor; 
+	ThemeEngine::FontColor  _fontColor;
 	bool _useEllipsis;
 
 public:
+	StaticTextWidget(GuiObject *boss, int x, int y, int w, int h, bool scale, const Common::U32String &text, Graphics::TextAlign align, const Common::U32String &tooltip = Common::U32String(), ThemeEngine::FontStyle font = ThemeEngine::kFontStyleBold, Common::Language lang = Common::UNK_LANG, bool useEllipsis = true);
 	StaticTextWidget(GuiObject *boss, int x, int y, int w, int h, const Common::U32String &text, Graphics::TextAlign align, const Common::U32String &tooltip = Common::U32String(), ThemeEngine::FontStyle font = ThemeEngine::kFontStyleBold, Common::Language lang = Common::UNK_LANG, bool useEllipsis = true);
 	StaticTextWidget(GuiObject *boss, const Common::String &name, const Common::U32String &text, const Common::U32String &tooltip = Common::U32String(), ThemeEngine::FontStyle font = ThemeEngine::kFontStyleBold, Common::Language lang = Common::UNK_LANG, bool useEllipsis = true);
 	void setValue(int value);
@@ -214,9 +222,10 @@ public:
 	void setAlign(Graphics::TextAlign align);
 	Graphics::TextAlign getAlign() const		{ return _align; }
 	void readLabel() { read(_label); }
-	void setFontColor(ThemeEngine::FontColor color);  
+	void setFontColor(ThemeEngine::FontColor color);
 
 protected:
+	void reflowLayout() override;
 	void drawWidget() override;
 	void setFont(ThemeEngine::FontStyle font, Common::Language lang);
 };
@@ -231,6 +240,7 @@ protected:
 	uint8	_lowresHotkey;
 	Common::U32String _lowresLabel;
 public:
+	ButtonWidget(GuiObject *boss, int x, int y, int w, int h, bool scale, const Common::U32String &label, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0, uint8 hotkey = 0, const Common::U32String &lowresLabel = Common::U32String());
 	ButtonWidget(GuiObject *boss, int x, int y, int w, int h, const Common::U32String &label, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0, uint8 hotkey = 0, const Common::U32String &lowresLabel = Common::U32String());
 	ButtonWidget(GuiObject *boss, const Common::String &name, const Common::U32String &label, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0, uint8 hotkey = 0, const Common::U32String &lowresLabel = Common::U32String());
 
@@ -260,6 +270,7 @@ protected:
 /* DropdownButtonWidget */
 class DropdownButtonWidget : public ButtonWidget {
 public:
+	DropdownButtonWidget(GuiObject *boss, int x, int y, int w, int h, bool scale, const Common::U32String &label, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0, uint8 hotkey = 0, const Common::U32String &lowresLabel = Common::U32String());
 	DropdownButtonWidget(GuiObject *boss, int x, int y, int w, int h, const Common::U32String &label, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0, uint8 hotkey = 0, const Common::U32String &lowresLabel = Common::U32String());
 	DropdownButtonWidget(GuiObject *boss, const Common::String &name, const Common::U32String &label, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0, uint8 hotkey = 0, const Common::U32String &lowresLabel = Common::U32String());
 
@@ -295,25 +306,24 @@ protected:
 /* PicButtonWidget */
 class PicButtonWidget : public ButtonWidget {
 public:
+	PicButtonWidget(GuiObject *boss, int x, int y, int w, int h, bool scale, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0, uint8 hotkey = 0);
 	PicButtonWidget(GuiObject *boss, int x, int y, int w, int h, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0, uint8 hotkey = 0);
 	PicButtonWidget(GuiObject *boss, const Common::String &name, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0, uint8 hotkey = 0);
 	~PicButtonWidget() override;
 
-	void setGfx(const Graphics::ManagedSurface *gfx, int statenum = kPicButtonStateEnabled, bool scale = true);
+	void setGfx(Common::SharedPtr<Graphics::ManagedSurface> &gfx, int statenum = kPicButtonStateEnabled);
 	void setGfx(const Graphics::Surface *gfx, int statenum = kPicButtonStateEnabled, bool scale = true);
-	void setGfxFromTheme(const char *name, int statenum = kPicButtonStateEnabled, bool scale = true);
+	void setGfxFromTheme(const char *name, int statenum = kPicButtonStateEnabled);
 	void setGfx(int w, int h, int r, int g, int b, int statenum = kPicButtonStateEnabled);
+	void clearGfx(int statenum = kPicButtonStateEnabled) { _gfx[statenum].reset(); }
 
-	void useAlpha(int alpha) { _alpha = alpha; }
-	void useThemeTransparency(bool enable) { _transparency = enable; }
 	void setButtonDisplay(bool enable) {_showButton = enable; }
 
 protected:
 	void drawWidget() override;
 
-	Graphics::ManagedSurface _gfx[kPicButtonStateMax + 1];
-	int _alpha;
-	bool _transparency;
+	Common::SharedPtr<Graphics::ManagedSurface> _gfx[kPicButtonStateMax + 1];
+	Graphics::AlphaType _alphaType[kPicButtonStateMax + 1];
 	bool _showButton;
 };
 
@@ -321,9 +331,10 @@ protected:
 class CheckboxWidget : public ButtonWidget {
 protected:
 	bool	_state;
-	bool _overrideText; 
+	bool _overrideText;
 	int _spacing;
 public:
+	CheckboxWidget(GuiObject *boss, int x, int y, int w, int h, bool scale, const Common::U32String &label, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0, uint8 hotkey = 0);
 	CheckboxWidget(GuiObject *boss, int x, int y, int w, int h, const Common::U32String &label, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0, uint8 hotkey = 0);
 	CheckboxWidget(GuiObject *boss, const Common::String &name, const Common::U32String &label, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0, uint8 hotkey = 0);
 
@@ -335,8 +346,8 @@ public:
 	void toggleState()			{ setState(!_state); }
 	bool getState() const		{ return _state; }
 
-	void setOverride(bool enable); 
-	
+	void setOverride(bool enable);
+
 protected:
 	void drawWidget() override;
 };
@@ -373,6 +384,7 @@ protected:
 	int _value;
 
 public:
+	RadiobuttonWidget(GuiObject *boss, int x, int y, int w, int h, bool scale, RadiobuttonGroup *group, int value, const Common::U32String &label, const Common::U32String &tooltip = Common::U32String(), uint8 hotkey = 0);
 	RadiobuttonWidget(GuiObject *boss, int x, int y, int w, int h, RadiobuttonGroup *group, int value, const Common::U32String &label, const Common::U32String &tooltip = Common::U32String(), uint8 hotkey = 0);
 	RadiobuttonWidget(GuiObject *boss, const Common::String &name, RadiobuttonGroup *group, int value, const Common::U32String &label, const Common::U32String &tooltip = Common::U32String(), uint8 hotkey = 0);
 
@@ -400,6 +412,7 @@ protected:
 	bool	_isDragging;
 	uint	_labelWidth;
 public:
+	SliderWidget(GuiObject *boss, int x, int y, int w, int h, bool scale, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0);
 	SliderWidget(GuiObject *boss, int x, int y, int w, int h, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0);
 	SliderWidget(GuiObject *boss, const Common::String &name, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0);
 
@@ -432,30 +445,78 @@ protected:
 /* GraphicsWidget */
 class GraphicsWidget : public Widget {
 public:
+	GraphicsWidget(GuiObject *boss, int x, int y, int w, int h, bool scale, const Common::U32String &tooltip = Common::U32String());
 	GraphicsWidget(GuiObject *boss, int x, int y, int w, int h, const Common::U32String &tooltip = Common::U32String());
 	GraphicsWidget(GuiObject *boss, const Common::String &name, const Common::U32String &tooltip = Common::U32String());
 	~GraphicsWidget() override;
 
-	void setGfx(const Graphics::ManagedSurface *gfx, bool scale = false);
+	void setGfx(Common::SharedPtr<Graphics::ManagedSurface> &gfx);
 	void setGfx(const Graphics::Surface *gfx, bool scale = false);
 	void setGfx(int w, int h, int r, int g, int b);
 	void setGfxFromTheme(const char *name);
-
-	void useAlpha(int alpha) { _alpha = alpha; }
-	void useThemeTransparency(bool enable) { _transparency = enable; }
+	void clearGfx() { _gfx.reset(); }
 
 protected:
 	void drawWidget() override;
 
-	Graphics::ManagedSurface _gfx;
-	int _alpha;
-	bool _transparency;
+	Common::SharedPtr<Graphics::ManagedSurface> _gfx;
+	Graphics::AlphaType _alphaType;
+};
+
+class PathWidget : public StaticTextWidget {
+public:
+	PathWidget(GuiObject *boss, int x, int y, int w, int h, bool scale,
+			const Common::Path &path, Graphics::TextAlign align,
+			const Common::U32String &placeholder = Common::U32String(),
+			const Common::U32String &tooltip = Common::U32String(),
+			ThemeEngine::FontStyle font = ThemeEngine::kFontStyleBold,
+			bool useEllipsis = true) :
+		StaticTextWidget(boss, x, y, w, h, scale,
+				path.empty() ? placeholder : Common::U32String(path.toString(Common::Path::kNativeSeparator)),
+				align, tooltip, font, Common::UNK_LANG, useEllipsis),
+		_path(path),
+		_placeholder(placeholder) { }
+	PathWidget(GuiObject *boss, int x, int y, int w, int h,
+			const Common::Path &path, Graphics::TextAlign align,
+			const Common::U32String &placeholder = Common::U32String(),
+			const Common::U32String &tooltip = Common::U32String(),
+			ThemeEngine::FontStyle font = ThemeEngine::kFontStyleBold,
+			bool useEllipsis = true) :
+		StaticTextWidget(boss, x, y, w, h,
+				path.empty() ? placeholder : Common::U32String(path.toString(Common::Path::kNativeSeparator)),
+				align, tooltip, font, Common::UNK_LANG, useEllipsis),
+		_path(path),
+		_placeholder(placeholder) {}
+	PathWidget(GuiObject *boss, const Common::String &name,
+			const Common::Path &path,
+			const Common::U32String &placeholder = Common::U32String(),
+			const Common::U32String &tooltip = Common::U32String(),
+			ThemeEngine::FontStyle font = ThemeEngine::kFontStyleBold,
+			bool useEllipsis = true) :
+		StaticTextWidget(boss, name,
+				path.empty() ? placeholder : Common::U32String(path.toString(Common::Path::kNativeSeparator)),
+				tooltip, font, Common::UNK_LANG, useEllipsis),
+		_path(path),
+		_placeholder(placeholder) {}
+	void setLabel(const Common::Path &path) {
+		_path = path;
+		if (path.empty()) {
+			StaticTextWidget::setLabel(_placeholder);
+		} else {
+			StaticTextWidget::setLabel(path.toString(Common::Path::kNativeSeparator));
+		}
+	}
+	const Common::Path &getLabel() const { return _path; }
+	void setEmptyPlaceHolder(const Common::U32String &placeholder) { _placeholder = placeholder; }
+protected:
+	Common::Path _path;
+	Common::U32String _placeholder;
 };
 
 /* ContainerWidget */
 class ContainerWidget : public Widget {
 public:
-	ContainerWidget(GuiObject *boss, int x, int y, int w, int h);
+	ContainerWidget(GuiObject *boss, int x, int y, int w, int h, bool scale = false);
 	ContainerWidget(GuiObject *boss, const Common::String &name);
 	~ContainerWidget() override;
 
@@ -476,12 +537,12 @@ public:
 	/**
 	 * @param widgetsBoss  parent widget for the container widget
 	 * @param name         name of the container widget in the layout system
-	 * @param dialogLayout name of the layout used by the contained widgets, empty string for manually layed out widgets
+	 * @param dialogLayout name of the layout used by the contained widgets, empty string for manually laid out widgets
 	 * @param scrollable   whether the container is made scrollable through a ScrollContainerWidget
 	 * @param domain       the configuration manager domain this widget is meant to edit
 	 */
 	OptionsContainerWidget(GuiObject *boss, const Common::String &name, const Common::String &dialogLayout,
-	                       bool scrollable, const Common::String &domain);
+	                       const Common::String &domain);
 	~OptionsContainerWidget() override;
 
 	/** Implementing classes should (re)initialize their widgets with state from the configuration domain */
@@ -507,20 +568,16 @@ public:
 	void setDomain(const Common::String &domain) { _domain = domain; }
 
 protected:
-	enum {
-		/** The command that gets sent when the scroll container needs to reflow its contents */
-		kReflowCmd = 'REFL'
-	};
-
 	// Widget API
 	void reflowLayout() override;
+	Common::Rect getClipRect() const override;
 	void drawWidget() override {}
 	bool containsWidget(Widget *widget) const override;
 	Widget *findWidget(int x, int y) override;
 	void removeWidget(Widget *widget) override;
 
 	/** The pareent object to use when creating child widgets */
-	GuiObject *widgetsBoss();
+	GuiObject *widgetsBoss() { return this; }
 
 	/**
 	 * Child classes can override this method to define the layout used by the contained widgets in the layout system
@@ -533,13 +590,9 @@ protected:
 	const Common::String _dialogLayout;
 
 	Dialog *_parentDialog;
-
-private:
-	ScrollContainerWidget *_scrollContainer;
 };
 
-ButtonWidget *addClearButton(GuiObject *boss, const Common::String &name, uint32 cmd, int x=0, int y=0, int w=0, int h=0);
-const Graphics::ManagedSurface *scaleGfx(const Graphics::ManagedSurface *gfx, int w, int h, bool filtering = false);
+ButtonWidget *addClearButton(GuiObject *boss, const Common::String &name, uint32 cmd, int x=0, int y=0, int w=0, int h=0, bool scale = false);
 
 } // End of namespace GUI
 

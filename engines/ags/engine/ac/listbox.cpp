@@ -21,8 +21,8 @@
 
 #include "common/config-manager.h"
 #include "common/savefile.h"
-#include "ags/lib/std/algorithm.h"
-#include "ags/lib/std/set.h"
+#include "common/std/algorithm.h"
+#include "common/std/set.h"
 #include "ags/lib/allegro.h" // find files
 #include "ags/engine/ac/listbox.h"
 #include "ags/shared/ac/common.h"
@@ -41,6 +41,9 @@
 #include "ags/engine/ac/dynobj/script_string.h"
 #include "ags/ags.h"
 #include "ags/globals.h"
+
+#include "gui/message.h"
+#include "common/translation.h"
 
 namespace AGS3 {
 
@@ -68,7 +71,18 @@ static void FillSaveList(std::set<String> &files, const String &filePattern) {
 	size_t wildcard = filePattern.FindChar('*');
 	assert(wildcard != String::NoIndex);
 	Common::String prefix(filePattern.GetCStr(), wildcard);
-	Common::StringArray matches = g_system->getSavefileManager()->listSavefiles(filePattern);
+	Common::StringArray matches;
+
+	// WORKAROUND: For QfG2 AGDI import screen, list only the QfG1 exported characters
+	if ((strcmp(_GP(game).guid, "{a46a9171-f6f9-456c-9b2b-a509b560ddc0}") == 0) && _G(displayed_room) == 1) {
+		::GUI::MessageDialog dialog(_("The game will now list characters exported from the Sierra games that can be imported:\n"
+									  "1. Save files named qfg1*.sav or qfg1vga*.sav inside ScummVM save directory, or\n"
+									  "2. Any .sav file inside the QfG2 Remake game directory"));
+		dialog.runModal();
+
+		matches = g_system->getSavefileManager()->listSavefiles("qfg1*.sav");
+	} else
+		matches = g_system->getSavefileManager()->listSavefiles(filePattern);
 
 	for (uint idx = 0; idx < matches.size(); ++idx) {
 		Common::String name = matches[idx];
@@ -86,7 +100,7 @@ void FillDirList(std::set<String> &files, const String &path) {
 		String subDir = dirName.Mid(_GP(ResPaths).DataDir.GetLength());
 		if (!subDir.IsEmpty() && subDir[0u] == '/')
 			subDir.ClipLeft(1);
-		dirName = ConfMan.get("path");
+		dirName = ConfMan.getPath("path").toString('/');
 	} else if (dirName.CompareLeftNoCase(get_save_game_directory()) == 0) {
 		// Save files listing
 		FillSaveList(files, filePattern);
@@ -146,6 +160,15 @@ int ListBox_FillSaveGameList(GUIListBox *listbox) {
 	for (const auto &item : saveList) {
 		int slot = item.getSaveSlot();
 		Common::String desc = item.getDescription();
+		if (strcmp(_GP(game).guid, "{623a837d-9007-4174-b8be-af23192c3d73}" /* Blackwell Epiphany */) == 0 ||
+			strcmp(_GP(game).guid, "{139fc4b0-c680-4e03-984e-bda22af424e9}" /* Gemini Rue */) == 0 ||
+			strcmp(_GP(game).guid, "{db1e693d-3c6a-4565-ae08-45fe4c536498}" /* Old Skies */) == 0 ||
+			strcmp(_GP(game).guid, "{a0488eca-2275-47c8-860a-3b755fd51a59}" /* The Shivah: Kosher Edition */) == 0 ||
+			strcmp(_GP(game).guid, "{ea2bf7d0-7eca-4127-9970-031ee8f37eba}" /* Unavowed */) == 0)
+			if (slot == 101) {
+				debug(0, "Skipping game-managed autosave slot entry in savelist");
+				continue;
+			}
 
 		listbox->AddItem(desc);
 		listbox->SavedGameIndex[listbox->ItemCount - 1] = slot;
@@ -172,7 +195,7 @@ int ListBox_GetItemAtLocation(GUIListBox *listbox, int x, int y) {
 	x = (x - listbox->X) - _GP(guis)[listbox->ParentId].X;
 	y = (y - listbox->Y) - _GP(guis)[listbox->ParentId].Y;
 
-	if ((x < 0) || (y < 0) || (x >= listbox->Width) || (y >= listbox->Height))
+	if ((x < 0) || (y < 0) || (x >= listbox->GetWidth()) || (y >= listbox->GetHeight()))
 		return -1;
 
 	return listbox->GetItemAt(x, y);
@@ -181,8 +204,7 @@ int ListBox_GetItemAtLocation(GUIListBox *listbox, int x, int y) {
 char *ListBox_GetItemText(GUIListBox *listbox, int index, char *buffer) {
 	if ((index < 0) || (index >= listbox->ItemCount))
 		quit("!ListBoxGetItemText: invalid item specified");
-	strncpy(buffer, listbox->Items[index].GetCStr(), 198);
-	buffer[199] = 0;
+	snprintf(buffer, MAX_MAXSTRLEN, "%s", listbox->Items[index].GetCStr());
 	return buffer;
 }
 
@@ -368,8 +390,10 @@ void ListBox_ScrollUp(GUIListBox *listbox) {
 
 
 GUIListBox *is_valid_listbox(int guin, int objn) {
-	if ((guin < 0) | (guin >= _GP(game).numgui)) quit("!ListBox: invalid GUI number");
-	if ((objn < 0) | (objn >= _GP(guis)[guin].GetControlCount())) quit("!ListBox: invalid object number");
+	if ((guin < 0) || (guin >= _GP(game).numgui))
+		quit("!ListBox: invalid GUI number");
+	if ((objn < 0) || (objn >= _GP(guis)[guin].GetControlCount()))
+		quit("!ListBox: invalid object number");
 	if (_GP(guis)[guin].GetControlType(objn) != kGUIListBox)
 		quit("!ListBox: specified control is not a list box");
 	return (GUIListBox *)_GP(guis)[guin].GetControl(objn);
@@ -489,7 +513,7 @@ RuntimeScriptValue Sc_ListBox_GetItemCount(void *self, const RuntimeScriptValue 
 
 // const char* (GUIListBox *listbox, int index)
 RuntimeScriptValue Sc_ListBox_GetItems(void *self, const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_OBJCALL_OBJ_PINT(GUIListBox, const char, _GP(myScriptStringImpl), ListBox_GetItems);
+	API_OBJCALL_OBJ_PINT(GUIListBox, const char, _GP(myScriptStringImpl), ListBox_GetItems);
 }
 
 // int (GUIListBox *listbox)
@@ -559,48 +583,51 @@ RuntimeScriptValue Sc_ListBox_SetTopItem(void *self, const RuntimeScriptValue *p
 }
 
 
-
 void RegisterListBoxAPI() {
-	ccAddExternalObjectFunction("ListBox::AddItem^1", Sc_ListBox_AddItem);
-	ccAddExternalObjectFunction("ListBox::Clear^0", Sc_ListBox_Clear);
-	ccAddExternalObjectFunction("ListBox::FillDirList^1", Sc_ListBox_FillDirList);
-	ccAddExternalObjectFunction("ListBox::FillSaveGameList^0", Sc_ListBox_FillSaveGameList);
-	ccAddExternalObjectFunction("ListBox::GetItemAtLocation^2", Sc_ListBox_GetItemAtLocation);
-	ccAddExternalObjectFunction("ListBox::GetItemText^2", Sc_ListBox_GetItemText);
-	ccAddExternalObjectFunction("ListBox::InsertItemAt^2", Sc_ListBox_InsertItemAt);
-	ccAddExternalObjectFunction("ListBox::RemoveItem^1", Sc_ListBox_RemoveItem);
-	ccAddExternalObjectFunction("ListBox::ScrollDown^0", Sc_ListBox_ScrollDown);
-	ccAddExternalObjectFunction("ListBox::ScrollUp^0", Sc_ListBox_ScrollUp);
-	ccAddExternalObjectFunction("ListBox::SetItemText^2", Sc_ListBox_SetItemText);
-	ccAddExternalObjectFunction("ListBox::get_Font", Sc_ListBox_GetFont);
-	ccAddExternalObjectFunction("ListBox::set_Font", Sc_ListBox_SetFont);
-	ccAddExternalObjectFunction("ListBox::get_ShowBorder", Sc_ListBox_GetShowBorder);
-	ccAddExternalObjectFunction("ListBox::set_ShowBorder", Sc_ListBox_SetShowBorder);
-	ccAddExternalObjectFunction("ListBox::get_ShowScrollArrows", Sc_ListBox_GetShowScrollArrows);
-	ccAddExternalObjectFunction("ListBox::set_ShowScrollArrows", Sc_ListBox_SetShowScrollArrows);
-	// old "inverted" properties
-	ccAddExternalObjectFunction("ListBox::get_HideBorder", Sc_ListBox_GetHideBorder);
-	ccAddExternalObjectFunction("ListBox::set_HideBorder", Sc_ListBox_SetHideBorder);
-	ccAddExternalObjectFunction("ListBox::get_HideScrollArrows", Sc_ListBox_GetHideScrollArrows);
-	ccAddExternalObjectFunction("ListBox::set_HideScrollArrows", Sc_ListBox_SetHideScrollArrows);
-	//
-	ccAddExternalObjectFunction("ListBox::get_ItemCount", Sc_ListBox_GetItemCount);
-	ccAddExternalObjectFunction("ListBox::geti_Items", Sc_ListBox_GetItems);
-	ccAddExternalObjectFunction("ListBox::seti_Items", Sc_ListBox_SetItemText);
-	ccAddExternalObjectFunction("ListBox::get_RowCount", Sc_ListBox_GetRowCount);
-	ccAddExternalObjectFunction("ListBox::geti_SaveGameSlots", Sc_ListBox_GetSaveGameSlots);
-	ccAddExternalObjectFunction("ListBox::get_SelectedBackColor", Sc_ListBox_GetSelectedBackColor);
-	ccAddExternalObjectFunction("ListBox::set_SelectedBackColor", Sc_ListBox_SetSelectedBackColor);
-	ccAddExternalObjectFunction("ListBox::get_SelectedIndex", Sc_ListBox_GetSelectedIndex);
-	ccAddExternalObjectFunction("ListBox::set_SelectedIndex", Sc_ListBox_SetSelectedIndex);
-	ccAddExternalObjectFunction("ListBox::get_SelectedTextColor", Sc_ListBox_GetSelectedTextColor);
-	ccAddExternalObjectFunction("ListBox::set_SelectedTextColor", Sc_ListBox_SetSelectedTextColor);
-	ccAddExternalObjectFunction("ListBox::get_TextAlignment", Sc_ListBox_GetTextAlignment);
-	ccAddExternalObjectFunction("ListBox::set_TextAlignment", Sc_ListBox_SetTextAlignment);
-	ccAddExternalObjectFunction("ListBox::get_TextColor", Sc_ListBox_GetTextColor);
-	ccAddExternalObjectFunction("ListBox::set_TextColor", Sc_ListBox_SetTextColor);
-	ccAddExternalObjectFunction("ListBox::get_TopItem", Sc_ListBox_GetTopItem);
-	ccAddExternalObjectFunction("ListBox::set_TopItem", Sc_ListBox_SetTopItem);
+	ScFnRegister listbox_api[] = {
+		{"ListBox::AddItem^1", API_FN_PAIR(ListBox_AddItem)},
+		{"ListBox::Clear^0", API_FN_PAIR(ListBox_Clear)},
+		{"ListBox::FillDirList^1", API_FN_PAIR(ListBox_FillDirList)},
+		{"ListBox::FillSaveGameList^0", API_FN_PAIR(ListBox_FillSaveGameList)},
+		{"ListBox::GetItemAtLocation^2", API_FN_PAIR(ListBox_GetItemAtLocation)},
+		{"ListBox::GetItemText^2", API_FN_PAIR(ListBox_GetItemText)},
+		{"ListBox::InsertItemAt^2", API_FN_PAIR(ListBox_InsertItemAt)},
+		{"ListBox::RemoveItem^1", API_FN_PAIR(ListBox_RemoveItem)},
+		{"ListBox::ScrollDown^0", API_FN_PAIR(ListBox_ScrollDown)},
+		{"ListBox::ScrollUp^0", API_FN_PAIR(ListBox_ScrollUp)},
+		{"ListBox::SetItemText^2", API_FN_PAIR(ListBox_SetItemText)},
+		{"ListBox::get_Font", API_FN_PAIR(ListBox_GetFont)},
+		{"ListBox::set_Font", API_FN_PAIR(ListBox_SetFont)},
+		{"ListBox::get_ShowBorder", API_FN_PAIR(ListBox_GetShowBorder)},
+		{"ListBox::set_ShowBorder", API_FN_PAIR(ListBox_SetShowBorder)},
+		{"ListBox::get_ShowScrollArrows", API_FN_PAIR(ListBox_GetShowScrollArrows)},
+		{"ListBox::set_ShowScrollArrows", API_FN_PAIR(ListBox_SetShowScrollArrows)},
+		// old { "inverted" properties
+		{"ListBox::get_HideBorder", API_FN_PAIR(ListBox_GetHideBorder)},
+		{"ListBox::set_HideBorder", API_FN_PAIR(ListBox_SetHideBorder)},
+		{"ListBox::get_HideScrollArrows", API_FN_PAIR(ListBox_GetHideScrollArrows)},
+		{"ListBox::set_HideScrollArrows", API_FN_PAIR(ListBox_SetHideScrollArrows)},
+		//
+		{"ListBox::get_ItemCount", API_FN_PAIR(ListBox_GetItemCount)},
+		{"ListBox::geti_Items", API_FN_PAIR(ListBox_GetItems)},
+		{"ListBox::seti_Items", API_FN_PAIR(ListBox_SetItemText)},
+		{"ListBox::get_RowCount", API_FN_PAIR(ListBox_GetRowCount)},
+		{"ListBox::geti_SaveGameSlots", API_FN_PAIR(ListBox_GetSaveGameSlots)},
+		{"ListBox::get_SelectedBackColor", API_FN_PAIR(ListBox_GetSelectedBackColor)},
+		{"ListBox::set_SelectedBackColor", API_FN_PAIR(ListBox_SetSelectedBackColor)},
+		{"ListBox::get_SelectedIndex", API_FN_PAIR(ListBox_GetSelectedIndex)},
+		{"ListBox::set_SelectedIndex", API_FN_PAIR(ListBox_SetSelectedIndex)},
+		{"ListBox::get_SelectedTextColor", API_FN_PAIR(ListBox_GetSelectedTextColor)},
+		{"ListBox::set_SelectedTextColor", API_FN_PAIR(ListBox_SetSelectedTextColor)},
+		{"ListBox::get_TextAlignment", API_FN_PAIR(ListBox_GetTextAlignment)},
+		{"ListBox::set_TextAlignment", API_FN_PAIR(ListBox_SetTextAlignment)},
+		{"ListBox::get_TextColor", API_FN_PAIR(ListBox_GetTextColor)},
+		{"ListBox::set_TextColor", API_FN_PAIR(ListBox_SetTextColor)},
+		{"ListBox::get_TopItem", API_FN_PAIR(ListBox_GetTopItem)},
+		{"ListBox::set_TopItem", API_FN_PAIR(ListBox_SetTopItem)},
+	};
+
+	ccAddExternalFunctions361(listbox_api);
 }
 
 } // namespace AGS3

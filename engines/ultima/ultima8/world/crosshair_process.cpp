@@ -19,7 +19,7 @@
  *
  */
 
-#include "ultima/ultima8/misc/pent_include.h"
+#include "ultima/ultima8/misc/debugger.h"
 
 #include "ultima/ultima8/kernel/kernel.h"
 #include "ultima/ultima8/world/actors/main_actor.h"
@@ -29,7 +29,7 @@
 #include "ultima/ultima8/world/get_object.h"
 #include "ultima/ultima8/ultima8.h"
 
-#include "common/math.h"
+#include "math/utils.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -59,13 +59,12 @@ void CrosshairProcess::run() {
 	if (actor->isInCombat()) {
 		Kernel *kernel = Kernel::get_instance();
 		assert(kernel);
-		int32 ax, ay, az;
-		actor->getLocation(ax, ay, az);
-		actor->addFireAnimOffsets(ax, ay, az);
+		Point3 pt = actor->getLocation();
+		actor->addFireAnimOffsets(pt.x, pt.y, pt.z);
 
 		const CruAvatarMoverProcess *mover = dynamic_cast<CruAvatarMoverProcess *>(Ultima8Engine::get_instance()->getAvatarMoverProcess());
 		if (!mover) {
-			warning("lost CruAvatarMoverProcess!");
+			warning("lost CruAvatarMoverProcess");
 			return;
 		}
 		double angle = mover->getAvatarAngleDegrees() + 90.0;
@@ -74,11 +73,11 @@ void CrosshairProcess::run() {
 			return;
 		}
 		// Convert angle to 0~2pi
-		double rads = Common::deg2rad(angle);
+		double rads = Math::deg2rad(angle);
 		float xoff = CROSSHAIR_DIST * cos(rads);
 		float yoff = CROSSHAIR_DIST * sin(rads);
-		ax -= static_cast<int32>(xoff);
-		ay -= static_cast<int32>(yoff);
+		pt.x -= static_cast<int32>(xoff);
+		pt.y -= static_cast<int32>(yoff);
 
 		Item *item;
 		if (_itemNum) {
@@ -90,7 +89,7 @@ void CrosshairProcess::run() {
 			setItemNum(item->getObjId());
 		}
 		if (item)
-			item->move(ax, ay, az);
+			item->move(pt.x, pt.y, pt.z);
 		else
 			_itemNum = 0; // sprite gone? can happen during teleport.
 	} else {
@@ -109,7 +108,7 @@ void CrosshairProcess::saveData(Common::WriteStream *ws) {
 
 bool CrosshairProcess::loadData(Common::ReadStream *rs, uint32 version) {
 	if (!Process::loadData(rs, version)) return false;
-	_type = 1; // should be persistant but older savegames may not know that.
+	_type = 1; // should be persistent but older savegames may not know that.
 	return true;
 }
 

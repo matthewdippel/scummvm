@@ -19,24 +19,21 @@
  *
  */
 
-#define FORBIDDEN_SYMBOL_ALLOW_ALL
-
-#include <curl/curl.h>
 #include "backends/cloud/onedrive/onedrivetokenrefresher.h"
 #include "backends/cloud/onedrive/onedrivestorage.h"
-#include "backends/networking/curl/networkreadstream.h"
+#include "backends/networking/http/networkreadstream.h"
 #include "common/debug.h"
-#include "common/json.h"
+#include "common/formats/json.h"
 
 namespace Cloud {
 namespace OneDrive {
 
 OneDriveTokenRefresher::OneDriveTokenRefresher(OneDriveStorage *parent, Networking::JsonCallback callback, Networking::ErrorCallback ecb, const char *url):
-	CurlJsonRequest(callback, ecb, url), _parentStorage(parent) {}
+	HttpJsonRequest(callback, ecb, url), _parentStorage(parent) {}
 
 OneDriveTokenRefresher::~OneDriveTokenRefresher() {}
 
-void OneDriveTokenRefresher::tokenRefreshed(Storage::BoolResponse response) {
+void OneDriveTokenRefresher::tokenRefreshed(const Storage::BoolResponse &response) {
 	if (!response.value) {
 		//failed to refresh token, notify user with NULL in original callback
 		warning("OneDriveTokenRefresher: failed to refresh token");
@@ -45,21 +42,20 @@ void OneDriveTokenRefresher::tokenRefreshed(Storage::BoolResponse response) {
 	}
 
 	//update headers: first change header with token, then pass those to request
-	for (uint32 i = 0; i < _headers.size(); ++i) {
-		if (_headers[i].contains("Authorization")) {
-			_headers[i] = "Authorization: bearer " + _parentStorage->accessToken();
+	for (uint32 i = 0; i < _headersList.size(); ++i) {
+		if (_headersList[i].contains("Authorization")) {
+			_headersList[i] = "Authorization: bearer " + _parentStorage->accessToken();
 		}
 	}
-	setHeaders(_headers);
 
 	//successfully received refreshed token, can restart the original request now
 	retry(0);
 }
 
-void OneDriveTokenRefresher::finishJson(Common::JSONValue *json) {
+void OneDriveTokenRefresher::finishJson(const Common::JSONValue *json) {
 	if (!json) {
 		//that's probably not an error (200 OK)
-		CurlJsonRequest::finishJson(nullptr);
+		HttpJsonRequest::finishJson(nullptr);
 		return;
 	}
 
@@ -97,26 +93,26 @@ void OneDriveTokenRefresher::finishJson(Common::JSONValue *json) {
 				irrecoverable = false;
 
 			if (irrecoverable) {
-				Common::String errorContents = "<irrecoverable> " + json->stringify(true);
-				finishError(Networking::ErrorResponse(this, false, true, errorContents, httpResponseCode));
+				Common::String errorContents = json->stringify(true);
+				finishErrorIrrecoverable(Networking::ErrorResponse(this, false, true, errorContents, httpResponseCode));
 				delete json;
 				return;
 			}
 
 			pause();
 			delete json;
-			_parentStorage->refreshAccessToken(new Common::Callback<OneDriveTokenRefresher, Storage::BoolResponse>(this, &OneDriveTokenRefresher::tokenRefreshed));
+			_parentStorage->refreshAccessToken(new Common::Callback<OneDriveTokenRefresher, const Storage::BoolResponse &>(this, &OneDriveTokenRefresher::tokenRefreshed));
 			return;
 		}
 	}
 
 	//notify user of success
-	CurlJsonRequest::finishJson(json);
+	HttpJsonRequest::finishJson(json);
 }
 
-void OneDriveTokenRefresher::finishError(Networking::ErrorResponse error, Networking::RequestState state) {
+void OneDriveTokenRefresher::finishError(const Networking::ErrorResponse &error, Networking::RequestState state) {
 	if (error.failed) {
-		Common::JSONValue *value = Common::JSON::parse(error.response.c_str());
+		Common::JSONValue *value = Common::JSON::parse(error.response);
 
 		//somehow OneDrive returns JSON with '.' in unexpected places, try fixing it
 		if (!value) {
@@ -125,7 +121,7 @@ void OneDriveTokenRefresher::finishError(Networking::ErrorResponse error, Networ
 				if (fixedResponse[i] == '.')
 					fixedResponse.replace(i, 1, " ");
 			}
-			value = Common::JSON::parse(fixedResponse.c_str());
+			value = Common::JSON::parse(fixedResponse);
 		}
 
 		if (value) {
@@ -134,20 +130,12 @@ void OneDriveTokenRefresher::finishError(Networking::ErrorResponse error, Networ
 		}
 	}
 
-	Request::finishError(error); //call closest base class's method
+	Request::finishError(error, state); //call closest base class's method
 }
 
-void OneDriveTokenRefresher::setHeaders(Common::Array<Common::String> &headers) {
-	_headers = headers;
-	curl_slist_free_all(_headersList);
-	_headersList = nullptr;
-	for (uint32 i = 0; i < headers.size(); ++i)
-		CurlJsonRequest::addHeader(headers[i]);
-}
-
-void OneDriveTokenRefresher::addHeader(Common::String header) {
-	_headers.push_back(header);
-	CurlJsonRequest::addHeader(header);
+void OneDriveTokenRefresher::finishErrorIrrecoverable(const Networking::ErrorResponse &error, Networking::RequestState state) {
+	// don't try to fix JSON as this is irrecoverable version
+	Request::finishError(error, state); // call closest base class's method
 }
 
 } // End of namespace OneDrive

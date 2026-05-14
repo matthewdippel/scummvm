@@ -19,7 +19,7 @@
  *
  */
 
-#include "common/math.h"
+#include "math/utils.h"
 
 #include "petka/walk.h"
 #include "petka/petka.h"
@@ -85,6 +85,15 @@ Walk::Walk(int id) { // CHECKED
 	_vertices = nullptr;
 	field_190 = 0;
 	resId = 0;
+
+	field_170 = field_178 = 0.0;
+	field_180 = field_181 = field_182 = field_183 = field_184 = field_185 =
+	field_186 = field_187 = field_188 = field_189 = field_18A = field_18B =
+	field_18C = field_18D = field_18E = field_18F = 0;
+	field_194 = 0;
+	field_198 = 0.0;
+	destX = destY = 0;
+	field_1C4 = field_1C5 = field_1C6 = field_1C7 = 0;
 }
 
 Walk::~Walk() { // CHECKED
@@ -356,7 +365,7 @@ int Walk::sub_422EA0(Point p1, Point p2) {
 
 	double v28 = p2.x - p1.x;
 	double v26 = p2.y - p1.y;
-	double v12 = Common::hypotenuse(p2.x - p1.x, p2.y - p1.y);
+	double v12 = Math::hypotenuse(p2.x - p1.x, p2.y - p1.y);
 
 	double v39 = 1.0 / sqrt(field_D0[resId] * field_D0[resId] - -1.0);
 	if (v39 == 0.0)
@@ -601,8 +610,8 @@ double Walk::angle(DBLPoint p1, DBLPoint p2, DBLPoint p3) { // CHECKED
 	double yv1 = p2.y - p1.y;
 	double yv2 = p3.y - p1.y;
 
-	double mv1 = Common::hypotenuse(xv1, yv1);
-	double mv2 = Common::hypotenuse(xv2, yv2);
+	double mv1 = Math::hypotenuse(xv1, yv1);
+	double mv2 = Math::hypotenuse(xv2, yv2);
 	double v13 = (xv1 * xv2 + yv1 * yv2) / (mv1 * mv2);
 	if ((xv2 / mv2 * (yv1 / mv1) - yv2 / mv2 * (xv1 / mv1)) < 0.0) // Not sure
 		return -acos(v13);

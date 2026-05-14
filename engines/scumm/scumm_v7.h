@@ -26,6 +26,7 @@
 
 #include "scumm/scumm_v6.h"
 #include "scumm/charset_v7.h"
+#include "scumm/insane/insane.h"
 
 namespace Scumm {
 
@@ -43,19 +44,21 @@ public:
 
 
 protected:
-	int _smushFrameRate;
+	int _smushFrameRate = 0;
 
 	/**
 	 * Flag which signals that the SMUSH video playback should end now
 	 * (e.g. because it was aborted by the user or it's simply finished).
 	 */
-	bool _smushVideoShouldFinish;
+	bool _smushVideoShouldFinish = false;
 
-	bool _smushActive;
+	bool _smushActive = false;
 
-	Insane *_insane;
+	Insane *_insane = nullptr;
 
 public:
+	void syncSoundSettings() override;
+
 	SmushMixer *_smixer;
 	SmushPlayer *_splayer;
 
@@ -69,14 +72,15 @@ protected:
 	TextRenderer_v7 *_textV7;
 	Common::Rect _defaultTextClipRect;
 	Common::Rect _wrappedTextClipRect;
-	bool _newTextRenderStyle;
+	bool _newTextRenderStyle = false;
+	int _blastTextRectsQueue = 0;
 
-	int _verbLineSpacing;
-	bool _existLanguageFile;
-	char *_languageBuffer;
+	int _verbLineSpacing = 0;
+	bool _existLanguageFile = false;
+	char *_languageBuffer = nullptr;
 	LangIndexNode *_languageIndex;
-	int _languageIndexSize;
-	char _lastStringTag[12+1];
+	int _languageIndexSize = 0;
+	char _lastStringTag[12+1] = {};
 
 	struct SubtitleText : TextObject {
 		void clear() {
@@ -97,9 +101,11 @@ public:
 	void processSubtitleQueue();
 	void addSubtitleToQueue(const byte *text, const Common::Point &pos, byte color, byte charset, bool center, bool wrap);
 	void clearSubtitleQueue();
-	void CHARSET_1() override;
-	bool isSmushActive() { return _smushActive; }
+	void displayDialog() override;
+	bool isSmushActive() override { return _smushActive; }
+	bool isInsaneActive() override { return _insane ? _insane->isInsaneActive() : false; }
 	void removeBlastTexts() override;
+	void restoreBlastTextsRects();
 
 protected:
 
@@ -108,7 +114,7 @@ protected:
 	void processInput() override;
 	void processKeyboard(Common::KeyState lastKeyHit) override;
 
-	void setupScumm(const Common::String &macResourceFile) override;
+	void setupScumm(const Common::Path &macResourceFile) override;
 	void resetScumm() override;
 
 	void setupScummVars() override;
@@ -130,15 +136,37 @@ protected:
 	int getObjectIdFromOBIM(const byte *obim) override;
 
 	void createTextRenderer(GlyphRenderer_v7 *gr) override;
-	void enqueueText(const byte *text, int x, int y, byte color, byte charset, TextStyleFlags flags);
+	void enqueueText(const byte *text, int x, int y, byte color, byte charset, TextStyleFlags flags, bool ttsVoiceText = true, bool ttsIsSubtitle = false);
+	void drawTextImmediately(const byte *text, Common::Rect *clipRect, int x, int y, byte color, byte charset, TextStyleFlags flags);
 	void drawBlastTexts() override;
+	void showMessageDialog(const byte *msg) override;
 
 	void actorTalk(const byte *msg) override;
-	void translateText(const byte *text, byte *trans_buff) override;
+	void translateText(const byte *text, byte *trans_buff, int transBufferSize) override;
 	void loadLanguageBundle() override;
 	void playSpeech(const byte *ptr);
 
-	void drawVerb(int verb, int mode) override;
+	void queryQuit(bool returnToLauncher) override;
+	int getBannerColor(int bannerId) override;
+	const char *getGUIString(int stringId) override;
+	int getGUIStringHeight(const char *str) override;
+	int getGUIStringWidth(const char *str) override;
+	void drawGUIText(const char *buttonString, Common::Rect *clipRect, int textXPos, int textYPos, int textColor, bool centerFlag) override;
+	int getMusicVolume() override;
+	int getSpeechVolume() override;
+	int getSFXVolume() override;
+	void setMusicVolume(int volume) override;
+	void setSpeechVolume(int volume) override;
+	void setSFXVolume(int volume) override;
+	void toggleVoiceMode() override;
+	void handleLoadDuringSmush() override;
+
+	void setDefaultCursor() override;
+	void updateCursor() override;
+	void setCursorTransparency(int a) override;
+	void setCursorFromImg(uint img, uint room, uint imgindex) override;
+
+	void drawVerb(int verb, int mode, Common::TextToSpeechManager::Action ttsAction = Common::TextToSpeechManager::INTERRUPT) override;
 
 	void pauseEngineIntern(bool pause) override;
 
@@ -147,15 +175,25 @@ protected:
 	struct BlastText : TextObject {
 		Common::Rect rect;
 		TextStyleFlags flags;
+#ifdef USE_TTS
+		bool voiceText;
+		bool isSubtitle;
+#endif
 
 		void clear() {
 			this->TextObject::clear();
 			rect = Common::Rect();
+#ifdef USE_TTS
+			voiceText = true;
+			isSubtitle = false;
+#endif
 		}
 	};
 
 	int _blastTextQueuePos;
 	BlastText _blastTextQueue[50];
+
+	byte *_guiStringTransBuff = nullptr;
 };
 
 

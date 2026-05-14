@@ -20,12 +20,14 @@
  */
 
 #define FORBIDDEN_SYMBOL_ALLOW_ALL
+#define SDL_FUNCTION_POINTER_IS_VOID_POINTER
 
 #include "backends/platform/sdl/sdl.h"
 #include "common/config-manager.h"
 #include "gui/EventRecorder.h"
 #include "common/taskbar.h"
 #include "common/textconsole.h"
+#include "common/translation.h"
 
 #ifdef USE_DISCORD
 #include "backends/presence/discord/discord.h"
@@ -40,20 +42,22 @@
 #include "backends/audiocd/sdl/sdl-audiocd.h"
 #endif
 
+#include "backends/mixer/null/null-mixer.h"
 #include "backends/events/default/default-events.h"
-#include "backends/events/sdl/legacy-sdl-events.h"
 #include "backends/keymapper/hardware-input.h"
 #include "backends/mutex/sdl/sdl-mutex.h"
 #include "backends/timer/sdl/sdl-timer.h"
 #include "backends/graphics/surfacesdl/surfacesdl-graphics.h"
 #ifdef USE_OPENGL
 #include "backends/graphics/openglsdl/openglsdl-graphics.h"
-#include "graphics/cursorman.h"
 #endif
 #if defined(USE_OPENGL_GAME) || defined(USE_OPENGL_SHADERS)
-#include "backends/graphics3d/openglsdl/openglsdl-graphics3d.h"
 #include "graphics/opengl/context.h"
 #endif
+#if defined(USE_SCUMMVMDLC)
+#include "backends/dlc/scummvmcloud.h"
+#endif
+#include "graphics/cursorman.h"
 #include "graphics/renderer.h"
 
 #include <time.h>	// for getTimeAndDate()
@@ -68,18 +72,29 @@
 #include <SDL_net.h>
 #endif
 
-#if SDL_VERSION_ATLEAST(2, 0, 0)
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+#include <SDL3/SDL_clipboard.h>
+#elif SDL_VERSION_ATLEAST(2, 0, 0)
 #include <SDL_clipboard.h>
+#endif
+
+#if (defined(USE_OPENGL_GAME) || defined(USE_OPENGL_SHADERS)) && !USE_FORCED_GLES2
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+static bool sdlGetAttribute(SDL_GLAttr attr, int *value) {
+	return SDL_GL_GetAttribute(attr, value);
+}
+#elif SDL_VERSION_ATLEAST(2, 0, 0)
+static bool sdlGetAttribute(SDL_GLattr attr, int *value) {
+	return SDL_GL_GetAttribute(attr, value) == 0;
+}
+#endif
 #endif
 
 OSystem_SDL::OSystem_SDL()
 	:
-#ifdef USE_OPENGL
+#ifdef USE_MULTIPLE_RENDERERS
 	_graphicsModes(),
 	_graphicsMode(0),
-	_firstGLMode(0),
-	_defaultSDLMode(0),
-	_defaultGLMode(0),
 #endif
 	_inited(false),
 	_initedSDL(false),
@@ -90,12 +105,19 @@ OSystem_SDL::OSystem_SDL()
 	_eventSource(nullptr),
 	_eventSourceWrapper(nullptr),
 	_window(nullptr) {
+#if defined(USE_SCUMMVMDLC)
+	_dlcStore = new DLC::ScummVMCloud::ScummVMCloud();
+#endif
 }
 
 OSystem_SDL::~OSystem_SDL() {
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+	SDL_ShowCursor();
+#else
 	SDL_ShowCursor(SDL_ENABLE);
+#endif
 
-#ifdef USE_OPENGL
+#ifdef USE_MULTIPLE_RENDERERS
 	clearGraphicsModes();
 #endif
 
@@ -158,8 +180,12 @@ void OSystem_SDL::init() {
 #endif
 
 #if !defined(OPENPANDORA)
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+	SDL_HideCursor();
+#else
 	// Disable OS cursor
 	SDL_ShowCursor(SDL_DISABLE);
+#endif
 #endif
 
 	if (_window == nullptr)
@@ -173,8 +199,19 @@ void OSystem_SDL::init() {
 }
 
 bool OSystem_SDL::hasFeature(Feature f) {
+#if SDL_VERSION_ATLEAST(1, 2, 7)
+	if (f == kFeatureCpuSSE2) return SDL_HasSSE2();
+	if (f == kFeatureCpuAltivec) return SDL_HasAltiVec();
+#endif
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 	if (f == kFeatureClipboardSupport) return true;
+	if (f == kFeatureCpuSSE41) return SDL_HasSSE41();
+#endif
+#if SDL_VERSION_ATLEAST(2, 0, 4)
+	if (f == kFeatureCpuAVX2) return SDL_HasAVX2();
+#endif
+#if SDL_VERSION_ATLEAST(2, 0, 6)
+	if (f == kFeatureCpuNEON) return SDL_HasNEON();
 #endif
 #if SDL_VERSION_ATLEAST(2, 0, 14)
 	if (f == kFeatureOpenUrl) return true;
@@ -183,12 +220,49 @@ bool OSystem_SDL::hasFeature(Feature f) {
 		return _eventSource->isJoystickConnected();
 	}
 #if defined(USE_OPENGL_GAME) || defined(USE_OPENGL_SHADERS)
-	/* Even if we are using the 2D graphics manager,
+	/* Even if we are using the SDL graphics manager,
 	 * we are at one initGraphics3d call of supporting OpenGL */
-	if (f == kFeatureOpenGLForGame) return true;
+	if (f == kFeatureOpenGLForGame) return _oglType != OpenGL::kContextNone && OpenGLContext.type != OpenGL::kContextGLES;
 	if (f == kFeatureShadersForGame) return _supportsShaders;
 #endif
+#if defined(USE_SCUMMVMDLC)
+	if (f == kFeatureDLC) return true;
+#endif
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+	if (f == kFeatureTouchpadMode) {
+		int count = 0;
+		SDL_free(SDL_GetTouchDevices(&count));
+		return count > 0;
+	}
+#elif SDL_VERSION_ATLEAST(2, 0, 0)
+	if (f == kFeatureTouchpadMode) {
+		return SDL_GetNumTouchDevices() > 0;
+	}
+#endif
 	return ModularGraphicsBackend::hasFeature(f);
+}
+
+
+void OSystem_SDL::setFeatureState(Feature f, bool enable) {
+	switch (f) {
+	case kFeatureTouchpadMode:
+		ConfMan.setBool("touchpad_mouse_mode", enable);
+		break;
+	default:
+		ModularGraphicsBackend::setFeatureState(f, enable);
+		break;
+	}
+}
+
+bool OSystem_SDL::getFeatureState(Feature f) {
+	switch (f) {
+	case kFeatureTouchpadMode:
+		return ConfMan.getBool("touchpad_mouse_mode");
+		break;
+	default:
+		return ModularGraphicsBackend::getFeatureState(f);
+		break;
+	}
 }
 
 void OSystem_SDL::initBackend() {
@@ -217,8 +291,11 @@ void OSystem_SDL::initBackend() {
 	debug(1, "Using SDL Video Driver \"%s\"", sdlDriverName);
 
 #if defined(USE_OPENGL_GAME) || defined(USE_OPENGL_SHADERS)
+	debug(2, "SDL Video Detecting OpenGL Features...");
 	detectOpenGLFeaturesSupport();
+	debug(2, "SDL Video Detecting Anti-aliasing Support...");
 	detectAntiAliasingSupport();
+	debug(2, "SDL Video OpenGL Feature Detection Complete");
 #endif
 
 	// Create the default event source, in case a custom backend
@@ -240,31 +317,32 @@ void OSystem_SDL::initBackend() {
 	ScalerMan.updateOldSettings();
 
 	if (_graphicsManager == nullptr) {
-#ifdef USE_OPENGL
-		// Setup a list with both SDL and OpenGL graphics modes. We only do
-		// this whenever the subclass did not already set up an graphics
-		// manager yet. This is because we don't know the type of the graphics
-		// manager of the subclass, thus we cannot easily switch between the
-		// OpenGL one and the set up one. It also is to be expected that the
-		// subclass does not want any switching of graphics managers anyway.
+#ifdef USE_MULTIPLE_RENDERERS
+		// Setup a list with all graphics modes. We only do this whenever the
+		// subclass did not already set up a graphics manager yet. This is
+		// because we don't know the type of the graphics manager of the subclass,
+		// thus we cannot easily switch between the standard ones and the set up
+		// one. It also is to be expected that the subclass does not want any
+		// switching of graphics managers anyway.
 		setupGraphicsModes();
 
 		Common::String gfxMode(ConfMan.get("gfx_mode"));
 		// "normal" and "default" are a special case for the default graphics mode.
 		// See OSystem::setGraphicsMode(const char *name) implementation.
 		if (gfxMode.empty() || !gfxMode.compareToIgnoreCase("normal") || !gfxMode.compareToIgnoreCase("default")) {
-			// If the default GraphicsManager is OpenGL, create the OpenGL graphics manager
-			if (getDefaultGraphicsManager() == GraphicsManagerOpenGL) {
-				_graphicsManager = new OpenGLSdlGraphicsManager(_eventSource, _window);
-				_graphicsMode = _defaultGLMode;
-			}
+			GraphicsManagerType type = getDefaultGraphicsManager();
+			assert(type >= GraphicsManagerSurfaceSDL && type < GraphicsManagerCount);
+			_graphicsManager = createGraphicsManager(_eventSource, _window, type);
+			_graphicsMode = _defaultMode[type];
 		} else {
-			// If the gfx_mode is from OpenGL, create the OpenGL graphics manager
-			for (uint i = _firstGLMode; i < _graphicsModeIds.size(); ++i) {
-				if (!scumm_stricmp(_graphicsModes[i].name, gfxMode.c_str())) {
-					_graphicsManager = new OpenGLSdlGraphicsManager(_eventSource, _window);
-					_graphicsMode = i;
-					break;
+			// If the gfx_mode is from a specific graphics manager, create it
+			for (uint i = 0; i < GraphicsManagerCount; ++i) {
+				for (int j = _firstMode[i]; j <= _lastMode[i]; ++j) {
+					if (!scumm_stricmp(_graphicsModes[j].name, gfxMode.c_str())) {
+						_graphicsManager = createGraphicsManager(_eventSource, _window, (GraphicsManagerType)i);
+						_graphicsMode = j;
+						break;
+					}
 				}
 			}
 		}
@@ -282,6 +360,13 @@ void OSystem_SDL::initBackend() {
 		_mixerManager = new SdlMixerManager();
 		// Setup and start mixer
 		_mixerManager->init();
+
+		if (_mixerManager->getMixer() == nullptr) {
+			// Audio was unavailable or disabled
+			delete _mixerManager;
+			_mixerManager = new NullMixerManager();
+			_mixerManager->init();
+		}
 	}
 
 #ifdef ENABLE_EVENTRECORDER
@@ -303,6 +388,7 @@ void OSystem_SDL::initBackend() {
 #endif
 
 	ConfMan.registerDefault("iconspath", this->getDefaultIconsPath());
+	ConfMan.registerDefault("dlcspath", this->getDefaultDLCsPath());
 
 	_inited = true;
 
@@ -318,28 +404,36 @@ void OSystem_SDL::initBackend() {
 #if defined(USE_OPENGL_GAME) || defined(USE_OPENGL_SHADERS)
 void OSystem_SDL::detectOpenGLFeaturesSupport() {
 	_oglType = OpenGL::kContextNone;
-	_supportsFrameBuffer = false;
 	_supportsShaders = false;
 #if USE_FORCED_GLES2
 	// Framebuffers and shaders are always available with GLES2
 	_oglType = OpenGL::kContextGLES2;
-	_supportsFrameBuffer = true;
 	_supportsShaders = true;
 #else
 	// Spawn a 32x32 window off-screen with a GL context to test if framebuffers are supported
 #if SDL_VERSION_ATLEAST(2, 0, 0)
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+	SDL_PropertiesID props = SDL_CreateProperties();
+	SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "");
+	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, 32);
+	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, 32);
+	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+	SDL_Window *window = SDL_CreateWindowWithProperties(props);
+	SDL_DestroyProperties(props);
+#else
 	SDL_Window *window = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 32, 32, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+#endif
 	if (!window) {
 		return;
 	}
 
 	int glContextProfileMask, glContextMajor;
-	if (SDL_GL_GetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, &glContextProfileMask) != 0) {
+	if (!sdlGetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, &glContextProfileMask)) {
 		SDL_DestroyWindow(window);
 		return;
 	}
 	if (glContextProfileMask == SDL_GL_CONTEXT_PROFILE_ES) {
-		if (SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &glContextMajor) != 0) {
+		if (!sdlGetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &glContextMajor)) {
 			SDL_DestroyWindow(window);
 			return;
 		}
@@ -359,10 +453,13 @@ void OSystem_SDL::detectOpenGLFeaturesSupport() {
 	}
 
 	OpenGLContext.initialize(_oglType);
-	_supportsFrameBuffer = OpenGLContext.framebufferObjectSupported;
 	_supportsShaders = OpenGLContext.enginesShadersSupported;
 	OpenGLContext.reset();
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+	SDL_GL_DestroyContext(glContext);
+#else
 	SDL_GL_DeleteContext(glContext);
+#endif
 	SDL_DestroyWindow(window);
 #else
 	SDL_putenv(const_cast<char *>("SDL_VIDEO_WINDOW_POS=9000,9000"));
@@ -371,8 +468,7 @@ void OSystem_SDL::detectOpenGLFeaturesSupport() {
 	// SDL 1.2 only supports OpenGL
 	_oglType = OpenGL::kContextGL;
 	OpenGLContext.initialize(_oglType);
-	_supportsFrameBuffer = OpenGLContext.framebufferObjectSupported;
-	_supportsShaders = OpenGLContext.shadersSupported;
+	_supportsShaders = OpenGLContext.enginesShadersSupported;
 	OpenGLContext.reset();
 #endif
 #endif
@@ -384,11 +480,23 @@ void OSystem_SDL::detectAntiAliasingSupport() {
 
 	int requestedSamples = 2;
 	while (requestedSamples <= 32) {
+		debugN(2, "Checking SDL Antialiasing Support With %d Samples... ", requestedSamples);
+
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, requestedSamples);
 
 #if SDL_VERSION_ATLEAST(2, 0, 0)
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+		SDL_PropertiesID props = SDL_CreateProperties();
+		SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "");
+		SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, 32);
+		SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, 32);
+		SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+		SDL_Window *window = SDL_CreateWindowWithProperties(props);
+		SDL_DestroyProperties(props);
+#else
 		SDL_Window *window = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 32, 32, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+#endif
 		if (window) {
 			SDL_GLContext glContext = SDL_GL_CreateContext(window);
 			if (glContext) {
@@ -397,12 +505,29 @@ void OSystem_SDL::detectAntiAliasingSupport() {
 
 				if (actualSamples == requestedSamples) {
 					_antiAliasLevels.push_back(requestedSamples);
+					debug(2, "Yes");
+				}
+				else
+				{
+					debug(2, "No");
 				}
 
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+				SDL_GL_DestroyContext(glContext);
+#else
 				SDL_GL_DeleteContext(glContext);
+#endif
+			}
+			else
+			{
+				debug(2, "No GL Context");
 			}
 
 			SDL_DestroyWindow(window);
+		}
+		else
+		{
+			debug(2, "No Window");
 		}
 #else
 		SDL_putenv(const_cast<char *>("SDL_VIDEO_WINDOW_POS=9000,9000"));
@@ -414,6 +539,11 @@ void OSystem_SDL::detectAntiAliasingSupport() {
 
 		if (actualSamples == requestedSamples) {
 			_antiAliasLevels.push_back(requestedSamples);
+			debug(2, "Yes from SDL1");
+		}
+		else
+		{
+			debug(2, "No from SDL1");
 		}
 #endif
 
@@ -478,11 +608,17 @@ void OSystem_SDL::initSDL() {
 		// or otherwise the application won't start.
 		uint32 sdlFlags = SDL_INIT_VIDEO;
 
+#if !SDL_VERSION_ATLEAST(3, 0, 0)
 		if (ConfMan.hasKey("disable_sdl_parachute"))
 			sdlFlags |= SDL_INIT_NOPARACHUTE;
+#endif
 
 		// Initialize SDL (SDL Subsystems are initialized in the corresponding sdl managers)
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+		if (!SDL_Init(sdlFlags))
+#else
 		if (SDL_Init(sdlFlags) == -1)
+#endif
 			error("Could not initialize SDL: %s", SDL_GetError());
 
 		_initedSDL = true;
@@ -511,6 +647,9 @@ void OSystem_SDL::addSysArchivesToSearchSet(Common::SearchSet &s, int priority) 
 	}
 #endif
 
+	// Add the current dir as a very last resort (cf. bug #3984).
+	// TODO: check if it's really needed
+	s.addDirectory(".", ".", priority - 1);
 }
 
 void OSystem_SDL::setWindowCaption(const Common::U32String &caption) {
@@ -585,22 +724,46 @@ Common::WriteStream *OSystem_SDL::createLogFile() {
 	// of a failure, we know that no log file is open.
 	_logFilePath.clear();
 
-	Common::String logFile;
+	Common::Path logFile;
 	if (ConfMan.hasKey("logfile"))
-		logFile = ConfMan.get("logfile");
+		logFile = ConfMan.getPath("logfile");
 	else
 		logFile = getDefaultLogFileName();
 	if (logFile.empty())
 		return nullptr;
 
 	Common::FSNode file(logFile);
-	Common::WriteStream *stream = file.createWriteStream();
+	Common::WriteStream *stream = file.createWriteStream(false);
 	if (stream)
 		_logFilePath = logFile;
 	return stream;
 }
 
 Common::String OSystem_SDL::getSystemLanguage() const {
+
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+	int count = 0;
+	SDL_Locale **pLocales = SDL_GetPreferredLocales(&count);
+	if (pLocales) {
+		SDL_Locale *locales = *pLocales;
+		if (locales[0].language != NULL) {
+			Common::String str = Common::String::format("%s_%s", locales[0].language, locales[0].country);
+			SDL_free(pLocales);
+			return str;
+		}
+		SDL_free(pLocales);
+	}
+#elif SDL_VERSION_ATLEAST(2, 0, 14)
+	SDL_Locale *locales = SDL_GetPreferredLocales();
+	if (locales) {
+		if (locales[0].language != NULL) {
+			Common::String str = Common::String::format("%s_%s", locales[0].language, locales[0].country);
+			SDL_free(locales);
+			return str;
+		}
+		SDL_free(locales);
+	}
+#endif
 #if defined(USE_DETECTLANG) && !defined(WIN32)
 	// Activating current locale settings
 	const Common::String locale = setlocale(LC_ALL, "");
@@ -636,8 +799,13 @@ Common::String OSystem_SDL::getSystemLanguage() const {
 }
 
 #if SDL_VERSION_ATLEAST(2, 0, 0)
+
 bool OSystem_SDL::hasTextInClipboard() {
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+	return SDL_HasClipboardText();
+#else
 	return SDL_HasClipboardText() == SDL_TRUE;
+#endif
 }
 
 Common::U32String OSystem_SDL::getTextFromClipboard() {
@@ -681,7 +849,11 @@ void OSystem_SDL::messageBox(LogMessageType::Type type, const char *message) {
 
 #if SDL_VERSION_ATLEAST(2, 0, 14)
 bool OSystem_SDL::openUrl(const Common::String &url) {
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+	if (!SDL_OpenURL(url.c_str())) {
+#else
 	if (SDL_OpenURL(url.c_str()) != 0) {
+#endif
 		warning("Failed to open URL: %s", SDL_GetError());
 		return false;
 	}
@@ -706,7 +878,7 @@ uint32 OSystem_SDL::getMillis(bool skipRecord) {
 
 void OSystem_SDL::delayMillis(uint msecs) {
 #ifdef ENABLE_EVENTRECORDER
-	if (!g_eventRec.processDelayMillis())
+	if (g_eventRec.processDelayMillis())
 #endif
 		SDL_Delay(msecs);
 }
@@ -762,23 +934,50 @@ Common::SaveFileManager *OSystem_SDL::getSavefileManager() {
 #endif
 }
 
+uint32 OSystem_SDL::getDoubleClickTime() const {
+	if (ConfMan.hasKey("double_click_time"))
+		return ConfMan.getInt("double_click_time");
+
+	return getOSDoubleClickTime();
+}
+
 //Not specified in base class
-Common::String OSystem_SDL::getDefaultIconsPath() {
-	Common::String path = ConfMan.get("iconspath");
-	if (!path.empty() && !path.hasSuffix("/"))
-		path += "/";
+Common::Path OSystem_SDL::getDefaultIconsPath() {
+	return ConfMan.getPath("iconspath");
+}
+
+// Not specified in base class
+Common::Path OSystem_SDL::getDefaultDLCsPath() {
+	Common::Path path(ConfMan.get("dlcspath"));
 	return path;
 }
 
 //Not specified in base class
-Common::String OSystem_SDL::getScreenshotsPath() {
-	Common::String path = ConfMan.get("screenshotpath");
-	if (!path.empty() && !path.hasSuffix("/"))
-		path += "/";
-	return path;
+Common::Path OSystem_SDL::getScreenshotsPath() {
+	return ConfMan.getPath("screenshotpath");
 }
 
+#ifdef USE_MULTIPLE_RENDERERS
+
+OSystem_SDL::GraphicsManagerType OSystem_SDL::getDefaultGraphicsManager() const {
+	return GraphicsManagerSurfaceSDL;
+}
+
+SdlGraphicsManager *OSystem_SDL::createGraphicsManager(SdlEventSource *sdlEventSource, SdlWindow *window, GraphicsManagerType type) {
+	switch (type) {
+	case GraphicsManagerSurfaceSDL:
+		debug(1, "creating SurfaceSDL graphics manager");
+		return new SurfaceSdlGraphicsManager(sdlEventSource, window);
 #ifdef USE_OPENGL
+	case GraphicsManagerOpenGL:
+		debug(1, "creating OpenGL graphics manager");
+		return new OpenGLSdlGraphicsManager(sdlEventSource, window);
+#endif
+	default:
+		assert(0);
+		return NULL;
+	}
+}
 
 const OSystem::GraphicsMode *OSystem_SDL::getSupportedGraphicsModes() const {
 	if (_graphicsModes.empty()) {
@@ -792,11 +991,9 @@ int OSystem_SDL::getDefaultGraphicsMode() const {
 	if (_graphicsModes.empty()) {
 		return _graphicsManager->getDefaultGraphicsMode();
 	} else {
-		// Return the default graphics mode
-		if (getDefaultGraphicsManager() == GraphicsManagerSDL)
-			return _defaultSDLMode;
-		else
-			return _defaultGLMode;
+		GraphicsManagerType type = getDefaultGraphicsManager();
+		assert(type >= GraphicsManagerSurfaceSDL && type < GraphicsManagerCount);
+		return _defaultMode[type];
 	}
 }
 
@@ -822,35 +1019,42 @@ bool OSystem_SDL::setGraphicsMode(int mode, uint flags) {
 	// It's also used to restore state from 3D to 2D GFX manager
 	SdlGraphicsManager *sdlGraphicsManager = dynamic_cast<SdlGraphicsManager *>(_graphicsManager);
 	_gfxManagerState = sdlGraphicsManager->getState();
-	bool supports3D = sdlGraphicsManager->hasFeature(kFeatureOpenGLForGame);
 
 	bool switchedManager = false;
 
 	// If the new mode and the current mode are not from the same graphics
 	// manager, delete and create the new mode graphics manager
-#if defined(USE_OPENGL_GAME) || defined(USE_OPENGL_SHADERS)
-	if (render3d && !supports3D) {
-		debug(1, "switching to OpenGL 3D graphics");
-		sdlGraphicsManager->deactivateManager();
-		delete sdlGraphicsManager;
-		_graphicsManager = sdlGraphicsManager = new OpenGLSdlGraphics3dManager(_eventSource, _window, _supportsFrameBuffer);
-		switchedManager = true;
-	} else
-#endif
-	if ((supports3D || _graphicsMode >= _firstGLMode) && mode < _firstGLMode) {
-		debug(1, "switching to plain SDL graphics");
+	if (render3d) {
+		uint best3DSupport = (uint) -1;
+		uint i;
+		// Make sure the requested mode supports 3D
+		for (i = 0; i < GraphicsManagerCount; ++i) {
+			if (_supports3D[i]) {
+				best3DSupport = i;
+			}
+			if (!(mode >= _firstMode[i] && mode <= _lastMode[i]))
+				continue;
+			if (_supports3D[i])
+				break;
+		}
+		if (i == GraphicsManagerCount) {
+			mode = _firstMode[best3DSupport];
+		}
+	}
+
+	for (uint i = 0; i < GraphicsManagerCount; ++i) {
+		if (!(mode >= _firstMode[i] && mode <= _lastMode[i]))
+			continue;
+		if (_graphicsMode >= _firstMode[i] && _graphicsMode <= _lastMode[i])
+			break;
+		debug(1, "switching graphics manager");
 		if (sdlGraphicsManager) {
 			sdlGraphicsManager->deactivateManager();
 			delete sdlGraphicsManager;
 		}
-		_graphicsManager = sdlGraphicsManager = new SurfaceSdlGraphicsManager(_eventSource, _window);
+		_graphicsManager = sdlGraphicsManager = createGraphicsManager(_eventSource, _window, (GraphicsManagerType)i);
 		switchedManager = true;
-	} else if ((supports3D || _graphicsMode < _firstGLMode) && mode >= _firstGLMode) {
-		debug(1, "switching to OpenGL graphics");
-		sdlGraphicsManager->deactivateManager();
-		delete sdlGraphicsManager;
-		_graphicsManager = sdlGraphicsManager = new OpenGLSdlGraphicsManager(_eventSource, _window);
-		switchedManager = true;
+		break;
 	}
 
 	_graphicsMode = mode;
@@ -900,48 +1104,35 @@ int OSystem_SDL::getGraphicsMode() const {
 void OSystem_SDL::setupGraphicsModes() {
 	clearGraphicsModes();
 	_graphicsModeIds.clear();
-	_defaultSDLMode = _defaultGLMode = -1;
 
 	// Count the number of graphics modes
 	const OSystem::GraphicsMode *srcMode;
 	int defaultMode;
 
-	GraphicsManager *manager = new SurfaceSdlGraphicsManager(_eventSource, _window);
-	defaultMode = manager->getDefaultGraphicsMode();
-	srcMode = manager->getSupportedGraphicsModes();
-	while (srcMode->name) {
-		if (defaultMode == srcMode->id) {
-			_defaultSDLMode = _graphicsModes.size();
+	GraphicsManager *manager;
+	for (uint i = 0; i < GraphicsManagerCount; i++) {
+		_defaultMode[i] = -1;
+		_firstMode[i] = _graphicsModes.size();
+		manager = createGraphicsManager(_eventSource, _window, (GraphicsManagerType)i);
+		defaultMode = manager->getDefaultGraphicsMode();
+		srcMode = manager->getSupportedGraphicsModes();
+		while (srcMode->name) {
+			if (defaultMode == srcMode->id) {
+				_defaultMode[i] = _graphicsModes.size();
+			}
+			OSystem::GraphicsMode mode = *srcMode;
+			// Do deep copy as we are going to delete the GraphicsManager and this may free
+			// the memory used for its graphics modes.
+			mode.name = scumm_strdup(srcMode->name);
+			mode.description = scumm_strdup(srcMode->description);
+			_graphicsModes.push_back(mode);
+			srcMode++;
 		}
-		OSystem::GraphicsMode mode = *srcMode;
-		// Do deep copy as we are going to delete the GraphicsManager and this may free
-		// the memory used for its graphics modes.
-		mode.name = scumm_strdup(srcMode->name);
-		mode.description = scumm_strdup(srcMode->description);
-		_graphicsModes.push_back(mode);
-		srcMode++;
+		_lastMode[i] = _graphicsModes.size() - 1;
+		_supports3D[i] = manager->hasFeature(kFeatureOpenGLForGame);
+		delete manager;
+		assert(_defaultMode[i] != -1);
 	}
-	delete manager;
-	assert(_defaultSDLMode != -1);
-
-	_firstGLMode = _graphicsModes.size();
-	manager = new OpenGLSdlGraphicsManager(_eventSource, _window);
-	srcMode = manager->getSupportedGraphicsModes();
-	defaultMode = manager->getDefaultGraphicsMode();
-	while (srcMode->name) {
-		if (defaultMode == srcMode->id) {
-			_defaultGLMode = _graphicsModes.size();
-		}
-		OSystem::GraphicsMode mode = *srcMode;
-		// Do deep copy as we are going to delete the GraphicsManager and this may free
-		// the memory used for its graphics modes.
-		mode.name = scumm_strdup(srcMode->name);
-		mode.description = scumm_strdup(srcMode->description);
-		_graphicsModes.push_back(mode);
-		srcMode++;
-	}
-	delete manager;
-	assert(_defaultGLMode != -1);
 
 	// Set a null mode at the end
 	GraphicsMode nullMode;
@@ -970,3 +1161,47 @@ void OSystem_SDL::clearGraphicsModes() {
 	}
 }
 #endif
+
+static const char * const helpTabs[] = {
+_s("Keyboard"),
+"",
+_s(
+"## Keyboard shortcuts\n"
+"\n"
+"ScummVM supports various in-game keyboard and mouse shortcuts, and since version 2.2.0 these can be manually configured in the **Keymaps tab**, or in the **configuration file**.\n"
+"\n"
+"For game-specific controls, see the [wiki entry](https://wiki.scummvm.org/index.php?title=Category:Supported_Games) for the game you are playing.\n"
+"\n"
+"Default shortcuts are shown in the table.\n"
+"\n"
+"| Shortcut      | Description      \n"
+"| --------------|------------------\n"
+"| `Ctrl+F5` | Displays the Global Main Menu\n")
+#if defined(MACOSX)
+_s("| `Cmd+q`    | Quit (macOS)\n")
+#elif defined(WIN32)
+_s("| `Alt+F4`  | Quit (Windows)\n")
+#else
+_s("| `Ctrl+q`  | Quit (Linux/Unix)\n")
+_s("| `Ctrl+z`  | Quit (other platforms)\n")
+#endif
+_s(
+"| `Ctrl+u`  | Mutes all sounds\n"
+"| `Ctrl+m`  | Toggles mouse capture\n"
+"| `Ctrl+Alt` and `9` or `0` | Cycles forwards/backwards between graphics filters\n"
+"| `Ctrl+Alt` and `+` or `-` | Increases/decreases the scale factor\n"
+"| `Ctrl+Alt+a` | Toggles aspect ratio correction on/off\n"
+"| `Ctrl+Alt+f` | Toggles between nearest neighbor and bilinear interpolation (graphics filtering on/off)\n"
+"| `Ctrl+Alt+s` | Cycles through stretch modes\n"
+"| `Alt+Enter`   | Toggles full screen/windowed mode\n"
+"| `Alt+s`          | Takes a screenshot\n"
+"| `Ctrl+F7`       | Opens virtual keyboard (if enabled). This can also be opened with a long press of the middle mouse button or wheel.\n"
+"| `Ctrl+Alt+d` | Opens the ScummVM debugger\n"
+),
+
+0,
+	};
+
+const char * const *OSystem_SDL::buildHelpDialogData() {
+	return helpTabs;
+}

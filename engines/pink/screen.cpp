@@ -21,7 +21,7 @@
 
 #include "graphics/macgui/macfontmanager.h"
 #include "graphics/macgui/mactext.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/fonts/ttf.h"
 
 #include "pink/pink.h"
@@ -93,23 +93,23 @@ Screen::Screen(PinkEngine *vm)
 	: _surface(640, 480), _textRendered(false) {
 	uint32 wmMode = Graphics::kWMModeNoDesktop | Graphics::kWMModeAutohideMenu
 		| Graphics::kWMModalMenuMode | Graphics::kWMModeForceBuiltinFonts
-		| Graphics::kWMModeUnicode;
+		| Graphics::kWMModeUnicode	 | Graphics::kWMModeWin95;
 
-	if (vm->getLanguage() != Common::HE_ISR) // We do not have Hebrew font in MS fonts :(
-		wmMode |= Graphics::kWMModeWin95;
+	if (vm->getLanguage() == Common::HE_ISR) // We do not have Hebrew font in MS fonts :(
+		wmMode |= Graphics::kWMModeForceMacFontsInWin95;
 
 	_wm = new Graphics::MacWindowManager(wmMode);
 
 	_wm->setScreen(&_surface);
 	_wm->setMenuHotzone(Common::Rect(0, 0, 640, 23));
-	_wm->setMenuDelay(250000);
+	_wm->setMenuDelay(250);
 	_wm->setEngineRedrawCallback(this, redrawCallback);
 
 	_textFont = nullptr;
 	_textFontCleanup = true;
 #ifdef USE_FREETYPE2
 	if (vm->getLanguage() == Common::HE_ISR) {
-		_textFont = _wm->_fontMan->getFont(Graphics::MacFont(Graphics::kMacFontChicago, 12, Graphics::kMacFontRegular));
+		_textFont = _wm->_fontMan->getFont(Graphics::MacFont(Graphics::kMacFontSystem, 12, Graphics::kMacFontRegular));
 		_textFontCleanup = false;
 	} else {
 		_textFont = Graphics::loadTTFFontFromArchive("system.ttf", 16);
@@ -231,6 +231,10 @@ void Screen::pause(bool pause_) {
 	for (uint i = 0; i < _sprites.size() ; ++i) {
 		_sprites[i]->pause(pause_);
 	}
+}
+
+bool Screen::isMenuActive() {
+	return _wm != nullptr && _wm->isMenuActive();
 }
 
 void Screen::saveStage() {

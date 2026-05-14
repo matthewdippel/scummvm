@@ -43,33 +43,30 @@
 - (void)applicationDidFinishLaunching:(UIApplication *)application {
 	CGRect rect = [[UIScreen mainScreen] bounds];
 
-#ifdef IPHONE_SANDBOXED
 	// Create the directory for savegames
 	NSFileManager *fm = [NSFileManager defaultManager];
-	NSString *documentPath = [NSString stringWithUTF8String:iOS7_getDocumentsDir()];
+	NSString *documentPath = [NSString stringWithUTF8String:iOS7_getDocumentsDir().c_str()];
 	NSString *savePath = [documentPath stringByAppendingPathComponent:@"Savegames"];
 	if (![fm fileExistsAtPath:savePath]) {
 		[fm createDirectoryAtPath:savePath withIntermediateDirectories:YES attributes:nil error:nil];
 	}
-#endif
-
-	_window = [[UIWindow alloc] initWithFrame:rect];
-	[_window retain];
 
 	_controller = [[iOS7ScummVMViewController alloc] init];
 
 	_view = [[iPhoneView alloc] initWithFrame:rect];
-	_view.multipleTouchEnabled = YES;
+#if TARGET_OS_IOS
+	// This property does not affect the gesture recognizers attached to the view.
+	// Gesture recognizers receive all touches that occur in the view.
+	_view.multipleTouchEnabled = NO;
+#endif
 	_controller.view = _view;
 
-	[_window setRootViewController:_controller];
-	[_window makeKeyAndVisible];
-
-	[[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
-	[[NSNotificationCenter defaultCenter] addObserver:self
-	                                         selector:@selector(didRotate:)
-	                                             name:@"UIDeviceOrientationDidChangeNotification"
-	                                           object:nil];
+	if (@available(iOS 13.0, *)) {
+		// iOS13 and later uses of UIScene.
+		// The keyWindow is setup by iOS7SceneDelegate
+	} else {
+		[iOS7AppDelegate setKeyWindow:[[UIWindow alloc] initWithFrame:rect]];
+	}
 
 	// Force creation of the shared instance on the main thread
 	iOS7_buildSharedOSystemInstance();
@@ -91,10 +88,11 @@
 - (void)applicationDidBecomeActive:(UIApplication *)application {
 	[_view applicationResume];
 
+#if TARGET_OS_IOS
 	// Make sure we have the correct orientation in case the orientation was changed while
 	// the app was inactive.
-	UIDeviceOrientation screenOrientation = [[UIDevice currentDevice] orientation];
-	[_view deviceOrientationChanged:screenOrientation];
+	[_controller updateCurrentOrientation];
+#endif
 }
 
 - (void)applicationDidEnterBackground:(UIApplication *)application {
@@ -114,13 +112,33 @@
 	return YES;
 }
 
-- (void)application:(UIApplication *)application didDecodeRestorableStateWithCoder:(NSCoder *)coder {
-	_restoreState = YES;
+#ifdef __IPHONE_13_2
+- (BOOL)application:(UIApplication *)application shouldSaveSecureApplicationState:(NSCoder *)coder {
+	return YES;
 }
 
-- (void)didRotate:(NSNotification *)notification {
-	UIDeviceOrientation screenOrientation = [[UIDevice currentDevice] orientation];
-	[_view deviceOrientationChanged:screenOrientation];
+- (BOOL)application:(UIApplication *)application shouldRestoreSecureApplicationState:(NSCoder *)coder {
+	return YES;
+}
+#endif
+
+#ifdef __IPHONE_13_0
+- (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession options:(UISceneConnectionOptions *)options API_AVAILABLE(ios(13.0)) {
+	// Called when a new scene session is being created.
+	UISceneConfiguration *config = [[UISceneConfiguration alloc] initWithName:@"ScummVM Scene Configuration" sessionRole:connectingSceneSession.role];
+	[config setDelegateClass:NSClassFromString(@"iOS7SceneDelegate")];
+	return config;
+}
+
+- (void)application:(UIApplication *)application didDiscardSceneSessions:(NSSet<UISceneSession *> *)sceneSessions API_AVAILABLE(ios(13.0)) {
+	// Called when the user discards a scene session.
+	// Use this method to release any resources that were
+	// specific to the discarded scenes, as they will not return.
+}
+#endif
+
+- (void)application:(UIApplication *)application didDecodeRestorableStateWithCoder:(NSCoder *)coder {
+	_restoreState = YES;
 }
 
 + (iOS7AppDelegate *)iOS7AppDelegate {
@@ -142,10 +160,20 @@
 	return appDelegate->_view;
 }
 
-@end
-
-const char *iOS7_getDocumentsDir() {
-	NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-	NSString *documentsDirectory = [paths objectAtIndex:0];
-	return [documentsDirectory UTF8String];
++ (void)setKeyWindow:(UIWindow *)window {
+	iOS7AppDelegate *appDelegate = [self iOS7AppDelegate];
+	appDelegate->_window = window;
+	[appDelegate->_window retain];
+	[appDelegate->_window setRootViewController:appDelegate->_controller];
+	[appDelegate->_window makeKeyAndVisible];
 }
+
+#if TARGET_OS_IOS
++ (UIInterfaceOrientation)currentOrientation {
+	iOS7AppDelegate *appDelegate = [self iOS7AppDelegate];
+	return [appDelegate->_controller currentOrientation];
+}
+
+#endif
+
+@end

@@ -46,20 +46,28 @@ namespace Image {
 class Indeo3Decoder : public Codec {
 public:
 	Indeo3Decoder(uint16 width, uint16 height, uint bitsPerPixel = 24);
-	~Indeo3Decoder();
+	~Indeo3Decoder() override;
 
-	const Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream);
-	Graphics::PixelFormat getPixelFormat() const;
+	const Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream) override;
+	Graphics::PixelFormat getPixelFormat() const override;
+	bool setOutputPixelFormat(const Graphics::PixelFormat &format) override {
+		if (format.bytesPerPixel != 2 && format.bytesPerPixel != 4)
+			return false;
+		_pixelFormat = format;
+		return true;
+	}
 
 	static bool isIndeo3(Common::SeekableReadStream &stream);
 
 private:
 	Graphics::Surface *_surface;
 
+	uint16 _width;
+	uint16 _height;
 	Graphics::PixelFormat _pixelFormat;
 
-	static const int _corrector_type_0[24];
-	static const int _corrector_type_2[8];
+	static const byte _corrector_type_0[24];
+	static const byte _corrector_type_2[8];
 	static const uint32 correction[];
 	static const uint32 correctionloworder[];
 	static const uint32 correctionhighorder[];
@@ -79,7 +87,7 @@ private:
 	YUVBufs *_ref_frame;
 
 	byte *_ModPred;
-	uint16 *_corrector_type;
+	byte *_corrector_type;
 
 	void buildModPred();
 	void allocFrames();

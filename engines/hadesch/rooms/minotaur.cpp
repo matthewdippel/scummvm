@@ -23,7 +23,6 @@
 #include "hadesch/hadesch.h"
 #include "hadesch/video.h"
 #include "hadesch/ambient.h"
-#include "common/translation.h"
 
 namespace Hadesch {
 static const char *kHighlightImage = "r6010ol0";
@@ -481,6 +480,10 @@ private:
 	static void readLabStream(Labyrinth &lab, Common::SharedPtr<Common::SeekableReadStream> stream) {
 		stream->readLine(); // Level number
 		int gridSize = stream->readLine().asUint64();
+
+		if (gridSize == 0)
+			gridSize = 1;
+
 		stream->readLine(); // ?
 		stream->readLine(); // ?
 		int numLines = stream->readLine().asUint64();

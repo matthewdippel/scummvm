@@ -32,23 +32,23 @@ class Shader;
 class ShaderPipeline : public Pipeline {
 public:
 	ShaderPipeline(Shader *shader);
-	~ShaderPipeline();
+	~ShaderPipeline() override;
 
-	virtual void setColor(GLfloat r, GLfloat g, GLfloat b, GLfloat a);
+	void setColor(GLfloat r, GLfloat g, GLfloat b, GLfloat a) override;
 
-	virtual void drawTexture(const GLTexture &texture, const GLfloat *coordinates, const GLfloat *texcoords);
-
-	virtual void setProjectionMatrix(const GLfloat *projectionMatrix);
+	void setProjectionMatrix(const Math::Matrix4 &projectionMatrix) override;
 
 protected:
-	virtual void activateInternal();
-	virtual void deactivateInternal();
+	void activateInternal() override;
+	void deactivateInternal() override;
+	void drawTextureInternal(const Texture &texture, const GLfloat *coordinates, const GLfloat *texcoords) override;
 
 	GLuint _coordsVBO;
 	GLuint _texcoordsVBO;
 	GLuint _colorVBO;
 
 	GLfloat _colorAttributes[4*4];
+	bool _colorDirty;
 
 	Shader *const _activeShader;
 };

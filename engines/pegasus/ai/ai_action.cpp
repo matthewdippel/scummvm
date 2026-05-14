@@ -38,14 +38,14 @@ void AICompoundAction::performAIAction(AIRule *rule) {
 		(*it)->performAIAction(rule);
 }
 
-AIPlayMessageAction::AIPlayMessageAction(const Common::String &movieName, bool keepLastFrame, const InputBits interruptionFilter) {
+AIPlayMessageAction::AIPlayMessageAction(const Common::Path &movieName, bool keepLastFrame, const InputBits interruptionFilter) {
 	_movieName = movieName;
 	_keepLastFrame = keepLastFrame;
 	_interruptionFilter = interruptionFilter;
 }
 
 void AIPlayMessageAction::performAIAction(AIRule *) {
-	if (g_AIArea && ((PegasusEngine *)g_engine)->isChattyAI()) {
+	if (g_AIArea && g_vm->isChattyAI()) {
 		g_AIArea->checkMiddleArea();
 		g_AIArea->playAIMovie(kRightAreaSignature, _movieName, _keepLastFrame, _interruptionFilter);
 	}

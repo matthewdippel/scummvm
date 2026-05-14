@@ -44,9 +44,9 @@ class Tileset;
 struct Portal;
 struct _Dungeon;
 
-typedef Std::vector<Portal *> PortalList;
+typedef Common::Array<Portal *> PortalList;
 typedef Common::List<int> CompressedChunkList;
-typedef Std::vector<MapTile> MapData;
+typedef Common::Array<MapTile> MapData;
 
 /* flags */
 #define SHOW_AVATAR (1 << 0)
@@ -263,7 +263,7 @@ public:
 
 public:
 	MapId _id;
-	Common::String _fname;
+	Common::Path _fname;
 	Type _type;
 	uint _width, _height, _levels;
 	uint _chunkWidth, _chunkHeight;
@@ -281,7 +281,7 @@ public:
 	Music::Type _music;
 	MapData _data;
 	ObjectDeque _objects;
-	Std::map<Common::String, MapCoords> _labels;
+	Common::HashMap<Common::String, MapCoords> _labels;
 	Tileset *_tileSet;
 	TileMap *_tileMap;
 	MapTile _blank;

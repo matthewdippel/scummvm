@@ -28,6 +28,7 @@
 
 #include "common/config-manager.h"
 #include "common/textconsole.h"
+#include "backends/events/default/default-events.h"
 #include "backends/fs/wii/wii-fs-factory.h"
 #include "backends/mutex/wii/wii-mutex.h"
 #include "backends/saves/default/default-saves.h"
@@ -39,6 +40,7 @@
 OSystem_Wii::OSystem_Wii() :
 	_startup_time(0),
 
+	_overlayInGUI(false),
 	_cursorDontScale(true),
 	_cursorPaletteDisabled(true),
 	_cursorPalette(NULL),
@@ -131,8 +133,9 @@ void OSystem_Wii::initBackend() {
 
 	char buf[MAXPATHLEN];
 	if (!getcwd(buf, MAXPATHLEN))
-		strcpy(buf, "/");
+		Common::strcpy_s(buf, "/");
 
+	_eventManager = new DefaultEventManager(this);
 	_savefileManager = new DefaultSaveFileManager(buf);
 	_timerManager = new DefaultTimerManager();
 
@@ -140,7 +143,7 @@ void OSystem_Wii::initBackend() {
 	initSfx();
 	initEvents();
 
-	EventsBaseBackend::initBackend();
+	BaseBackend::initBackend();
 }
 
 void OSystem_Wii::quit() {
@@ -162,7 +165,7 @@ void OSystem_Wii::quit() {
 
 void OSystem_Wii::engineInit() {
 	_gameRunning = true;
-	WiiFilesystemFactory::instance().umountUnused(ConfMan.get("path"));
+	WiiFilesystemFactory::instance().umountUnused(ConfMan.getPath("path").toString(Common::Path::kNativeSeparator));
 }
 
 void OSystem_Wii::engineDone() {
@@ -175,7 +178,9 @@ bool OSystem_Wii::hasFeature(Feature f) {
 	return (f == kFeatureFullscreenMode) ||
 			(f == kFeatureAspectRatioCorrection) ||
 			(f == kFeatureCursorPalette) ||
-			(f == kFeatureOverlaySupportsAlpha);
+			(f == kFeatureCursorAlpha) ||
+			(f == kFeatureOverlaySupportsAlpha) ||
+			(f == kFeatureTouchscreen);
 }
 
 void OSystem_Wii::setFeatureState(Feature f, bool enable) {
@@ -189,10 +194,7 @@ void OSystem_Wii::setFeatureState(Feature f, bool enable) {
 		break;
 	case kFeatureCursorPalette:
 		_cursorPaletteDisabled = !enable;
-		if (_texMouse.palette && !enable) {
-			memcpy(_texMouse.palette, _cursorPalette, 256 * 2);
-			_cursorPaletteDirty = true;
-		}
+		updateMousePalette();
 		break;
 	default:
 		break;
@@ -343,7 +345,7 @@ Common::String OSystem_Wii::getSystemLanguage() const {
 	} else {
 		// This will only happen when new languages are added to the API.
 		warning("WII: Unknown system language: %d", langID);
-		return EventsBaseBackend::getSystemLanguage();
+		return BaseBackend::getSystemLanguage();
 	}
 }
 #endif // !GAMECUBE

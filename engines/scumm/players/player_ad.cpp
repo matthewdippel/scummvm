@@ -194,7 +194,7 @@ void Player_AD::saveLoadWithSerializer(Common::Serializer &s) {
 	Common::StackLock lock(_mutex);
 
 	if (s.getVersion() < VER(95)) {
-		IMuse *dummyImuse = IMuse::create(_vm->_system, nullptr, nullptr);
+		IMuse *dummyImuse = IMuse::create(_vm, nullptr, nullptr, MDT_ADLIB, 0);
 		dummyImuse->saveLoadIMuse(s, _vm, false);
 		delete dummyImuse;
 		return;
@@ -231,7 +231,7 @@ void Player_AD::saveLoadWithSerializer(Common::Serializer &s) {
 		}
 
 		// Finally start up the SFX. This makes sure that they are not
-		// accidently stopped while seeking to the old music position.
+		// accidentally stopped while seeking to the old music position.
 		if (s.isLoading()) {
 			for (int i = 1; i < ARRAYSIZE(res); ++i) {
 				if (res[i] != -1) {

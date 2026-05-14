@@ -24,12 +24,15 @@
 #ifndef SWORD2_DETECTION_H
 #define SWORD2_DETECTION_H
 
+#include "engines/advancedDetector.h"
+
 namespace Sword2 {
 
 enum {
-	GF_DEMO	       = 1 << 0,
-	GF_SPANISHDEMO = 1 << 1
+	GF_SPANISHDEMO = 1 << 0
 };
+
+#define GAMEOPTION_OBJECT_LABELS GUIO_GAMEOPTIONS1
 
 } // End of namespace Sword2
 

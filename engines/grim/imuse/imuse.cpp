@@ -287,7 +287,8 @@ void Imuse::callback() {
 				continue;
 
 			do {
-				result = _sound->getDataFromRegion(track->soundDesc, track->curRegion, &data, track->regionOffset, mixer_size);
+				int32 mixerFlags = makeMixerFlags(track->mixerFlags);
+				result = _sound->getDataFromRegion(track->soundDesc, track->curRegion, &data, track->regionOffset, mixer_size, &mixerFlags);
 				if (channels == 1) {
 					result &= ~1;
 				}
@@ -299,10 +300,10 @@ void Imuse::callback() {
 					result = mixer_size;
 
 				if (g_system->getMixer()->isReady()) {
-					track->stream->queueBuffer(data, result, DisposeAfterUse::YES, makeMixerFlags(track->mixerFlags));
+					track->stream->queueBuffer(data, result, DisposeAfterUse::YES, mixerFlags);
 					track->regionOffset += result;
 				} else
-					delete[] data;
+					free(data);
 
 				if (_sound->isEndOfRegion(track->soundDesc, track->curRegion)) {
 					switchToNextRegion(track);

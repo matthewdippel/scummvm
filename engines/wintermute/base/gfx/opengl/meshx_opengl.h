@@ -25,22 +25,28 @@
  * Copyright (c) 2003-2013 Jan Nedoma and contributors
  */
 
-#ifndef WINTERMUTE_MESH_X_OPENGL_H
-#define WINTERMUTE_MESH_X_OPENGL_H
+#ifndef WINTERMUTE_XMESH_OPENGL_H
+#define WINTERMUTE_XMESH_OPENGL_H
 
-#include "engines/wintermute/base/gfx/x/meshx.h"
+#include "engines/wintermute/base/gfx/xmesh.h"
+
+class Effect3D;
+class Effect3DParams;
 
 #if defined(USE_OPENGL_GAME)
 
 namespace Wintermute {
 
-class MeshXOpenGL : public MeshX {
+class XMeshOpenGL : public XMesh {
 public:
-	MeshXOpenGL(BaseGame *inGame);
-	~MeshXOpenGL() override;
+	XMeshOpenGL(BaseGame *inGame);
+	~XMeshOpenGL() override;
 
-	bool render(ModelX *model) override;
-	bool renderFlatShadowModel() override;
+	bool render(XModel *model) override;
+	bool renderFlatShadowModel(uint32 shadowColor) override;
+
+private:
+	void renderEffect(Material *material);
 };
 
 } // namespace Wintermute

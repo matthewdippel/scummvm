@@ -31,6 +31,7 @@ class TwinEEngine;
 
 class TwinEConsole : public GUI::Debugger {
 private:
+	using Super = GUI::Debugger;
 	TwinEEngine *_engine;
 
 	bool doToggleSceneryView(int argc, const char **argv);
@@ -45,9 +46,6 @@ private:
 	bool doSetLife(int argc, const char **argv);
 	bool doGiveAllItems(int argc, const char **argv);
 	bool doChangeScene(int argc, const char **argv);
-	bool doListMenuText(int argc, const char **argv);
-	bool doToggleDebug(int argc, const char **argv);
-	bool doToggleDarkPal(int argc, const char **argv);
 	bool doToggleAutoAggressive(int argc, const char **argv);
 	bool doGiveKey(int argc, const char **argv);
 	bool doGiveGas(int argc, const char **argv);
@@ -57,11 +55,10 @@ private:
 	bool doToggleActorRendering(int argc, const char **argv);
 	bool doToggleTrackRendering(int argc, const char **argv);
 	bool doToggleGodMode(int argc, const char **argv);
-	bool doToggleEnhancements(int argc, const char **argv);
 	bool doToggleFreeCamera(int argc, const char **argv);
-	bool doToggleSceneChanges(int argc, const char **argv);
 	bool doToggleSceneRendering(int argc, const char **argv);
 	bool doSetTrackObject(int argc, const char **argv);
+	bool doChangeChapter(int argc, const char **argv);
 	bool doSkipSceneActorsBut(int argc, const char **argv);
 	bool doSetGameFlag(int argc, const char **argv);
 	bool doSetInventoryFlag(int argc, const char **argv);
@@ -69,6 +66,10 @@ private:
 	bool doAddMagicPoints(int argc, const char **argv);
 	bool doDumpFile(int argc, const char **argv);
 	bool doSetHolomapTrajectory(int argc, const char **argv);
+
+protected:
+	void preEnter() override;
+	void postEnter() override;
 
 public:
 	TwinEConsole(TwinEEngine *engine);

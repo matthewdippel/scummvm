@@ -23,7 +23,7 @@
 #define GRAPHICS_WINCURSOR_H
 
 #include "common/array.h"
-#include "common/winexe.h"
+#include "common/formats/winexe.h"
 
 #include "graphics/cursor.h"
 
@@ -79,6 +79,13 @@ Cursor *makeDefaultWinCursor();
  * @note The calling code is responsible for deleting the returned pointer.
  */
 Cursor *makeBusyWinCursor();
+
+/**
+ * Create a Cursor from DIB-format data, i.e. starting with a BITMAPINFOHEADER
+ *
+ * @note The calling code is responsible for deleting the returned pointer.
+ */
+Cursor *loadWindowsCursorFromDIB(Common::SeekableReadStream &stream, uint16 hotspotX, uint16 hotspotY);
 
 /** @} */
 

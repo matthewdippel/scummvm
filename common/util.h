@@ -23,7 +23,8 @@
 #define COMMON_UTIL_H
 
 #include "common/scummsys.h"
-#include "common/str.h"
+
+#include "common/type_traits.h"
 
 /**
  * @defgroup common_util Util
@@ -82,6 +83,25 @@ template<typename T> inline T CLIP(T v, T amin, T amax)
  */
 template<typename T> inline void SWAP(T &a, T &b) { T tmp = a; a = b; b = tmp; }
 
+/** Function to rotate the 32-bit integer @p x left by @p r bits */
+static inline uint32 ROTATE_LEFT_32(const uint32 x, const uint32 r) {
+	return (x >> (32 - r)) | (x << r);
+}
+
+/** Function to rotate the 32-bit integer @p x right by @p bits */
+static inline uint32 ROTATE_RIGHT_32(const uint32 x, const uint32 r) {
+	return (x << (32 - r)) | (x >> r);
+}
+
+#if !defined(_MSC_VER) || _MSC_VER >= 1910
+/** Template method to return the number of arguments passed to it. */
+template<typename... A> constexpr size_t NUMARGS(A&&...)	{ return sizeof...(A); }
+#else
+/** Macro that returns the number of arguments passed to it. */
+using int_c_array = int[]; // MSVC 2015 doesn't like the template method above
+#define NUMARGS(...)	(sizeof(int_c_array{__VA_ARGS__})/sizeof(int))
+#endif
+
 #ifdef ARRAYSIZE
 #undef ARRAYSIZE
 #endif
@@ -123,10 +143,73 @@ template<typename T, size_t N> inline void ARRAYCLEAR(T (&array) [N], const T &v
 
 namespace Common {
 
+class String;
+class U32String;
+
 /**
  * @addtogroup common_util
  * @{
  */
+
+/**
+ * A reimplementation of std::move.
+ */
+template<class T>
+constexpr remove_reference_t<T> &&move(T &&t) noexcept {
+  return static_cast<remove_reference_t<T> &&>(t);
+}
+
+template<class T>
+constexpr T&& forward(remove_reference_t<T> &&t) noexcept {
+	return static_cast<T &&>(t);
+}
+
+template<class T>
+constexpr T&& forward(remove_reference_t<T> &t) noexcept {
+	return static_cast<T &&>(t);
+}
+
+/**
+ * Provides a way to store two heterogeneous objects as a single unit.
+ */
+template<class T1, class T2>
+struct Pair {
+	T1 first;
+	T2 second;
+
+	constexpr Pair() {
+	}
+
+	constexpr Pair(const Pair &other) : first(other.first), second(other.second) {
+	}
+
+	constexpr Pair(Pair &&other) : first(Common::move(other.first)), second(Common::move(other.second)) {
+	}
+
+	constexpr Pair(const T1 &first_, const T2 &second_) : first(first_), second(second_) {
+	}
+
+	constexpr Pair(T1 &&first_, T2 &&second_) : first(Common::move(first_)), second(Common::move(second_)) {
+	}
+
+	constexpr Pair(T1 &&first_, const T2 &second_) : first(Common::move(first_)), second(second_) {
+	}
+
+	constexpr Pair(const T1 &first_, T2 &&second_) : first(first_), second(Common::move(second_)) {
+	}
+
+	Pair &operator=(const Pair &other) {
+		this->first = other.first;
+		this->second = other.second;
+		return *this;
+	}
+
+	Pair &operator=(Pair &&other) {
+		this->first = Common::move(other.first);
+		this->second = Common::move(other.second);
+		return *this;
+	}
+};
 
 /**
  * Print a hexdump of the data passed in. The number of bytes per line is
@@ -326,7 +409,7 @@ bool isBlank(int c);
  *
  * @return String with a floating point number representing the given size.
  */
-Common::U32String getHumanReadableBytes(uint64 bytes, Common::String &unitsOut);
+Common::String getHumanReadableBytes(uint64 bytes, const char *&unitsOut);
 
 /** @} */
 

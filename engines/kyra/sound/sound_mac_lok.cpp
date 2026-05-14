@@ -27,25 +27,20 @@
 
 #include "common/config-manager.h"
 #include "common/macresman.h"
-#include "common/stuffit.h"
+#include "common/compression/stuffit.h"
 
 #include "audio/mixer.h"
 
 
 #define HS_16BITOUTPUT		false
-#define HS_INTERPOLATION	kNone
-
 
 namespace Kyra {
 
-SoundMacRes::SoundMacRes(KyraEngine_v1 *vm) : _resMan(0), _stuffItArchive(nullptr) {
+SoundMacRes::SoundMacRes(KyraEngine_v1 *vm) : _resMan(0), _stuffItArchive(nullptr), _isTalkie(vm->gameFlags().isTalkie) {
 	_resMan = new Common::MacResManager[2];
 
 	if (vm->gameFlags().useInstallerPackage) {
-		Common::String str = Util::findMacResourceFile("Install Legend of Kyrandia");
-		if (str.empty())
-			error("SoundMacRes::SoundMacRes(): Could not find Legend of Kyrandia installer file");
-		_stuffItArchive = vm->resource()->getCachedArchive(str);
+		_stuffItArchive = vm->resource()->getCachedArchive("Install Legend of Kyrandia");
 		if (!_stuffItArchive)
 			error("SoundMacRes::SoundMacRes(): Failed to load Legend of Kyrandia installer file");
 	}
@@ -59,7 +54,9 @@ bool SoundMacRes::init() {
 	if (!_resMan)
 		return false;
 
-	_kyraMacExe = _stuffItArchive ? "Legend of Kyrandia\xaa" : Util::findMacResourceFile("Legend of Kyrandia");
+	_kyraMacExe = _stuffItArchive ? Common::Path("Legend of Kyrandia\xaa") : Util::findMacResourceFile("Legend of Kyrandia");
+	if (_kyraMacExe.empty() && _isTalkie)
+		_kyraMacExe = Util::findMacResourceFile("LK");
 
 	if (_kyraMacExe.empty()) {
 		warning("SoundMacRes::init(): Legend of Kyrandia resource fork not found");
@@ -71,14 +68,14 @@ bool SoundMacRes::init() {
 		return false;
 
 	// Test actual resource fork reading...
-	Common::SeekableReadStream *test = getResource(2, 'SMOD');
+	Common::SeekableReadStream *test = getResource(2, MKTAG('S', 'M', 'O', 'D'));
 	if (!test) {
 		warning("SoundMacRes::init(): Resource fork read test failed for 'Legend of Kyrandia' executable");
 		return false;
 	}
 	delete test;
 
-	test = getResource(202, 'SONG');
+	test = getResource(202, MKTAG('S', 'O', 'N', 'G'));
 	if (!test) {
 		warning("SoundMacRes::init(): Resource fork read test failed for 'HQ_Music.res'");
 		return false;
@@ -102,23 +99,23 @@ Common::SeekableReadStream *SoundMacRes::getResource(uint16 id, uint32 type) {
 
 bool SoundMacRes::setQuality(bool hi) {
 	Common::StackLock lock(_mutex);
-	Common::String s[2];
+	Common::Path s[2];
 	s[0] = hi ? "HQ_Music.res" : "LQ_Music.res";
 	s[1] = _kyraMacExe;
 	int err = 0;
 
 	if (_stuffItArchive) {
 		for (int i = 0; i < 2; ++i)
-			err |= (_resMan[i].open(Common::Path(s[i]), *_stuffItArchive) ? 0 : (1 << i));
+			err |= (_resMan[i].open(s[i], *_stuffItArchive) ? 0 : (1 << i));
 	} else {
 		for (int i = 0; i < 2; ++i)
-			err |= (_resMan[i].open(Common::Path(s[i])) ? 0 : (1 << i));
+			err |= (_resMan[i].open(s[i]) ? 0 : (1 << i));
 	}
 
 	if (err) {
 		for (int i = 0; i < 2; ++i) {
 			if (err & (1 << i))
-				warning("SoundMacRes::setQuality(): Error opening resource container: '%s'", s[i].c_str());
+				warning("SoundMacRes::setQuality(): Error opening resource container: '%s'", s[i].toString().c_str());
 		}
 		return false;
 	}
@@ -126,7 +123,7 @@ bool SoundMacRes::setQuality(bool hi) {
 	return true;
 }
 
-SoundMac::SoundMac(KyraEngine_v1 *vm, Audio::Mixer *mixer) : Sound(vm, mixer), _driver(nullptr), _res(nullptr), _currentResourceSet(-1), _resIDMusic(nullptr), _ready(false) {
+SoundMac::SoundMac(KyraEngine_v1 *vm, Audio::Mixer *mixer) : Sound(vm, mixer), _driver(nullptr), _res(nullptr), _currentResourceSet(-1), _resIDMusic(nullptr), _talkieFlag(vm->gameFlags().isTalkie ? 1 : 0), _ready(false) {
 }
 
 SoundMac::~SoundMac() {
@@ -148,7 +145,7 @@ bool SoundMac::init(bool hiQuality) {
 
 	_driver = new HalestormDriver(_res, _mixer);
 
-	if (!(_driver && _driver->init(hiQuality, HalestormDriver::HS_INTERPOLATION, HS_16BITOUTPUT)))
+	if (!(_driver && _driver->init(hiQuality, (hiQuality && _talkieFlag) ? HalestormDriver::kSimple : HalestormDriver::kNone, 1 + _talkieFlag, HS_16BITOUTPUT)))
 		return false;
 
 	setQuality(hiQuality);
@@ -211,11 +208,11 @@ void SoundMac::playSoundEffect(uint16 track, uint8) {
 
 	if (_currentResourceSet == kMusicIntro) {
 		if (track > 21 && track < 38)
-			_driver->startSoundEffect(_resIDSfxIntro[_soundEffectDefsIntro[track - 22].number]);
+			_driver->startSoundEffect(_resIDSfxIntro[_talkieFlag][_soundEffectDefsIntro[track - 22].number]);
 	} else {
 		const SoundEffectDef *se = &_soundEffectDefsIngame[track];
 		if (se->note)
-			_driver->enqueueSoundEffect(_resIDSfxIngame[se->number], se->rate, se->note);
+			_driver->enqueueSoundEffect(_resIDSfxIngame[_talkieFlag][se->number], se->rate, se->note);
 	}
 }
 
@@ -253,11 +250,19 @@ void SoundMac::enableMusic(int enable) {
 }
 
 void SoundMac::setQuality(bool hi) {
-	static const uint16 resIds[] = {
-		0x1b5b, 0x1b5c, 0x1b5e, 0x1b62, 0x1b63, 0x1b6b, 0x1b6c, 0x1b6d,
-		0x1b6e, 0x1b6f, 0x1b70, 0x1b71, 0x1b72, 0x1b73, 0x1b74, 0x1b75,
-		0x1b76, 0x1b77, 0x1b78, 0x1b79, 0x1b7a, 0x1b7b, 0x1b7c, 0x1b7d,
-		0x1b7e, 0x1b8a, 0x1bbc, 0x1bbd, 0x1bbe, 0xffff
+	static const uint16 resIDs[2][30] = {
+		{
+			0x1b5b, 0x1b5c, 0x1b5e, 0x1b62, 0x1b63, 0x1b6b, 0x1b6c, 0x1b6d,
+			0x1b6e, 0x1b6f, 0x1b70, 0x1b71, 0x1b72, 0x1b73, 0x1b74, 0x1b75,
+			0x1b76, 0x1b77, 0x1b78, 0x1b79, 0x1b7a, 0x1b7b, 0x1b7c, 0x1b7d,
+			0x1b7e, 0x1b8a, 0x1bbc, 0x1bbd, 0x1bbe, 0xffff
+		},
+		{
+			0x1b97, 0x1b98, 0x1b9a, 0x1b9e, 0x1b9f, 0x1b6b, 0x1b6c, 0x1b6d,
+			0x1b6e, 0x1b6f, 0x1b70, 0x1b71, 0x1b72, 0x1b73, 0x1b74, 0x1b75,
+			0x1b76, 0x1b77, 0x1b78, 0x1b79, 0x1b7a, 0x1b7b, 0x1b7c, 0x1b7d,
+			0x1b7e, 0x1b8a, 0x1bbc, 0x1bbd, 0x1bbe, 0xffff
+		}
 	};
 
 	if (!(_driver && _res))
@@ -270,21 +275,21 @@ void SoundMac::setQuality(bool hi) {
 	_res->setQuality(hi);
 
 	if (hi) {
-		_driver->changeSystemVoices(7, 4, 1);
-		_driver->doCommand(HalestormDriver::kSetRateAndIntrplMode, 3);
+		_driver->changeSystemVoices(7 - _talkieFlag, 4, 1 + _talkieFlag);
+		_driver->doCommand(HalestormDriver::kSetRateAndIntrplMode, 3 + (_talkieFlag << 1));
 	} else {
-		_driver->changeSystemVoices(4, 3, 1);
-		_driver->doCommand(HalestormDriver::kSetRateAndIntrplMode, 2);
+		_driver->changeSystemVoices(4, 3 + _talkieFlag, 1 + _talkieFlag);
+		_driver->doCommand(HalestormDriver::kSetRateAndIntrplMode, 2 + _talkieFlag);
 	}
 
-	_driver->registerSamples(resIds, true);
+	_driver->registerSamples(resIDs[_talkieFlag], true);
 }
 
 const uint16 SoundMac::_resIDMusicIntro[4] {
 	0x00c8, 0x00c9, 0x00ca, 0x00cb
 };
 
-const uint16 SoundMac::_resIDMusicIngame[35] {
+const uint16 SoundMac::_resIDMusicIngame[35] = {
 	0x0064, 0x0065, 0x0066, 0x0067, 0x0068, 0x0069, 0x006a, 0x006b,
 	0x006c, 0x006d, 0x006e, 0x006f, 0x0070, 0x0071, 0x0072, 0x0073,
 	0x0074, 0x0075, 0x0076, 0x0077, 0x0078, 0x0079, 0x007a, 0x01f4,
@@ -293,7 +298,7 @@ const uint16 SoundMac::_resIDMusicIngame[35] {
 };
 
 
-const uint8 SoundMac::_musicLoopTable[35] {
+const uint8 SoundMac::_musicLoopTable[35] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x01, 0x01, 0x01, 0x00, 0x01, 0x01,
 	0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01,
@@ -301,20 +306,38 @@ const uint8 SoundMac::_musicLoopTable[35] {
 	0x01, 0x00, 0x00
 };
 
-const uint16 SoundMac::_resIDSfxIntro[39] {
-	0x1b58, 0x1b59, 0x1b5a, 0x1b5b, 0x1b5c, 0x1b5d, 0x1b5e, 0x1b5f,
-	0x1b60, 0x1b61, 0x1b62, 0x1b63, 0x1b64, 0x1b65, 0x1b66, 0x1b67,
-	0x1b68, 0x1b69, 0x1b6a, 0x1b6d, 0x1b6c, 0x1b7a, 0x1bbc, 0x1bbd,
-	0x1bbe, 0x1b71, 0x1b72, 0x1b73, 0x1b74, 0x1b75, 0x1b76, 0x1b77,
-	0x1b78, 0x1b79, 0x1b7a, 0x1b7b, 0x1b7c, 0x1b7d, 0x1b7e
+const uint16 SoundMac::_resIDSfxIntro[2][39] = {
+	{
+		0x1b58, 0x1b59, 0x1b5a, 0x1b5b, 0x1b5c, 0x1b5d, 0x1b5e, 0x1b5f,
+		0x1b60, 0x1b61, 0x1b62, 0x1b63, 0x1b64, 0x1b65, 0x1b66, 0x1b67,
+		0x1b68, 0x1b69, 0x1b6a, 0x1b6d, 0x1b6c, 0x1b7a, 0x1bbc, 0x1bbd,
+		0x1bbe, 0x1b71, 0x1b72, 0x1b73, 0x1b74, 0x1b75, 0x1b76, 0x1b77,
+		0x1b78, 0x1b79, 0x1b7a, 0x1b7b, 0x1b7c, 0x1b7d, 0x1b7e
+	},
+	{
+		0x1b94, 0x1b95, 0x1b96, 0x1b97, 0x1b8b, 0x1b99, 0x1b9a, 0x1b9b,
+		0x1b9c, 0x1b9d, 0x1b9e, 0x1b9f, 0x1ba0, 0x1ba1, 0x1ba2, 0x1ba3,
+		0x1ba4, 0x1b69, 0x1b6a, 0x1b6d, 0x1b6c, 0x1b7a, 0x1bbc, 0x1bbd,
+		0x1bbe, 0x1b71, 0x1b72, 0x1b73, 0x1b74, 0x1b75, 0x1b76, 0x1b77,
+		0x1b78, 0x1b79, 0x1b7a, 0x1b7b, 0x1b7c, 0x1b7d, 0x1b7e
+	}
 };
 
-const uint16 SoundMac::_resIDSfxIngame[39] {
-	0x1b58, 0x1b59, 0x1b5a, 0x1b5b, 0x1b5c, 0x1b5d, 0x1b5e, 0x1b5f,
-	0x1b60, 0x1b61, 0x1b62, 0x1b63, 0x1b64, 0x1b65, 0x1b66, 0x1b67,
-	0x1b68, 0x1b69, 0x1b6a, 0x1b6b, 0x1b6c, 0x1b6d, 0x1b6e, 0x1b6f,
-	0x1b70, 0x1b71, 0x1b72, 0x1b73, 0x1b74, 0x1b75, 0x1b76, 0x1b77,
-	0x1b78, 0x1b8a, 0x1b7a, 0x1b7b, 0x1b7c, 0x1b7d, 0x1b7e
+const uint16 SoundMac::_resIDSfxIngame[2][39] = {
+	{
+		0x1b58, 0x1b59, 0x1b5a, 0x1b5b, 0x1b5c, 0x1b5d, 0x1b5e, 0x1b5f,
+		0x1b60, 0x1b61, 0x1b62, 0x1b63, 0x1b64, 0x1b65, 0x1b66, 0x1b67,
+		0x1b68, 0x1b69, 0x1b6a, 0x1b6b, 0x1b6c, 0x1b6d, 0x1b6e, 0x1b6f,
+		0x1b70, 0x1b71, 0x1b72, 0x1b73, 0x1b74, 0x1b75, 0x1b76, 0x1b77,
+		0x1b78, 0x1b8a, 0x1b7a, 0x1b7b, 0x1b7c, 0x1b7d, 0x1b7e
+	},
+	{
+		0x1b94, 0x1b95, 0x1b96, 0x1b97, 0x1b98, 0x1b99, 0x1b9a, 0x1b9b,
+		0x1b9c, 0x1b9d, 0x1b9e, 0x1b9f, 0x1ba0, 0x1ba1, 0x1ba2, 0x1ba3,
+		0x1ba4, 0x1b69, 0x1b6a, 0x1b6b, 0x1b6c, 0x1b6d, 0x1b6e, 0x1b6f,
+		0x1b70, 0x1b71, 0x1b72, 0x1b73, 0x1b74, 0x1b75, 0x1b76, 0x1b77,
+		0x1b78, 0x1b8a, 0x1b7a, 0x1b7b, 0x1b7c, 0x1b7d, 0x1b7e
+	}
 };
 
 const SoundMac::SoundEffectDef SoundMac::_soundEffectDefsIntro[16] = {

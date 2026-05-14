@@ -19,33 +19,33 @@
  *
  */
 
-#include "ultima/ultima8/misc/pent_include.h"
 #include "ultima/ultima8/conf/config_file_manager.h"
-#include "ultima/ultima8/filesys/file_system.h"
+
+#include "common/debug.h"
+#include "common/file.h"
 
 namespace Ultima {
 namespace Ultima8 {
 
-using Std::string;
-
 ConfigFileManager *ConfigFileManager::_configFileManager = nullptr;
 
 ConfigFileManager::ConfigFileManager() {
-	debugN(MM_INFO, "Creating ConfigFileManager...\n");
+	debug(1, "Creating ConfigFileManager...");
 
 	_configFileManager = this;
 }
 
 ConfigFileManager::~ConfigFileManager() {
-	debugN(MM_INFO, "Destroying ConfigFileManager...\n");
+	debug(1, "Destroying ConfigFileManager...");
 
 	clear();
 	_configFileManager = nullptr;
 }
 
-bool ConfigFileManager::readConfigFile(string fname, const istring &category) {
-	Common::SeekableReadStream *f = FileSystem::get_instance()->ReadFile(fname);
-	if (!f) return false;
+bool ConfigFileManager::readConfigFile(const Common::Path &fname, const Common::String &category) {
+	Common::File f;
+	if (!f.open(fname))
+		return false;
 
 	ConfigFile *configFile = new ConfigFile();
 	configFile->_category = category;
@@ -53,7 +53,7 @@ bool ConfigFileManager::readConfigFile(string fname, const istring &category) {
 	// We need various characters as the inis are used for translations.
 	configFile->_iniFile.allowNonEnglishCharacters();
 
-	if (!configFile->_iniFile.loadFromStream(*f)) {
+	if (!configFile->_iniFile.loadFromStream(f)) {
 		delete configFile;
 		return false;
 	}
@@ -63,18 +63,17 @@ bool ConfigFileManager::readConfigFile(string fname, const istring &category) {
 }
 
 void ConfigFileManager::clear() {
-	Std::vector<ConfigFile*>::iterator i;
-	for (i = _configFiles.begin(); i != _configFiles.end(); ++i) {
-		delete(*i);
+	for (auto *i : _configFiles) {
+		delete i;
 	}
 	_configFiles.clear();
 }
 
-void ConfigFileManager::clearRoot(const istring &category) {
-	Std::vector<ConfigFile *>::iterator i = _configFiles.begin();
+void ConfigFileManager::clearRoot(const Common::String &category) {
+	auto i = _configFiles.begin();
 
 	while (i != _configFiles.end()) {
-		if ((*i)->_category == category) {
+		if (category.equalsIgnoreCase((*i)->_category)) {
 			delete(*i);
 			i = _configFiles.erase(i);
 		} else {
@@ -83,11 +82,11 @@ void ConfigFileManager::clearRoot(const istring &category) {
 	}
 }
 
-bool ConfigFileManager::get(const istring &category, const istring &section, const istring &key, string &ret) {
-	Std::vector<ConfigFile*>::reverse_iterator i;
-	for (i = _configFiles.rbegin(); i != _configFiles.rend(); ++i) {
-		if ((*i)->_category == category) {
-			if ((*i)->_iniFile.getKey(key, section, ret)) {
+bool ConfigFileManager::get(const Common::String &category, const Common::String &section, const Common::String &key, Common::String &ret) const {
+	for (int i = _configFiles.size() - 1; i >= 0; --i) {
+		const ConfigFile *file = _configFiles[i];
+		if (category.equalsIgnoreCase(file->_category)) {
+			if (file->_iniFile.getKey(key, section, ret)) {
 				return true;
 			}
 		}
@@ -97,8 +96,8 @@ bool ConfigFileManager::get(const istring &category, const istring &section, con
 }
 
 
-bool ConfigFileManager::get(const istring &category, const istring &section, const istring &key, int &ret) {
-	string stringval;
+bool ConfigFileManager::get(const Common::String &category, const Common::String &section, const Common::String &key, int &ret) const {
+	Common::String stringval;
 	if (!get(category, section, key, stringval))
 		return false;
 
@@ -106,8 +105,8 @@ bool ConfigFileManager::get(const istring &category, const istring &section, con
 	return true;
 }
 
-bool ConfigFileManager::get(const istring &category, const istring &section, const istring &key, bool &ret) {
-	string stringval;
+bool ConfigFileManager::get(const Common::String &category, const Common::String &section, const Common::String &key, bool &ret) const {
+	Common::String stringval;
 	if (!get(category, section, key, stringval))
 		return false;
 
@@ -115,16 +114,13 @@ bool ConfigFileManager::get(const istring &category, const istring &section, con
 	return true;
 }
 
-Std::vector<istring> ConfigFileManager::listSections(const istring &category) {
-	Std::vector<istring> sections;
-	Std::vector<ConfigFile*>::const_iterator i;
-
-	for ( i = _configFiles.begin(); i != _configFiles.end(); ++i) {
-		if ((*i)->_category == category) {
-			Common::INIFile::SectionList sectionList = (*i)->_iniFile.getSections();
-			Common::INIFile::SectionList::const_iterator j;
-			for (j = sectionList.begin(); j != sectionList.end(); ++j) {
-				sections.push_back(j->name);
+Common::Array<Common::String> ConfigFileManager::listSections(const Common::String &category) const {
+	Common::Array<Common::String> sections;
+	for (const auto *i : _configFiles) {
+		if (category.equalsIgnoreCase(i->_category)) {
+			Common::INIFile::SectionList sectionList = i->_iniFile.getSections();
+			for (const auto &j : sectionList) {
+				sections.push_back(j.name);
 			}
 		}
 	}
@@ -132,17 +128,13 @@ Std::vector<istring> ConfigFileManager::listSections(const istring &category) {
 	return sections;
 }
 
-KeyMap ConfigFileManager::listKeyValues(const istring &category, const istring &section) {
+KeyMap ConfigFileManager::listKeyValues(const Common::String &category, const Common::String &section) const {
 	KeyMap values;
-	Std::vector<ConfigFile*>::const_iterator i;
-
-	for (i = _configFiles.begin(); i != _configFiles.end(); ++i) {
-		const ConfigFile *c = *i;
-		if (c->_category == category && c->_iniFile.hasSection(section)) {
+	for (const auto *c : _configFiles) {
+		if (category.equalsIgnoreCase(c->_category) && c->_iniFile.hasSection(section)) {
 			Common::INIFile::SectionKeyList keys = c->_iniFile.getKeys(section);
-			Common::INIFile::SectionKeyList::const_iterator j;
-			for (j = keys.begin(); j != keys.end(); ++j) {
-				values[j->key] = j->value;
+			for (const auto &j : keys) {
+				values[j.key] = j.value;
 			}
 		}
 	}

@@ -23,6 +23,7 @@
 #define ULTIMA_BITMAP_H
 
 #include "ultima/shared/core/lzw.h"
+#include "common/path.h"
 #include "common/stream.h"
 #include "graphics/managed_surface.h"
 
@@ -35,7 +36,7 @@ public:
 	/**
 	 * Loads an Ultima 6 bitmap
 	 */
-	void load(const Common::String &filename);
+	void load(const Common::Path &filename);
 
 	/**
 	 * Flips a bitmap horizontally

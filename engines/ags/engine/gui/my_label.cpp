@@ -19,13 +19,12 @@
  *
  */
 
+#include "ags/engine/gui/my_label.h"
 #include "ags/engine/ac/display.h"
 #include "ags/engine/ac/game_setup.h"
 #include "ags/engine/ac/string.h"
 #include "ags/shared/font/fonts.h"
-#include "ags/shared/gui/gui_defines.h"
-#include "ags/engine/gui/my_label.h"
-#include "ags/engine/gui/gui_dialog_internal_defs.h"
+#include "ags/engine/gui/gui_dialog_defines.h"
 #include "ags/globals.h"
 
 namespace AGS3 {
@@ -33,8 +32,7 @@ namespace AGS3 {
 using namespace Shared;
 
 MyLabel::MyLabel(int xx, int yy, int wii, const char *tee) {
-	strncpy(text, tee, 150);
-	text[149] = 0;
+	snprintf(text, sizeof(text), "%s", tee);
 	x = xx;
 	y = yy;
 	wid = wii;

@@ -23,12 +23,15 @@
 #include "twine/renderer/renderer.h"
 #include "common/memstream.h"
 
+#define	INFO_TRI	1
+#define	INFO_ANIM	2
+
 namespace TwinE {
 
 void BodyData::reset() {
 	_vertices.clear();
 	_bones.clear();
-	_shades.clear();
+	_normals.clear();
 	_polygons.clear();
 	_spheres.clear();
 	_lines.clear();
@@ -61,25 +64,26 @@ void BodyData::loadBones(Common::SeekableReadStream &stream) {
 		const int16 basePoint = stream.readSint16LE() / 6;
 		const int16 baseElementOffset = stream.readSint16LE();
 		BoneFrame boneframe;
-		boneframe.type = stream.readSint16LE();
+		boneframe.type = (BoneType)stream.readSint16LE();
 		boneframe.x = stream.readSint16LE();
 		boneframe.y = stream.readSint16LE();
 		boneframe.z = stream.readSint16LE();
 		/*int16 unk1 =*/ stream.readSint16LE();
-		const int16 numOfShades = stream.readSint16LE();
+		const int16 numNormals = stream.readSint16LE();
 		/*int16 unk2 =*/ stream.readSint16LE();
 		/*int32 field_18 =*/ stream.readSint32LE();
 		/*int32 y =*/ stream.readSint32LE();
 		/*int32 field_20 =*/ stream.readSint32LE();
 		/*int32 field_24 =*/ stream.readSint32LE();
 
+		// PatchObjet in original sources
 		BodyBone bone;
 		bone.parent = baseElementOffset == -1 ? 0xffff : baseElementOffset / 38;
 		bone.vertex = basePoint;
 		bone.firstVertex = firstPoint;
 		bone.numVertices = numPoints;
 		bone.initalBoneState = boneframe;
-		bone.numOfShades = numOfShades;
+		bone.numNormals = numNormals;
 
 		// assign the bone index to the vertices
 		for (int j = 0; j < numPoints; ++j) {
@@ -91,19 +95,19 @@ void BodyData::loadBones(Common::SeekableReadStream &stream) {
 	}
 }
 
-void BodyData::loadShades(Common::SeekableReadStream &stream) {
-	const uint16 numShades = stream.readUint16LE();
+void BodyData::loadNormals(Common::SeekableReadStream &stream) {
+	const uint16 numNormals = stream.readUint16LE();
 	if (stream.eos())
 		return;
 
-	_shades.reserve(numShades);
-	for (uint16 i = 0; i < numShades; ++i) {
-		BodyShade shape;
-		shape.col1 = stream.readSint16LE();
-		shape.col2 = stream.readSint16LE();
-		shape.col3 = stream.readSint16LE();
-		shape.unk4 = stream.readUint16LE();
-		_shades.push_back(shape);
+	_normals.reserve(numNormals);
+	for (uint16 i = 0; i < numNormals; ++i) {
+		BodyNormal shape;
+		shape.x = stream.readSint16LE();
+		shape.y = stream.readSint16LE();
+		shape.z = stream.readSint16LE();
+		shape.prenormalizedRange = stream.readUint16LE();
+		_normals.push_back(shape);
 	}
 }
 
@@ -118,21 +122,23 @@ void BodyData::loadPolygons(Common::SeekableReadStream &stream) {
 		poly.materialType = stream.readByte();
 		const uint8 numVertices = stream.readByte();
 
-		poly.color = stream.readSint16LE();
-		int16 intensity = -1;
+		poly.intensity = stream.readSint16LE();
+		int16 normal = -1;
 		if (poly.materialType == MAT_FLAT || poly.materialType == MAT_GRANIT) {
-			intensity = stream.readSint16LE();
+			// only one shade value is used
+			normal = stream.readSint16LE();
 		}
 
 		poly.indices.reserve(numVertices);
-		poly.intensities.reserve(numVertices);
+		poly.normals.reserve(numVertices);
 		for (int k = 0; k < numVertices; ++k) {
 			if (poly.materialType >= MAT_GOURAUD) {
-				intensity = stream.readSint16LE();
+				normal = stream.readSint16LE();
 			}
+			// numPoint is point index precomupted * 6
 			const uint16 vertexIndex = stream.readUint16LE() / 6;
 			poly.indices.push_back(vertexIndex);
-			poly.intensities.push_back(intensity);
+			poly.normals.push_back(normal);
 		}
 
 		_polygons.push_back(poly);
@@ -150,6 +156,7 @@ void BodyData::loadLines(Common::SeekableReadStream &stream) {
 		stream.skip(1);
 		line.color = stream.readByte();
 		stream.skip(2);
+		// indexPoint is point index precomupted * 6
 		line.vertex1 = stream.readUint16LE() / 6;
 		line.vertex2 = stream.readUint16LE() / 6;
 		_lines.push_back(line);
@@ -177,25 +184,30 @@ bool BodyData::loadFromStream(Common::SeekableReadStream &stream, bool lba1) {
 	reset();
 	if (lba1) {
 		const uint16 flags = stream.readUint16LE();
-		animated = (flags & 2) != 0;
+		animated = (flags & INFO_ANIM) != 0;
 		bbox.mins.x = stream.readSint16LE();
 		bbox.maxs.x = stream.readSint16LE();
 		bbox.mins.y = stream.readSint16LE();
 		bbox.maxs.y = stream.readSint16LE();
 		bbox.mins.z = stream.readSint16LE();
 		bbox.maxs.z = stream.readSint16LE();
+		offsetToData = stream.readSint16LE();
 
+		// using this value as the offset crashes the demo of lba1 - see https://bugs.scummvm.org/ticket/14294
+		// stream.seek(offsetToData);
 		stream.seek(0x1A);
+
 		loadVertices(stream);
 		loadBones(stream);
-		loadShades(stream);
+		loadNormals(stream);
 		loadPolygons(stream);
 		loadLines(stream);
 		loadSpheres(stream);
 	} else {
+		// T_BODY_HEADER (lba2)
 		const uint32 flags = stream.readUint32LE();
-		animated = (flags & 2) != 0;
-		stream.skip(4);
+		animated = (flags & INFO_ANIM) != 0;
+		stream.skip(4); // int16 size of header and int16 dummy
 		bbox.mins.x = stream.readSint32LE();
 		bbox.maxs.x = stream.readSint32LE();
 		bbox.mins.y = stream.readSint32LE();

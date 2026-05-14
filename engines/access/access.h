@@ -62,13 +62,69 @@
 namespace Access {
 
 enum AccessDebugChannels {
-	kDebugPath      = 1 << 0,
-	kDebugScripts	= 1 << 1,
-	kDebugGraphics	= 1 << 2,
-	kDebugSound     = 1 << 3
+	kDebugPath = 1,
+	kDebugScripts,
+	kDebugGraphics,
+	kDebugSound,
 };
 
-extern const char *const _estTable[];
+/* typed enum to match unsignedness of Common::CustomEventType */
+enum ACCESSActions : Common::CustomEventType {
+	kActionNone,
+	kActionMoveUp,
+	kActionMoveDown,
+	kActionMoveLeft,
+	kActionMoveRight,
+	kActionMoveUpLeft,
+	kActionMoveUpRight,
+	kActionMoveDownLeft,
+	kActionMoveDownRight,
+	kActionLook,
+	kActionUse,
+	kActionTake,
+	kActionInventory,
+	kActionClimb,
+	kActionTalk,
+	kActionWalk,
+	kActionHelp,
+	kActionOpen,
+	kActionMove,
+	kActionTravel,
+	kActionSkip,
+	kActionSaveLoad,
+};
+
+struct AccessActionCode {
+	ACCESSActions _action;
+	int8 _code;
+};
+
+static const AccessActionCode AMAZON_ACTION_CODES[] = {
+	{ kActionLook, 1 },
+	{ kActionUse, 2 },
+	{ kActionTake, 3 },
+	{ kActionInventory, 4 },
+	{ kActionClimb, 5 },
+	{ kActionTalk, 6 },
+	{ kActionWalk, 7 },
+	{ kActionHelp, 8 },
+	{ kActionSaveLoad, -2 },
+	{ kActionNone, -1 },
+};
+
+static const AccessActionCode MARTIAN_ACTION_CODES[] = {
+	{ kActionLook, 0 },
+	{ kActionOpen, 1 },
+	{ kActionMove, 2 },
+	{ kActionTake, 3 },
+	{ kActionUse, 4 },
+	{ kActionWalk, 5 },
+	{ kActionTalk, 6 },
+	{ kActionTravel, 7 },
+	{ kActionHelp, 8 },
+	{ kActionSaveLoad, -2 },
+	{ kActionNone, -1 },
+};
 
 #define ACCESS_SAVEGAME_VERSION 1
 
@@ -79,11 +135,17 @@ struct AccessSavegameHeader {
 	int _year, _month, _day;
 	int _hour, _minute;
 	int _totalFrames;
+	int _totalPlayTime;
 };
 
 class AccessEngine : public Engine {
 private:
 	uint32 _lastTime, _curTime;
+
+	/**
+	 * A cache for the ICONS.LZ sprite data
+	 */
+	SpriteResource *_icons;
 
 	/**
 	 * Handles basic initialization
@@ -122,7 +184,8 @@ protected:
 	/**
 	* Synchronize savegame data
 	*/
-	virtual void synchronize(Common::Serializer &s);
+	virtual Common::Error synchronize(Common::Serializer &s);
+
 public:
 	AnimationManager *_animation;
 	BubbleBox *_bubbleBox;
@@ -149,14 +212,12 @@ public:
 	ASurface _buffer2;
 	ASurface _vidBuf;
 	int _vidX, _vidY;
-	Common::Array<CharEntry *> _charTable;
 	SpriteResource *_objectsTable[100];
 	bool _establishTable[100];
 	bool _establishFlag;
 	int _establishMode;
 	int _establishGroup;
 	int _establishCtrlTblOfs;
-	int _numAnimTimers;
 	TimerList _timers;
 	DeathList _deaths;
 	FontManager _fonts;
@@ -166,7 +227,7 @@ public:
 	ImageEntryList _images;
 	int _mouseMode;
 
-	int _playerDataCount;
+	uint8 _playerDataCount;
 	int _currentManOld;
 	int _converseMode;
 	bool _currentCharFlag;
@@ -198,8 +259,8 @@ public:
 
 	// Fields used by MM
 	// TODO: Refactor
-	int _travel[60];
-	int _ask[40];
+	byte _travel[60];
+	byte _ask[40];
 	int _startTravelItem;
 	int _startTravelBox;
 	int _startAboutItem;
@@ -211,9 +272,6 @@ public:
 	int _numLines;
 	byte _byte26CB5;
 	int _bcnt;
-	byte *_tempList;
-	int _pictureTaken;
-	//
 
 	bool _vidEnd;
 	bool _clearSummaryFlag;
@@ -223,6 +281,7 @@ public:
 	int &_useItem;
 	int &_startup;
 	int &_manScaleOff;
+	int &_pictureTaken;
 
 public:
 	AccessEngine(OSystem *syst, const AccessGameDescription *gameDesc);
@@ -242,7 +301,9 @@ public:
 
 	int getRandomNumber(int maxNumber);
 
-	void loadCells(Common::Array<CellIdent> &cells);
+	const SpriteResource *getIcons();
+
+	void loadCells(const Common::Array<CellIdent> &cells);
 
 	/**
 	* Free the sprites list
@@ -270,40 +331,34 @@ public:
 	void printText(BaseSurface *s, const Common::String &msg);
 	void speakText(BaseSurface *s, const Common::String &msg);
 
+	void syncSoundSettings() override;
+
 	/**
 	 * Load a savegame
 	 */
 	Common::Error loadGameState(int slot) override;
+	Common::Error loadGameStream(Common::SeekableReadStream *stream) override;
 
 	/**
 	 * Save the game
 	 */
-	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
-
+	Common::Error saveGameStream(Common::WriteStream *stream, bool isAutosave = false) override;
 	/**
 	 * Returns true if a savegame can currently be loaded
 	 */
-	bool canLoadGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	/**
 	* Returns true if the game can currently be saved
 	*/
-	bool canSaveGameStateCurrently() override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	/**
 	 * Read in a savegame header
 	 */
-	WARN_UNUSED_RESULT static bool readSavegameHeader(Common::InSaveFile *in, AccessSavegameHeader &header, bool skipThumbnail = true);
+	static bool readSavegameHeader(Common::InSaveFile *in, AccessSavegameHeader &header, bool skipThumbnail = true);
 
-	/**
-	 * Write out a savegame header
-	 */
-	void writeSavegameHeader(Common::OutSaveFile *out, AccessSavegameHeader &header);
-
-	void SPRINTCHR(char c, int fontNum);
-	void PRINTCHR(Common::String msg, int fontNum);
-
-	bool playMovie(const Common::String &filename, const Common::Point &pos);
+	bool playMovie(const Common::Path &filename, const Common::Point &pos);
 };
 
 } // End of namespace Access

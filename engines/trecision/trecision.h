@@ -23,6 +23,7 @@
 #define TRECISION_TRECISION_H
 
 #include "common/str-array.h"
+#include "common/events.h"
 #include "common/keyboard.h"
 #include "common/str.h"
 #include "common/serializer.h"
@@ -82,6 +83,18 @@ enum TrecisionMessageIds {
 	kMessageGoto2 = 26
 };
 
+enum TRECISIONAction {
+	kActionNone,
+	kActionSkipVideo,
+	kActionFastWalk,
+	kActionPause,
+	kActionQuit,
+	kActionSystemMenu,
+	kActionSave,
+	kActionLoad,
+	kActionYes
+};
+
 typedef Common::List<Common::Rect>::iterator DirtyRectsIterator;
 
 struct ElevatorAction {
@@ -135,6 +148,7 @@ class TrecisionEngine : public Engine {
 	// Utils
 	char *getNextSentence();
 	uint16 getKey();
+	uint16 getAction();
 	void processTime();
 	void processMouse();
 	static bool isBetween(int a, int x, int b);
@@ -169,15 +183,15 @@ public:
 	bool isDemo() const { return _gameDescription->flags & ADGF_DEMO; }
 	bool isAmiga() const { return _gameDescription->platform == Common::kPlatformAmiga; }
 	bool hasFeature(EngineFeature f) const override;
-	bool canLoadGameStateCurrently() override { return canPlayerInteract() && _curRoom != kRoomIntro; }
-	bool canSaveGameStateCurrently() override { return canPlayerInteract() && _curRoom != kRoomIntro; }
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override { return canPlayerInteract() && _curRoom != kRoomIntro; }
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override { return canPlayerInteract() && _curRoom != kRoomIntro; }
 	Common::Error loadGameStream(Common::SeekableReadStream *stream) override;
 	Common::Error saveGameStream(Common::WriteStream *stream, bool isAutosave = false) override;
 	bool syncGameStream(Common::Serializer &ser);
 
 	// Data files
 	Common::SeekableReadStreamEndian *readEndian(Common::SeekableReadStream *stream, DisposeAfterUse::Flag disposeParentStream = DisposeAfterUse::YES);
-	void read3D(const Common::String &c);
+	void read3D(const Common::Path &c);
 
 	// Inventory
 	void setInventoryStart(uint8 startIcon, uint8 startLine);
@@ -238,11 +252,12 @@ public:
 	void readPositionerSnapshots();
 
 	// Data files
-	byte *readData(const Common::String &fileName);
+	byte *readData(const Common::Path &fileName);
 
 	const ADGameDescription *_gameDescription;
 
 	Graphics::Surface _thumbnail;
+	bool _controlPanelSave = false;
 
 	uint16 _curRoom;
 	uint16 _oldRoom;
@@ -293,6 +308,8 @@ public:
 	Common::Point _mousePos;
 	bool _mouseMoved, _mouseLeftBtn, _mouseRightBtn;
 	Common::KeyCode _curKey;
+	Common::CustomEventType _curAction;
+	bool _joyButtonUp = false;
 
 	bool _flagScriptActive;
 	SScriptFrame _scriptFrame[MAXSCRIPTFRAME];

@@ -27,6 +27,10 @@
 
 namespace Common {
 
+enum {
+	kTempBufSize = 65536
+};
+
 uint32 WriteStream::writeStream(ReadStream *stream, uint32 dataSize) {
 	void *buf = malloc(dataSize);
 	dataSize = stream->read(buf, dataSize);
@@ -36,8 +40,21 @@ uint32 WriteStream::writeStream(ReadStream *stream, uint32 dataSize) {
 	return dataSize;
 }
 
-uint32 WriteStream::writeStream(SeekableReadStream *stream) {
-	return writeStream(stream, stream->size());
+uint32 WriteStream::writeStream(ReadStream *stream) {
+	uint32 ret = 0;
+
+	void *buf = malloc(kTempBufSize);
+	assert(buf);
+
+	uint32 readSize, writeSize;
+	do {
+		readSize = stream->read(buf, kTempBufSize);
+		writeSize = write(buf, readSize);
+		ret += writeSize;
+	} while(readSize == kTempBufSize && writeSize == readSize);
+
+	free(buf);
+	return ret;
 }
 
 void WriteStream::writeString(const String &str) {
@@ -94,6 +111,9 @@ Common::String ReadStream::readPascalString(bool transformCR) {
 }
 
 uint32 MemoryReadStream::read(void *dataPtr, uint32 dataSize) {
+	if (!dataPtr)
+		return 0;
+
 	// Read at most as many bytes as are still available...
 	if (dataSize > _size - _pos) {
 		dataSize = _size - _pos;
@@ -119,7 +139,7 @@ bool MemoryReadStream::seek(int64 offs, int whence) {
 	case SEEK_SET:
 		// Fall through
 	default:
-		_ptr = _ptrOrig + offs;
+		_ptr = _ptrOrig.get() + offs;
 		_pos = offs;
 		break;
 
@@ -128,8 +148,10 @@ bool MemoryReadStream::seek(int64 offs, int whence) {
 		_pos += offs;
 		break;
 	}
-	// Post-Condition
-	assert(_pos <= _size);
+	
+	if (!(_pos <= _size)) {
+		_pos = _size;
+	}
 
 	// Reset end-of-stream flag on a successful seek
 	_eos = false;
@@ -457,7 +479,7 @@ bool BufferedSeekableReadStream::seek(int64 offset, int whence) {
 		if (whence == SEEK_CUR)
 			offset -= (_bufSize - _pos);
 		// We invalidate the buffer here. This assures that successive seeks
-		// do not have the chance to incorrectly think they seeked back into
+		// do not have the chance to incorrectly think they seek'ed back into
 		// the buffer.
 		// Note: This does not take full advantage of the buffer. But it is
 		// a simple way to prevent nasty errors. It would be possible to take
@@ -524,6 +546,7 @@ public:
 	virtual ~BufferedWriteStream() {
 		const bool flushResult = flushBuffer();
 		assert(flushResult);
+		(void)flushResult;
 
 		delete _parentStream;
 
@@ -538,11 +561,13 @@ public:
 		} else if (_bufSize >= dataSize) {	// check if we can flush the buffer and load the data
 			const bool flushResult = flushBuffer();
 			assert(flushResult);
+			(void)flushResult;
 			memcpy(_buf, dataPtr, dataSize);
 			_pos += dataSize;
 		} else	{	// too big for our buffer
 			const bool flushResult = flushBuffer();
 			assert(flushResult);
+			(void)flushResult;
 			return _parentStream->write(dataPtr, dataSize);
 		}
 		return dataSize;
@@ -579,6 +604,11 @@ WriteStream *wrapBufferedWriteStream(WriteStream *parentStream, uint32 bufSize) 
 	if (parentStream)
 		return new BufferedWriteStream(parentStream, bufSize);
 	return nullptr;
+}
+
+uint32 SafeMutexedSeekableSubReadStream::read(void *dataPtr, uint32 dataSize) {
+	Common::StackLock lock(_mutex);
+	return Common::SafeSeekableSubReadStream::read(dataPtr, dataSize);
 }
 
 } // End of namespace Common

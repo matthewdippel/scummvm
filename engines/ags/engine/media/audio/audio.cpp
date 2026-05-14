@@ -25,6 +25,7 @@
 #include "ags/shared/ac/game_setup_struct.h"
 #include "ags/engine/ac/dynobj/cc_audio_clip.h"
 #include "ags/engine/ac/dynobj/cc_audio_channel.h"
+#include "ags/engine/ac/dynobj/dynobj_manager.h"
 #include "ags/engine/ac/game_state.h"
 #include "ags/engine/script/script_runtime.h"
 #include "ags/engine/ac/audio_channel.h"
@@ -79,7 +80,7 @@ SOUNDCLIP *AudioChans::SetChannel(int index, SOUNDCLIP *ch) {
 	}
 
 	// TODO: store clips in smart pointers
-	if (_GP(audioChannels)[index] == ch)
+	if (_GP(audioChannels)[index] != nullptr && _GP(audioChannels)[index] == ch)
 		Debug::Printf(kDbgMsg_Warn, "WARNING: channel %d - same clip assigned", index);
 	else if (_GP(audioChannels)[index] != nullptr && ch != nullptr)
 		Debug::Printf(kDbgMsg_Warn, "WARNING: channel %d - clip overwritten", index);
@@ -137,14 +138,15 @@ static void move_track_to_crossfade_channel(int currentChannel, int crossfadeSpe
 // NOTE: this function assumes one of the user channels
 void stop_or_fade_out_channel(int fadeOutChannel, int fadeInChannel, ScriptAudioClip *newSound) {
 	ScriptAudioClip *sourceClip = AudioChannel_GetPlayingClip(&_G(scrAudioChannel)[fadeOutChannel]);
-	if ((sourceClip != nullptr) && (_GP(game).audioClipTypes[sourceClip->type].crossfadeSpeed > 0)) {
+	if ((_GP(play).fast_forward == 0) && // don't crossfade if skipping a cutscene
+		(sourceClip != nullptr) && (_GP(game).audioClipTypes[sourceClip->type].crossfadeSpeed > 0)) {
 		move_track_to_crossfade_channel(fadeOutChannel, _GP(game).audioClipTypes[sourceClip->type].crossfadeSpeed, fadeInChannel, newSound);
 	} else {
 		stop_and_destroy_channel(fadeOutChannel);
 	}
 }
 
-static int find_free_audio_channel(ScriptAudioClip *clip, int priority, bool interruptEqualPriority) {
+static int find_free_audio_channel(ScriptAudioClip *clip, int priority, bool interruptEqualPriority, bool for_queue = true) {
 	int lowestPrioritySoFar = 9999999;
 	int lowestPriorityID = -1;
 	int channelToUse = -1;
@@ -152,9 +154,8 @@ static int find_free_audio_channel(ScriptAudioClip *clip, int priority, bool int
 	if (!interruptEqualPriority)
 		priority--;
 
-	// NOTE: in backward compat mode we allow to place sound on a crossfade channel
 	int startAtChannel = _G(reserved_channel_count);
-	int endBeforeChannel = _GP(game).numCompatGameChannels;
+	int endBeforeChannel = _GP(game).numGameChannels;
 
 	if (_GP(game).audioClipTypes[clip->type].reservedChannels > 0) {
 		startAtChannel = 0;
@@ -162,6 +163,8 @@ static int find_free_audio_channel(ScriptAudioClip *clip, int priority, bool int
 			startAtChannel += MIN(MAX_SOUND_CHANNELS,
 				_GP(game).audioClipTypes[i].reservedChannels);
 		}
+		// NOTE: we allow to place sound on a crossfade channel for backward compatibility,
+		// but ONLY for the case of audio type with reserved channels (weird quirk).
 		endBeforeChannel = MIN(_GP(game).numCompatGameChannels,
 			startAtChannel + _GP(game).audioClipTypes[clip->type].reservedChannels);
 	}
@@ -177,6 +180,19 @@ static int find_free_audio_channel(ScriptAudioClip *clip, int priority, bool int
 		        (ch->_sourceClipType == clip->type)) {
 			lowestPrioritySoFar = ch->_priority;
 			lowestPriorityID = i;
+		}
+		// NOTE: This is a "hack" for starting queued clips;
+		// since having a new audio system (3.6.0 onwards), the audio timing
+		// changed a little, and queued sounds have to start bit earlier
+		// if we want them to sound seamless with the previous clips.
+		// TODO: investigate better solutions? may require reimplementation of the sound queue.
+		if (for_queue && (ch->_sourceClipType == clip->type)) {
+			// try to start queued sounds 1 frame earlier
+			const float trigger_pos = (1000.f / _G(frames_per_second)) * 1.f;
+			if (ch->get_pos_ms() >= (ch->get_length_ms() - trigger_pos)) {
+				lowestPrioritySoFar = priority;
+				lowestPriorityID = i;
+			}
 		}
 	}
 
@@ -273,7 +289,7 @@ static void audio_update_polled_stuff() {
 	if (_GP(play).new_music_queue_size > 0) {
 		for (int i = 0; i < _GP(play).new_music_queue_size; i++) {
 			ScriptAudioClip *clip = &_GP(game).audioClips[_GP(play).new_music_queue[i].audioClipIndex];
-			int channel = find_free_audio_channel(clip, clip->defaultPriority, false);
+			int channel = find_free_audio_channel(clip, clip->defaultPriority, false, true);
 			if (channel >= 0) {
 				QueuedAudioItem itemToPlay = _GP(play).new_music_queue[i];
 
@@ -377,7 +393,7 @@ void remove_clips_of_type_from_queue(int audioType) {
 	int aa;
 	for (aa = 0; aa < _GP(play).new_music_queue_size; aa++) {
 		ScriptAudioClip *clip = &_GP(game).audioClips[_GP(play).new_music_queue[aa].audioClipIndex];
-		if (clip->type == audioType) {
+		if ((audioType == SCR_NO_VALUE) || (clip->type == audioType)) {
 			_GP(play).new_music_queue_size--;
 			for (int bb = aa; bb < _GP(play).new_music_queue_size; bb++)
 				_GP(play).new_music_queue[bb] = _GP(play).new_music_queue[bb + 1];
@@ -407,7 +423,7 @@ ScriptAudioChannel *play_audio_clip(ScriptAudioClip *clip, int priority, int rep
 	if (repeat == SCR_NO_VALUE)
 		repeat = clip->defaultRepeat;
 
-	int channel = find_free_audio_channel(clip, priority, !queueIfNoChannel);
+	int channel = find_free_audio_channel(clip, priority, !queueIfNoChannel, queueIfNoChannel);
 	if (channel < 0) {
 		if (queueIfNoChannel)
 			queue_audio_clip_to_play(clip, priority, repeat);
@@ -461,6 +477,13 @@ void stop_and_destroy_channel(int chid) {
 	stop_and_destroy_channel_ex(chid, true);
 }
 
+void export_missing_audiochans() {
+	for (int i = 0; i < _GP(game).numCompatGameChannels; ++i) {
+		int h = ccGetObjectHandleFromAddress(&_G(scrAudioChannel)[i]);
+		if (h <= 0)
+			ccRegisterManagedObject(&_G(scrAudioChannel)[i], &_GP(ccDynamicAudio));
+	}
+}
 
 
 // ***** BACKWARDS COMPATIBILITY WITH OLD AUDIO SYSTEM ***** //
@@ -758,10 +781,31 @@ void update_volume_drop_if_voiceover() {
 	apply_volume_drop_modifier(_GP(play).speech_has_voice);
 }
 
+// Sync logical game channels with the audio backend:
+// startup new assigned clips, apply changed parameters.
+void sync_audio_playback() {
+	for (int i = 0; i < TOTAL_AUDIO_CHANNELS; ++i) {
+		// update the playing channels, and dispose the finished / invalid ones
+		auto *ch = AudioChans::GetChannelIfPlaying(i);
+		if (ch && !ch->update()) {
+			AudioChans::SetChannel(i, nullptr);
+			delete ch;
+		}
+	}
+}
+
 // Update the music, and advance the crossfade on a step
 // (this should only be called once per game loop)
 void update_audio_system_on_game_loop() {
-	update_polled_stuff_if_runtime();
+	update_polled_stuff();
+
+	// Sync logical game channels with the audio backend
+	// NOTE: we update twice, first time here - because we need to know
+	// which clips are still playing before updating the sound transitions
+	// and queues, then second time later - because we need to apply any
+	// changes to channels / parameters.
+	// TODO: investigate options for optimizing this.
+	sync_audio_playback();
 
 	process_scheduled_music_update();
 
@@ -789,7 +833,7 @@ void update_audio_system_on_game_loop() {
 					// we want to crossfade, and we know how far through
 					// the tune we are
 					int takesSteps = calculate_max_volume() / _GP(game).options[OPT_CROSSFADEMUSIC];
-					int takesMs = ::lround(takesSteps * 1000.0f / get_current_fps());
+					int takesMs = ::lround(takesSteps * 1000.0f / get_game_fps());
 					if (curpos >= muslen - takesMs)
 						play_next_queued();
 				}
@@ -797,21 +841,13 @@ void update_audio_system_on_game_loop() {
 		}
 	}
 
-	if (_G(loopcounter) % 5 == 0) {
+	if (_G(loopcounter) % 5 == 0) { // TODO: investigate why we do this each 5 frames?
 		update_ambient_sound_vol();
 		update_directional_sound_vol();
 	}
 
-	// Update and sync logical game channels with the audio backend
-	for (int i = 0; i < TOTAL_AUDIO_CHANNELS; ++i) {
-		auto *ch = AudioChans::GetChannel(i);
-		if (ch) { // update the playing channel, and if it's finished then dispose it
-			if (ch->is_ready() && !ch->update()) {
-				delete ch;
-				AudioChans::SetChannel(i, nullptr);
-			}
-		}
-	}
+	// Sync logical game channels with the audio backend again
+	sync_audio_playback();
 }
 
 void stopmusic() {

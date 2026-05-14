@@ -27,7 +27,7 @@
 #include "common/config-manager.h"
 #include "common/fs.h"
 #include "common/str.h"
-
+#include "backends/keymapper/keymapper.h"
 #include "trecision/animmanager.h"
 #include "trecision/animtype.h"
 #include "trecision/actor.h"
@@ -53,7 +53,7 @@ namespace Trecision {
 TrecisionEngine::TrecisionEngine(OSystem *syst, const ADGameDescription *desc) : Engine(syst), _gameDescription(desc) {
 	_gameId = !strcmp(_gameDescription->gameId, "nl") ? GID_NightLong : GID_ArkOfTime;
 
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 	SearchMan.addSubDirectoryMatching(gameDataDir, "AUTORUN");
 	SearchMan.addSubDirectoryMatching(gameDataDir, "DATA");
 	SearchMan.addSubDirectoryMatching(gameDataDir, "FMV");
@@ -112,6 +112,7 @@ TrecisionEngine::TrecisionEngine(OSystem *syst, const ADGameDescription *desc) :
 	_nextRefresh = 0;
 
 	_curKey = Common::KEYCODE_INVALID;
+	_curAction = kActionNone;
 	_curAscii = 0;
 	_mousePos = Common::Point(0, 0);
 	_mouseMoved = _mouseLeftBtn = _mouseRightBtn = false;
@@ -237,6 +238,7 @@ Common::Error TrecisionEngine::run() {
 void TrecisionEngine::eventLoop() {
 	Common::Event event;
 	while (g_system->getEventManager()->pollEvent(event)) {
+		Common::Keymapper *keymapper = _eventMan->getKeymapper();
 		switch (event.type) {
 		case Common::EVENT_MOUSEMOVE:
 			_mouseMoved = true;
@@ -251,25 +253,38 @@ void TrecisionEngine::eventLoop() {
 			_mouseRightBtn = true;
 			break;
 
-		case Common::EVENT_KEYUP:
-			_curKey = event.kbd.keycode;
-			_curAscii = event.kbd.ascii;
-			switch (event.kbd.keycode) {
-			case Common::KEYCODE_p:
+		case Common::EVENT_CUSTOM_ENGINE_ACTION_END:
+			_curAction = event.customType;
+			switch (event.customType) {
+			case kActionFastWalk:
+				_fastWalk ^= true;
+				break;
+			case kActionPause:
 				if (!_gamePaused && !_keybInput) {
 					_curKey = Common::KEYCODE_INVALID;
+					_curAction = kActionNone;
+					keymapper->getKeymap("game-shortcuts")->setEnabled(false);
+
 					_gamePaused = true;
 					waitKey();
 				}
+
+				keymapper->getKeymap("game-shortcuts")->setEnabled(true);
 				_gamePaused = false;
 				break;
 
-			case Common::KEYCODE_CAPSLOCK:
-				_fastWalk ^= true;
-				break;
 			default:
 				break;
 			}
+			return;
+
+		case Common::EVENT_KEYUP:
+			_curKey = event.kbd.keycode;
+			_curAscii = event.kbd.ascii;
+			break;
+
+		case Common::EVENT_JOYBUTTON_UP:
+			_joyButtonUp = true;
 			break;
 
 		default:
@@ -382,13 +397,13 @@ void TrecisionEngine::reEvent() {
 }
 
 Common::SeekableReadStreamEndian *TrecisionEngine::getLocStream() {
-	Common::String filename;
+	Common::Path filename(_room[_curRoom]._baseName);
 
 	if (isAmiga()) {
-		filename = Common::String::format("%s.bm", _room[_curRoom]._baseName);
+		filename.appendInPlace(".bm");
 		return readEndian(_dataFile.createReadStreamForMember(filename));
 	} else {
-		filename = Common::String::format("%s.cr", _room[_curRoom]._baseName);
+		filename.appendInPlace(".cr");
 		return readEndian(_dataFile.createReadStreamForCompressedMember(filename));
 	}
 }
@@ -409,7 +424,7 @@ void TrecisionEngine::readLoc() {
 	if (_room[_curRoom]._sounds[0] != 0)
 		_soundMgr->loadRoomSounds();
 
-	Common::String fname = Common::String::format("%s.3d", _room[_curRoom]._baseName);
+	Common::Path fname(Common::String::format("%s.3d", _room[_curRoom]._baseName));
 	read3D(fname);
 
 	if (_room[_curRoom]._bkgAnim) {

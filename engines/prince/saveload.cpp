@@ -29,11 +29,10 @@
 #include "common/system.h"
 #include "common/config-manager.h"
 #include "common/memstream.h"
-#include "common/translation.h"
 
 #include "graphics/thumbnail.h"
 #include "graphics/surface.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/scaler.h"
 
 #include "gui/saveload.h"
@@ -51,7 +50,7 @@ bool PrinceEngine::scummVMSaveLoadDialog(bool isSave) {
 	int slot;
 
 	if (isSave) {
-		dialog = new GUI::SaveLoadChooser(_("Save game:"), _("Save"), true);
+		dialog = new GUI::SaveLoadChooser(true);
 
 		slot = dialog->runModalWithCurrentTarget();
 		desc = dialog->getResultString();
@@ -60,7 +59,7 @@ bool PrinceEngine::scummVMSaveLoadDialog(bool isSave) {
 			desc = dialog->createDefaultSaveDescription(slot);
 		}
 	} else {
-		dialog = new GUI::SaveLoadChooser(_("Restore game:"), _("Restore"), false);
+		dialog = new GUI::SaveLoadChooser(false);
 		slot = dialog->runModalWithCurrentTarget();
 	}
 
@@ -113,7 +112,7 @@ WARN_UNUSED_RESULT bool PrinceEngine::readSavegameHeader(Common::InSaveFile *in,
 	return true;
 }
 
-bool PrinceEngine::canSaveGameStateCurrently() {
+bool PrinceEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	if (_mouseFlag && _mouseFlag != 3) {
 		if (_mainHero->_visible) {
 			// 29 - Basement
@@ -128,7 +127,7 @@ bool PrinceEngine::canSaveGameStateCurrently() {
 	return false;
 }
 
-bool PrinceEngine::canLoadGameStateCurrently() {
+bool PrinceEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	if (_mouseFlag && _mouseFlag != 3) {
 		if (_mainHero->_visible) {
 			// 29 - Basement

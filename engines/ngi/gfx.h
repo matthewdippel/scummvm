@@ -26,7 +26,7 @@
 
 namespace Graphics {
 	struct Surface;
-	struct TransparentSurface;
+	class ManagedSurface;
 }
 
 namespace NGI {
@@ -46,7 +46,8 @@ struct Bitmap {
 	int _dataSize;
 	int _flags;
 	int _flipping;
-	Graphics::TransparentSurface *_surface;
+	Graphics::ManagedSurface *_surface;
+	Graphics::ManagedSurface *_mask;
 
 	Bitmap();
 	Bitmap(const Bitmap &src);
@@ -55,13 +56,15 @@ struct Bitmap {
 	void load(Common::ReadStream *s);
 	void decode(byte *pixels, const Palette &palette);
 	void putDib(int x, int y, const Palette &palette, byte alpha);
-	bool putDibRB(byte *pixels, const Palette &palette);
+	void putDibRB(byte *pixels, const Palette &palette);
 	void putDibCB(byte *pixels, const Palette &palette);
 
-	void colorFill(uint32 *dest, int len, int32 color);
-	void paletteFill(uint32 *dest, byte *src, int len, const Palette &palette);
-	void copierKeyColor(uint32 *dest, byte *src, int len, int keyColor, const Palette &palette, bool cb05_format);
-	void copier(uint32 *dest, byte *src, int len, const Palette &palette, bool cb05_format);
+	void convertPalette(const Palette &palette);
+
+	void colorFill(uint8 *dest, uint8 *mask, byte color, int len);
+	void paletteFill(uint8 *dest, uint8 *mask, byte *src, int len);
+	void copier8(uint8 *dest, byte *src, int len);
+	void copier16(uint16 *dest, byte *src, int len);
 
 	/** ownership of returned object is transferred to caller */
 	Bitmap *reverseImage(bool flip = true) const;

@@ -30,8 +30,7 @@
 #include "engines/wintermute/base/gfx/osystem/render_ticket.h"
 #include "engines/wintermute/base/gfx/osystem/base_surface_osystem.h"
 
-#include "graphics/transform_tools.h"
-#include "graphics/transparent_surface.h"
+#include "graphics/managed_surface.h"
 
 #include "common/textconsole.h"
 
@@ -46,14 +45,12 @@ RenderTicket::RenderTicket(BaseSurfaceOSystem *owner, const Graphics::Surface *s
 	        _wantsDraw(true),
 	        _transform(transform) {
 	if (surf) {
-		_surface = new Graphics::Surface();
-		_surface->create((uint16)srcRect->width(), (uint16)srcRect->height(), surf->format);
-		assert(_surface->format.bytesPerPixel == 4);
-		// Get a clipped copy of the surface
-		for (int i = 0; i < _surface->h; i++) {
-			memcpy(_surface->getBasePtr(0, i), surf->getBasePtr(srcRect->left, srcRect->top + i), srcRect->width() * _surface->format.bytesPerPixel);
-		}
-		// Then scale it if necessary
+		assert(surf->format.bytesPerPixel == 4);
+
+		// Get a clipped view of the surface
+		const Graphics::Surface temp = surf->getSubArea(*srcRect);
+
+		// Then copy and scale it as necessary
 		//
 		// NB: The numTimesX/numTimesY properties don't yet mix well with
 		// scaling and rotation, but there is no need for that functionality at
@@ -62,17 +59,14 @@ RenderTicket::RenderTicket(BaseSurfaceOSystem *owner, const Graphics::Surface *s
 		// (Mirroring should most likely be done before rotation. See also
 		// TransformTools.)
 		if (_transform._angle != Graphics::kDefaultAngle) {
-			Graphics::Surface *temp = _surface->rotoscale(transform, owner->_gameRef->getBilinearFiltering());
-			_surface->free();
-			delete _surface;
-			_surface = temp;
+			_surface = temp.rotoscale(transform, owner->_game->getBilinearFiltering());
 		} else if ((dstRect->width() != srcRect->width() ||
-					dstRect->height() != srcRect->height()) &&
-					_transform._numTimesX * _transform._numTimesY == 1) {
-			Graphics::Surface *temp = _surface->scale(dstRect->width(), dstRect->height(), owner->_gameRef->getBilinearFiltering());
-			_surface->free();
-			delete _surface;
-			_surface = temp;
+			    dstRect->height() != srcRect->height()) &&
+			    _transform._numTimesX * _transform._numTimesY == 1) {
+			_surface = temp.scale(dstRect->width(), dstRect->height(), owner->_game->getBilinearFiltering());
+		} else {
+			_surface = new Graphics::Surface();
+			_surface->copyFrom(temp);
 		}
 	} else {
 		_surface = nullptr;
@@ -98,20 +92,25 @@ bool RenderTicket::operator==(const RenderTicket &t) const {
 }
 
 // Replacement for SDL2's SDL_RenderCopy
-void RenderTicket::drawToSurface(Graphics::Surface *_targetSurface) const {
-	Graphics::TransparentSurface src(*getSurface(), false);
+void RenderTicket::drawToSurface(Graphics::ManagedSurface *_targetSurface) const {
+	if (!getSurface()) {
+		_targetSurface->blendFillRect(_dstRect, _transform._rgbaMod, Graphics::BLEND_NORMAL);
+		return;
+	}
 
 	Common::Rect clipRect;
 	clipRect.setWidth(getSurface()->w);
 	clipRect.setHeight(getSurface()->h);
 
+	Graphics::AlphaType alphaMode = Graphics::ALPHA_FULL;
+
 	if (_owner) {
 		if (_transform._alphaDisable) {
-			src.setAlphaMode(Graphics::ALPHA_OPAQUE);
+			alphaMode = Graphics::ALPHA_OPAQUE;
 		} else if (_transform._angle) {
-			src.setAlphaMode(Graphics::ALPHA_FULL);
+			alphaMode = Graphics::ALPHA_FULL;
 		} else {
-			src.setAlphaMode(_owner->getAlphaType());
+			alphaMode = _owner->getAlphaType();
 		}
 	}
 
@@ -122,15 +121,20 @@ void RenderTicket::drawToSurface(Graphics::Surface *_targetSurface) const {
 	for (int ry = 0; ry < _transform._numTimesY; ++ry) {
 		int x = _dstRect.left;
 		for (int rx = 0; rx < _transform._numTimesX; ++rx) {
-			src.blit(*_targetSurface, x, y, _transform._flip, &clipRect, _transform._rgbaMod, clipRect.width(), clipRect.height());
+			_targetSurface->blendBlitFrom(*getSurface(), clipRect, Common::Point(x, y),
+				_transform._flip, _transform._rgbaMod, Graphics::BLEND_NORMAL, alphaMode);
 			x += w;
 		}
 		y += h;
 	}
 }
 
-void RenderTicket::drawToSurface(Graphics::Surface *_targetSurface, Common::Rect *dstRect, Common::Rect *clipRect) const {
-	Graphics::TransparentSurface src(*getSurface(), false);
+void RenderTicket::drawToSurface(Graphics::ManagedSurface *_targetSurface, Common::Rect *dstRect, Common::Rect *clipRect) const {
+	if (!getSurface()) {
+		_targetSurface->blendFillRect(*dstRect, _transform._rgbaMod, _transform._blendMode);
+		return;
+	}
+
 	bool doDelete = false;
 	if (!clipRect) {
 		doDelete = true;
@@ -139,22 +143,22 @@ void RenderTicket::drawToSurface(Graphics::Surface *_targetSurface, Common::Rect
 		clipRect->setHeight(getSurface()->h * _transform._numTimesY);
 	}
 
+	Graphics::AlphaType alphaMode = Graphics::ALPHA_FULL;
+
 	if (_owner) {
 		if (_transform._alphaDisable) {
-			src.setAlphaMode(Graphics::ALPHA_OPAQUE);
+			alphaMode = Graphics::ALPHA_OPAQUE;
 		} else if (_transform._angle) {
-			src.setAlphaMode(Graphics::ALPHA_FULL);
+			alphaMode = Graphics::ALPHA_FULL;
 		} else {
-			src.setAlphaMode(_owner->getAlphaType());
+			alphaMode = _owner->getAlphaType();
 		}
 	}
 
 	if (_transform._numTimesX * _transform._numTimesY == 1) {
-
-		src.blit(*_targetSurface, dstRect->left, dstRect->top, _transform._flip, clipRect, _transform._rgbaMod, clipRect->width(), clipRect->height(), _transform._blendMode);
-
+		_targetSurface->blendBlitFrom(*getSurface(), *clipRect, Common::Point(dstRect->left, dstRect->top),
+			_transform._flip, _transform._rgbaMod, _transform._blendMode, alphaMode);
 	} else {
-
 		// clipRect is a subrect of the full numTimesX*numTimesY rect
 		Common::Rect subRect;
 
@@ -170,7 +174,6 @@ void RenderTicket::drawToSurface(Graphics::Surface *_targetSurface, Common::Rect
 		for (int ry = 0; ry < _transform._numTimesY; ++ry) {
 			int x = 0;
 			for (int rx = 0; rx < _transform._numTimesX; ++rx) {
-
 				subRect.left = x;
 				subRect.top = y;
 				subRect.setWidth(w);
@@ -179,8 +182,9 @@ void RenderTicket::drawToSurface(Graphics::Surface *_targetSurface, Common::Rect
 				if (subRect.intersects(*clipRect)) {
 					subRect.clip(*clipRect);
 					subRect.translate(-x, -y);
-					src.blit(*_targetSurface, basex + x + subRect.left, basey + y + subRect.top, _transform._flip, &subRect, _transform._rgbaMod, subRect.width(), subRect.height(), _transform._blendMode);
-
+					_targetSurface->blendBlitFrom(*getSurface(), subRect,
+						Common::Point(basex + x + subRect.left, basey + y + subRect.top),
+						_transform._flip, _transform._rgbaMod, _transform._blendMode, alphaMode);
 				}
 
 				x += w;

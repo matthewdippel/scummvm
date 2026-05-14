@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/endian.h"
@@ -217,7 +223,7 @@ SavePartVars *SaveConverter::readVars(Common::SeekableReadStream &stream,
 	SavePartVars *vars = new SavePartVars(_vm, count);
 
 	// Read variables into part
-	if (!vars->readFromRaw(data, count)) {
+	if (!vars->readFromRaw(data, 0, count)) {
 		delete[] data;
 		delete vars;
 		return nullptr;
@@ -278,8 +284,10 @@ SavePartSprite *SaveConverter::readSprite(Common::SeekableReadStream &stream,
 	delete[] data;
 
 	if (palette)
-		if (!sprite->readPalette(pal))
+		if (!sprite->readPalette(pal)) {
+			delete sprite;
 			return nullptr;
+		}
 
 	return sprite;
 }

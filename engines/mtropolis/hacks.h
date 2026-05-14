@@ -49,6 +49,15 @@ struct Hacks {
 	void addSaveLoadMechanismHooks(const Common::SharedPtr<SaveLoadMechanismHooks> &hooks);
 
 	bool ignoreMismatchedProjectNameInObjectLookups;
+	bool removeQuickTimeEdits;
+	bool ignoreMToonMaintainRateFlag;
+	bool allowAssetsFromOtherScenes;
+	bool mtiVariableReferencesHack;
+	bool mtiSceneReturnHack;
+	bool mtiHispaniolaDamagedStringHack;
+
+	bool ignoreSceneUnloads;
+
 	uint midiVolumeScale;	// 256 = 1.0
 
 	uint32 minTransitionDuration;
@@ -58,6 +67,7 @@ struct Hacks {
 
 	Common::HashMap<uint32, Common::SharedPtr<StructuralHooks> > structuralHooks;
 	Common::HashMap<uint32, Common::SharedPtr<ModifierHooks> > modifierHooks;
+	Common::SharedPtr<StructuralHooks> defaultStructuralHooks;
 	Common::Array<Common::SharedPtr<SceneTransitionHooks> > sceneTransitionHooks;
 	Common::Array<Common::SharedPtr<AssetHooks> > assetHooks;
 	Common::Array<Common::SharedPtr<SaveLoadHooks> > saveLoadHooks;
@@ -71,6 +81,8 @@ void addObsidianBugFixes(const MTropolisGameDescription &desc, Hacks &hacks);
 void addObsidianAutoSaves(const MTropolisGameDescription &desc, Hacks &hacks, IAutoSaveProvider *autoSaveProvider);
 void addObsidianSaveMechanism(const MTropolisGameDescription &desc, Hacks &hacks);
 void addObsidianImprovedWidescreen(const MTropolisGameDescription &desc, Hacks &hacks);
+
+void addMTIQuirks(const MTropolisGameDescription &desc, Hacks &hacks);
 
 } // End of namespace HackSuites
 

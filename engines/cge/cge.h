@@ -79,11 +79,34 @@ class Talk;
 
 #define kSayTheEnd  41
 
+enum CGEAction {
+	kActionNone,
+	kActionInfo,
+	kActionEscape,
+	kActionSave,
+	kActionLoad,
+	kActionQuit,
+	kActionInv1,
+	kActionInv2,
+	kActionInv3,
+	kActionInv4,
+	kActionInv5,
+	kActionInv6,
+	kActionInv7,
+	kActionInv8,
+	kActionAltDice,
+	kActionLevel0,
+	kActionLevel1,
+	kActionLevel2,
+	kActionLevel3,
+	kActionLevel4
+};
+
 // our engine debug channels
 enum {
-	kCGEDebugBitmap = 1 << 0,
-	kCGEDebugFile = 1 << 1,
-	kCGEDebugEngine = 1 << 2
+	kCGEDebugBitmap = 1,
+	kCGEDebugFile,
+	kCGEDebugEngine,
 };
 
 enum SnList {
@@ -136,8 +159,8 @@ public:
 	CGEEngine(OSystem *syst, const ADGameDescription *gameDescription);
 	~CGEEngine() override;
 	bool hasFeature(EngineFeature f) const override;
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 

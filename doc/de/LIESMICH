@@ -293,6 +293,8 @@ Spiele von Adventuresoft/Horrorsoft (AGOS):
      Waxworks                                    [waxworks]
 
 Spiele von Coktel Vision (GOB):
+     Adibou 1									 [adibou1]
+	 Adibou 2									 [adibou2]
      Bargon Attack                               [bargon]
      Fascination                                 [fascination]
      Geisha                                      [geisha]
@@ -394,7 +396,7 @@ Andere Spiele:
      Amazon: Guardians of Eden                   [access]
      Baphomets Fluch 2.5:
          Die Rückkehr der Tempelritter           [sword25]
-     Beavis and Butt-head in Virtual Stupidity   [bbvs]
+     Beavis and Butt-Head in Virtual Stupidity   [bbvs]
      Blade Runner                                [bladerunner]
      Blue Force                                  [blueforce]
      Bud Tucker in Double Trouble                [tucker]
@@ -1995,7 +1997,7 @@ Beneath a Steel Sky
     it  - Italienisch
     pt  - Portugiesisch
     es  - Spanisch
-    se  - Schwedisch
+    sv  - Schwedisch
 
 Baphomets Fluch
     en  - Englisch (Standard)
@@ -2015,7 +2017,7 @@ Sehen Sie sich das Beispiel weiter unten in dieser Liesmich-Datei an.
 
 Die folgenden Plattformen haben ein anderes Standard-Verzeichnis:
     macOS:
-    $HOME/Documents/ScummVM Savegames/
+    $HOME/Library/Application Support/ScummVM/Savegames/
 
     Andere UNIX-Systeme:
     Wir befolgen die Spezifikation XDG Base Directory. Dies bedeutet, dass
@@ -2045,12 +2047,6 @@ Spielstände werden unter Windows NT4/2000/XP/Vista/7/8/10 in einem versteckten
 Verzeichnis gespeichert, auf welches über den Pfad
 „%APPDATA%\ScummVM\Saved Games\“ zugegriffen werden kann. Es wird auch sichtbar,
 wenn die Anzeige versteckter Dateien im Windows Explorer aktiviert wird.
-
-Hinweis für Anwender von Windows NT4/2000/XP/Vista/7/8/10: Das Standard-
-Verzeichnis für Spielstände wurde bei ScummVM 1.5.0 geändert. Die
-Stapelverarbeitungsdatei migration.bat kann verwendet werden, um die Spielstände
-vom alten Standard-Verzeichnis in das neue zu kopieren.
-
 
 6.1) Automatische Speicherung der Spielstände:
 ---- -----------------------------------------
@@ -2786,7 +2782,7 @@ Die folgenden Schlüsselwörter werden erkannt:
                                 erscheinen wird
 
     language           Text     Legt Sprache fest (de, en, us, fr, it, pt, es,
-                                jp, zh, kr, se, gb, hb, cz, ru).
+                                jp, zh, kr, sv, gb, hb, cz, ru).
     speech_mute        Bool     Falls „true“, wird Sprachausgabe unterdrückt.
     subtitles          Bool     Belegung mit „true“ aktiviert Untertitel.
     talkspeed          Zahl     Textverzögerung in SCUMM-Spielen oder Texttempo
@@ -3152,7 +3148,7 @@ https://wiki.scummvm.org/index.php/Compiling_ScummVM/Mac_OS_X_Crosscompiling
       Weiterführende Informationen finden Sie unter:
       https://wiki.scummvm.org/index.php/Compiling_ScummVM/Dreamcast
 
-   Sony Playstation:
+   Sony PlayStation:
    * Sony PlayStation 2
       Weiterführende Informationen finden Sie unter:
       https://wiki.scummvm.org/index.php/Compiling_ScummVM/PlayStation_2

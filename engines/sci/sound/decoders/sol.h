@@ -21,6 +21,7 @@
 
 #ifndef SCI_SOUND_DECODERS_SOL_H
 #define SCI_SOUND_DECODERS_SOL_H
+
 #include "audio/audiostream.h"
 #include "common/stream.h"
 
@@ -51,6 +52,21 @@ private:
 	int32 _rawDataSize;
 
 	/**
+	 * DPCM8 pop (overflow) fix working data:
+	 *  - Whether or not the fix is enabled, set once on construction.
+	 *  - The current state of the repair (0 = inactive, 1 = positive, 2 = negative).
+	 *  - The sample state without repair, to detect where repairing should stop.
+	 */
+	struct PopFixData {
+		const bool enabled;
+		uint8 state;
+		uint8 preRepairSample;
+
+		PopFixData(const bool e):
+			enabled(e), state(0), preRepairSample(0) {}
+	} _popfixDPCM8;
+
+	/**
 	 * The last sample from the previous DPCM decode.
 	 */
 	union {
@@ -76,5 +92,7 @@ public:
 };
 
 Audio::SeekableAudioStream *makeSOLStream(Common::SeekableReadStream *stream, DisposeAfterUse::Flag disposeAfterUse);
-}
-#endif
+
+} // End of namespace Sci
+
+#endif // SCI_SOUND_DECODERS_SOL_H

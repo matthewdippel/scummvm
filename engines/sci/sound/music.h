@@ -19,8 +19,8 @@
  *
  */
 
-#ifndef SCI_MUSIC_H
-#define SCI_MUSIC_H
+#ifndef SCI_SOUND_MUSIC_H
+#define SCI_SOUND_MUSIC_H
 
 #include "common/serializer.h"
 #include "common/mutex.h"
@@ -217,7 +217,7 @@ public:
 	uint32 soundGetTempo() const { return _dwTempo; }
 	MusicType soundGetMusicType() const { return _musicType; }
 
-	bool soundIsActive(MusicEntry *pSnd) {
+	bool isSoundActive(MusicEntry *pSnd) {
 		assert(pSnd->pStreamAud != 0);
 		return _pMixer->isSoundHandleActive(pSnd->hCurrentAud);
 	}
@@ -284,6 +284,8 @@ public:
 	// The parsers need to know this for the dontMap channels...
 	bool isDeviceChannelMapped(int devChannel) const;
 
+	bool isDigitalSamplePlaying() const;
+
 private:
 	MusicList _playList;
 	bool _soundOn;
@@ -311,4 +313,4 @@ private:
 
 } // End of namespace Sci
 
-#endif
+#endif // SCI_SOUND_MUSIC_H

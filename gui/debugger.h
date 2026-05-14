@@ -45,7 +45,7 @@ public:
 
 	int getCharsPerLine();
 
-	int debugPrintf(const char *format, ...) GCC_PRINTF(2, 3);
+	int debugPrintf(MSVC_PRINTF const char *format, ...) GCC_PRINTF(2, 3);
 
 	void debugPrintColumns(const Common::StringArray &list);
 
@@ -168,6 +168,9 @@ protected:
 	 */
 	void clearVars();
 
+	void setPrompt(Common::String prompt);
+	void resetPrompt();
+
 private:
 	/**
 	 * The frame countdown specifies a number of frames that must pass
@@ -272,6 +275,7 @@ protected:
 	bool cmdDebugFlagsList(int argc, const char **argv);
 	bool cmdDebugFlagEnable(int argc, const char **argv);
 	bool cmdDebugFlagDisable(int argc, const char **argv);
+	bool cmdClearLog(int argc, const char **argv);
 	bool cmdExecFile(int argc, const char **argv);
 
 #ifndef USE_TEXT_CONSOLE_FOR_DEBUGGER

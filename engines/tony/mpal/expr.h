@@ -34,7 +34,7 @@ namespace Tony {
 namespace MPAL {
 
 /**
- * @defgroup Mathamatical operations
+ * @defgroup Mathematical operations
  */
 //@{
 
@@ -65,16 +65,16 @@ namespace MPAL {
 
 //@{
 /**
- * Mathamatical framework to manage operations
+ * Mathematical framework to manage operations
  */
 typedef struct {
 	byte _type;          // Object Type (see enum ExprListTypes)
 
 	union {
-		int _num;        // Identifier (if type == ELT_NUMBER)
+		int32 _num;      // Identifier (if type == ELT_NUMBER)
 		char *_name;     // Variable name (if type == ELT_VAR)
 		MpalHandle _son; // Handle expressions (if type == ELT_PARENTH)
-		byte *_pson;     // Handle lockato (if type == ELT_PARENTH2)
+		void *_pson;     // Handle lockato (if type == ELT_PARENTH2)
 	} _val;
 
 	byte _symbol;        // Mathematic symbols (see #define OP_*)
@@ -106,15 +106,15 @@ enum ExprListTypes {
  * will point to the area of memory containing the parsed expression
  * @returns		Pointer to the buffer immediately after the expression, or NULL if error.
  */
-const byte *parseExpression(const byte *lpBuf, MpalHandle *h);
+const byte *parseExpression(const byte *lpBuf, const Common::UnalignedPtr<MpalHandle> &h);
 
 /**
- * Calculate the value of a mathamatical expression
+ * Calculate the value of a mathematical expression
  *
  * @param h					Handle to the expression
  * @returns		Numeric value
  */
-int evaluateExpression(MpalHandle h);
+int32 evaluateExpression(MpalHandle h);
 
 /**
  * Compare two mathematical expressions together

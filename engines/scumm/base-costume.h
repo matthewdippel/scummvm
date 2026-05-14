@@ -31,8 +31,8 @@ namespace Scumm {
 
 struct CostumeInfo {
 	uint16 width, height;
-	int16 rel_x, rel_y;
-	int16 move_x, move_y;
+	int16 relX, relY;
+	int16 moveX, moveY;
 } PACKED_STRUCT;
 
 #include "common/pack-end.h"	// END STRUCT PACKING
@@ -55,10 +55,10 @@ public:
 	virtual ~BaseCostumeLoader() {}
 
 	virtual void loadCostume(int id) = 0;
-	virtual byte increaseAnims(Actor *a) = 0;
+	virtual bool increaseAnims(Actor *a) = 0;
 	virtual void costumeDecodeData(Actor *a, int frame, uint usemask) = 0;
 
-	bool hasManyDirections(int id) { return false; }
+	virtual bool hasManyDirections(int id) { return false; }
 };
 
 
@@ -70,14 +70,14 @@ public:
 	Common::Rect _clipOverride;
 	byte _actorID;
 
-	byte _shadow_mode;
-	byte *_shadow_table;
+	byte _shadowMode;
+	byte *_shadowTable;
 
 	int _actorX, _actorY;
 	byte _zbuf;
 	byte _scaleX, _scaleY;
 
-	int _draw_top, _draw_bottom;
+	int _drawTop, _drawBottom;
 	byte _paletteNum;
 	bool _skipLimbs;
 	bool _actorDrawVirScr;
@@ -86,62 +86,69 @@ public:
 protected:
 	ScummEngine *_vm;
 
+	// flag to enable AkosRenderer's behaviour in paintCelByleRLECommon() and byleRLEDecode()
+	bool _akosRendering;
+
 	// Destination
 	Graphics::Surface _out;
 	int32 _numStrips;
 
 	// Source pointer
-	const byte *_srcptr;
+	const byte *_srcPtr;
 
 	// current move offset
-	int _xmove, _ymove;
+	int _xMove, _yMove;
 
 	// whether to draw the actor mirrored
-	bool _mirror;
+	bool _drawActorToRight;
 
 	int _numBlocks;
 
 	// width and height of cel to decode
 	int _width, _height;
 
+	// actor _palette
+	uint16 _palette[256] = {};
+
 public:
-	struct Codec1 {
+	struct ByleRLEData {
 		// Parameters for the original ("V1") costume codec.
-		// These ones are accessed from ARM code. Don't reorder.
 		int x;
 		int y;
-		const byte *scaletable;
-		int height;
-		int width;
-		int skip_width;
-		byte *destptr;
-		const byte *mask_ptr;
-		int scaleXstep;
+		const byte *scaleTable;
+		int skipWidth;
+		byte *destPtr;
+		const byte *maskPtr;
+		int scaleXStep;
 		byte mask, shr;
-		byte repcolor;
-		byte replen;
-		// These ones aren't accessed from ARM code.
+		byte repColor;
+		byte repLen;
 		Common::Rect boundsRect;
-		int scaleXindex, scaleYindex;
+		int scaleXIndex, scaleYIndex;
+		int scaleIndexMask;
 	};
 
-	BaseCostumeRenderer(ScummEngine *scumm) {
+    BaseCostumeRenderer(ScummEngine *scumm, bool akosRendering = false) {
 		_actorID = 0;
-		_shadow_mode = 0;
-		_shadow_table = 0;
+		_shadowMode = 0;
+		_shadowTable = nullptr;
 		_actorX = _actorY = 0;
 		_zbuf = 0;
 		_scaleX = _scaleY = 0;
-		_draw_top = _draw_bottom = 0;
+		_drawTop = _drawBottom = 0;
 
 		_vm = scumm;
+        _akosRendering = akosRendering;
+
 		_numStrips = -1;
-		_srcptr = 0;
-		_xmove = _ymove = 0;
-		_mirror = false;
+		_srcPtr = nullptr;
+		_xMove = _yMove = 0;
+		_drawActorToRight = false;
 		_width = _height = 0;
-		_skipLimbs = 0;
+		_skipLimbs = false;
 		_paletteNum = 0;
+		_actorDrawVirScr = false;
+		_numBlocks = 0;
 	}
 	virtual ~BaseCostumeRenderer() {}
 
@@ -155,7 +162,23 @@ public:
 protected:
 	virtual byte drawLimb(const Actor *a, int limb) = 0;
 
-	void codec1_ignorePakCols(Codec1 &v1, int num);
+	byte paintCelByleRLECommon(
+		int xMoveCur,
+		int yMoveCur,
+		int numColors,
+		int scaletableSize,
+		bool amiOrPcEngCost,
+		bool c64Cost,
+		ByleRLEData &compData,
+		bool &decode);
+
+	void byleRLEDecode(ByleRLEData &compData, int16 actorHitX = 0, int16 actorHitY = 0, bool *actorHitResult = nullptr, const uint8 *xmap = nullptr);
+
+	void skipCelLines(ByleRLEData &compData, int num);
+
+private:
+	// helper function to be called from paintCelByleRLECommon
+	virtual void markAsDirty(const Common::Rect &rect, ByleRLEData &compData, bool &decode) {}
 };
 
 } // End of namespace Scumm

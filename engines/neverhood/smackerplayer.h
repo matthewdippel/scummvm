@@ -25,11 +25,13 @@
 #include "video/smk_decoder.h"
 #include "neverhood/neverhood.h"
 #include "neverhood/entity.h"
+#include "neverhood/subtitles.h"
 
 namespace Neverhood {
 
 class Scene;
 class Palette;
+class SmackerPlayer;
 
 class SmackerSurface : public BaseSurface {
 public:
@@ -37,8 +39,12 @@ public:
 	void draw() override;
 	void setSmackerFrame(const Graphics::Surface *smackerFrame);
 	void unsetSmackerFrame();
+	void renderSubtitles();
 protected:
 	const Graphics::Surface *_smackerFrame;
+	Common::ScopedPtr<SubtitlePlayer> _subtitles;
+	uint32 frameNumber;
+	friend class SmackerPlayer;
 };
 
 class SmackerDoubleSurface : public SmackerSurface {
@@ -56,7 +62,7 @@ class SmackerPlayer : public Entity {
 public:
 	SmackerPlayer(NeverhoodEngine *vm, Scene *scene, uint32 fileHash, bool doubleSurface, bool flag, bool paused = false);
 	~SmackerPlayer() override;
-	BaseSurface *getSurface() { return _smackerSurface; }
+        Common::SharedPtr<BaseSurface> getSurface() { return _smackerSurface; }
 	void open(uint32 fileHash, bool keepLastFrame);
 	void close();
 	void gotoFrame(int frameNumber);
@@ -71,7 +77,7 @@ protected:
 	Scene *_scene;
 	Palette *_palette;
 	NeverhoodSmackerDecoder *_smackerDecoder;
-	SmackerSurface *_smackerSurface;
+	Common::SharedPtr<SmackerSurface> _smackerSurface;
 	uint32 _fileHash;
 	bool _smackerFirst;
 	bool _doubleSurface;

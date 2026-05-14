@@ -34,6 +34,7 @@
 #include "common/savefile.h"
 #include "common/system.h"
 #include "common/util.h"
+#include "common/text-to-speech.h"
 
 #include "engines/savestate.h"
 
@@ -54,8 +55,29 @@
  */
 namespace Drascula {
 
-#define DRASCULA_DAT_VER 6
+#define DRASCULA_DAT_VER 7
 #define DATAALIGNMENT 4
+
+enum DRASCULAActions {
+	kActionNone,
+	kActionSkip,
+	kActionLook,
+	kActionPick,
+	kActionOpen,
+	kActionClose,
+	kActionTalk,
+	kActionMove,
+	kActionLoadGame,
+	kActionVerbReset,
+	kActionVolumeControls,
+	kActionSaveGame,
+	kActionSubtitlesEnable,
+	kActionSubtitlesDisable,
+	kActionQuit,
+	kActionEasterEgg,
+	kActionPauseSpeech,
+	kActionConfirmQuit,
+};
 
 enum Languages {
 	kEnglish = 0,
@@ -257,9 +279,9 @@ public:
 
 	void enableFallback(bool val) { _fallBack = val; }
 
-	void registerArchive(const Common::String &filename, int priority);
+	void registerArchive(const Common::Path &filename, int priority);
 
-	Common::SeekableReadStream *open(const Common::String &filename);
+	Common::SeekableReadStream *open(const Common::Path &filename);
 
 private:
 	bool _fallBack;
@@ -306,6 +328,7 @@ public:
 #define HALF_PAL		128
 
 #define KEYBUFSIZE		16
+#define ACTIONBUFSIZE	16
 
 static const int interf_x[] = { 1, 65, 129, 193, 1, 65, 129 };
 static const int interf_y[] = { 51, 51, 51, 51, 83, 83, 83 };
@@ -325,9 +348,9 @@ public:
 	void syncSoundSettings() override;
 
 	Common::Error loadGameState(int slot) override;
-	bool canLoadGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
-	bool canSaveGameStateCurrently() override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	Common::RandomSource *_rnd;
 	const DrasculaGameDescription *_gameDescription;
@@ -345,7 +368,7 @@ public:
 
 	void loadPic(int roomNum, byte *targetSurface, int colorCount = 1) {
 		char rm[20];
-		sprintf(rm, "%i.alg", roomNum);
+		Common::sprintf_s(rm, "%i.alg", roomNum);
 		loadPic(rm, targetSurface, colorCount);
 	}
 
@@ -464,10 +487,15 @@ public:
 	int _color;
 	int musicStopped;
 	int _mouseX, _mouseY, _leftMouseButton, _rightMouseButton;
+	bool _leftMouseButtonHeld;
 
 	Common::KeyState _keyBuffer[KEYBUFSIZE];
 	int _keyBufferHead;
 	int _keyBufferTail;
+
+	Common::CustomEventType _actionBuffer[ACTIONBUFSIZE];
+	int _actionBufferHead;
+	int _actionBufferTail;
 
 	bool loadDrasculaDat();
 
@@ -493,6 +521,9 @@ public:
 	Common::KeyCode getScan();
 	void addKeyToBuffer(Common::KeyState& key);
 	void flushKeyBuffer();
+	Common::CustomEventType getAction();
+	void addActionToBuffer(Common::CustomEventType& action);
+	void flushActionBuffer();
 	void selectVerb(int);
 	int updateVolume(int prevVolume, int prevVolumeY);
 	void volumeControls();
@@ -729,6 +760,8 @@ public:
 	void update_62_pre();
 	void update_102();
 
+	void sayText(const Common::String &text, Common::TextToSpeechManager::Action action);
+
 private:
 	int _lang;
 
@@ -775,6 +808,8 @@ private:
 	RoomTalkAction *_roomActions;
 	TalkSequenceCommand *_talkSequences;
 	Common::String _saveNames[10];
+	Common::String _previousSaid;
+	Common::CodePage _ttsTextEncoding;
 
 	char **loadTexts(Common::File &in);
 	void freeTexts(char **ptr);

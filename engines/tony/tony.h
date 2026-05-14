@@ -56,11 +56,11 @@ using namespace MPAL;
 class Globals;
 
 enum {
-	kTonyDebugAnimations = 1 << 0,
-	kTonyDebugActions = 1 << 1,
-	kTonyDebugSound = 1 << 2,
-	kTonyDebugMusic = 1 << 3,
-	kTonyDebugMPAL = 1 << 4
+	kTonyDebugAnimations = 1,
+	kTonyDebugActions,
+	kTonyDebugSound,
+	kTonyDebugMusic,
+	kTonyDebugMPAL,
 };
 
 #define DEBUG_BASIC 1
@@ -161,8 +161,8 @@ public:
 		return &_theEngine;
 	}
 
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 

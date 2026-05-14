@@ -1,3 +1,4 @@
+%top{
 /* ScummVM - Graphic Adventure Engine
  *
  * ScummVM is the legal property of its developers, whose names
@@ -19,18 +20,16 @@
  *
  */
 
-%option noyywrap
-%option noinput
-%option nounput
-%option never-interactive
-%option case-insensitive
-
-%option outfile="engines/director/lingo/lingo-lex.cpp"
-
-%{
-
 #define YY_NO_UNISTD_H
-#define FORBIDDEN_SYMBOL_ALLOW_ALL
+#define FORBIDDEN_SYMBOL_EXCEPTION_FILE
+#define FORBIDDEN_SYMBOL_EXCEPTION_fprintf
+#define FORBIDDEN_SYMBOL_EXCEPTION_fwrite
+#define FORBIDDEN_SYMBOL_EXCEPTION_fread
+#define FORBIDDEN_SYMBOL_EXCEPTION_stdin
+#define FORBIDDEN_SYMBOL_EXCEPTION_stdout
+#define FORBIDDEN_SYMBOL_EXCEPTION_stderr
+#define FORBIDDEN_SYMBOL_EXCEPTION_exit
+#define FORBIDDEN_SYMBOL_EXCEPTION_getc
 
 #include "common/str.h"
 
@@ -43,9 +42,20 @@
 
 using namespace Director;
 
-int yyparse();
 static const char *inputbuffer;
 static uint inputlen;
+
+}
+
+%option noyywrap
+%option noinput
+%option nounput
+%option never-interactive
+%option case-insensitive
+
+%option outfile="engines/director/lingo/lingo-lex.cpp"
+
+%{
 
 // Push lines in stack
 static void pushLine(uint num) {
@@ -128,10 +138,10 @@ static Common::String *readUntilWhitespace(const char **ptr) {
 	return res;
 }
 
-static Common::String *readUntilNull(const char **ptr) {
+static Common::String *readUntilNewline(const char **ptr) {
 	Common::String *res = new Common::String;
 
-	while (**ptr) {
+	while ((**ptr != '\n') && (**ptr != '\r') && (**ptr != '\0')) {
 		if (**ptr == '\xC2' && *(*ptr + 1) == '\xAC') { // continuation
 			*ptr += 2;
 			*res += ' '; // replace with space
@@ -146,8 +156,8 @@ static Common::String *readUntilNull(const char **ptr) {
 
 %}
 
-identifier [_[:alpha:]][_[:alnum:]]*
-constfloat [[:digit:]]+\.[[:digit:]]*
+identifier [_[:alpha:]][_\.[:alnum:]]*
+constfloat [[:digit:]]*\.[[:digit:]]*
 constinteger [[:digit:]]+
 conststring \"[^\"\r\n]*\"
 operator [-+*/%^:,()><&\[\]]
@@ -169,6 +179,8 @@ after		{ count(); return tAFTER; }		// D3
 and			{ count(); return tAND; }
 before		{ count(); return tBEFORE; }	// D3
 cast		{ count(); return tCAST; }
+castlib		{ count(); return tCASTLIB; }	// D5
+castlibs	{ count(); return tCASTLIBS; }	// D5
 char		{ count(); return tCHAR; }		// D3
 chars		{ count(); return tCHARS; }
 contains	{ count(); return tCONTAINS; }
@@ -198,7 +210,7 @@ exit		{ count(); return tEXIT; }
 field		{ count(); return tFIELD; }
 frame		{ count(); return tFRAME; }
 global		{ count(); return tGLOBAL; }
-go{spc}+(to)?	{ count(); return tGO; }
+go({spc}+to)?	{ count(); return tGO; }
 hilite		{ count(); return tHILITE; }
 if			{ count(); return tIF; }
 instance	{ count(); return tINSTANCE; }
@@ -212,7 +224,9 @@ line		{ count(); return tLINE; }
 lines		{ count(); return tLINES; }
 long		{ count(); return tLONG; }
 macro		{ count(); return tMACRO; }
+member		{ count(); return tMEMBER; }
 menu		{ count(); return tMENU; }
+menus		{ count(); return tMENUS; }
 menuItem	{ count(); return tMENUITEM;}
 menuItems	{ count(); return tMENUITEMS; }
 method		{ count(); return tMETHOD; }
@@ -230,6 +244,7 @@ previous	{ count(); return tPREVIOUS; }
 property	{ count(); return tPROPERTY; }	// D4
 put			{ count(); return tPUT; }
 repeat		{ count(); return tREPEAT; }
+return		{ count(); return tRETURN; }
 script		{ count(); return tSCRIPT; }
 scummvmAssertError	{ count(); return tASSERTERROR; }
 set			{ count(); return tSET; }
@@ -242,7 +257,7 @@ the			{ count(); return tTHE; }
 then		{ count(); return tTHEN; }
 time		{ count(); return tTIME; }
 to			{ count(); return tTO; }
-when{spc}+{eventname}{spc}+then{spc}+{unparsedstmt}	{
+when{spc}+{eventname}{spc}+then{spc}*{unparsedstmt}	{
 		count();
 
 		const char *ptr =  &yytext[5]; // Skip 'when '
@@ -251,10 +266,10 @@ when{spc}+{eventname}{spc}+then{spc}+{unparsedstmt}	{
 		Common::String *eventName = readUntilWhitespace(&ptr);
 
 		skipWhitespace(&ptr);
-		ptr += 5; // Skip 'then '
+		ptr += 4; // Skip 'then'
 		skipWhitespace(&ptr);
 
-		Common::String *stmt = readUntilNull(&ptr);
+		Common::String *stmt = readUntilNewline(&ptr);
 
 		yylval.w.eventName = eventName;
 		yylval.w.stmt = stmt;
@@ -266,6 +281,7 @@ with		{ count(); return tWITH; }
 within		{ count(); return tWITHIN; }
 word		{ count(); return tWORD; }
 words		{ count(); return tWORDS; }
+xtras		{ count(); return tXTRAS; } // D5
 
 [<][>]			{ count(); return tNEQ; }
 [>][=]			{ count(); return tGE; }

@@ -86,6 +86,8 @@ protected:
 	void processInput() override;
 
 	void saveLoadWithSerializer(Common::Serializer &s) override;
+	int checkSoundEngineSaveDataSize(Serializer &s) override;
+	void terminateSaveMenuScript() override;
 
 	bool objIsActor(int obj) override;
 	int objToActor(int obj) override;
@@ -151,7 +153,6 @@ protected:
 	void o_lights();
 	void o_unlockCostume();
 	void o_unlockScript();
-	void o_decrement();
 	void o_nop();
 	void o_getObjectOwner();
 	void o_getActorBitVar();

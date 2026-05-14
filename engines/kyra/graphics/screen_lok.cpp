@@ -24,7 +24,7 @@
 
 #include "common/system.h"
 
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 
 namespace Kyra {
 
@@ -33,6 +33,8 @@ Screen_LoK::Screen_LoK(KyraEngine_LoK *vm, OSystem *system)
 	_vm = vm;
 	_unkPtr1 = _unkPtr2 = nullptr;
 	_bitBlitNum = 0;
+	memset(_saveLoadPage, 0, sizeof(_saveLoadPage));
+	memset(_saveLoadPageOvl, 0, sizeof(_saveLoadPageOvl));
 }
 
 Screen_LoK::~Screen_LoK() {

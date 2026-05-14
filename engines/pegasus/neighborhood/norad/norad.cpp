@@ -267,7 +267,7 @@ void Norad::checkAirMask() {
 
 void Norad::receiveNotification(Notification *notification, const NotificationFlags flags) {
 	if (notification == &_neighborhoodNotification && (flags & kAirTimerExpiredFlag) != 0)
-		((PegasusEngine *)g_engine)->die(kDeathGassedInNorad);
+		g_vm->die(kDeathGassedInNorad);
 
 	Neighborhood::receiveNotification(notification, flags);
 
@@ -283,7 +283,7 @@ uint16 Norad::getDateResID() const {
 	return kDate2112ID;
 }
 
-Common::String Norad::getBriefingMovie() {
+Common::Path Norad::getBriefingMovie() {
 	return "Images/AI/Norad/XNO";
 }
 

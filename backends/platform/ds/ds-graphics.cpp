@@ -19,11 +19,15 @@
  *
  */
 
+#include <portdefs.h> // Protect uintXX typedefs
 #include <nds.h>
 
 #include "backends/platform/ds/osystem_ds.h"
+#include "backends/platform/ds/gfx/banner.h"
 
 #include "common/translation.h"
+
+#include "graphics/blit.h"
 
 namespace DS {
 
@@ -143,7 +147,7 @@ void VBlankHandler(void) {
 }
 
 void initHardware() {
-	powerOn(POWER_ALL);
+	pmPowerOn(POWCNT_ALL);
 
 	videoSetMode(MODE_5_2D | DISPLAY_BG3_ACTIVE);
 	vramSetBankA(VRAM_A_MAIN_BG_0x06000000);
@@ -159,12 +163,16 @@ void initHardware() {
 	subScTargetX = 0;
 	subScTargetY = 0;
 
-	//irqs are nice
-	irqSet(IRQ_VBLANK, VBlankHandler);
-	irqEnable(IRQ_VBLANK);
-
 #ifdef DISABLE_TEXT_CONSOLE
 	videoSetModeSub(MODE_3_2D | DISPLAY_BG3_ACTIVE);
+
+	bgExtPaletteEnableSub();
+
+	/* The extended palette data can only be accessed in LCD mode. */
+	vramSetBankH(VRAM_H_LCD);
+	// bannerPal comes from code memory: it doesn't need to be flushed
+	dmaCopy(bannerPal, &VRAM_H_EXT_PALETTE[1][0], bannerPalLen);
+	vramSetBankH(VRAM_H_SUB_BG_EXT_PALETTE);
 #endif
 }
 
@@ -178,28 +186,42 @@ void OSystem_DS::initGraphics() {
 	oamInit(&oamMain, SpriteMapping_Bmp_1D_128, false);
 	_cursorSprite = oamAllocateGfx(&oamMain, SpriteSize_64x64, SpriteColorFormat_Bmp);
 
-	_overlay.create(256, 192, true, 2, false, 0, false);
+	_overlay.create(256, 192, _pfABGR1555);
+	_overlayScreen = new DS::Background(&_overlay, 2, false, 0, false);
+	_overlayScreen->reset();
+	_screen = nullptr;
+#ifdef DISABLE_TEXT_CONSOLE
+	_subScreen = nullptr;
+	_banner = nullptr;
+#endif
 
 	_keyboard = new DS::Keyboard(_eventManager->getEventDispatcher());
 #ifndef DISABLE_TEXT_CONSOLE
-	_keyboard->init(0, 34, 1, false);
+	_keyboard->init(0, 21, 1, false);
 #endif
+
+	// Setup VBlank IRQ only when we are ready to handle it
+	irqSet(IRQ_VBLANK, DS::VBlankHandler);
 }
 
 void OSystem_DS::setMainScreen(int32 x, int32 y, int32 sx, int32 sy) {
-	_framebuffer.setScalef(sx, sy);
-	_framebuffer.setScrollf(x, y);
+	if (_screen) {
+		_screen->setScalef(sx, sy);
+		_screen->setScrollf(x, y);
+	}
 }
 
 void OSystem_DS::setSubScreen(int32 x, int32 y, int32 sx, int32 sy) {
 #ifdef DISABLE_TEXT_CONSOLE
-	_subScreen.setScalef(sx, sy);
-	_subScreen.setScrollf(x, y);
+	if (_subScreen) {
+		_subScreen->setScalef(sx, sy);
+		_subScreen->setScrollf(x, y);
+	}
 #endif
 }
 
 bool OSystem_DS::hasFeature(Feature f) {
-	return (f == kFeatureCursorPalette) || (f == kFeatureStretchMode) || (f == kFeatureVirtualKeyboard);
+	return (f == kFeatureCursorPalette) || (f == kFeatureCursorAlpha) || (f == kFeatureStretchMode) || (f == kFeatureVirtualKeyboard) || (f == kFeatureTouchscreen);
 }
 
 void OSystem_DS::setFeatureState(Feature f, bool enable) {
@@ -212,19 +234,27 @@ void OSystem_DS::setFeatureState(Feature f, bool enable) {
 #ifdef DISABLE_TEXT_CONSOLE
 			if (_subScreenActive) {
 				_subScreenActive = false;
-				_subScreen.hide();
-				_subScreen.reset();
-				_keyboard->init(0, 34, 1, false);
+				if (_subScreen) {
+					_subScreen->hide();
+					_subScreen->reset();
+				} else if (_banner) {
+					_banner->hide();
+				}
+				_keyboard->init(0, 21, 1, false);
 			}
 #endif
 			_keyboard->show();
 		} else if (_keyboard->isVisible()) {
 			_keyboard->hide();
 #ifdef DISABLE_TEXT_CONSOLE
-			_subScreen.reset();
-			_subScreen.show();
+			if (_subScreen) {
+				_subScreen->reset();
+				_subScreen->show();
+				_paletteDirty = true;
+			} else if (_banner) {
+				_banner->show();
+			}
 			_subScreenActive = true;
-			_paletteDirty = true;
 #endif
 			setSwapLCDs(false);
 		}
@@ -265,11 +295,13 @@ int OSystem_DS::getDefaultGraphicsMode() const {
 }
 
 bool OSystem_DS::setGraphicsMode(int mode, uint flags) {
+	assert(_transactionMode != kTransactionNone);
+
 	switch (mode) {
 	case GFX_NOSCALE:
 	case GFX_HWSCALE:
 	case GFX_SWSCALE:
-		_graphicsMode = mode;
+		_currentState.graphicsMode = mode;
 		return true;
 	default:
 		return false;
@@ -277,7 +309,7 @@ bool OSystem_DS::setGraphicsMode(int mode, uint flags) {
 }
 
 int OSystem_DS::getGraphicsMode() const {
-	return _graphicsMode;
+	return _currentState.graphicsMode;
 }
 
 static const OSystem::GraphicsMode stretchModes[] = {
@@ -296,17 +328,18 @@ int OSystem_DS::getDefaultStretchMode() const {
 }
 
 bool OSystem_DS::setStretchMode(int mode) {
-	_stretchMode = mode;
-	DS::setTopScreenZoom(mode);
+	assert(_transactionMode != kTransactionNone);
+
+	_currentState.stretchMode = mode;
 	return true;
 }
 
 int OSystem_DS::getStretchMode() const {
-	return _stretchMode;
+	return _currentState.stretchMode;
 }
 
 Graphics::PixelFormat OSystem_DS::getScreenFormat() const {
-	return _framebuffer.format;
+	return _currentState.format;
 }
 
 Common::List<Graphics::PixelFormat> OSystem_DS::getSupportedFormats() const {
@@ -317,39 +350,129 @@ Common::List<Graphics::PixelFormat> OSystem_DS::getSupportedFormats() const {
 	return res;
 }
 
+void OSystem_DS::beginGFXTransaction() {
+	assert(_transactionMode == kTransactionNone);
+
+	// Start a transaction.
+	_oldState = _currentState;
+	_transactionMode = kTransactionActive;
+}
+
 void OSystem_DS::initSize(uint width, uint height, const Graphics::PixelFormat *format) {
-	Graphics::PixelFormat actualFormat = format ? *format : _pfCLUT8;
-	bool isRGB = (actualFormat != _pfCLUT8), swScale = ((_graphicsMode == GFX_SWSCALE) && (width == 320));
+	_currentState.width = width;
+	_currentState.height = height;
+	_currentState.format = format ? *format : _pfCLUT8;
+}
+
+OSystem::TransactionError OSystem_DS::endGFXTransaction() {
+	assert(_transactionMode == kTransactionActive);
+
+	uint transactionError = OSystem::kTransactionSuccess;
 
 	// For Lost in Time, the title screen is displayed in 640x400.
 	// In order to support this game, the screen mode is set, but
 	// all draw calls are ignored until the game switches to 320x200.
-	if (_framebuffer.getRequiredVRAM(width, height, isRGB, swScale) > 0x40000) {
-		_framebuffer.create(width, height, isRGB);
-	} else {
-		_framebuffer.reset();
-		_framebuffer.create(width, height, isRGB, 3, false, 8, swScale);
+	if ((_currentState.width > 512 || _currentState.height > 512) & !_hiresHack) {
+		_currentState.width  = _oldState.width;
+		_currentState.height = _oldState.height;
+		transactionError |= OSystem::kTransactionSizeChangeFailed;
 	}
 
+	if (_currentState.format != _pfCLUT8) {
+		if (_currentState.width > 256 && _currentState.height > 256) {
+			_currentState.format = _pfCLUT8;
+			transactionError |= OSystem::kTransactionFormatNotSupported;
+		} else if (_currentState.format != _pfABGR1555) {
+			_currentState.format = _pfABGR1555;
+			transactionError |= OSystem::kTransactionFormatNotSupported;
+		}
+	}
+
+	const bool isRGB = (_currentState.format != _pfCLUT8);
+
+	bool setupNewGameScreen = false;
+	if (_oldState.graphicsMode != _currentState.graphicsMode
+	    || _oldState.width     != _currentState.width
+	    || _oldState.height    != _currentState.height
+	    || _oldState.format    != _currentState.format) {
+		setupNewGameScreen = true;
+	}
+
+	bool bannerChanged = false;
 #ifdef DISABLE_TEXT_CONSOLE
-	if (_framebuffer.getRequiredVRAM(width, height, isRGB, false) > 0x20000) {
-		_subScreen.init(&_framebuffer);
-	} else {
-		if (_subScreenActive)
-			_subScreen.reset();
-		_subScreen.init(&_framebuffer, 3, true, 0, false);
+	if (  (!_engineRunning && (_banner == NULL))
+	    || (_engineRunning && (_banner != NULL))) {
+		bannerChanged = true;
 	}
 #endif
 
-	DS::setGameSize(width, height);
+	if (setupNewGameScreen) {
+		bool swScale = ((_currentState.graphicsMode == GFX_SWSCALE) && (_currentState.width == 320));
+
+		_framebuffer.create(_currentState.width, _currentState.height, _currentState.format);
+
+		if (_screen)
+			_screen->reset();
+		delete _screen;
+		_screen = nullptr;
+
+		if (DS::Background::getRequiredVRAM(_currentState.width, _currentState.height, isRGB, swScale) <= 0x40000) {
+			_screen = new DS::Background(&_framebuffer, 3, false, 8, swScale);
+		}
+
+		// Something changed, so update the screen change ID.
+		++_screenChangeID;
+	} else if (bannerChanged) {
+		if (_screen)
+			_screen->reset();
+	}
+
+#ifdef DISABLE_TEXT_CONSOLE
+	if (setupNewGameScreen || bannerChanged) {
+		if (_subScreen && _subScreenActive)
+			_subScreen->reset();
+		delete _subScreen;
+		_subScreen = nullptr;
+
+		if (_engineRunning) {
+			if (_banner) {
+				_banner->reset();
+				_banner->hide();
+			}
+
+			delete _banner;
+			_banner = nullptr;
+
+			if (DS::Background::getRequiredVRAM(_currentState.width, _currentState.height, isRGB, false) <= 0x20000) {
+				_subScreen = new DS::Background(&_framebuffer, 3, true, 0, false);
+			}
+		} else {
+			if (!_banner)
+				_banner = new DS::TiledBackground(bannerTiles, bannerTilesLen, bannerMap, bannerMapLen, 1, true, 30, 0);
+			_banner->update();
+		}
+	}
+#endif
+
+	DS::setGameSize(_currentState.width, _currentState.height);
+
+	DS::setTopScreenZoom(_currentState.stretchMode);
+
+	_transactionMode = kTransactionNone;
+
+	return (OSystem::TransactionError)transactionError;
+}
+
+int OSystem_DS::getScreenChangeID() const {
+	return _screenChangeID;
 }
 
 int16 OSystem_DS::getHeight() {
-	return _framebuffer.h;
+	return _currentState.height;
 }
 
 int16 OSystem_DS::getWidth() {
-	return _framebuffer.w;
+	return _currentState.width;
 }
 
 void OSystem_DS::setPalette(const byte *colors, uint start, uint num) {
@@ -406,22 +529,25 @@ void OSystem_DS::updateScreen() {
 	       SpriteColorFormat_Bmp, _cursorSprite, 0, false, !_cursorVisible, false, false, false);
 	oamUpdate(&oamMain);
 
-	if (_overlay.isVisible()) {
-		_overlay.update();
-	} else {
-		if (_paletteDirty) {
-			dmaCopyHalfWords(3, _palette, BG_PALETTE, 256 * 2);
+	if (_paletteDirty) {
+		DC_FlushRange(_palette, 256 * 2);
+		dmaCopyHalfWords(3, _palette, BG_PALETTE, 256 * 2);
 #ifdef DISABLE_TEXT_CONSOLE
-			if (_subScreenActive)
-				dmaCopyHalfWords(3, _palette, BG_PALETTE_SUB, 256 * 2);
+		if (_subScreen && _subScreenActive)
+			dmaCopyHalfWords(3, _palette, BG_PALETTE_SUB, 256 * 2);
 #endif
-			_paletteDirty = false;
-		}
+		_paletteDirty = false;
+	}
 
-		_framebuffer.update();
+	if (_overlayScreen && _overlayScreen->isVisible()) {
+		_overlayScreen->update();
+	}
+
+	if (_screen && _screen->isVisible()) {
+		_screen->update();
 #ifdef DISABLE_TEXT_CONSOLE
-		if (_subScreenActive)
-			_subScreen.update();
+		if (_subScreen && _subScreenActive)
+			_subScreen->update();
 #endif
 	}
 }
@@ -430,39 +556,48 @@ void OSystem_DS::setShakePos(int shakeXOffset, int shakeYOffset) {
 	DS::setShakePos(shakeXOffset, shakeYOffset);
 }
 
-void OSystem_DS::showOverlay() {
-	_overlay.reset();
-	_overlay.show();
+void OSystem_DS::showOverlay(bool inGUI) {
+	assert(_overlayScreen);
+	_overlayInGUI = inGUI;
+	_overlayScreen->reset();
+	_overlayScreen->show();
 }
 
 void OSystem_DS::hideOverlay() {
-	_overlay.hide();
+	assert(_overlayScreen);
+	_overlayInGUI = false;
+	_overlayScreen->hide();
 }
 
 bool OSystem_DS::isOverlayVisible() const {
-	return _overlay.isVisible();
+	assert(_overlayScreen);
+	return _overlayScreen->isVisible();
 }
 
 void OSystem_DS::clearOverlay() {
-	_overlay.clear();
+	memset(_overlay.getPixels(), 0, _overlay.pitch * _overlay.h);
 }
 
 void OSystem_DS::grabOverlay(Graphics::Surface &surface) {
-	assert(surface.w >= _overlay.w);
-	assert(surface.h >= _overlay.h);
+	assert(surface.w >= getOverlayWidth());
+	assert(surface.h >= getOverlayHeight());
 	assert(surface.format.bytesPerPixel == _overlay.format.bytesPerPixel);
-	_overlay.grab((byte *)surface.getPixels(), surface.pitch);
+
+	byte *src = (byte *)_overlay.getPixels();
+	byte *dst = (byte *)surface.getPixels();
+	Graphics::copyBlit(dst, src, surface.pitch, _overlay.pitch,
+		getOverlayWidth(), getOverlayHeight(), _overlay.format.bytesPerPixel);
 }
 
 void OSystem_DS::copyRectToOverlay(const void *buf, int pitch, int x, int y, int w, int h) {
 	_overlay.copyRectToSurface(buf, pitch, x, y, w, h);
 }
 
-int16 OSystem_DS::getOverlayHeight() {
+int16 OSystem_DS::getOverlayHeight() const {
 	return _overlay.h;
 }
 
-int16 OSystem_DS::getOverlayWidth() {
+int16 OSystem_DS::getOverlayWidth() const {
 	return _overlay.w;
 }
 
@@ -471,10 +606,10 @@ Graphics::PixelFormat OSystem_DS::getOverlayFormat() const {
 }
 
 Common::Point OSystem_DS::transformPoint(int16 x, int16 y) {
-	if (_overlay.isVisible())
+	if (_overlayInGUI || !_screen)
 		return Common::Point(x, y);
 	else
-		return _framebuffer.realToScaled(x, y);
+		return _screen->realToScaled(x, y);
 }
 
 bool OSystem_DS::showMouse(bool visible) {
@@ -484,15 +619,18 @@ bool OSystem_DS::showMouse(bool visible) {
 }
 
 void OSystem_DS::warpMouse(int x, int y) {
-	if (_overlay.isVisible())
+	if (_overlayInGUI || !_screen)
 		_cursorPos = Common::Point(x, y);
 	else
-		_cursorPos = _framebuffer.scaledToReal(x, y);
+		_cursorPos = _screen->scaledToReal(x, y);
 }
 
-void OSystem_DS::setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, u32 keycolor, bool dontScale, const Graphics::PixelFormat *format) {
+void OSystem_DS::setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, u32 keycolor, bool dontScale, const Graphics::PixelFormat *format, const byte *mask) {
 	if (!buf || w == 0 || h == 0)
 		return;
+
+	if (mask)
+		warning("OSystem_DS::setMouseCursor: Masks are not supported");
 
 	Graphics::PixelFormat actualFormat = format ? *format : _pfCLUT8;
 	if (_cursor.w != (int16)w || _cursor.h != (int16)h || _cursor.format != actualFormat)

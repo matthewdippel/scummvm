@@ -1252,7 +1252,7 @@ typedef struct NSVGNamedColor {
 	unsigned int color;
 } NSVGNamedColor;
 
-NSVGNamedColor nsvg__colors[] = {
+static const NSVGNamedColor nsvg__colors[] = {
 
 	{ "red", NSVG_RGB(255, 0, 0) },
 	{ "green", NSVG_RGB( 0, 128, 0) },
@@ -1616,7 +1616,7 @@ static int nsvg__parseRotate(float* xform, const char* str)
 
 static void nsvg__parseTransform(float* xform, const char* str)
 {
-	float t[6];
+	float t[6] = {0.0f};
 	int len;
 	nsvg__xformIdentity(xform);
 	while (*str)

@@ -156,7 +156,7 @@ void tglEdgeFlag(TGLboolean flag) {
 	TinyGL::GLParam p[2];
 
 	p[0].op = TinyGL::OP_EdgeFlag;
-	p[1].i = flag == TGL_TRUE ? 1 : 0;;
+	p[1].i = flag == TGL_TRUE ? 1 : 0;
 
 	c->gl_add_op(p);
 }
@@ -280,6 +280,28 @@ void tglStencilOp(TGLenum sfail, TGLenum dpfail, TGLenum dppass) {
 	p[2].i = dpfail;
 	p[3].i = dppass;
 
+	c->gl_add_op(p);
+}
+
+void tglPolygonStipple(const TGLubyte *mask) {
+	TinyGL::GLContext *c = TinyGL::gl_get_context();
+	TinyGL::GLParam p[129];
+
+	p[0].op = TinyGL::OP_PolygonStipple;
+	for (int i = 0; i < 128; i++)
+		p[i + 1].ui = mask[i];
+
+	c->gl_add_op(p);
+}
+
+void tglStippleColor(TGLubyte r, TGLubyte g, TGLubyte b) {
+	TinyGL::GLContext *c = TinyGL::gl_get_context();
+	TinyGL::GLParam p[7];
+
+	p[0].op = TinyGL::OP_StippleColor;
+	p[1].f = r;
+	p[2].f = g;
+	p[3].f = b;
 	c->gl_add_op(p);
 }
 
@@ -453,37 +475,58 @@ void tglViewport(TGLint x, TGLint y, TGLsizei width, TGLsizei height) {
 	c->gl_add_op(p);
 }
 
-void tglFrustum(TGLdouble left, TGLdouble right, TGLdouble bottom, TGLdouble top, TGLdouble nearv, TGLdouble farv) {
+void tglScissor(TGLint x, TGLint y, TGLsizei width, TGLsizei height) {
+	TinyGL::GLContext *c = TinyGL::gl_get_context();
+	TinyGL::GLParam p[5];
+
+	p[0].op = TinyGL::OP_Scissor;
+	p[1].i = x;
+	p[2].i = y;
+	p[3].i = width;
+	p[4].i = height;
+
+	c->gl_add_op(p);
+}
+
+void tglFrustumf(TGLfloat left, TGLfloat right, TGLfloat bottom, TGLfloat top, TGLfloat nearv, TGLfloat farv) {
 	TinyGL::GLContext *c = TinyGL::gl_get_context();
 	TinyGL::GLParam p[7];
 
 	p[0].op = TinyGL::OP_Frustum;
-	p[1].f = (float)left;
-	p[2].f = (float)right;
-	p[3].f = (float)bottom;
-	p[4].f = (float)top;
-	p[5].f = (float)nearv;
-	p[6].f = (float)farv;
+	p[1].f = left;
+	p[2].f = right;
+	p[3].f = bottom;
+	p[4].f = top;
+	p[5].f = nearv;
+	p[6].f = farv;
+
+	c->gl_add_op(p);
+}
+
+void tglFrustum(TGLdouble left, TGLdouble right, TGLdouble bottom, TGLdouble top, TGLdouble nearv, TGLdouble farv) {
+	tglFrustumf((TGLfloat)left, (TGLfloat)right, (TGLfloat)bottom, (TGLfloat)top, (TGLfloat)nearv, (TGLfloat)farv);
+}
+
+void tglOrthof(TGLfloat left, TGLfloat right, TGLfloat bottom, TGLfloat top, TGLfloat zNear, TGLfloat zFar) {
+	TinyGL::GLContext *c = TinyGL::gl_get_context();
+	TinyGL::GLParam p[7];
+
+	p[0].op = TinyGL::OP_Ortho;
+	p[1].f = left;
+	p[2].f = right;
+	p[3].f = bottom;
+	p[4].f = top;
+	p[5].f = zNear;
+	p[6].f = zFar;
 
 	c->gl_add_op(p);
 }
 
 void tglOrtho(TGLdouble left, TGLdouble right, TGLdouble bottom, TGLdouble top, TGLdouble zNear, TGLdouble zFar) {
-	TinyGL::GLContext *c = TinyGL::gl_get_context();
-	TinyGL::GLParam p[7];
-
-	p[0].op = TinyGL::OP_Ortho;
-	p[1].f = (float)left;
-	p[2].f = (float)right;
-	p[3].f = (float)bottom;
-	p[4].f = (float)top;
-	p[5].f = (float)zNear;
-	p[6].f = (float)zFar;
-
-	c->gl_add_op(p);
+	tglOrthof((TGLfloat)left, (TGLfloat)right, (TGLfloat)bottom, (TGLfloat)top, (TGLfloat)zNear, (TGLfloat)zFar);
 }
 
-// lightening
+// lightning
 
 void tglMaterialfv(TGLenum mode, TGLenum type, const TGLfloat *v) {
 	TinyGL::GLContext *c = TinyGL::gl_get_context();
@@ -498,7 +541,7 @@ void tglMaterialfv(TGLenum mode, TGLenum type, const TGLfloat *v) {
 	n = 4;
 	if (type == TGL_SHININESS)
 		n = 1;
-	for (int i = 0; i < 4; i++)
+	for (int i = 0; i < n; i++)
 		p[3 + i].f = v[i];
 	for (int i = n; i < 4; i++)
 		p[3 + i].f = 0;
@@ -612,14 +655,18 @@ void tglClearColor(TGLfloat r, TGLfloat g, TGLfloat b, TGLfloat a) {
 	c->gl_add_op(p);
 }
 
-void tglClearDepth(TGLdouble depth) {
+void tglClearDepthf(TGLfloat depth) {
 	TinyGL::GLContext *c = TinyGL::gl_get_context();
 	TinyGL::GLParam p[2];
 
 	p[0].op = TinyGL::OP_ClearDepth;
-	p[1].f = (float)depth;
+	p[1].f = depth;
 
 	c->gl_add_op(p);
+}
+
+void tglClearDepth(TGLdouble depth) {
+	tglClearDepthf((TGLfloat)depth);
 }
 
 void tglClearStencil(TGLint s) {
@@ -706,6 +753,24 @@ void tglTexEnvi(TGLenum target, TGLenum pname, TGLint param) {
 	c->gl_add_op(p);
 }
 
+void tglTexEnvfv(TGLenum target, TGLenum pname, const TGLfloat *params) {
+	TinyGL::GLContext *c = TinyGL::gl_get_context();
+	TinyGL::GLParam p[8];
+	
+	p[0].op = TinyGL::OP_TexEnv;
+	p[1].i = target;
+	p[2].i = pname;
+	p[3].i = 0;
+
+	int n = 0;
+	if (target == TGL_TEXTURE_ENV && pname == TGL_TEXTURE_ENV_COLOR)
+		n = 4;
+	for (int i = 0; i < n; i++)
+		p[4 + i].f = params[i];
+
+	c->gl_add_op(p);
+}
+
 void tglTexParameteri(TGLenum target, TGLenum pname, TGLint param) {
 	TinyGL::GLContext *c = TinyGL::gl_get_context();
 	TinyGL::GLParam p[8];
@@ -736,13 +801,8 @@ void tglDeleteTextures(TGLsizei n, const TGLuint *textures) {
 
 void tglPixelStorei(TGLenum pname, TGLint param) {
 	TinyGL::GLContext *c = TinyGL::gl_get_context();
-	TinyGL::GLParam p[3];
 
-	p[0].op = TinyGL::OP_PixelStore;
-	p[1].i = pname;
-	p[2].i = param;
-
-	c->gl_add_op(p);
+	c->gl_PixelStore(pname, param);
 }
 
 // selection
@@ -875,8 +935,6 @@ void tglEnableClientState(TGLenum array) {
 	TinyGL::GLContext *c = TinyGL::gl_get_context();
 	TinyGL::GLParam p[2];
 
-	p[0].op = TinyGL::OP_EnableClientState;
-
 	switch (array) {
 	case TGL_VERTEX_ARRAY:
 		p[1].i = VERTEX_ARRAY;
@@ -895,14 +953,12 @@ void tglEnableClientState(TGLenum array) {
 		break;
 	}
 
-	c->gl_add_op(p);
+	c->gl_EnableClientState(p);
 }
 
 void tglDisableClientState(TGLenum array) {
 	TinyGL::GLContext *c = TinyGL::gl_get_context();
 	TinyGL::GLParam p[2];
-
-	p[0].op = TinyGL::OP_DisableClientState;
 
 	switch (array) {
 	case TGL_VERTEX_ARRAY:
@@ -922,58 +978,54 @@ void tglDisableClientState(TGLenum array) {
 		break;
 	}
 
-	c->gl_add_op(p);
+	c->gl_DisableClientState(p);
 }
 
 void tglVertexPointer(TGLint size, TGLenum type, TGLsizei stride, const TGLvoid *pointer) {
 	TinyGL::GLContext *c = TinyGL::gl_get_context();
 	TinyGL::GLParam p[5];
 
-	p[0].op = TinyGL::OP_VertexPointer;
 	p[1].i = size;
 	p[2].i = type;
 	p[3].i = stride;
 	p[4].p = const_cast<void *>(pointer);
 
-	c->gl_add_op(p);
+	c->gl_VertexPointer(p);
 }
 
 void tglColorPointer(TGLint size, TGLenum type, TGLsizei stride, const TGLvoid *pointer) {
 	TinyGL::GLContext *c = TinyGL::gl_get_context();
 	TinyGL::GLParam p[5];
 
-	p[0].op = TinyGL::OP_ColorPointer;
 	p[1].i = size;
 	p[2].i = type;
 	p[3].i = stride;
 	p[4].p = const_cast<void *>(pointer);
 
-	c->gl_add_op(p);
+	c->gl_ColorPointer(p);
 }
 
 void tglNormalPointer(TGLenum type, TGLsizei stride, const TGLvoid *pointer) {
 	TinyGL::GLContext *c = TinyGL::gl_get_context();
 	TinyGL::GLParam p[4];
 
-	p[0].op = TinyGL::OP_NormalPointer;
 	p[1].i = type;
 	p[2].i = stride;
 	p[3].p = const_cast<void *>(pointer);
 
-	c->gl_add_op(p);
+	c->gl_NormalPointer(p);
 }
 
 void tglTexCoordPointer(TGLint size, TGLenum type, TGLsizei stride, const TGLvoid *pointer) {
 	TinyGL::GLContext *c = TinyGL::gl_get_context();
 	TinyGL::GLParam p[5];
 
-	p[0].op = TinyGL::OP_TexCoordPointer;
 	p[1].i = size;
 	p[2].i = type;
 	p[3].i = stride;
 	p[4].p = const_cast<void *>(pointer);
 
-	c->gl_add_op(p);
+	c->gl_TexCoordPointer(p);
 }
 
 // fog

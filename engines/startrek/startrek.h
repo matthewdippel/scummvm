@@ -22,7 +22,6 @@
 #ifndef STARTREK_H
 #define STARTREK_H
 
-#include "common/cosinetables.h"
 #include "common/events.h"
 #include "common/list.h"
 #include "common/ptr.h"
@@ -30,15 +29,15 @@
 #include "common/rect.h"
 #include "common/scummsys.h"
 #include "common/serializer.h"
-#include "common/sinetables.h"
 #include "common/str.h"
 #include "common/stream.h"
 #include "common/system.h"
 #include "common/util.h"
 
-#include "gui/saveload-dialog.h"
-
 #include "engines/engine.h"
+
+#include "math/cosinetables.h"
+#include "math/sinetables.h"
 
 #include "startrek/action.h"
 #include "startrek/awaymission.h"
@@ -119,11 +118,11 @@ const int MAX_BAN_FILES = 16;
 
 
 enum kDebugLevels {
-	kDebugSound =     1 << 0,
-	kDebugGraphics =  1 << 1,
-	kDebugSavegame =  1 << 2,
-	kDebugSpace =     1 << 3,
-	kDebugGeneral =   1 << 4
+	kDebugSound = 1,
+	kDebugGraphics,
+	kDebugSavegame,
+	kDebugSpace,
+	kDebugGeneral,
 };
 
 enum GameMode {
@@ -803,8 +802,8 @@ private:
 	void bridgeLeftClick();
 
 	Common::RandomSource _randomSource;
-	Common::SineTable _sineTable;
-	Common::CosineTable _cosineTable;
+	Math::SineTable _sineTable;
+	Math::CosineTable _cosineTable;
 	Room *_room;
 	Common::List<ComputerTopic> _computerTopics;
 };

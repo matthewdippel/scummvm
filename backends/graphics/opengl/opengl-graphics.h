@@ -25,6 +25,8 @@
 #include "backends/graphics/opengl/framebuffer.h"
 #include "backends/graphics/windowed.h"
 
+#include "base/plugins.h"
+
 #include "common/frac.h"
 #include "common/mutex.h"
 #include "common/ustr.h"
@@ -44,6 +46,12 @@ namespace OpenGL {
 
 class Surface;
 class Pipeline;
+#if !USE_FORCED_GLES
+class LibRetroPipeline;
+#endif
+#if defined(USE_OPENGL_GAME) || defined(USE_OPENGL_SHADERS)
+class Renderer3D;
+#endif
 
 enum {
 	GFX_OPENGL = 0
@@ -82,6 +90,10 @@ public:
 	uint getScaleFactor() const override;
 #endif
 
+#if !USE_FORCED_GLES
+	bool setShader(const Common::Path &fileNode) override;
+#endif
+
 	void beginGFXTransaction() override;
 	OSystem::TransactionError endGFXTransaction() override;
 
@@ -94,8 +106,10 @@ public:
 
 	void copyRectToScreen(const void *buf, int pitch, int x, int y, int w, int h) override;
 	void fillScreen(uint32 col) override;
+	void fillScreen(const Common::Rect &r, uint32 col) override;
 
 	void updateScreen() override;
+	void presentBuffer() override;
 
 	Graphics::Surface *lockScreen() override;
 	void unlockScreen() override;
@@ -105,6 +119,8 @@ public:
 
 	int16 getOverlayWidth() const override;
 	int16 getOverlayHeight() const override;
+	void showOverlay(bool inGUI) override;
+	void hideOverlay() override;
 
 	Graphics::PixelFormat getOverlayFormat() const override;
 
@@ -112,7 +128,7 @@ public:
 	void clearOverlay() override;
 	void grabOverlay(Graphics::Surface &surface) const override;
 
-	void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format) override;
+	void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format, const byte *mask) override;
 	void setCursorPalette(const byte *colors, uint start, uint num) override;
 
 	void displayMessageOnOSD(const Common::U32String &msg) override;
@@ -123,8 +139,10 @@ public:
 	void grabPalette(byte *colors, uint start, uint num) const override;
 
 protected:
+	void renderCursor();
+
 	/**
-	 * Whether an GLES or GLES2 context is active.
+	 * Whether a GLES or GLES2 context is active.
 	 */
 	bool isGLESContext() const { return OpenGLContext.type == kContextGLES || OpenGLContext.type == kContextGLES2; }
 
@@ -140,6 +158,7 @@ protected:
 	 */
 	void notifyContextCreate(
 			ContextType type,
+			Framebuffer *target,
 			const Graphics::PixelFormat &defaultFormat,
 			const Graphics::PixelFormat &defaultFormatAlpha);
 
@@ -161,7 +180,7 @@ protected:
 	 * @param wantScaler Whether or not a software scaler should be used.
 	 * @return A pointer to the surface or nullptr on failure.
 	 */
-	Surface *createSurface(const Graphics::PixelFormat &format, bool wantAlpha = false, bool wantScaler = false);
+	Surface *createSurface(const Graphics::PixelFormat &format, bool wantAlpha = false, bool wantScaler = false, bool wantMask = false);
 
 	//
 	// Transaction support
@@ -171,8 +190,8 @@ protected:
 #ifdef USE_RGB_COLOR
 		    gameFormat(),
 #endif
-		    aspectRatioCorrection(false), graphicsMode(GFX_OPENGL), filtering(true),
-		    scalerIndex(0), scaleFactor(1) {
+		    aspectRatioCorrection(false), graphicsMode(GFX_OPENGL), flags(0),
+			filtering(true), scalerIndex(0), scaleFactor(1), shader() {
 		}
 
 		bool valid;
@@ -183,10 +202,13 @@ protected:
 #endif
 		bool aspectRatioCorrection;
 		int graphicsMode;
+		uint flags;
 		bool filtering;
 
 		uint scalerIndex;
 		int scaleFactor;
+
+		Common::Path shader;
 
 		bool operator==(const VideoState &right) {
 			return gameWidth == right.gameWidth && gameHeight == right.gameHeight
@@ -195,7 +217,9 @@ protected:
 #endif
 			    && aspectRatioCorrection == right.aspectRatioCorrection
 			    && graphicsMode == right.graphicsMode
-				&& filtering == right.filtering;
+			    && flags == right.flags
+			    && filtering == right.filtering
+			    && shader == right.shader;
 		}
 
 		bool operator!=(const VideoState &right) {
@@ -254,10 +278,13 @@ protected:
 	 *
 	 * @parma requestedWidth  This is the requested actual game screen width.
 	 * @param requestedHeight This is the requested actual game screen height.
-	 * @param format          This is the requested pixel format of the virtual game screen.
+	 * @param resizable       This indicates that the window should not be resized because we can't handle it.
+	 * @param antialiasing    This is the requested antialiasing level.
 	 * @return true on success, false otherwise
 	 */
-	virtual bool loadVideoMode(uint requestedWidth, uint requestedHeight, const Graphics::PixelFormat &format) = 0;
+	virtual bool loadVideoMode(uint requestedWidth, uint requestedHeight, bool resizable, int antialiasing) = 0;
+
+	bool loadShader(const Common::Path &fileName);
 
 	/**
 	 * Refresh the screen contents.
@@ -270,7 +297,7 @@ protected:
 	 * @param filename The output filename.
 	 * @return true on success, false otherwise
 	 */
-	bool saveScreenshot(const Common::String &filename) const;
+	bool saveScreenshot(const Common::Path &filename) const;
 
 	// Do not hide the argument-less saveScreenshot from the base class
 	using WindowedGraphicsManager::saveScreenshot;
@@ -290,6 +317,13 @@ private:
 	 */
 	Pipeline *_pipeline;
 
+#if !USE_FORCED_GLES
+	/**
+	 * OpenGL pipeline used for post-processing.
+	 */
+	LibRetroPipeline *_libretroPipeline;
+#endif
+
 protected:
 	/**
 	 * Try to determine the internal parameters for a given pixel format.
@@ -303,6 +337,10 @@ protected:
 	void recalculateDisplayAreas() override;
 	void handleResizeImpl(const int width, const int height) override;
 
+	void updateTextureSettings();
+
+	Pipeline *getPipeline() const { return _pipeline; }
+
 	/**
 	 * The default pixel format of the backend.
 	 */
@@ -314,14 +352,21 @@ protected:
 	Graphics::PixelFormat _defaultFormatAlpha;
 
 	/**
-	 * Render back buffer.
+	 * Render target.
 	 */
-	Backbuffer _backBuffer;
+	Framebuffer *_targetBuffer;
 
 	/**
 	 * The rendering surface for the virtual game screen.
 	 */
 	Surface *_gameScreen;
+
+#if defined(USE_OPENGL_GAME) || defined(USE_OPENGL_SHADERS)
+	/**
+	 * The rendering helper for 3D games.
+	 */
+	Renderer3D *_renderer3d;
+#endif
 
 	/**
 	 * The game palette if in CLUT8 mode.
@@ -350,6 +395,11 @@ protected:
 	 * The rendering surface for the mouse cursor.
 	 */
 	Surface *_cursor;
+
+	/**
+	 * The rendering surface for the opacity and inversion mask (if any)
+	 */
+	Surface *_cursorMask;
 
 	/**
 	 * The X offset for the cursor hotspot in unscaled game coordinates.
@@ -382,17 +432,22 @@ protected:
 	/**
 	 * The width of the cursor in scaled game display area coordinates.
 	 */
-	uint _cursorWidthScaled;
+	float _cursorWidthScaled;
 
 	/**
 	 * The height of the cursor in scaled game display area coordinates.
 	 */
-	uint _cursorHeightScaled;
+	float _cursorHeightScaled;
 
 	/**
 	 * The key color.
 	 */
 	uint32 _cursorKeyColor;
+
+	/**
+	 * If true, use key color.
+	 */
+	bool _cursorUseKey;
 
 	/**
 	 * Whether no cursor scaling should be applied.

@@ -23,8 +23,6 @@
 #define ULTIMA8_GUMPS_SHAPEVIEWERGUMP_H
 
 #include "ultima/ultima8/gumps/modal_gump.h"
-
-#include "ultima/shared/std/containers.h"
 #include "ultima/ultima8/misc/classtype.h"
 
 namespace Ultima {
@@ -37,18 +35,26 @@ class ShapeArchive;
  */
 class ShapeViewerGump : public ModalGump {
 public:
+	struct ShapeArchiveEntry {
+		Common::String _name;
+		ShapeArchive *_archive;
+		DisposeAfterUse::Flag _disposeAfterUse;
+
+		ShapeArchiveEntry(const char *name, ShapeArchive *archive, DisposeAfterUse::Flag disposeAfterUse = DisposeAfterUse::NO)
+			: _name(name), _archive(archive), _disposeAfterUse(disposeAfterUse) {}
+	};
+
 	ENABLE_RUNTIME_CLASSTYPE()
 
 	ShapeViewerGump();
 	ShapeViewerGump(int x, int y, int width, int height,
-	                Std::vector<Std::pair<Std::string, ShapeArchive *> > &flexes,
-	                uint32 flags = FLAG_PREVENT_SAVE, int32 layer = LAYER_MODAL);
+					Common::Array<ShapeArchiveEntry> &archives,
+					uint32 flags = FLAG_PREVENT_SAVE, int32 layer = LAYER_MODAL);
 	~ShapeViewerGump() override;
 
 	void PaintThis(RenderSurface *, int32 lerp_factor, bool scaled) override;
 
 	bool OnKeyDown(int key, int mod) override;
-	bool OnTextInput(int unicode) override;
 
 	// Init the gump, call after construction
 	void InitGump(Gump *newparent, bool take_focus = true) override;
@@ -59,9 +65,8 @@ public:
 	void saveData(Common::WriteStream *ws) override;
 
 protected:
-	Std::vector<Std::pair<Std::string, ShapeArchive *> > _flexes;
-	unsigned int _curFlex;
-	ShapeArchive *_flex;
+	Common::Array<ShapeArchiveEntry> _archives;
+	unsigned int _curArchive;
 	uint32 _curShape;
 	uint32 _curFrame;
 
@@ -69,6 +74,9 @@ protected:
 
 	//! The font used in the shape viewer
 	uint32 _fontNo;
+
+	bool _showGrid;
+	bool _mirrored;
 
 	int32 _shapeW, _shapeH, _shapeX, _shapeY;
 };

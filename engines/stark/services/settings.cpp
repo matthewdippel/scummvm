@@ -94,8 +94,8 @@ bool Settings::shouldPreMultiplyReplacementPNGs() const {
 	return ConfMan.getBool("replacement_png_premultiply_alpha");
 }
 
-Gfx::Texture::SamplingFilter Settings::getImageSamplingFilter() const {
-	return ConfMan.getBool("use_linear_filtering") ? Gfx::Texture::kLinear : Gfx::Texture::kNearest;
+Gfx::Bitmap::SamplingFilter Settings::getImageSamplingFilter() const {
+	return ConfMan.getBool("use_linear_filtering") ? Gfx::Bitmap::kLinear : Gfx::Bitmap::kNearest;
 }
 
 bool Settings::isFontAntialiasingEnabled() const {
@@ -108,6 +108,8 @@ Common::CodePage Settings::getTextCodePage() const {
 		return Common::kWindows1250;
 	case Common::RU_RUS:
 		return Common::kWindows1251;
+	case Common::HE_ISR:
+		return Common::kWindows1255;
 	default:
 		return Common::kWindows1252;
 	}

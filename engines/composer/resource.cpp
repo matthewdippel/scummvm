@@ -26,6 +26,7 @@
 #include "common/substream.h"
 #include "common/util.h"
 #include "common/textconsole.h"
+#include "common/macresman.h"
 
 namespace Composer {
 
@@ -40,11 +41,11 @@ Archive::~Archive() {
 	close();
 }
 
-bool Archive::openFile(const Common::String &fileName) {
-	Common::File *file = new Common::File();
+bool Archive::openFile(const Common::Path &fileName) {
+	Common::SeekableReadStream *file
+		= Common::MacResManager::openFileOrDataFork(fileName);
 
-	if (!file->open(fileName)) {
-		delete file;
+	if (!file) {
 		return false;
 	}
 

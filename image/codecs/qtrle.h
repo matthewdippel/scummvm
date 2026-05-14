@@ -23,6 +23,7 @@
 #define IMAGE_CODECS_QTRLE_H
 
 #include "graphics/pixelformat.h"
+#include "graphics/palette.h"
 #include "image/codecs/codec.h"
 
 namespace Image {
@@ -35,23 +36,23 @@ namespace Image {
 class QTRLEDecoder : public Codec {
 public:
 	QTRLEDecoder(uint16 width, uint16 height, byte bitsPerPixel);
-	~QTRLEDecoder();
+	~QTRLEDecoder() override;
 
-	const Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream);
-	Graphics::PixelFormat getPixelFormat() const;
+	const Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream) override;
+	Graphics::PixelFormat getPixelFormat() const override;
 
-	bool containsPalette() const { return _ditherPalette != 0; }
-	const byte *getPalette() { _dirtyPalette = false; return _ditherPalette; }
-	bool hasDirtyPalette() const { return _dirtyPalette; }
-	bool canDither(DitherType type) const;
-	void setDither(DitherType type, const byte *palette);
+	bool containsPalette() const override { return _ditherPalette != 0; }
+	const byte *getPalette() override { _dirtyPalette = false; return _ditherPalette.data(); }
+	bool hasDirtyPalette() const override { return _dirtyPalette; }
+	bool canDither(DitherType type) const override;
+	void setDither(DitherType type, const byte *palette) override;
 
 private:
 	byte _bitsPerPixel;
 	Graphics::Surface *_surface;
 	uint16 _width, _height;
 	uint32 _paddedWidth;
-	byte *_ditherPalette;
+	Graphics::Palette _ditherPalette;
 	bool _dirtyPalette;
 	byte *_colorMap;
 
@@ -61,9 +62,11 @@ private:
 	void decode2_4(Common::SeekableReadStream &stream, uint32 rowPtr, uint32 linesToChange, byte bpp);
 	void decode8(Common::SeekableReadStream &stream, uint32 rowPtr, uint32 linesToChange);
 	void decode16(Common::SeekableReadStream &stream, uint32 rowPtr, uint32 linesToChange);
+	void dither16(Common::SeekableReadStream &stream, uint32 rowPtr, uint32 linesToChange);
 	void decode24(Common::SeekableReadStream &stream, uint32 rowPtr, uint32 linesToChange);
 	void dither24(Common::SeekableReadStream &stream, uint32 rowPtr, uint32 linesToChange);
 	void decode32(Common::SeekableReadStream &stream, uint32 rowPtr, uint32 linesToChange);
+	void dither32(Common::SeekableReadStream &stream, uint32 rowPtr, uint32 linesToChange);
 };
 
 } // End of namespace Image

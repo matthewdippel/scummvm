@@ -25,8 +25,9 @@
 #include "ags/shared/core/platform.h"
 #define AGS_PLATFORM_DEFINES_PSP_VARS (AGS_PLATFORM_OS_IOS || AGS_PLATFORM_OS_ANDROID)
 
-#include "ags/lib/std/queue.h"
+#include "common/std/queue.h"
 #include "ags/shared/ac/game_version.h"
+#include "ags/shared/ac/keycode.h"
 #include "ags/shared/util/stdio_compat.h"
 #include "ags/shared/util/string.h"
 #include "ags/shared/util/string_types.h"
@@ -34,7 +35,10 @@
 #include "ags/shared/font/wfn_font.h"
 #include "ags/shared/gui/gui_main.h"
 #include "ags/shared/script/cc_script.h"
+#include "ags/engine/ac/dynobj/script_game.h"
+#include "ags/engine/ac/dynobj/script_user_object.h"
 #include "ags/engine/ac/event.h"
+#include "ags/engine/ac/file.h"
 #include "ags/engine/ac/runtime_defines.h"
 #include "ags/engine/ac/walk_behind.h"
 #include "ags/engine/main/engine.h"
@@ -42,10 +46,10 @@
 #include "ags/engine/media/audio/audio_defines.h"
 #include "ags/engine/script/script.h"
 #include "ags/engine/script/script_runtime.h"
-#include "ags/lib/std/array.h"
-#include "ags/lib/std/chrono.h"
-#include "ags/lib/std/memory.h"
-#include "ags/lib/std/set.h"
+#include "common/std/array.h"
+#include "common/std/chrono.h"
+#include "common/std/memory.h"
+#include "common/std/set.h"
 #include "ags/lib/allegro/color.h"
 #include "ags/lib/allegro/fixed.h"
 #include "ags/lib/allegro/aintern.h"
@@ -108,9 +112,9 @@ class SplitLines;
 class TTFFontRenderer;
 class WFNFontRenderer;
 
+struct AGSCCStaticObject;
 struct AGSDeSerializer;
 struct AGSPlatformDriver;
-struct AGSStaticObject;
 struct AmbientSound;
 struct AnimatingGUIButton;
 struct CachedActSpsData;
@@ -176,6 +180,7 @@ struct SOUNDCLIP;
 struct SpeechLipSyncLine;
 struct SpriteListEntry;
 struct StaticArray;
+struct CCStaticArray;
 struct StaticGame;
 struct SystemImports;
 struct TopBarSettings;
@@ -183,6 +188,13 @@ struct ViewStruct;
 
 class Globals {
 public:
+	enum SimdFlags : uint {
+		SIMD_NONE = 0,
+		SIMD_NEON = (1 << 0),
+		SIMD_SSE2 = (1 << 1),
+		SIMD_AVX2 = (1 << 2),
+	};
+
 	/**
 	 * @defgroup agsglobals AGS Globals
 	 * @ingroup agsengine
@@ -220,6 +232,7 @@ public:
 	int _trans_blend_green = 0;
 	int _trans_blend_blue = 0;
 	BlenderMode __blender_mode = kRgbToRgbBlender;
+	uint _simd_flags = SIMD_NONE;
 	/* current format information and worker routines */
 	int _utype = U_UTF8;
 
@@ -233,16 +246,24 @@ public:
 	volatile int _mouse_z = 0;  // Mouse wheel vertical
 	volatile int _mouse_b = 0;  // Mouse buttons bitflags
 	volatile int _mouse_pos = 0;    // X position in upper 16 bits, Y in lower 16
+
+	// Accumulated absolute and relative mouse device motion.
+	// May be retrieved by calling *acquire_absxy and *acquire_relxy functions,
+	// after which these are reset, until next motion event is received.
 	volatile int _sys_mouse_x = 0; // mouse x position
 	volatile int _sys_mouse_y = 0; // mouse y position
 	volatile int _sys_mouse_z = 0; // mouse wheel position
+
 	volatile int _freeze_mouse_flag = 0;
+
+	// Relative x and y deltas
+	int _mouse_accum_relx = 0, _mouse_accum_rely = 0;
 
 	int _mouse_button_state = 0;
 	int _mouse_accum_button_state = 0;
 	uint32 _mouse_clear_at_time = 0;
-	int _mouse_accum_relx = 0, _mouse_accum_rely = 0;
-	int _wasbutdown = 0, _wasongui = 0;
+	eAGSMouseButton _wasbutdown = kMouseNone;
+	int _wasongui = 0;
 
 	/**@}*/
 
@@ -276,6 +297,7 @@ public:
 	 */
 
 	AGS::Shared::Bitmap *_glVirtualScreenWrap;
+	std::vector<PluginObjectReader> *_pluginReaders;
 
 	/**@}*/
 
@@ -285,8 +307,8 @@ public:
 	 * @{
 	 */
 
-	AGSStaticObject *_GlobalStaticManager;
-	StaticGame      *_GameStaticManager;
+	AGSCCStaticObject *_GlobalStaticManager;
+	CCScriptGame	  *_GameStaticManager;
 
 	/**@}*/
 
@@ -300,7 +322,6 @@ public:
 	std::array<AmbientSound> *_ambient;
 
 	ScriptAudioChannel *_scrAudioChannel;
-	char _acaudio_buffer[256];
 	int _reserved_channel_count = 0;
 
 	// This is an indicator of a music played by an old audio system
@@ -446,7 +467,7 @@ public:
 	int _loops_per_character = 0, _text_lips_offset = 0, _char_speaking = -1;
 	int _char_thinking = -1;
 	const char *_text_lips_text = nullptr;
-	SpeechLipSyncLine *_splipsync = nullptr;
+	std::vector<SpeechLipSyncLine> *_splipsync;
 	int _numLipLines = 0, _curLipLine = -1, _curLipLinePhoneme = 0;
 
 	/**@}*/
@@ -491,18 +512,12 @@ public:
 	};
 
 	std::vector<Breakpoint> _breakpoints;
-	int _numBreakpoints = 0;
 
 	int _debug_flags = 0;
 
-	String *_debug_line;
-	int _first_debug_line = 0, _last_debug_line = 0, _display_console = 0;
-
-	float _fps;
 	int _display_fps;
 	std::unique_ptr<AGS::Engine::MessageBuffer> *_DebugMsgBuff;
 	std::unique_ptr<AGS::Engine::LogFile> *_DebugLogFile;
-	std::unique_ptr<AGS::Engine::ConsoleOutputTarget> *_DebugConsole;
 
 	/**@}*/
 
@@ -534,7 +549,7 @@ public:
 	int _said_text = 0;
 	int _longestline = 0;
 	// Old dialog support
-	std::vector< std::shared_ptr<unsigned char> > _old_dialog_scripts;
+	std::vector<std::vector<uint8_t>> _old_dialog_scripts;
 	std::vector<String> _old_speech_lines;
 
 	/**@}*/
@@ -572,11 +587,10 @@ public:
 	AGS::Engine::IGraphicsDriver *_gfxDriver = nullptr;
 	AGS::Engine::IDriverDependantBitmap *_blankImage = nullptr;
 	AGS::Engine::IDriverDependantBitmap *_blankSidebarImage = nullptr;
-	AGS::Engine::IDriverDependantBitmap *_debugConsole = nullptr;
 
 	// actsps is used for temporary storage of the bitamp and texture
 	// of the latest version of the sprite (room objects and characters);
-	// objects sprites begin with index 0, characters are after MAX_ROOM_OBJECTS
+	// objects sprites begin with index 0, characters are after ACTSP_OBJSOFF
 	std::vector<ObjTexture> *_actsps;
 	// Walk-behind textures (3D renderers only)
 	std::vector<ObjTexture> *_walkbehindobj;
@@ -586,28 +600,31 @@ public:
 	std::vector<ObjTexture> *_guiobjbg;
 	// first control texture index of each GUI
 	std::vector<int> *_guiobjddbref;
-	// Overlay's cached transformed bitmap, for software mode
-	std::vector<std::unique_ptr<Shared::Bitmap> > *_overlaybmp;
+	// Overlays textures
+	std::vector<ObjTexture> *_overtxs;
 	// For debugging room masks
 	ObjTexture *_debugRoomMaskObj;
 	ObjTexture *_debugMoveListObj;
 	RoomAreaMask _debugRoomMask = kRoomAreaNone;
 	int _debugMoveListChar = -1;
-
+	// For in-game "console" surface
+	AGS::Shared::Bitmap *_debugConsoleBuffer;
+	// Whether room bg was modified
 	bool _current_background_is_dirty = false;
 	// Room background sprite
 	AGS::Engine::IDriverDependantBitmap *_roomBackgroundBmp = nullptr;
-	AGS::Shared::Bitmap *_debugConsoleBuffer = nullptr;
 	// whether there are currently remnants of a DisplaySpeech
 	bool _screen_is_dirty = false;
-	AGS::Shared::Bitmap *_raw_saved_screen = nullptr;
-	AGS::Shared::Bitmap **_dynamicallyCreatedSurfaces = nullptr;
-	int _places_r = 3, _places_g = 2, _places_b = 3;
+	std::unique_ptr<Shared::Bitmap> _raw_saved_screen;
+	std::unique_ptr<Shared::Bitmap> *_dynamicallyCreatedSurfaces;
 	color *_palette;
 	COLOR_MAP *_maincoltable;
 
 	std::vector<Engine::IDriverDependantBitmap *> *_guiobjddb;
 	std::vector<Point> *_guiobjoff; // because surface may be larger than logical position
+
+	DrawState _drawstate;
+	DrawFPS _gl_DrawFPS;
 
 	/**@}*/
 
@@ -673,13 +690,10 @@ public:
 
 	std::vector<EventHappened> *_events;
 
-	const char *_evblockbasename = nullptr;
-	int _evblocknum = 0;
-
 	int _inside_processevent = 0;
 	int _eventClaimed = 0;
 
-	const char *_tsnames[TS_NUM] = { nullptr, REP_EXEC_NAME, "on_key_press", "on_mouse_click", "on_text_input" };
+	const char *_tsnames[kTS_Num] = { nullptr, REP_EXEC_NAME, "on_key_press", "on_mouse_click", "on_text_input" };
 
 	/**@}*/
 
@@ -697,6 +711,11 @@ public:
 	String _installAudioDirectory;
 	// Installation directory, containing voice-over files
 	String _installVoiceDirectory;
+
+	ScriptFileHandle _valid_handles[MAX_OPEN_SCRIPT_FILES + 1];
+	// [IKM] NOTE: this is not precisely the number of files opened at this moment,
+	// but rather maximal number of handles that were used simultaneously during game run
+	int _num_open_script_files = 0;
 
 	/**@}*/
 
@@ -738,25 +757,21 @@ public:
 	CCDialog *_ccDynamicDialog;
 	CCAudioClip *_ccDynamicAudioClip;
 	CCAudioChannel *_ccDynamicAudio;
-	ScriptString *_myScriptStringImpl;
-
-	// TODO: IMPORTANT!!
-	// we cannot simply replace these arrays with vectors, or other C++ containers,
-	// until we implement safe management of such containers in script exports
-	// system. Noteably we would need an alternate to StaticArray class to track
-	// access to their elements.
 	ScriptObject *_scrObj;
-	ScriptGUI *_scrGui = nullptr;
+	std::vector<ScriptGUI> *_scrGui;
 	ScriptHotspot *_scrHotspot;
 	ScriptRegion *_scrRegion;
 	ScriptInvItem *_scrInv;
-	ScriptDialog *_scrDialog = nullptr;
+	std::vector<ScriptDialog> *_scrDialog;
+
 	std::vector<ViewStruct> *_views;
+
+	// Draw cache: keep record of all kinds of things related to the previous drawing state
 	// Cached character and object states, used to determine
 	// whether these require texture update
 	std::vector<ObjectCache> *_charcache;
 	ObjectCache *_objcache;
-	std::vector<Point> *_screenovercache;
+	std::vector<Point> *_overcache;
 	std::vector<CharacterExtras> *_charextra;
 	// MoveLists for characters and room objects; NOTE: 1-based array!
 	// object sprites begin with index 1, characters are after MAX_ROOM_OBJECTS + 1
@@ -789,7 +804,6 @@ public:
 	// The version of the engine the loaded game was compiled for (if available)
 	Version _game_compiled_version;
 	int _game_paused = 0;
-	char _pexbuf[STD_BUFFER_SIZE] = { 0 };
 	unsigned int _load_new_game = 0;
 	int _load_new_game_restore = -1;
 	// TODO: refactor these global vars into function arguments
@@ -808,13 +822,13 @@ public:
 	 * @{
 	 */
 
-	StaticArray *_StaticCharacterArray;
-	StaticArray *_StaticObjectArray;
-	StaticArray *_StaticGUIArray;
-	StaticArray *_StaticHotspotArray;
-	StaticArray *_StaticRegionArray;
-	StaticArray *_StaticInventoryArray;
-	StaticArray *_StaticDialogArray;
+	CCStaticArray *_StaticCharacterArray;
+	CCStaticArray *_StaticObjectArray;
+	CCStaticArray *_StaticGUIArray;
+	CCStaticArray *_StaticHotspotArray;
+	CCStaticArray *_StaticRegionArray;
+	CCStaticArray *_StaticInventoryArray;
+	CCStaticArray *_StaticDialogArray;
 
 	/**@}*/
 
@@ -825,7 +839,7 @@ public:
 	 */
 
 	 // Following struct instructs the engine to run game loops until
-	 // certain condition is not fullfilled.
+	 // certain condition is not fulfilled.
 	struct RestrictUntil {
 		int type = 0; // type of condition, UNTIL_* constant
 		int disabled_for = 0; // FOR_* constant
@@ -836,6 +850,7 @@ public:
 		int data2 = 0;
 	} _restrict_until;
 
+	float _fps;
 	unsigned int _loopcounter = 0;
 	unsigned int _lastcounter = 0;
 	int _numEventsAtStartOfFunction = 0;
@@ -892,6 +907,16 @@ public:
 	 */
 
 	ScriptPosition *_last_in_dialog_request_script_pos;
+
+	/**@}*/
+
+	/**
+	 * @defgroup agsglobal_gameglobals global_game globals
+	 * @ingroup agsglobals
+	 * @{
+	 */
+
+	ScriptPosition *_last_cutscene_script_pos;
 
 	/**@}*/
 
@@ -1009,7 +1034,8 @@ public:
 	 */
 
 	int _guis_need_update = 1;
-	int _all_buttons_disabled = -1, _gui_inv_pic = -1;
+	AGS::Shared::GuiDisableStyle _all_buttons_disabled = AGS::Shared::kGuiDis_Undefined;
+	int _gui_inv_pic = -1;
 
 	/**@}*/
 
@@ -1063,7 +1089,7 @@ public:
 	uint8_t *_lzbuffer = nullptr;
 	int *_node = nullptr;
 	int _pos = 0;
-	size_t _outbytes = 0, _maxsize = 0, _putbytes = 0;
+	size_t _outbytes = 0;
 
 	/**@}*/
 
@@ -1086,6 +1112,11 @@ public:
 	std::set<String> _tellInfoKeys;
 	int _loadSaveGameOnStartup = -1;
 
+	// ScummVM GUIO-controlled flags
+	bool _saveThumbnail = true;     // capture a screenshot when saving (used for saves thumbnails)
+	bool _noScummAutosave = false;  // disable ScummVM autosaves
+	bool _noScummSaveLoad = false;  // disable ScummVM GMM save/load
+
 #if 0
 	//! AGS_PLATFORM_DEFINES_PSP_VARS
 	int _psp_rotation = 0;
@@ -1098,10 +1129,6 @@ public:
 
 	// Current engine version
 	Version _EngineVersion;
-	// Lowest savedgame version, accepted by this engine
-	Version _SavedgameLowestBackwardCompatVersion;
-	// Lowest engine version, which would accept current savedgames
-	Version _SavedgameLowestForwardCompatVersion;
 
 	/**@}*/
 
@@ -1121,14 +1148,12 @@ public:
 	 * @{
 	 */
 
-	int8 _currentcursor = 0;
 	// virtual mouse cursor coordinates
 	int _mousex = 0, _mousey = 0, _numcurso = -1, _hotx = 0, _hoty = 0;
-	// real mouse coordinates and bounds
+	// real mouse coordinates and bounds (in window coords)
 	int _real_mouse_x = 0, _real_mouse_y = 0;
 	int _boundx1 = 0, _boundx2 = 99999, _boundy1 = 0, _boundy2 = 99999;
-	int _disable_mgetgraphpos = 0;
-	int8 _ignore_bounds = 0;
+	int _ignore_bounds = 0; // FIXME: this currently works as a counter, not bool?
 	AGS::Shared::Bitmap *_mousecurs[MAXCURSORS];
 
 	ScriptMouse *_scmouse;
@@ -1161,6 +1186,7 @@ public:
 	 */
 
 	std::vector<ScreenOverlay> *_screenover;
+	std::queue<int32_t> *_over_free_ids;
 	int _is_complete_overlay = 0;
 
 	/**@}*/
@@ -1170,9 +1196,6 @@ public:
 	 * @ingroup agsglobals
 	 * @{
 	 */
-
-	PluginObjectReader *_pluginReaders;
-	int _numPluginReaders = 0;
 
 	/**@}*/
 
@@ -1199,6 +1222,7 @@ public:
 	int _new_room_flags = 0;
 	int _gs_to_newroom = -1;
 	int _bg_just_changed = 0;
+	std::unique_ptr<RoomStatus> _room_statuses[MAX_ROOMS];
 
 	/**@}*/
 
@@ -1208,11 +1232,11 @@ public:
 	 * @{
 	 */
 
-	int32_t *_navpoints;
+	Point *_navpoints;
 	Navigation *_nav;
 	int _num_navpoints = 0;
-	fixed _move_speed_x = 0, _move_speed_y = 0;
 	AGS::Shared::Bitmap *_wallscreen = nullptr;
+	fixed _move_speed_x, _move_speed_y;
 	int _lastcx = 0, _lastcy = 0;
 	std::unique_ptr<IRouteFinder> *_route_finder_impl;
 
@@ -1241,9 +1265,11 @@ public:
 
 	PScript *_gamescript;
 	PScript *_dialogScriptsScript;
-	ccInstance *_gameinst = nullptr, *_roominst = nullptr;
-	ccInstance *_dialogScriptsInst = nullptr;
-	ccInstance *_gameinstFork = nullptr, *_roominstFork = nullptr;
+	UInstance _gameinst;
+	UInstance _roominst;
+	UInstance _dialogScriptsInst;
+	UInstance _gameinstFork;
+	UInstance _roominstFork;
 
 	int _num_scripts = 0;
 	int _post_script_cleanup_stack = 0;
@@ -1265,15 +1291,15 @@ public:
 	ScriptSystem *_scsystem;
 
 	std::vector<PScript> *_scriptModules;
-	std::vector<ccInstance *> *_moduleInst;
-	std::vector<ccInstance *> *_moduleInstFork;
+	std::vector<UInstance> *_moduleInst;
+	std::vector<UInstance> *_moduleInstFork;
 	std::vector<RuntimeScriptValue> *_moduleRepExecAddr;
 	size_t _numScriptModules = 0;
 
 	/**@}*/
 
 	/**
-	 * @defgroup agsscript_runtimeglobals script_runtime globals
+	 * @defgroup agsscript_runtimeglobals agsscript_user_object agscript_string script_runtime globals
 	 * @ingroup agsglobals
 	 * @{
 	 */
@@ -1289,6 +1315,8 @@ public:
 	// after which the interpreter will abort
 	unsigned _maxWhileLoops = 0u;
 	ccInstance *_loadedInstances[MAX_LOADED_INSTANCES];
+	ScriptString *_myScriptStringImpl;
+	ScriptUserObject _globalDynamicStruct;
 
 	/**@}*/
 
@@ -1297,8 +1325,6 @@ public:
 	 * @ingroup agsglobals
 	 * @{
 	 */
-
-	int _MAXSTRLEN = MAX_MAXSTRLEN;
 
 	/**@}*/
 
@@ -1325,7 +1351,7 @@ public:
 	long _pl_file_handle = -1;
 	AGS::Shared::Stream *_pl_file_stream = nullptr;
 
-	int _pluginSimulatedClick = -1;
+	eAGSMouseButton _simulatedClick = kMouseNone;
 	int _mouse_z_was = 0;
 
 	/**@}*/
@@ -1383,8 +1409,7 @@ public:
 	int _walkBehindLeft[MAX_WALK_BEHINDS], _walkBehindTop[MAX_WALK_BEHINDS];
 	int _walkBehindRight[MAX_WALK_BEHINDS], _walkBehindBottom[MAX_WALK_BEHINDS];
 	AGS::Engine::IDriverDependantBitmap *_walkBehindBitmap[MAX_WALK_BEHINDS];
-	int _walkBehindsCachedForBgNum = 0;
-	WalkBehindMethodEnum _walkBehindMethod = DrawOverCharSprite;
+	int _walkBehindsCachedForBgNum = -1;
 	int _walk_behind_baselines_changed = 0;
 	Rect _walkBehindAABB[MAX_WALK_BEHINDS]; // WB bounding box
 	std::vector<WalkBehindColumn> _walkBehindCols; // precalculated WB positions

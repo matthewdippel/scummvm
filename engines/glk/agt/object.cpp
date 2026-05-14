@@ -360,7 +360,7 @@ defined in exec.h */
 	/* Weight */
 	if (obj2 == 1 || (aver > AGTME15 && aver < AGX00)) {
 		/* Pre-1.56 interpreters forgot to check this;
-		   Magx deliberatly *doesn't* check this */
+		   Magx deliberately *doesn't* check this */
 
 		net = noun[obj1 - first_noun].weight;
 		if (aver >= AGX00) net += contweight(obj1);
@@ -811,9 +811,9 @@ static char *build_position(word prep_, word name)
 	leng = strlen(dict[prep_]) + strlen(dict[name]) + 6; /* includes final '\0' */
 	s = (char *)rmalloc(leng * sizeof(char));
 
-	strcpy(s, dict[prep_]);
-	strcat(s, " the ");
-	strcat(s, dict[name]);
+	Common::strcpy_s(s, leng, dict[prep_]);
+	Common::strcat_s(s, leng, " the ");
+	Common::strcat_s(s, leng, dict[name]);
 	assert((int)strlen(s) + 1 == leng);
 	return s;
 }

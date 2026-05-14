@@ -38,6 +38,30 @@ void ZCodeMetaEngine::getSupportedGames(PlainGameList &games) {
 		games.push_back(*pd);
 }
 
+const GlkDetectionEntry* ZCodeMetaEngine::getDetectionEntries() {
+	static Common::Array<GlkDetectionEntry> entries;
+	for (const FrotzGameDescription *entry = FROTZ_GAMES; entry->_gameId; ++entry) {
+		GlkDetectionEntry detection = {
+			entry->_gameId,
+			entry->_extra,
+			entry->_md5,
+			entry->_filesize,
+			entry->_language,
+			Common::kPlatformUnknown
+		};
+		entries.push_back(detection);
+	}
+
+	entries.push_back({nullptr,
+					   nullptr,
+					   nullptr,
+					   0,
+					   Common::UNK_LANG,
+					   Common::kPlatformUnknown});
+
+	return entries.data();
+}
+
 GameDescriptor ZCodeMetaEngine::findGame(const char *gameId) {
 	for (const PlainGameDescriptor *pd = INFOCOM_GAME_LIST; pd->gameId; ++pd) {
 		if (!strcmp(gameId, pd->gameId)) {
@@ -54,8 +78,18 @@ GameDescriptor ZCodeMetaEngine::findGame(const char *gameId) {
 		}
 	}
 	for (const PlainGameDescriptor *pd = ZCODE_GAME_LIST; pd->gameId; ++pd) {
-		if (!strcmp(gameId, pd->gameId))
-			return *pd;
+		if (!strcmp(gameId, pd->gameId)) {
+			GameDescriptor gd = *pd;
+			/*
+			 * Tested against ScummVM 2.8.0git, following entries are confirmed not to be playable
+			 */
+			if (!strcmp(gameId, "bureaucrocy_zcode") ||
+				!strcmp(gameId, "scopa") ||
+				!strcmp(gameId, "sunburst"))
+				gd._supportLevel = kUnstableGame;
+
+			return gd;
+		}
 	}
 
 	return GameDescriptor::empty();
@@ -94,9 +128,9 @@ bool ZCodeMetaEngine::detectGames(const Common::FSList &fslist, DetectedGames &g
 				continue;
 			}
 			gameFile.seek(18);
-			strcpy(&serial[0], "\"");
+			Common::strcpy_s(&serial[0], sizeof(serial), "\"");
 			gameFile.read(&serial[1], 6);
-			strcpy(&serial[7], "\"");
+			Common::strcpy_s(&serial[7], sizeof(serial)-7, "\"");
 		} else {
 			Blorb b(*file, INTERPRETER_ZCODE);
 			Common::SeekableReadStream *f = b.createReadStreamForMember("game");
@@ -104,9 +138,9 @@ bool ZCodeMetaEngine::detectGames(const Common::FSList &fslist, DetectedGames &g
 
 			if (!emptyBlorb) {
 				f->seek(18);
-				strcpy(&serial[0], "\"");
+				Common::strcpy_s(&serial[0], sizeof(serial), "\"");
 				f->read(&serial[1], 6);
-				strcpy(&serial[7], "\"");
+				Common::strcpy_s(&serial[7], sizeof(serial) - 7, "\"");
 				delete f;
 			}
 		}
@@ -121,8 +155,8 @@ bool ZCodeMetaEngine::detectGames(const Common::FSList &fslist, DetectedGames &g
 			++p;
 
 		if (!p->_gameId) {
-			// Generic .dat/.zip files don't get reported as matches unless they have a known md5
-			if (filename.hasSuffixIgnoreCase(".dat") || filename.hasSuffixIgnoreCase(".zip") || emptyBlorb)
+			// Generic .dat/.data/.zip files don't get reported as matches unless they have a known md5
+			if (filename.hasSuffixIgnoreCase(".dat") || filename.hasSuffixIgnoreCase(".data") || filename.hasSuffixIgnoreCase(".zip") || emptyBlorb)
 				continue;
 
 			const PlainGameDescriptor &desc = ZCODE_GAME_LIST[0];

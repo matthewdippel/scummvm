@@ -183,7 +183,7 @@ reg_t kResCheck(EngineState *s, int argc, reg_t *argv) {
 		}
 
 		if (format) {
-			const Common::String fileName = Common::String::format(format, argv[1].toUint16());
+			const Common::Path fileName(Common::String::format(format, argv[1].toUint16()));
 			return make_reg(0, Common::File::exists(fileName));
 		}
 	}
@@ -239,8 +239,6 @@ reg_t kClone(EngineState *s, int argc, reg_t *argv) {
 
 	return cloneAddr;
 }
-
-extern void _k_view_list_mark_free(EngineState *s, reg_t off);
 
 reg_t kDisposeClone(EngineState *s, int argc, reg_t *argv) {
 	reg_t obj = argv[0];

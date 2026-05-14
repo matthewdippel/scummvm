@@ -38,21 +38,20 @@ static const DebugChannelDef debugFlagList[] = {
 
 #include "mortevielle/detection_tables.h"
 
-class MortevielleMetaEngineDetection : public AdvancedMetaEngineDetection {
+class MortevielleMetaEngineDetection : public AdvancedMetaEngineDetection<Mortevielle::MortevielleGameDescription> {
 public:
-	MortevielleMetaEngineDetection() : AdvancedMetaEngineDetection(Mortevielle::MortevielleGameDescriptions, sizeof(Mortevielle::MortevielleGameDescription),
-		MortevielleGame) {
+	MortevielleMetaEngineDetection() : AdvancedMetaEngineDetection(Mortevielle::MortevielleGameDescriptions, MortevielleGame) {
 		_md5Bytes = 512;
 		// Use kADFlagUseExtraAsHint to distinguish between original and improved versions
 		// (i.e. use or not of the game data file).
 		_flags = kADFlagUseExtraAsHint;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "mortevielle";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Mortville Manor";
 	}
 

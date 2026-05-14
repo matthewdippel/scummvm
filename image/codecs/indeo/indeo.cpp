@@ -140,17 +140,17 @@ int IVIHuffTab::decodeHuffDesc(IVI45DecContext *ctx, int descCoded, int whichTab
 		return 0;
 	}
 
-	_tabSel = ctx->_gb->getBits(3);
+	_tabSel = ctx->_gb->getBits<3>();
 	if (_tabSel == 7) {
 		// custom huffman table (explicitly encoded)
-		newHuff._numRows = ctx->_gb->getBits(4);
+		newHuff._numRows = ctx->_gb->getBits<4>();
 		if (!newHuff._numRows) {
 			warning("Empty custom Huffman table!");
 			return -1;
 		}
 
 		for (int i = 0; i < newHuff._numRows; i++)
-			newHuff._xBits[i] = ctx->_gb->getBits(4);
+			newHuff._xBits[i] = ctx->_gb->getBits<4>();
 
 		// Have we got the same custom table? Rebuild if not.
 		if (newHuff.huffDescCompare(&_custDesc) || !_custTab._table) {
@@ -463,36 +463,21 @@ IVI45DecContext::IVI45DecContext() : _gb(nullptr), _frameNum(0), _frameType(0),
 
 /*------------------------------------------------------------------------*/
 
-IndeoDecoderBase::IndeoDecoderBase(uint16 width, uint16 height, uint bitsPerPixel) : Codec() {
-	_pixelFormat = g_system->getScreenFormat();
+IndeoDecoderBase::IndeoDecoderBase(uint16 width, uint16 height, uint bitsPerPixel) : Codec(), _surface(nullptr) {
+	_width = width;
+	_height = height;
+	_bitsPerPixel = bitsPerPixel;
+	_pixelFormat = getDefaultYUVFormat();
 
-	if (_pixelFormat.bytesPerPixel == 1) {
-		switch (bitsPerPixel) {
-		case 15:
-			_pixelFormat = Graphics::PixelFormat(2, 5, 5, 5, 0, 0, 5, 10, 0);
-			break;
-		case 16:
-			_pixelFormat = Graphics::PixelFormat(2, 5, 6, 5, 0, 11, 5, 0, 0);
-			break;
-		case 24:
-			_pixelFormat = Graphics::PixelFormat(4, 8, 8, 8, 0, 16, 8, 0, 0);
-			break;
-		case 32:
-			_pixelFormat = Graphics::PixelFormat(4, 8, 8, 8, 8, 24, 16, 8, 0);
-			break;
-		default:
-			error("Invalid color depth");
-			break;
-		}
-	}
-
-	_surface.create(width, height, _pixelFormat);
-	_surface.fillRect(Common::Rect(0, 0, width, height), (bitsPerPixel == 32) ? 0xff : 0);
 	_ctx._bRefBuf = 3; // buffer 2 is used for scalability mode
 }
 
 IndeoDecoderBase::~IndeoDecoderBase() {
-	_surface.free();
+	if (_surface) {
+		_surface->free();
+		delete _surface;
+		_surface = nullptr;
+	}
 	IVIPlaneDesc::freeBuffers(_ctx._planes);
 	if (_ctx._mbVlc._custTab._table)
 		_ctx._mbVlc._custTab.freeVlc();
@@ -506,6 +491,12 @@ int IndeoDecoderBase::decodeIndeoFrame() {
 	int result;
 	AVFrame frameData;
 	AVFrame *frame = &frameData;
+
+	if (!_surface) {
+		_surface = new Graphics::Surface;
+		_surface->create(_width, _height, _pixelFormat);
+		_surface->fillRect(Common::Rect(0, 0, _width, _height), (_bitsPerPixel == 32) ? 0xff : 0);
+	}
 
 	// Decode the header
 	if (decodePictureHeader() < 0)
@@ -562,7 +553,7 @@ int IndeoDecoderBase::decodeIndeoFrame() {
 	if (!isNonNullFrame())
 		return 0;
 
-	assert(_ctx._planes[0]._width <= _surface.w && _ctx._planes[0]._height <= _surface.h);
+	assert(_ctx._planes[0]._width <= _surface->w && _ctx._planes[0]._height <= _surface->h);
 	result = frame->setDimensions(_ctx._planes[0]._width, _ctx._planes[0]._height);
 	if (result < 0)
 		return result;
@@ -583,7 +574,7 @@ int IndeoDecoderBase::decodeIndeoFrame() {
 	outputPlane(&_ctx._planes[1], frame->_data[2], frame->_linesize[2]);
 
 	// Merge the planes into the final surface
-	YUVToRGBMan.convert410(&_surface, Graphics::YUVToRGBManager::kScaleITU,
+	YUVToRGBMan.convert410(_surface, Graphics::YUVToRGBManager::kScaleITU,
 		frame->_data[0], frame->_data[1], frame->_data[2], frame->_width, frame->_height,
 		frame->_width, frame->_width);
 
@@ -601,14 +592,14 @@ int IndeoDecoderBase::decodeIndeoFrame() {
 		int left;
 
 		// skip version string
-		while (_ctx._gb->getBits(8)) {
+		while (_ctx._gb->getBits<8>()) {
 			if (_ctx._gb->getBitsLeft() < 8)
 				return -1;
 		}
 		left = _ctx._gb->pos() & 0x18;
 		_ctx._gb->skip(64 - left);
 		if (_ctx._gb->getBitsLeft() > 18 &&
-			_ctx._gb->peekBits(21) == 0xBFFF8) { // syncheader + inter _type
+			_ctx._gb->peekBits<21>() == 0xBFFF8) { // syncheader + inter _type
 			error("Indeo decoder: Mode not currently implemented in ScummVM");
 		}
 	}
@@ -1048,9 +1039,9 @@ int IndeoDecoderBase::decodeTileDataSize(GetBits *gb) {
 	int len = 0;
 
 	if (gb->getBit()) {
-		len = gb->getBits(8);
+		len = gb->getBits<8>();
 		if (len == 255)
-			len = gb->getBits(24);
+			len = gb->getBits<24>();
 	}
 
 	// align the bitstream reader on the byte boundary
@@ -1266,15 +1257,15 @@ int IndeoDecoderBase::decodeCodedBlocks(GetBits *gb, IVIBandDesc *band,
 	// zero column flags
 	memset(colFlags, 0, sizeof(colFlags));
 	while (scanPos <= numCoeffs) {
-		sym = gb->getVLC2<1>(band->_blkVlc._tab->_table, IVI_VLC_BITS);
+		sym = gb->getVLC2<1, IVI_VLC_BITS>(band->_blkVlc._tab->_table);
 		if (sym == rvmap->_eobSym)
 			break; // End of block
 
 		// Escape - run/val explicitly coded using 3 vlc codes
 		if (sym == rvmap->_escSym) {
-			run = gb->getVLC2<1>(band->_blkVlc._tab->_table, IVI_VLC_BITS) + 1;
-			lo = gb->getVLC2<1>(band->_blkVlc._tab->_table, IVI_VLC_BITS);
-			hi = gb->getVLC2<1>(band->_blkVlc._tab->_table, IVI_VLC_BITS);
+			run = gb->getVLC2<1, IVI_VLC_BITS>(band->_blkVlc._tab->_table) + 1;
+			lo = gb->getVLC2<1, IVI_VLC_BITS>(band->_blkVlc._tab->_table);
+			hi = gb->getVLC2<1, IVI_VLC_BITS>(band->_blkVlc._tab->_table);
 			// merge them and convert into signed val
 			val = IVI_TOSIGNED((hi << 6) | lo);
 		} else {

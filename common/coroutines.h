@@ -307,6 +307,9 @@ struct PROCESS {
 	int sleepTime;      ///< Number of scheduler cycles to sleep.
 	uint32 pid;         ///< Process ID.
 	uint32 pidWaiting[CORO_MAX_PID_WAITING];    ///< Process ID(s) that the process is currently waiting on.
+#ifndef NO_CXX11_ALIGNAS
+	alignas(max_align_t)
+#endif
 	char param[CORO_PARAM_SIZE];    ///< Process-specific information.
 };
 typedef PROCESS *PPROCESS;
@@ -418,7 +421,7 @@ public:
 	void giveWay(PPROCESS pReSchedProc = nullptr);
 
 	/**
-	 * Continously make a given process wait for another process to finish or event to signal.
+	 * Continuously make a given process wait for another process to finish or event to signal.
 	 *
 	 * @param pid           Process/Event identifier.
 	 * @param duration      Duration in milliseconds.
@@ -427,7 +430,7 @@ public:
 	void waitForSingleObject(CORO_PARAM, int pid, uint32 duration, bool *expired = nullptr);
 
 	/**
-	 * Continously make a given process wait for given processes to finish or events to be set.
+	 * Continuously make a given process wait for given processes to finish or events to be set.
 	 *
 	 * @param nCount        Number of IDs being passed.
 	 * @param pidList       List of process IDs to wait for.

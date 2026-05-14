@@ -26,12 +26,12 @@ static const VoyeurGameDescription gameDescriptions[] = {
 		// Voyeur DOS English
 		{
 			"voyeur",
-			0,
+			nullptr,
 			AD_ENTRY1s("bvoy.blt", "12e9e10654171501cf8be3a7aa7198e1", 13036269),
 			Common::EN_ANY,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_NOMIDI)
+			GUIO2(GUIO_NOMIDI, GAMEOPTION_COPY_PROTECTION)
 		}
 	},
 
@@ -44,11 +44,21 @@ static const VoyeurGameDescription gameDescriptions[] = {
 			Common::EN_ANY,
 			Common::kPlatformDOS,
 			ADGF_DEMO,
-			GUIO1(GUIO_NOMIDI)
+			GUIO2(GUIO_NOMIDI, GAMEOPTION_COPY_PROTECTION)
 		}
 	},
 
-	{ AD_TABLE_END_MARKER }
-};
+	{// Voyeur German Fan Translation - By Bakhtosh
+	 {
+		 "voyeur",
+		 "German Fan Made Version",
+		 AD_ENTRY1s("bvoy.blt", "af281a228ddcf7daa18a3c8b591bace9", 15134654),
+		 Common::DE_DEU,
+		 Common::kPlatformDOS,
+		 ADGF_NO_FLAGS,
+		 GUIO2(GUIO_NOMIDI, GAMEOPTION_COPY_PROTECTION)}
+	},
+
+	{AD_TABLE_END_MARKER}};
 
 } // End of namespace Voyeur

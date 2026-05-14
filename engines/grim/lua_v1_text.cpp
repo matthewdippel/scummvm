@@ -19,7 +19,6 @@
  *
  */
 
-#include "common/foreach.h"
 #include "common/savefile.h"
 #include "common/system.h"
 
@@ -135,7 +134,7 @@ void Lua_V1::GetTextObjectDimensions() {
 
 void Lua_V1::ExpireText() {
 	// Cleanup actor references to deleted text objects
-	foreach (Actor *a, Actor::getPool()) {
+	for (Actor *a : Actor::getPool()) {
 		a->lineCleanup();
 	}
 }
@@ -257,7 +256,7 @@ void Lua_V1::LocalizeString() {
 		// we've been given
 		if (str[0] == '/') {
 			Common::String msg = parseMsgText(str, msgId);
-			sprintf(buf, "/%s/%s", msgId, msg.c_str());
+			Common::sprintf_s(buf, "/%s/%s", msgId, msg.c_str());
 			str = buf;
 		}
 		lua_pushstring(str);
@@ -300,8 +299,9 @@ void Lua_V1::SayLine() {
 				}
 				paramObj = lua_getparam(paramId++);
 			}
-
-			actor->sayLine(msgId, background, x, y); // background, vol, pan, x, y
+			if (msgId) {
+				actor->sayLine(msgId, background, x, y); // background, vol, pan, x, y
+			}
 		}
 	}
 }

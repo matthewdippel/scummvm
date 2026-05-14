@@ -24,11 +24,13 @@
 
 #include "common/hashmap.h"
 #include "common/list.h"
+#include "common/mutex.h"
 #include "common/stack.h"
 #include "common/events.h"
 
 #include "graphics/font.h"
 #include "graphics/fontman.h"
+#include "graphics/palette.h"
 #include "graphics/macgui/macwindow.h"
 #include "graphics/macgui/macmenu.h"
 
@@ -76,18 +78,22 @@ enum MacCursorType {
 };
 
 enum {
-	kWMModeNone         	= 0,
-	kWMModeNoDesktop    	= (1 << 0),
-	kWMModeAutohideMenu 	= (1 << 1),
-	kWMModalMenuMode 		= (1 << 2),
-	kWMModeForceBuiltinFonts= (1 << 3),
-	kWMModeUnicode			= (1 << 4),
-	kWMModeManualDrawWidgets= (1 << 5),
-	kWMModeFullscreen       = (1 << 6),
-	kWMModeButtonDialogStyle= (1 << 7),
-	kWMMode32bpp			= (1 << 8),
-	kWMNoScummVMWallpaper   = (1 << 9),
-	kWMModeWin95            = (1 << 10)
+	kWMModeNone         		= 0,
+	kWMModeNoDesktop    		= (1 << 0),
+	kWMModeAutohideMenu 		= (1 << 1),
+	kWMModalMenuMode 			= (1 << 2),
+	kWMModeForceBuiltinFonts	= (1 << 3),
+	kWMModeUnicode				= (1 << 4),
+	kWMModeManualDrawWidgets	= (1 << 5),
+	kWMModeFullscreen			= (1 << 6),
+	kWMModeButtonDialogStyle	= (1 << 7),
+	kWMNoScummVMWallpaper		= (1 << 8),
+	kWMModeWin95				= (1 << 9),
+	kWMModeForceMacFontsInWin95 = (1 << 10), // Enforce Mac font for languages which don't have glyphs in ms_sans_serif.ttf
+	kWMModeNoCursorOverride     = (1 << 11),
+	kWMModeForceMacBorder       = (1 << 12),
+	kWMModeForceMacFonts        = (1 << 13), // Enforce Mac fonts even when there are viable TTF substitutions
+	kWMModeNoSystemRedraw       = (1 << 14), // Skip g_system->copyRectToScreen (for 3D game backends)
 };
 
 }
@@ -106,7 +112,7 @@ class MacFont;
 
 class MacFontManager;
 
-typedef Common::Array<byte *> MacPatterns;
+typedef Common::Array<const byte *> MacPatterns;
 
 struct MacPlotData {
 	Graphics::ManagedSurface *surface;
@@ -134,19 +140,18 @@ struct ZoomBox {
 	uint32 nextTime;
 };
 
-typedef void (* MacDrawPixPtr)(int, int, int, void *);
-
 /**
  * A manager class to handle window creation, destruction,
  * drawing, moving and event handling.
  */
 class MacWindowManager {
 public:
-	MacWindowManager(uint32 mode = 0, MacPatterns *patterns = nullptr, Common::Language language = Common::UNK_LANG);
+	MacWindowManager(uint32 mode = 0, MacPatterns *patterns = nullptr, Common::Language language = Common::UNK_LANG,
+	                 const Graphics::PixelFormat &pixelFormat = Graphics::PixelFormat::createFormatCLUT8());
 	~MacWindowManager();
 
-	MacDrawPixPtr getDrawPixel();
-	MacDrawPixPtr getDrawInvertPixel();
+	Primitives &getDrawPrimitives() const { return *_macDrawPrimitives; }
+	Primitives &getDrawInvertPrimitives() const;
 
 	/**
 	 * Mutator to indicate the surface onto which the desktop will be drawn.
@@ -175,8 +180,8 @@ public:
 	 * @return Pointer to the newly created window.
 	 */
 	MacWindow *addWindow(bool scrollable, bool resizable, bool editable);
-	MacTextWindow *addTextWindow(const MacFont *font, int fgcolor, int bgcolor, int maxWidth, TextAlign textAlignment, MacMenu *menu, bool cursorHandler = true);
-	MacTextWindow *addTextWindow(const Font *font, int fgcolor, int bgcolor, int maxWidth, TextAlign textAlignment, MacMenu *menu, bool cursorHandler = true);
+	MacTextWindow *addTextWindow(const MacFont *font, int fgcolor, int bgcolor, int maxWidth, TextAlign textAlignment, MacMenu *menu, int padding = 0);
+	MacTextWindow *addTextWindow(const Font *font, int fgcolor, int bgcolor, int maxWidth, TextAlign textAlignment, MacMenu *menu, int padding = 0);
 	void resizeScreen(int w, int h);
 
 	/**
@@ -202,6 +207,7 @@ public:
 	 * @return Pointer to a new empty menu.
 	 */
 	MacMenu *addMenu();
+	void addMenu(int id, MacMenu *menu);
 
 	void removeMenu();
 	void activateMenu();
@@ -227,6 +233,8 @@ public:
 	 * @param id ID of the window that has to be set to active.
 	 */
 	void setActiveWindow(int id);
+
+	int getActiveWindow() { return _activeWindow; }
 
 	/**
 	 * Return Top Window containing a point
@@ -275,7 +283,11 @@ public:
 	 * @param id The id of the desired window.
 	 * @return Pointer to the requested window, if it exists.
 	 */
-	BaseMacWindow *getWindow(int id) { return _windows[id]; }
+	BaseMacWindow *getWindow(int id) {
+		if (id >= 0 && id < (int)_windows.size())
+			return _windows[id];
+		return nullptr;
+	}
 
 	/**
 	 * Retrieve the patterns used to fill surfaces.
@@ -290,9 +302,25 @@ public:
 	 */
 	void setActiveWidget(MacWidget *widget);
 
+	/**
+	 * Similar to setActiveWidget but in this case no action including animation
+	 * hover, etc can work until a window is locked.
+	 * Anything outside this window will not respond to user.
+	 * @param widget Pointer to the widget to lock, nullptr for no widget
+	 */
+	void setLockedWidget(MacWidget *widget);
+
+	/**
+	 * Sets a background window, which is always active, this window cannot be
+	 * deactivated by clicking outside it, ie it is always in background.
+	 * @param window Pointer to the widget to background, nullptr for no widget
+	 */
+	void setBackgroundWindow(MacWindow *window);
+
 	MacPatterns  &getBuiltinPatterns() { return _builtinPatterns; }
 
 	MacWidget *getActiveWidget() { return _activeWidget; }
+	MacWidget *getLockedWidget() { return _lockedWidget; }
 
 	Common::Rect getScreenBounds() { return _screen ? _screen->getBounds() : _screenDims; }
 
@@ -305,6 +333,8 @@ private:
 
 public:
 	MacCursorType getCursorType() const;
+	static bool getBuiltInCursorData(MacCursorType type, const byte *&data, const byte *&palette,
+		const byte *&mask, int &w, int &h, int &hotspotX, int &hotspotY, int &transColor);
 
 	void pushCursor(MacCursorType type, Cursor *cursor = nullptr);
 	void replaceCursor(MacCursorType type, Cursor *cursor = nullptr);
@@ -320,14 +350,14 @@ public:
 
 	void setEngine(Engine *engine);
 	void setEngineRedrawCallback(void *engine, void (*redrawCallback)(void *engine));
+	void setEngineActivateMenuCallback(void *engine, void (*redrawCallback)(void *engine));
 
 	void passPalette(const byte *palette, uint size);
-	uint findBestColor(byte cr, byte cg, byte cb);
-	uint findBestColor(uint32 color);
-	void decomposeColor(uint32 color, byte &r, byte &g, byte &b);
+	void getPaletteEntry(uint32 color, byte &r, byte &g, byte &b);
+	uint32 findBestColor(byte cr, byte cg, byte cb);
 	void setDesktopColor(byte, byte, byte);
 
-	uint inverter(uint src);
+	byte inverter(byte src);
 
 	const byte *getPalette() { return _palette; }
 	uint getPaletteSize() { return _paletteSize; }
@@ -339,9 +369,11 @@ public:
 
 	void loadDataBundle();
 	void cleanupDataBundle();
-	BorderOffsets getBorderOffsets(byte windowType);
-	Common::SeekableReadStream *getBorderFile(byte windowType, uint32 flags);
-	Common::SeekableReadStream *getFile(const Common::String &filename);
+	void cleanupDesktopBmp();
+
+	const BorderOffsets &getBorderOffsets(uint32 windowType);
+	Common::SeekableReadStream *getBorderFile(uint32 windowType, uint32 flags);
+	Common::SeekableReadStream *getFile(const Common::Path &filename);
 
 	void setTextInClipboard(const Common::U32String &str);
 	/**
@@ -368,6 +400,10 @@ public:
 	Common::String getMenuItemName(MacMenuItem *menuItem);
 	int getMenuItemAction(MacMenuItem *menuItem);
 	MacMenu *getMenu();
+	MacMenu *getMenu(int id);
+
+	void sayText(const Common::U32String &text) const;
+	void setTTSEnabled(bool enabled);
 
 public:
 	MacFontManager *_fontMan;
@@ -378,7 +414,7 @@ public:
 	Common::Point _lastMousePos;
 	Common::Rect _menuHotzone;
 
-	bool _menuTimerActive;
+	uint32 _menuTimer;
 	bool _mouseDown;
 
 	uint32 _colorBlack, _colorGray80, _colorGray88, _colorGrayEE, _colorWhite, _colorGreen, _colorGreen2;
@@ -402,7 +438,7 @@ private:
 	void adjustDimensions(const Common::Rect &clip, const Common::Rect &dims, int &adjWidth, int &adjHeight);
 
 public:
-	TransparentSurface *_desktopBmp;
+	Surface *_desktopBmp;
 	ManagedSurface *_desktop;
 	PixelFormat _pixelformat;
 
@@ -411,6 +447,7 @@ public:
 	Common::Rect _screenDims;
 
 private:
+	Common::Mutex _mutex;
 	Common::List<BaseMacWindow *> _windowStack;
 	Common::HashMap<uint, BaseMacWindow *> _windows;
 
@@ -424,6 +461,9 @@ private:
 
 	bool _inEditableArea;
 
+	Primitives *_macDrawPrimitives;
+	Primitives *_macDrawInvertPrimitives;
+
 	MacPatterns _patterns;
 	MacPatterns _builtinPatterns;
 	byte *_palette;
@@ -435,12 +475,16 @@ private:
 	Engine *_engineP;
 	void *_engineR;
 	void (*_redrawEngineCallback)(void *engine);
+	void *_engineAM;
+	void (*_activateMenuCallback)(void *engine);
 
-	MacCursorType _tempType;
+	MacCursorType _tempType = kMacCursorArrow;
 	Common::Stack<MacCursorType> _cursorTypeStack;
-	Cursor *_cursor;
+	Cursor *_cursor = nullptr;
 
 	MacWidget *_activeWidget;
+	MacWidget *_lockedWidget;
+	MacWindow *_backgroundWindow;
 
 	PauseToken *_screenCopyPauseToken;
 
@@ -451,7 +495,11 @@ private:
 	Common::Archive *_dataBundle;
 
 	Common::U32String _clipboard;
+
+	bool _ttsEnabled;
 };
+
+const Common::U32String::value_type *readHex(uint16 *res, const Common::U32String::value_type *s, int len);
 
 } // End of namespace Graphics
 

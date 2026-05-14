@@ -109,6 +109,10 @@ struct Point {
 	inline Point operator +(const Point &p) const {
 		return Point(X + p.X, Y + p.Y);
 	}
+
+	inline bool Equals(const int x, const int y) const {
+		return X == x && Y == y;
+	}
 };
 
 struct Line {
@@ -165,20 +169,28 @@ struct Size {
 	}
 
 	// Indicates if current size exceeds other size by any metric
-	inline bool ExceedsByAny(const Size size) const {
+	inline bool ExceedsByAny(const Size &size) const {
 		return Width > size.Width || Height > size.Height;
 	}
 
-	inline bool operator==(const Size size) const {
+	inline bool operator==(const Size &size) const {
 		return Width == size.Width && Height == size.Height;
 	}
 
-	inline bool operator!=(const Size size) const {
+	inline bool operator!=(const Size &size) const {
 		return Width != size.Width || Height != size.Height;
 	}
 
 	inline bool operator<(const Size &other) const { // TODO: this implementation is silly and not universally useful; make a realistic one and replace with another function where necessary
 		return Width < other.Width || (Width == other.Width && Height < other.Height);
+	}
+
+	inline Size operator+(const Size &size) const {
+		return Size(Width + size.Width, Height + size.Height);
+	}
+
+	inline Size operator-(const Size &size) const {
+		return Size(Width - size.Width, Height - size.Height);
 	}
 
 	inline Size operator *(int x) const {

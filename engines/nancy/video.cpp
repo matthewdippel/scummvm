@@ -26,8 +26,50 @@
 #include "engines/nancy/video.h"
 #include "engines/nancy/decompress.h"
 #include "engines/nancy/graphics.h"
+#include "engines/nancy/util.h"
 
 namespace Nancy {
+
+class VideoCacheLoader : public DeferredLoader {
+public:
+	VideoCacheLoader(AVFDecoder::AVFVideoTrack &owner) : _owner(owner) {}
+	virtual ~VideoCacheLoader() {}
+
+private:
+	bool loadInner() override;
+
+	AVFDecoder::AVFVideoTrack &_owner;
+};
+
+bool VideoCacheLoader::loadInner() {
+	AVFDecoder::CacheHint hint = _owner.getCacheHint();
+	int frameID = _owner.getCurFrame();
+	int frameCount = _owner.getFrameCount();
+
+	for (int i = 0; i < frameCount; ++i) {
+		if (frameID < 0) {
+			frameID += frameCount;
+		}
+
+		if (frameID >= frameCount) {
+			frameID -= frameCount;
+		}
+
+		if (!_owner.getSurfaceForFrame(frameID)->getPixels()) {
+			_owner.decodeFrame(frameID);
+			return false;
+		}
+
+		// Select next frame based on hint and play direction
+		if (hint != AVFDecoder::kLoadBidirectional) {
+			frameID = _owner.isReversed() ? frameID - 1 : frameID + 1;
+		} else {
+			frameID = _owner.getCurFrame() + (i % 2 ? i >> 1 : -(i >> 1));
+		}
+	}
+
+	return true;
+}
 
 AVFDecoder::~AVFDecoder() {
 	close();
@@ -63,24 +105,32 @@ bool AVFDecoder::loadStream(Common::SeekableReadStream *stream) {
 		stream->skip(1); // Unknown
 	}
 
-	addTrack(new AVFVideoTrack(stream, chunkFileFormat));
+	addTrack(new AVFVideoTrack(stream, chunkFileFormat, _cacheHint));
 
 	return true;
 }
 
 const Graphics::Surface *AVFDecoder::decodeFrame(uint frameNr) {
-	return ((AVFDecoder::AVFVideoTrack *)getTrack(0))->decodeFrame(frameNr);
+	return ((AVFVideoTrack *)getTrack(0))->decodeFrame(frameNr);
 }
 
 void AVFDecoder::addFrameTime(const uint16 timeToAdd) {
-	((AVFDecoder::AVFVideoTrack *)getTrack(0))->_frameTime += timeToAdd;
+	((AVFVideoTrack *)getTrack(0))->addFrameTime(timeToAdd);
 }
 
-AVFDecoder::AVFVideoTrack::AVFVideoTrack(Common::SeekableReadStream *stream, uint32 chunkFileFormat) {
+// Custom function to allow the last frame of the video to play correctly
+bool AVFDecoder::atEnd() const {
+	const AVFVideoTrack *track = ((const AVFVideoTrack *)getTrack(0));
+	if (!track) {
+		return true;
+	}
+	return !track->isReversed() && track->endOfTrack() && track->getFrameTime(track->getFrameCount()) <= getTime();
+}
+
+AVFDecoder::AVFVideoTrack::AVFVideoTrack(Common::SeekableReadStream *stream, uint32 chunkFileFormat, CacheHint cacheHint) {
 	assert(stream);
 	_fileStream = stream;
 	_curFrame = -1;
-	_refFrame = -1;
 	_reversed = false;
 	_dec = new Decompressor;
 
@@ -91,6 +141,7 @@ AVFDecoder::AVFVideoTrack::AVFVideoTrack(Common::SeekableReadStream *stream, uin
 	_frameTime = stream->readUint32LE();
 
 	byte comp = stream->readByte();
+	_compressed = comp == 2;
 
 	uint formatHi = chunkFileFormat >> 16;
 
@@ -98,12 +149,10 @@ AVFDecoder::AVFVideoTrack::AVFVideoTrack(Common::SeekableReadStream *stream, uin
 		stream->skip(1);
 	}
 
-	if (comp != 2)
+	if (comp != 1 && comp != 2)
 		error("Unknown compression type %d found in AVF", comp);
 
-	_surface = new Graphics::Surface();
-	_pixelFormat = g_nancy->_graphicsManager->getInputPixelFormat();
-	_surface->create(_width, _height, _pixelFormat);
+	_pixelFormat = g_nancy->_graphics->getInputPixelFormat();
 	_frameSize = _width * _height * _pixelFormat.bytesPerPixel;
 
 	_chunkInfo.reserve(_frameCount);
@@ -134,18 +183,33 @@ AVFDecoder::AVFVideoTrack::AVFVideoTrack(Common::SeekableReadStream *stream, uin
 
 		_chunkInfo.push_back(info);
 	}
+
+	_frameCache.resize(_frameCount);
+	_cacheHint = cacheHint;
+	_loaderPtr.reset(new VideoCacheLoader(*this));
+	auto castedPtr = _loaderPtr.dynamicCast<DeferredLoader>();
+	g_nancy->addDeferredLoader(castedPtr);
 }
 
 AVFDecoder::AVFVideoTrack::~AVFVideoTrack() {
 	delete _fileStream;
-	_surface->free();
-	delete _surface;
 	delete _dec;
+
+	for (Graphics::Surface &surf : _frameCache) {
+		surf.free();
+	}
 }
 
 bool AVFDecoder::AVFVideoTrack::seek(const Audio::Timestamp &time) {
-	// TODO this will almost definitely break video type 2
 	_curFrame = getFrameAtTime(time);
+
+	// Offset by 1 to ensure decodeNextFrame() actually decodes the frame we want
+	if (!_reversed) {
+		--_curFrame;
+	} else {
+		++_curFrame;
+	}
+
 	return true;
 }
 
@@ -156,9 +220,9 @@ bool AVFDecoder::AVFVideoTrack::setReverse(bool reverse) {
 
 bool AVFDecoder::AVFVideoTrack::endOfTrack() const {
 	if (_reversed)
-		return _curFrame < 0;
+		return _curFrame <= 0;
 
-	return _curFrame >= (getFrameCount() - 1);
+	return _curFrame >= getFrameCount();
 }
 
 bool AVFDecoder::AVFVideoTrack::decode(byte *outBuf, uint32 frameSize, Common::ReadStream &inBuf) const {
@@ -209,27 +273,35 @@ bool AVFDecoder::AVFVideoTrack::decode(byte *outBuf, uint32 frameSize, Common::R
 }
 
 const Graphics::Surface *AVFDecoder::AVFVideoTrack::decodeFrame(uint frameNr) {
+	if (frameNr < _frameCache.size() && _frameCache[frameNr].getPixels()) {
+		// Frame is cached, return a pointer to it
+		return &_frameCache[frameNr];
+	}
+
 	if (frameNr >= _chunkInfo.size()) {
-		warning("Frame %d doesn't exist", frameNr);
-		return nullptr;
+		debugC(kDebugVideo, "Frame %d doesn't exist, returning last frame %d", frameNr, _chunkInfo.size() - 1);
+		return decodeFrame(_chunkInfo.size() - 1);
 	}
 
 	const ChunkInfo &info = _chunkInfo[frameNr];
-
-	if (info.type == 2 && (_refFrame == -1 || _refFrame != (int)frameNr - 1)) {
-		warning("Cannot decode frame %d, reference frame is invalid", frameNr);
-		return nullptr;
-	}
 
 	if (!info.size && !info.compressedSize) {
 		if (info.type != 2) {
 			warning("Found empty frame %d of type %d", frameNr, info.type);
 			return nullptr;
 		}
-		// Return previous frame
-		_refFrame = frameNr;
-		return _surface;
+
+		// Type 2 empty frames are valid. We recursively call decodeFrame until
+		// we find a valid previous frame, or arrive at the beginning of the video
+		if (frameNr != 0) {
+			return decodeFrame(frameNr - 1);
+		} else {
+			return nullptr;
+		}
 	}
+
+	Graphics::Surface &frameInCache = _frameCache[frameNr];
+	frameInCache.create(_width, _height, _pixelFormat);
 
 	byte *decompBuf = nullptr;
 	if (info.type == 0) {
@@ -238,32 +310,76 @@ const Graphics::Surface *AVFDecoder::AVFVideoTrack::decodeFrame(uint frameNr) {
 			warning("Decompressed size %d exceeds frame size %d", info.size, _frameSize);
 			return nullptr;
 		}
+
+		decompBuf = (byte *)frameInCache.getPixels();
 	} else {
 		// For types 1 and 2, we decompress to a temp buffer for decoding
 		decompBuf = new byte[info.size];
 	}
 
-	Common::MemoryWriteStream output((info.type == 0 ? (byte *)_surface->getPixels() : decompBuf), info.size);
 	Common::SeekableSubReadStream input(_fileStream, info.offset, info.offset + info.compressedSize);
 
-	if (!_dec->decompress(input, output)) {
-		warning("Failed to decompress frame %d", frameNr);
-		delete[] decompBuf;
-		return nullptr;
+	if (_compressed) {
+		Common::MemoryWriteStream output(decompBuf, info.size);
+
+		if (!_dec->decompress(input, output)) {
+			warning("Failed to decompress frame %d", frameNr);
+			// Make sure we don't delete data we don't own
+			if (info.type != 0) {
+				delete[] decompBuf;
+			}
+
+			return nullptr;
+		}
+	} else {
+		// No compression, just copy the data
+		input.read(decompBuf, info.size);
 	}
 
 	if (info.type != 0) {
+		if (info.type == 2 && frameNr != 0) {
+			// Type 2 frames are incomplete, and only contain the pixels
+			// that are different from the last valid frame. Thus, we need
+			// to decode the previous frame and copy its contents to the new one's
+			const Graphics::Surface *refFrame = decodeFrame(frameNr - 1);
+			if (refFrame) {
+				Graphics::copyBlit((byte *)frameInCache.getPixels(), (const byte *)refFrame->getPixels(),
+					frameInCache.pitch, refFrame->pitch, frameInCache.w, frameInCache.h, frameInCache.format.bytesPerPixel);
+
+#ifdef SCUMM_BIG_ENDIAN
+				// Convert from BE back to LE so the decode step below works correctly
+				byte *buf = (byte *)frameInCache.getPixels();
+				if (g_nancy->_graphics->getInputPixelFormat().bytesPerPixel == 2) {
+					for (int i = 0; i < frameInCache.pitch * frameInCache.h / 2; ++i) {
+						((uint16 *)buf)[i] = SWAP_BYTES_16(((uint16 *)buf)[i]);
+					}
+				}
+#endif
+			}
+		}
+
 		Common::MemoryReadStream decompStr(decompBuf, info.size);
-		decode((byte *)_surface->getPixels(), _frameSize, decompStr);
+		decode((byte *)frameInCache.getPixels(), _frameSize, decompStr);
 	}
 
-	_refFrame = frameNr;
-	delete[] decompBuf;
-	return _surface;
+	if (info.type != 0) {
+		delete[] decompBuf;
+	}
+
+#ifdef SCUMM_BIG_ENDIAN
+	byte *buf = (byte *)frameInCache.getPixels();
+	if (g_nancy->_graphics->getInputPixelFormat().bytesPerPixel == 2) {
+		for (int i = 0; i < frameInCache.pitch * frameInCache.h / 2; ++i) {
+			((uint16 *)buf)[i] = SWAP_BYTES_16(((uint16 *)buf)[i]);
+		}
+	}
+#endif
+
+	return &frameInCache;
 }
 
 const Graphics::Surface *AVFDecoder::AVFVideoTrack::decodeNextFrame() {
-	return decodeFrame(_reversed ? _curFrame-- : ++_curFrame);
+	return decodeFrame(_reversed ? --_curFrame : ++_curFrame);
 }
 
 } // End of namespace Nancy

@@ -48,6 +48,7 @@ ADD_OP(Translate, 3, "%f %f %f")
 ADD_OP(Scale, 3, "%f %f %f")
 ADD_OP(Ortho, 6, "%f %f %f %f %f %f")
 
+ADD_OP(Scissor, 4, "%d %d %d %d")
 ADD_OP(Viewport, 4, "%d %d %d %d")
 ADD_OP(Frustum, 6, "%f %f %f %f %f %f")
 
@@ -70,7 +71,6 @@ ADD_OP(TexImage2D, 9, "%d %d %d %d %d %d %d %d %d")
 ADD_OP(BindTexture, 2, "%C %d")
 ADD_OP(TexEnv, 7, "%C %C %C %f %f %f %f")
 ADD_OP(TexParameter, 7, "%C %C %C %f %f %f %f")
-ADD_OP(PixelStore, 2, "%C %C")
 
 ADD_OP(ShadeModel, 1, "%C")
 ADD_OP(CullFace, 1, "%C")
@@ -85,6 +85,9 @@ ADD_OP(DepthFunc, 1, "%d")
 ADD_OP(StencilFunc, 3, "%C %d %d")
 ADD_OP(StencilOp, 3, "%C %C %C")
 
+ADD_OP(PolygonStipple, 128, "%d")
+ADD_OP(StippleColor, 3, "%f %f %f")
+
 ADD_OP(Fog, 5, "%d %f %f %f %f")
 
 ADD_OP(CallList, 1, "%d")
@@ -98,12 +101,6 @@ ADD_OP(NextBuffer, 1, "%p")
 ADD_OP(ArrayElement, 1, "%d")
 ADD_OP(DrawArrays, 3, "%C %d %d")
 ADD_OP(DrawElements, 4, "%C %d %C %p")
-ADD_OP(EnableClientState, 1, "%C")
-ADD_OP(DisableClientState, 1, "%C")
-ADD_OP(VertexPointer, 4, "%d %C %d %p")
-ADD_OP(ColorPointer, 4, "%d %C %d %p")
-ADD_OP(NormalPointer, 3, "%C %d %p")
-ADD_OP(TexCoordPointer, 4, "%d %C %d %p")
 
 // opengl 1.1 polygon offset
 ADD_OP(PolygonOffset, 2, "%f %f")

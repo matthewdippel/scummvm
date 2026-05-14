@@ -30,7 +30,6 @@
 #include "ags/engine/ac/game.h"
 #include "ags/engine/ac/game_setup.h"
 #include "ags/shared/ac/game_setup_struct.h"
-#include "ags/engine/ac/game_state.h"
 #include "ags/shared/ac/game_struct_defines.h"
 #include "ags/engine/ac/gui.h"
 #include "ags/engine/ac/view_frame.h"
@@ -46,7 +45,6 @@
 #include "ags/engine/platform/base/ags_platform_driver.h"
 #include "ags/shared/script/cc_common.h"
 #include "ags/engine/script/script.h"
-#include "ags/shared/util/aligned_stream.h"
 #include "ags/shared/util/stream.h"
 #include "ags/shared/util/text_stream_reader.h"
 #include "ags/globals.h"
@@ -126,7 +124,7 @@ static inline HError MakeScriptLoadError(const char *name) {
 // For those that do exist, reads them and replaces any scripts of same kind
 // in the already loaded game data.
 HError LoadGameScripts(LoadedGameEntities &ents) {
-	// Global script 
+	// Global script
 	std::unique_ptr<Stream> in(_GP(AssetMgr)->OpenAsset("GlobalScript.o"));
 	if (in) {
 		PScript script(ccScript::CreateFromStream(in.get()));
@@ -171,24 +169,38 @@ HError load_game_file() {
 	MainGameSource src;
 	LoadedGameEntities ents(_GP(game));
 	HError err = (HError)OpenMainGameFileFromDefaultAsset(src, _GP(AssetMgr).get());
-	if (err) {
-		err = (HError)ReadGameData(ents, src.InputStream.get(), src.DataVersion);
-		src.InputStream.reset();
-		if (err) {
-			// Upscale mode -- for old games that supported it.
-			// NOTE: this must be done before UpdateGameData, or resolution-dependant
-			// adjustments won't be applied correctly.
-			if ((_G(loaded_game_file_version) < kGameVersion_310) && _GP(usetup).override_upscale) {
-				if (_GP(game).GetResolutionType() == kGameResolution_320x200)
-					_GP(game).SetGameResolution(kGameResolution_640x400);
-				else if (_GP(game).GetResolutionType() == kGameResolution_320x240)
-					_GP(game).SetGameResolution(kGameResolution_640x480);
-			}
+	if (!err)
+		return err;
 
-			err = (HError)UpdateGameData(ents, src.DataVersion);
-		}
+	err = (HError)ReadGameData(ents, src.InputStream.get(), src.DataVersion);
+	if (!err)
+		return err;
+	src.InputStream.reset();
+
+	//-------------------------------------------------------------------------
+	// Data overrides: for compatibility mode and custom engine support
+	// NOTE: this must be done before UpdateGameData, or certain adjustments
+	// won't be applied correctly.
+
+	// Custom engine detection (ugly hack, depends on the known game GUIDs)
+	if (strcmp(_GP(game).guid, "{d6795d1c-3cfe-49ec-90a1-85c313bfccaf}" /* Kathy Rain */ ) == 0 ||
+		strcmp(_GP(game).guid, "{5833654f-6f0d-40d9-99e2-65c101c8544a}" /* Whispers of a Machine */ ) == 0)
+	{
+		_GP(game).options[OPT_CUSTOMENGINETAG] = CUSTOMENG_CLIFFTOP;
+	}
+	// Upscale mode -- for old games that supported it.
+	if ((_G(loaded_game_file_version) < kGameVersion_310) && _GP(usetup).override_upscale) {
+		if (_GP(game).GetResolutionType() == kGameResolution_320x200 || _GP(game).GetResolutionType() == kGameResolution_Default)
+			_GP(game).SetGameResolution(kGameResolution_640x400);
+		else if (_GP(game).GetResolutionType() == kGameResolution_320x240)
+			_GP(game).SetGameResolution(kGameResolution_640x480);
+	}
+	if (_GP(game).options[OPT_CUSTOMENGINETAG] == CUSTOMENG_CLIFFTOP) {
+		if (_GP(game).GetResolutionType() == kGameResolution_640x400)
+			_GP(game).SetGameResolution(Size(640, 360));
 	}
 
+	err = (HError)UpdateGameData(ents, src.DataVersion);
 	if (!err)
 		return err;
 	err = LoadGameScripts(ents);

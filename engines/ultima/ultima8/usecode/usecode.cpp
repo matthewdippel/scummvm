@@ -19,9 +19,8 @@
  *
  */
 
-#include "ultima/ultima8/misc/pent_include.h"
-
 #include "ultima/ultima8/usecode/usecode.h"
+
 #include "ultima/ultima8/ultima8.h"
 
 namespace Ultima {
@@ -31,8 +30,8 @@ uint32 Usecode::get_class_event(uint32 classid, uint32 eventid) {
 	if (get_class_size(classid) == 0) return 0;
 
 	if (eventid >= get_class_event_count(classid)) {
-		perr << "eventid too high: " << eventid << " >= " << get_class_event_count(classid) << " for class " << classid << Std::endl;
-		CANT_HAPPEN();
+		warning("eventid too high: %u >= %u for class %u",
+			eventid, get_class_event_count(classid), classid);
 	}
 
 	const uint8 *data = get_class(classid);
@@ -49,7 +48,7 @@ uint32 Usecode::get_class_event(uint32 classid, uint32 eventid) {
 		offset += data[20 + (eventid * 6) + 4] << 16;
 		offset += data[20 + (eventid * 6) + 5] << 24;
 	} else {
-		CANT_HAPPEN_MSG("Invalid game type.");
+		warning("Invalid game type.");
 	}
 
 	return offset;

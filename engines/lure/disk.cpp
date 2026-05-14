@@ -83,14 +83,14 @@ void Disk::openFile(uint8 fileNum) {
 	if (_fileNum != 0xff) delete _fileHandle;
 	_fileNum = fileNum;
 
-	// Open up the the new file
+	// Open up the new file
 	_fileHandle = new Common::File();
 
 	char sFilename[10];
 	if (_fileNum == 0)
-		strcpy(sFilename, SUPPORT_FILENAME);
+		Common::strcpy_s(sFilename, SUPPORT_FILENAME);
 	else
-		sprintf(sFilename, "disk%d.%s", _fileNum, isEGA ? "ega" : "vga");
+		Common::sprintf_s(sFilename, "disk%d.%s", _fileNum, isEGA ? "ega" : "vga");
 
 	_fileHandle->open(sFilename);
 	if (!_fileHandle->isOpen())

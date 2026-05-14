@@ -25,17 +25,18 @@
 #include "audio/softsynth/fmtowns_pc98/towns_audio.h"
 #include "audio/mididrv.h"
 
+namespace Scumm {
 
 class TownsMidiOutputChannel;
 class TownsMidiInputChannel;
 class TownsMidiChanState;
 
-class MidiDriver_TOWNS : public MidiDriver, public TownsAudioInterfacePluginDriver {
+class IMuseDriver_FMTowns : public MidiDriver, public TownsAudioInterfacePluginDriver {
 friend class TownsMidiInputChannel;
 friend class TownsMidiOutputChannel;
 public:
-	MidiDriver_TOWNS(Audio::Mixer *mixer);
-	~MidiDriver_TOWNS() override;
+	IMuseDriver_FMTowns(Audio::Mixer *mixer);
+	~IMuseDriver_FMTowns() override;
 
 	int open() override;
 	bool isOpen() const override { return _isOpen; }
@@ -62,6 +63,7 @@ private:
 	TownsMidiInputChannel **_channels;
 	TownsMidiOutputChannel **_out;
 	TownsMidiChanState *_chanState;
+	const uint8 _numParts;
 
 	Common::TimerManager::TimerProc _timerProc;
 	void *_timerProcPara;
@@ -78,5 +80,7 @@ private:
 
 	const uint16 _baseTempo;
 };
+
+} // end of namespace Scumm
 
 #endif

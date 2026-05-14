@@ -22,10 +22,11 @@
 #ifndef SHARED_CONF_XML_NODE_H
 #define SHARED_CONF_XML_NODE_H
 
-#include "ultima/shared/std/containers.h"
-#include "common/str.h"
 #include "common/array.h"
 #include "common/hash-str.h"
+#include "common/path.h"
+#include "common/str.h"
+#include "common/util.h"
 
 namespace Ultima {
 namespace Shared {
@@ -55,7 +56,7 @@ private:
 	/**
 	 * Parses a specified file and returns the root node for it
 	 */
-	static XMLNode *xmlParseFile(XMLTree *tree, const Common::String &fname);
+	static XMLNode *xmlParseFile(XMLTree *tree, const Common::Path &fname);
 
 	static Common::String closeTag(const Common::String &s);
 	static Common::String encodeEntity(const Common::String &s);
@@ -122,7 +123,7 @@ public:
 		return _nodeList;
 	}
 
-	typedef Std::pair<Common::String, Common::String> KeyType;
+	typedef Common::Pair<Common::String, Common::String> KeyType;
 	typedef Common::Array<KeyType> KeyTypeList;
 
 	/**
@@ -131,8 +132,8 @@ public:
 	 * Returns true if search is 'finished'
 	 */
 	bool searchPairs(KeyTypeList &ktl, const Common::String &basekey,
-		const Common::String currkey, const unsigned int pos);
-	void selectPairs(KeyTypeList &ktl, const Common::String currkey);
+		const Common::String &currkey, const unsigned int pos);
+	void selectPairs(KeyTypeList &ktl, const Common::String &currkey);
 
 	Common::String dump(int depth = 0);
 

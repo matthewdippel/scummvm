@@ -45,10 +45,6 @@ GLTexture *GLContext::find_texture(uint h) {
 	return nullptr;
 }
 
-void GLContext::free_texture(uint h) {
-	free_texture(find_texture(h));
-}
-
 void GLContext::free_texture(GLTexture *t) {
 	GLTexture **ht;
 	GLImage *im;
@@ -101,6 +97,7 @@ void GLContext::glopBindTexture(GLParam *p) {
 	GLTexture *t;
 
 	assert(target == TGL_TEXTURE_2D);
+	(void)target;
 
 	t = find_texture(texture);
 	if (!t) {
@@ -155,21 +152,7 @@ void GLContext::glopTexImage2D(GLParam *p) {
 		}
 		if (!found)
 			error("TinyGL texture: format 0x%04x and type 0x%04x combination not supported", format, type);
-		Graphics::PixelBuffer src(pf, pixels);
-		Graphics::PixelFormat internalPf;
-#if defined(SCUMM_LITTLE_ENDIAN)
-		if (internalformat == TGL_RGBA)
-			internalPf = Graphics::PixelFormat(4, 8, 8, 8, 8, 0, 8, 16, 24);
-		else if (internalformat == TGL_RGB)
-			internalPf = Graphics::PixelFormat(3, 8, 8, 8, 0, 0, 8, 16, 0);
-#else
-		if (internalformat == TGL_RGBA)
-			internalPf = Graphics::PixelFormat(4, 8, 8, 8, 8, 24, 16, 8, 0);
-		else if (internalformat == TGL_RGB)
-			internalPf = Graphics::PixelFormat(3, 8, 8, 8, 0, 16, 8, 0, 0);
-#endif
-		Graphics::PixelBuffer srcInternal(internalPf, width * height, DisposeAfterUse::YES);
-		srcInternal.copyBuffer(0, width * height, src);
+
 		if (width > _textureSize || height > _textureSize)
 			filter = texture_mag_filter;
 		else
@@ -178,17 +161,21 @@ void GLContext::glopTexImage2D(GLParam *p) {
 		case TGL_LINEAR_MIPMAP_NEAREST:
 		case TGL_LINEAR_MIPMAP_LINEAR:
 		case TGL_LINEAR:
-			im->pixmap = new BilinearTexelBuffer(
-				srcInternal,
+			im->pixmap = createBilinearTexelBuffer(
+				pixels, pf,
+				format, type,
 				width, height,
-				_textureSize
+				_textureSize,
+				internalformat
 			);
 			break;
 		default:
-			im->pixmap = new NearestTexelBuffer(
-				srcInternal,
+			im->pixmap = createNearestTexelBuffer(
+				pixels, pf,
+				format, type,
 				width, height,
-				_textureSize
+				_textureSize,
+				internalformat
 			);
 			break;
 		}
@@ -203,14 +190,95 @@ void GLContext::glopTexEnv(GLParam *p) {
 
 	if (target != TGL_TEXTURE_ENV) {
 error:
-		error("tglTexParameter: unsupported option");
+		error("tglTexEnv: unsupported option");
 	}
 
-	if (pname != TGL_TEXTURE_ENV_MODE)
+	switch (pname) {
+	case TGL_TEXTURE_ENV_MODE:
+		if (param == TGL_REPLACE ||
+			param == TGL_MODULATE ||
+			param == TGL_DECAL ||
+			param == TGL_BLEND ||
+			param == TGL_ADD ||
+			param == TGL_COMBINE)
+			_texEnv.envMode = param;
+		else
+			goto error;
+		break;
+	case TGL_COMBINE_RGB:
+		if (param == TGL_REPLACE ||
+			param == TGL_MODULATE ||
+			param == TGL_ADD)
+			_texEnv.combineRGB = param;
+		else
+			goto error;
+		break;
+	case TGL_COMBINE_ALPHA:
+		if (param == TGL_REPLACE ||
+			param == TGL_MODULATE ||
+			param == TGL_ADD)
+			_texEnv.combineAlpha = param;
+		else
+			goto error;
+		break;
+	case TGL_SOURCE0_RGB:
+	case TGL_SOURCE1_RGB:
+	{
+		GLTextureEnvArgument *op = pname == TGL_SOURCE0_RGB ? &_texEnv.arg0 : &_texEnv.arg1;
+		if (param == TGL_TEXTURE ||
+			param == TGL_PRIMARY_COLOR ||
+			param == TGL_CONSTANT)
+			op->sourceRGB = param;
+		else
+			goto error;
+		break;
+	}
+	case TGL_SOURCE0_ALPHA:
+	case TGL_SOURCE1_ALPHA:
+	{
+		GLTextureEnvArgument *op = pname == TGL_SOURCE0_ALPHA ? &_texEnv.arg0 : &_texEnv.arg1;
+		if (param == TGL_TEXTURE ||
+			param == TGL_PRIMARY_COLOR ||
+			param == TGL_CONSTANT)
+			op->sourceAlpha = param;
+		else
+			goto error;
+		break;
+	}
+	case TGL_OPERAND0_RGB:
+	case TGL_OPERAND1_RGB:
+	{
+		GLTextureEnvArgument *op = pname == TGL_OPERAND0_RGB ? &_texEnv.arg0 : &_texEnv.arg1;
+		if (param == TGL_SRC_COLOR ||
+			param == TGL_ONE_MINUS_SRC_COLOR ||
+			param == TGL_SRC_ALPHA)
+			op->operandRGB = param;
+		else
+			goto error;
+		break;
+	}
+	case TGL_OPERAND0_ALPHA:
+	case TGL_OPERAND1_ALPHA:
+	{
+		GLTextureEnvArgument *op = pname == TGL_OPERAND0_ALPHA ? &_texEnv.arg0 : &_texEnv.arg1;
+		if (param == TGL_SRC_ALPHA ||
+			param == TGL_ONE_MINUS_SRC_ALPHA)
+			op->operandAlpha = param;
+		else
+			goto error;
+		break;
+	}
+	case TGL_TEXTURE_ENV_COLOR:
+	{
+		_texEnv.constR = (byte)clampf(p[4].f * 255.0f, 0, 255.0f);
+		_texEnv.constG = (byte)clampf(p[5].f * 255.0f, 0, 255.0f);
+		_texEnv.constB = (byte)clampf(p[6].f * 255.0f, 0, 255.0f);
+		_texEnv.constA = (byte)clampf(p[7].f * 255.0f, 0, 255.0f);
+		break;
+	}
+	default:
 		goto error;
-
-	if (param != TGL_DECAL)
-		goto error;
+	}
 }
 
 // TODO: not all tests are done
@@ -260,10 +328,7 @@ error:
 	}
 }
 
-void GLContext::glopPixelStore(GLParam *p) {
-	int pname = p[1].i;
-	int param = p[2].i;
-
+void GLContext::gl_PixelStore(TGLenum pname, TGLint param) {
 	if (pname != TGL_UNPACK_ALIGNMENT || param != 1) {
 		error("tglPixelStore: unsupported option");
 	}
@@ -281,7 +346,7 @@ void GLContext::gl_DeleteTextures(TGLsizei n, const TGLuint *textures) {
 		TinyGL::GLTexture *t = find_texture(textures[i]);
 		if (t) {
 			if (t == current_texture) {
-				current_texture = find_texture(0);
+				current_texture = default_texture;
 			}
 			t->disposed = true;
 		}

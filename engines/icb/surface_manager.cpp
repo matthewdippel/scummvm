@@ -24,6 +24,7 @@
  *
  */
 
+#include "engines/icb/icb.h"
 #include "engines/icb/common/px_common.h"
 #include "engines/icb/surface_manager.h"
 #include "engines/icb/mission.h"
@@ -46,7 +47,7 @@ namespace ICB {
 
 uint32 working_buffer_id;
 uint32 bg_buffer_id;
-uint32 effect_time; // Time spent doing postprocessing effects (fades ect)
+uint32 effect_time; // Time spent doing postprocessing effects (fades etc)
 uint32 flipTime;
 
 _surface::~_surface() {
@@ -78,6 +79,8 @@ void _surface_manager::PrintDebugLabel(const char *mess, uint32 c) {
 		        Release_surface_DC( working_buffer_id, dc);*/
 		y += 15;
 	}
+
+	(void)y;
 }
 
 void _surface_manager::PrintTimer(char label, uint32 time, uint32 limit) {
@@ -100,7 +103,7 @@ void _surface_manager::PrintTimer(char label, uint32 time, uint32 limit) {
 		if (percIndex > 5)
 			percIndex = 5;
 		char message[64];
-		sprintf(message, "%c%3.1f", label, perc);
+		Common::sprintf_s(message, "%c%3.1f", label, perc);
 		/*      Get_surface_DC( working_buffer_id, dc );
 		        SetBkColor( dc, colours[percIndex] );
 		        SetTextColor( dc, 0x01010101 );
@@ -108,6 +111,7 @@ void _surface_manager::PrintTimer(char label, uint32 time, uint32 limit) {
 		        Release_surface_DC( working_buffer_id, dc);*/
 		x += 54;
 	}
+	(void)x;
 }
 
 _surface_manager::_surface_manager() {
@@ -158,7 +162,10 @@ uint32 _surface_manager::Init_direct_draw() {
 	// Debug info
 	Zdebug("*SURFACE_MANAGER* Initalizing the SDL video interface");
 
-	g_system->setWindowCaption(Common::U32String("In Cold Blood (C)2000 Revolution Software Ltd"));
+	if (g_icb->getGameType() == GType_ICB)
+		g_system->setWindowCaption(Common::U32String("In Cold Blood"));
+	else
+		g_system->setWindowCaption(Common::U32String("The Road to El Dorado"));
 	initGraphics(SCREEN_WIDTH, SCREEN_DEPTH, nullptr);
 
 	screenSurface = new Graphics::Surface();
@@ -206,7 +213,7 @@ void _surface_manager::Reset_Effects() {
 void _surface_manager::Flip() {
 	// Draw Frame rate monitor if it's switched on
 	static uint32 g_fpsCounter = 0;
-	static float g_fpsTotalTime = 0.0f;
+	//static float g_fpsTotalTime = 0.0f;
 	static float g_fpsEndTime = 0.0f;
 	static float g_fpsStartTime = 0.0f;
 
@@ -217,14 +224,14 @@ void _surface_manager::Flip() {
 	if ((nowTime > 1000.0f) || (nowTime < 1.0f))
 		nowTime = 83.0f;
 
-	g_fpsTotalTime += nowTime;
+	//g_fpsTotalTime += nowTime;
 	//float averageFps = (float)(g_fpsTotalTime / ((double)g_fpsCounter + 1.0f));
 
 	//float currentFPS = (float)(1000.0f / (double)nowTime);
 	//float averageFPS = (float)(1000.0f / (double)averageFps);
 
 	if ((++g_fpsCounter) > 0xffffff00) {
-		g_fpsTotalTime = 0.0f;
+		//g_fpsTotalTime = 0.0f;
 		g_fpsCounter = 0;
 	}
 
@@ -357,7 +364,7 @@ static void copyRectToSurface(void *dstBuffer, const void *srcBuffer, int32 srcP
 }
 
 static void copyRectToSurface(Graphics::Surface *dstSurface, Graphics::Surface *srcSurface,
-							  int32 destX, int32 destY, const Common::Rect subRect,
+							  int32 destX, int32 destY, const Common::Rect &subRect,
 							  bool8 colorKeyEnable, uint32 colorKey) {
 	assert(srcSurface->format == dstSurface->format);
 	assert(srcSurface->format.bytesPerPixel == 4);

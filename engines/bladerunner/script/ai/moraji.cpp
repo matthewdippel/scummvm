@@ -186,7 +186,7 @@ bool AIScriptMoraji::GoalChanged(int currentGoalNumber, int newGoalNumber) {
 		return true;
 
 	case kGoalMorajiLayDown:
-		Actor_Retired_Here(kActorMoraji, 60, 16, 0, -1);
+		Actor_Retired_Here(kActorMoraji, 60, 16, false, -1);
 		Actor_Set_Targetable(kActorMoraji, true);
 		return true;
 
@@ -204,7 +204,7 @@ bool AIScriptMoraji::GoalChanged(int currentGoalNumber, int newGoalNumber) {
 	case kGoalMorajiDead:
 		Actor_Set_Targetable(kActorMoraji, false);
 		_animationState = 14;
-		Actor_Retired_Here(kActorMoraji, 60, 16, 1, -1);
+		Actor_Retired_Here(kActorMoraji, 60, 16, true, -1);
 		return true;
 		break;
 
@@ -383,6 +383,7 @@ bool AIScriptMoraji::UpdateAnimation(int *animation, int *frame) {
 		break;
 
 	default:
+		debugC(6, kDebugAnimation, "AIScriptMoraji::UpdateAnimation() - Current _animationState (%d) is not supported", _animationState);
 		break;
 	}
 	*frame = _animationFrame;
@@ -455,6 +456,10 @@ bool AIScriptMoraji::ChangeAnimationMode(int mode) {
 	case kAnimationModeDie:
 		_animationState = 13;
 		_animationFrame = -1;
+		break;
+
+	default:
+		debugC(6, kDebugAnimation, "AIScriptMoraji::ChangeAnimationMode(%d) - Target mode is not supported", mode);
 		break;
 	}
 

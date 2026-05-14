@@ -23,12 +23,12 @@
 #define FORBIDDEN_SYMBOL_ALLOW_ALL
 
 #include "create_kyradat.h"
+
+#include "md5.h"
+#include "pak.h"
 #include "resources.h"
 #include "types.h"
 
-#include "pak.h"
-
-#include "md5.h"
 #include "common/language.h"
 #include "common/platform.h"
 
@@ -38,7 +38,7 @@
 
 
 enum {
-	kKyraDatVersion = 118
+	kKyraDatVersion = 123
 };
 
 const ExtractFilename extractFilenames[] = {
@@ -601,6 +601,10 @@ const ExtractFilename extractFilenames[] = {
 	{ kEoB2IntroAnimData41, kEoB2SequenceData, false },
 	{ kEoB2IntroAnimData42, kEoB2SequenceData, false },
 	{ kEoB2IntroAnimData43, kEoB2SequenceData, false },
+	{ kEoB2IntroAnimData44, kEoB2SequenceData, false },
+	{ kEoB2IntroAnimData45, kEoB2SequenceData, false },
+	{ kEoB2IntroAnimData46, kEoB2SequenceData, false },
+	{ kEoB2IntroAnimData47, kEoB2SequenceData, false },
 	{ kEoB2IntroShapes00, kEoB2ShapeData, false },
 	{ kEoB2IntroShapes01, kEoB2ShapeData, false },
 	{ kEoB2IntroShapes04, kEoB2ShapeData, false },
@@ -1049,7 +1053,8 @@ const ExtractFilename extractFilenames[] = {
 	{ kEoB2Config2431Strings, kStringList, true },
 	{ kEoBBaseTextInputCharacterLines, kStringList, true },
 	{ kEoBBaseTextInputSelectStrings, kStringList, true },
-	{ kEoB2FontDmpSearchTbl, kRawDataBe16, false },
+	{ kEoB2FontLookupTbl, kRawDataBe16, false },
+	{ kEoB2FontConvertTbl, kRawData, false },
 	{ kEoB2Ascii2SjisTables, kStringList, false },
 	{ kEoB2Ascii2SjisTables2, kStringList, false },
 	{ kEoBBaseSaveNamePatterns, kStringList, true },
@@ -1204,6 +1209,8 @@ const TypeTable languageTable[] = {
 	{ ZH_CHN,  9 },
 	{ ZH_TWN, 10 },
 	{ KO_KOR, 11 },
+	{ CS_CZE, 12 },
+	{ PL_POL, 13 },
 	{ -1, -1 }
 };
 
@@ -1262,8 +1269,8 @@ uint32 getFilename(const ResourceProvider *provider, const ExtractFilename *fDes
 	return getFilename(provider->game, provider->platform, provider->special, provider->language, fDesc);
 }
 
-bool getFilename(char *dstFilename, const Game *g, const int id) {
-	sprintf(dstFilename, "%08X", getFilename(g, id));
+bool getFilename(char *dstFilename, size_t bufcnt, const Game *g, const int id) {
+	snprintf(dstFilename, bufcnt, "%08X", getFilename(g, id));
 	return true;
 }
 
@@ -1367,7 +1374,7 @@ bool createIDMap(PAKFile &out, const Game *g, const int *needList) {
 	// present
 	for (const int *n = needList; *n != -1; ++n) {
 		char filename[12];
-		if (!getFilename(filename, g, *n) || !out.getFileList()->findEntry(filename)) {
+		if (!getFilename(filename, ARRAYSIZE(filename), g, *n) || !out.getFileList()->findEntry(filename)) {
 			fprintf(stderr, "ERROR: Could not find need %d for game %04X", *n, createGameDef(g));
 			return false;
 		}
@@ -1391,7 +1398,7 @@ bool createIDMap(PAKFile &out, const Game *g, const int *needList) {
 	}
 
 	char filename[12];
-	if (!getFilename(filename, g, 0)) {
+	if (!getFilename(filename, ARRAYSIZE(filename), g, 0)) {
 		fprintf(stderr, "ERROR: Could not create ID map for game\n");
 		delete[] map;
 		return false;

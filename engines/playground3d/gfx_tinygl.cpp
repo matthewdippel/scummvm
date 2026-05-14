@@ -76,6 +76,7 @@ Renderer *CreateGfxTinyGL(OSystem *system) {
 
 TinyGLRenderer::TinyGLRenderer(OSystem *system) :
 		Renderer(system),
+		_context(nullptr),
 		_blitImageRgba(nullptr),
 		_blitImageRgb(nullptr),
 		_blitImageRgb565(nullptr),
@@ -83,16 +84,13 @@ TinyGLRenderer::TinyGLRenderer(OSystem *system) :
 		_blitImageRgba4444(nullptr) {
 }
 
-TinyGLRenderer::~TinyGLRenderer() {
-	TinyGL::destroyContext();
-}
-
 void TinyGLRenderer::init() {
 	debug("Initializing Software 3D Renderer");
 
 	computeScreenViewport();
 
-	TinyGL::createContext(kOriginalWidth, kOriginalHeight, g_system->getScreenFormat(), 512, true, ConfMan.getBool("dirtyrects"));
+	_context = TinyGL::createContext(kOriginalWidth, kOriginalHeight, g_system->getScreenFormat(), 512, true, ConfMan.getBool("dirtyrects"));
+	TinyGL::setContext(_context);
 
 	tglMatrixMode(TGL_PROJECTION);
 	tglLoadIdentity();
@@ -126,6 +124,7 @@ void TinyGLRenderer::deinit() {
 	tglDeleteBlitImage(_blitImageRgb565);
 	tglDeleteBlitImage(_blitImageRgba5551);
 	tglDeleteBlitImage(_blitImageRgba4444);
+	TinyGL::destroyContext(_context);
 }
 
 void TinyGLRenderer::loadTextureRGBA(Graphics::Surface *texture) {
@@ -187,10 +186,23 @@ void TinyGLRenderer::enableFog(const Math::Vector4d &fogColor) {
 	tglEnable(TGL_FOG);
 }
 
+void TinyGLRenderer::disableFog() {
+	tglDisable(TGL_FOG);
+}
+
+void TinyGLRenderer::enableScissor(int x, int y, int width, int height) {
+	tglScissor(x, y, width, height);
+	tglEnable(TGL_SCISSOR_TEST);
+}
+
+void TinyGLRenderer::disableScissor() {
+	tglDisable(TGL_SCISSOR_TEST);
+}
+
 void TinyGLRenderer::drawFace(uint face) {
 	tglBegin(TGL_TRIANGLE_STRIP);
 	for (uint i = 0; i < 4; i++) {
-		tglColor3f(cubeVertices[11 * (4 * face + i) + 8], cubeVertices[11 * (4 * face + i) + 9], cubeVertices[11 * (4 * face + i) + 10]);
+		tglColor4f(cubeVertices[11 * (4 * face + i) + 8], cubeVertices[11 * (4 * face + i) + 9], cubeVertices[11 * (4 * face + i) + 10], 1.0f);
 		tglVertex3f(cubeVertices[11 * (4 * face + i) + 2], cubeVertices[11 * (4 * face + i) + 3], cubeVertices[11 * (4 * face + i) + 4]);
 		tglNormal3f(cubeVertices[11 * (4 * face + i) + 5], cubeVertices[11 * (4 * face + i) + 6], cubeVertices[11 * (4 * face + i) + 7]);
 	}
@@ -203,6 +215,12 @@ void TinyGLRenderer::drawCube(const Math::Vector3d &pos, const Math::Vector3d &r
 
 	tglMatrixMode(TGL_MODELVIEW);
 	tglLoadMatrixf(_modelViewMatrix.getData());
+
+	tglDisable(TGL_BLEND);
+	tglBlendFunc(TGL_ONE, TGL_ZERO);
+	tglEnable(TGL_DEPTH_TEST);
+	tglDepthMask(TGL_TRUE);
+	tglDisable(TGL_TEXTURE_2D);
 
 	tglTranslatef(pos.x(), pos.y(), pos.z());
 	tglRotatef(roll.x(), 1.0f, 0.0f, 0.0f);
@@ -221,10 +239,16 @@ void TinyGLRenderer::drawPolyOffsetTest(const Math::Vector3d &pos, const Math::V
 	tglMatrixMode(TGL_MODELVIEW);
 	tglLoadMatrixf(_modelViewMatrix.getData());
 
+	tglDisable(TGL_BLEND);
+	tglBlendFunc(TGL_ONE, TGL_ZERO);
+	tglEnable(TGL_DEPTH_TEST);
+	tglDepthMask(TGL_TRUE);
+	tglDisable(TGL_TEXTURE_2D);
+
 	tglTranslatef(pos.x(), pos.y(), pos.z());
 	tglRotatef(roll.y(), 0.0f, 1.0f, 0.0f);
 
-	tglColor3f(0.0f, 1.0f, 0.0f);
+	tglColor4f(0.0f, 1.0f, 0.0f, 1.0f);
 	tglBegin(TGL_TRIANGLES);
 	tglVertex3f(-1.0f,  1.0, 0.0f);
 	tglVertex3f( 1.0f,  1.0, 0.0f);
@@ -233,7 +257,7 @@ void TinyGLRenderer::drawPolyOffsetTest(const Math::Vector3d &pos, const Math::V
 
 	tglPolygonOffset(-1.0f, 0.0f);
 	tglEnable(TGL_POLYGON_OFFSET_FILL);
-	tglColor3f(1.0f, 1.0f, 1.0f);
+	tglColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	tglBegin(TGL_TRIANGLES);
 	tglVertex3f(-0.5f,  0.5, 0.0f);
 	tglVertex3f( 0.5f,  0.5, 0.0f);
@@ -313,11 +337,11 @@ void TinyGLRenderer::drawInViewport() {
 	tglDisableClientState(TGL_VERTEX_ARRAY);
 
 	tglPushMatrix();
-	_pos.x() += 0.01;
-	_pos.y() += 0.01;
-	if (_pos.x() >= 1.0f) {
-		_pos.x() = -1.0;
-		_pos.y() = -1.0;
+	_pos.x() += 0.01f;
+	_pos.y() += 0.01f;
+	if (_pos.x() >= 1.1f) {
+		_pos.x() = -1.1f;
+		_pos.y() = -1.1f;
 	}
 	tglTranslatef(_pos.x(), _pos.y(), 0);
 
@@ -358,7 +382,7 @@ void TinyGLRenderer::drawRgbaTexture() {
 	tglEnableClientState(TGL_VERTEX_ARRAY);
 	tglEnableClientState(TGL_TEXTURE_COORD_ARRAY);
 
-	tglTranslatef(-0.799f, 0.8, 0);
+	tglTranslatef(-0.799f, 0.8f, 0);
 	//tglTranslatef(-0.8, 0.8, 0); // some gfx issue
 
 	tglVertexPointer(2, TGL_FLOAT, 2 * sizeof(TGLfloat), bitmapVertices);
@@ -373,7 +397,7 @@ void TinyGLRenderer::drawRgbaTexture() {
 	tglBindTexture(TGL_TEXTURE_2D, _textureRgbId[0]);
 	tglDrawArrays(TGL_TRIANGLE_STRIP, 0, 4);
 
-	tglTranslatef(0.501, 0, 0);
+	tglTranslatef(0.501f, 0, 0);
 	//tglTranslatef(0.5, 0, 0); // some gfx issue
 
 	tglVertexPointer(2, TGL_FLOAT, 2 * sizeof(TGLfloat), bitmapVertices);

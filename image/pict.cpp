@@ -22,8 +22,10 @@
 #include "image/pict.h"
 #include "image/codecs/codec.h"
 
+#include "common/bitstream.h"
 #include "common/debug.h"
 #include "common/endian.h"
+#include "common/memstream.h"
 #include "common/stream.h"
 #include "common/substream.h"
 #include "common/textconsole.h"
@@ -35,9 +37,7 @@ namespace Image {
 // https://developer.apple.com/library/archive/documentation/mac/QuickDraw/QuickDraw-461.html
 // https://developer.apple.com/library/archive/documentation/mac/QuickDraw/QuickDraw-269.html
 
-PICTDecoder::PICTDecoder() {
-	_outputSurface = 0;
-	_paletteColorCount = 0;
+PICTDecoder::PICTDecoder() : _outputSurface(nullptr), _palette(0), _version(2) {
 }
 
 PICTDecoder::~PICTDecoder() {
@@ -48,10 +48,10 @@ void PICTDecoder::destroy() {
 	if (_outputSurface) {
 		_outputSurface->free();
 		delete _outputSurface;
-		_outputSurface = 0;
+		_outputSurface = nullptr;
 	}
 
-	_paletteColorCount = 0;
+	_palette.clear();
 }
 
 #define OPCODE(a, b, c) _opcodes.push_back(PICTOpcode(a, &PICTDecoder::b, c))
@@ -62,11 +62,17 @@ void PICTDecoder::setupOpcodesCommon() {
 	OPCODE(0x0003, o_txFont, "TxFont");
 	OPCODE(0x0004, o_txFace, "TxFace");
 	OPCODE(0x0007, o_pnSize, "PnSize");
+	OPCODE(0x0009, o_pnPat, "PnPat");
 	OPCODE(0x000D, o_txSize, "TxSize");
 	OPCODE(0x0010, o_txRatio, "TxRatio");
 	OPCODE(0x0011, o_versionOp, "VersionOp");
 	OPCODE(0x001E, o_nop, "DefHilite");
+	OPCODE(0x0022, o_shortLine, "ShortLine");
+	OPCODE(0x0023, o_shortLineFrom, "ShortLineFrom");
 	OPCODE(0x0028, o_longText, "LongText");
+	OPCODE(0x0091, o_bitsRgn, "BitsRgn");
+	OPCODE(0x0099, o_packBitsRgn, "PackBitsRgn");
+	OPCODE(0x00A0, o_shortComment, "ShortComment");
 	OPCODE(0x00A1, o_longComment, "LongComment");
 	OPCODE(0x00FF, o_opEndPic, "OpEndPic");
 	OPCODE(0x0C00, o_headerOp, "HeaderOp");
@@ -97,18 +103,18 @@ void PICTDecoder::o_nop(Common::SeekableReadStream &) {
 void PICTDecoder::o_clip(Common::SeekableReadStream &stream) {
 	// Ignore
 	int size = stream.readUint16BE();
-	debug(3, "CLIP: size is %d", size);
+	debugC(3, kDebugLevelGGraphics, "CLIP: size is %d", size);
 	if (size >= 10) {
 		int x1 = stream.readSint16BE();
 		int y1 = stream.readSint16BE();
 		int x2 = stream.readSint16BE();
 		int y2 = stream.readSint16BE();
-		debug(3, "CLIP: RECT encountered: %d %d %d %d", x1, y1, x2, y2);
+		debugC(3, kDebugLevelGGraphics, "CLIP: RECT encountered: %d %d %d %d", x1, y1, x2, y2);
 		stream.skip(size - 10);
-		debug(3, "CLIP: skipped %d bytes", size - 10);
+		debugC(3, kDebugLevelGGraphics, "CLIP: skipped %d bytes", size - 10);
 	} else {
 		stream.skip(size - 2);
-		debug(3, "CLIP: skipped %d bytes", size - 2);
+		debugC(3, kDebugLevelGGraphics, "CLIP: skipped %d bytes", size - 2);
 	}
 }
 
@@ -126,6 +132,12 @@ void PICTDecoder::o_pnSize(Common::SeekableReadStream &stream) {
 	// Ignore
 	stream.readUint16BE();
 	stream.readUint16BE();
+}
+
+void PICTDecoder::o_pnPat(Common::SeekableReadStream &stream) {
+	for (int i = 0; i < 8; i++) {
+		_penPattern[i] = stream.readByte();
+	}
 }
 
 void PICTDecoder::o_txSize(Common::SeekableReadStream &stream) {
@@ -153,11 +165,67 @@ void PICTDecoder::o_versionOp1(Common::SeekableReadStream& stream) {
 	_version = 1;
 }
 
+void PICTDecoder::o_shortLine(Common::SeekableReadStream &stream) {
+	// Read the pen location (pnLoc)
+	int16 pnLocX = stream.readSint16BE();
+	int16 pnLocY = stream.readSint16BE();
+
+	// Update the current pen position
+	_currentPenPosition.x = pnLocX;
+	_currentPenPosition.y = pnLocY;
+
+	// Read the relative coordinates for the end of the line (dh, dv)
+	int8 dh = stream.readByte(); // Delta horizontal
+	int8 dv = stream.readByte(); // Delta vertical
+
+	// Calculate the end position of the line
+	int16 endX = pnLocX + dh;
+	int16 endY = pnLocY + dv;
+
+	// Draw the line from the current pen location to the new position
+	//drawLine(pnLocX, pnLocY, endX, endY);
+
+	// Update the pen position
+	_currentPenPosition.x = endX;
+	_currentPenPosition.y = endY;
+}
+
+void PICTDecoder::o_shortLineFrom(Common::SeekableReadStream &stream) {
+	// Read the relative coordinates (dh, dv)
+	int8 dh = stream.readByte(); // Delta horizontal
+	int8 dv = stream.readByte(); // Delta vertical
+
+	// Calculate the new pen position
+	int16 newX = _currentPenPosition.x + dh;
+	int16 newY = _currentPenPosition.y + dv;
+
+	// Draw the line from the current pen position to the new position
+	//drawLine(_currentPenPosition.x, _currentPenPosition.y, newX, newY);
+
+	// Update the pen position
+	_currentPenPosition.x = newX;
+	_currentPenPosition.y = newY;
+}
+
 void PICTDecoder::o_longText(Common::SeekableReadStream &stream) {
 	// Ignore
 	stream.readUint16BE();
 	stream.readUint16BE();
 	stream.skip(stream.readByte());
+}
+
+void PICTDecoder::o_bitsRgn(Common::SeekableReadStream &stream) {
+	// Copy unpacked data with clipped region (8bpp or lower)
+	unpackBitsRectOrRgn(stream, false, true);
+}
+
+void PICTDecoder::o_packBitsRgn(Common::SeekableReadStream &stream) {
+	unpackBitsRectOrRgn(stream, true, true);
+}
+
+void PICTDecoder::o_shortComment(Common::SeekableReadStream &stream) {
+	// Ignore
+	stream.readUint16BE();
 }
 
 void PICTDecoder::o_longComment(Common::SeekableReadStream &stream) {
@@ -187,17 +255,30 @@ void PICTDecoder::o_headerOp(Common::SeekableReadStream &stream) {
 
 void PICTDecoder::on_bitsRect(Common::SeekableReadStream &stream) {
 	// Copy unpacked data with clipped rectangle (8bpp or lower)
-	unpackBitsRect(stream, true);
+	unpackBitsRectOrRgn(stream, false, false);
 }
 
 void PICTDecoder::on_packBitsRect(Common::SeekableReadStream &stream) {
 	// Unpack data (8bpp or lower)
-	unpackBitsRect(stream, true);
+	unpackBitsRectOrRgn(stream, true, false);
 }
 
 void PICTDecoder::on_directBitsRect(Common::SeekableReadStream &stream) {
 	// Unpack data (16bpp or higher)
-	unpackBitsRect(stream, false);
+	PixMap pixMap = readRowBytes(stream, true);
+	pixMap.rowBytes = pixMap.rowBytes & 0x7fff;
+	unpackBitsRect(stream, false, pixMap);
+}
+
+void PICTDecoder::unpackBitsRectOrRgn(Common::SeekableReadStream &stream, bool compressed, bool hasRegion) {
+    PixMap pixMap = readRowBytes(stream, false);
+    bool hasPixMap = (pixMap.rowBytes & 0x8000);
+    pixMap.rowBytes = pixMap.rowBytes & 0x7fff;
+
+    if (hasPixMap)
+        unpackBitsRect(stream, true, pixMap);
+    else
+        unpackBits(stream, compressed, hasRegion);
 }
 
 void PICTDecoder::on_compressedQuickTime(Common::SeekableReadStream &stream) {
@@ -236,7 +317,7 @@ bool PICTDecoder::loadStream(Common::SeekableReadStream &stream) {
 	setupOpcodesNormal();
 
 	_continueParsing = true;
-	memset(_palette, 0, sizeof(_palette));
+	_palette.clear();
 
 	uint16 fileSize = stream.readUint16BE();
 
@@ -250,7 +331,7 @@ bool PICTDecoder::loadStream(Common::SeekableReadStream &stream) {
 	_imageRect.left = stream.readUint16BE();
 	_imageRect.bottom = stream.readUint16BE();
 	_imageRect.right = stream.readUint16BE();
-	_imageRect.debugPrint(8, "PICTDecoder::loadStream(): loaded rect: ");
+	_imageRect.debugPrintC(8, kDebugLevelGGraphics, "PICTDecoder::loadStream(): loaded rect: ");
 
 	// NOTE: This is only a subset of the full PICT format.
 	//     - Only V2 (Extended) Images Supported
@@ -279,7 +360,7 @@ bool PICTDecoder::loadStream(Common::SeekableReadStream &stream) {
 
 		for (uint32 i = 0; i < _opcodes.size(); i++) {
 			if (_opcodes[i].op == opcode) {
-				debug(4, "Running PICT opcode %04x '%s'", opcode, _opcodes[i].desc);
+				debugC(4, kDebugLevelGGraphics, "Running PICT opcode %04x '%s'", opcode, _opcodes[i].desc);
 				(this->*(_opcodes[i].proc))(stream);
 				break;
 			} else if (i == _opcodes.size() - 1) {
@@ -296,10 +377,15 @@ bool PICTDecoder::loadStream(Common::SeekableReadStream &stream) {
 	return _outputSurface;
 }
 
-PICTDecoder::PixMap PICTDecoder::readPixMap(Common::SeekableReadStream &stream, bool hasBaseAddr) {
+PICTDecoder::PixMap PICTDecoder::readPixMap(Common::SeekableReadStream &stream, bool hasBaseAddr, bool hasRowBytes) {
 	PixMap pixMap;
-	pixMap.baseAddr = hasBaseAddr ? stream.readUint32BE() : 0;
-	pixMap.rowBytes = stream.readUint16BE() & 0x7fff;
+
+	if (hasRowBytes) {
+		pixMap.baseAddr = hasBaseAddr ? stream.readUint32BE() : 0;
+		uint16 rowBytes = stream.readUint16BE();
+		pixMap.rowBytes = rowBytes & 0x7fff;
+	}
+
 	pixMap.bounds.top = stream.readUint16BE();
 	pixMap.bounds.left = stream.readUint16BE();
 	pixMap.bounds.bottom = stream.readUint16BE();
@@ -319,6 +405,14 @@ PICTDecoder::PixMap PICTDecoder::readPixMap(Common::SeekableReadStream &stream, 
 	return pixMap;
 }
 
+PICTDecoder::PixMap PICTDecoder::readRowBytes(Common::SeekableReadStream &stream, bool hasBaseAddr) {
+	PixMap pixMap;
+	pixMap.baseAddr = hasBaseAddr ? stream.readUint32BE() : 0;
+	uint16 rowBytes = stream.readUint16BE();
+	pixMap.rowBytes = rowBytes;
+	return pixMap;
+}
+
 struct PackBitsRectData {
 	PICTDecoder::PixMap pixMap;
 	Common::Rect srcRect;
@@ -326,22 +420,27 @@ struct PackBitsRectData {
 	uint16 mode;
 };
 
-void PICTDecoder::unpackBitsRect(Common::SeekableReadStream &stream, bool withPalette) {
+void PICTDecoder::unpackBitsRect(Common::SeekableReadStream &stream, bool withPalette, PixMap pixMap) {
 	PackBitsRectData packBitsData;
-	packBitsData.pixMap = readPixMap(stream, !withPalette);
+
+	packBitsData.pixMap = readPixMap(stream, !withPalette, false);
+	packBitsData.pixMap.baseAddr = pixMap.baseAddr;
+	packBitsData.pixMap.rowBytes = pixMap.rowBytes;
 
 	// Read in the palette if there is one present
 	if (withPalette) {
 		// See https://developer.apple.com/library/archive/documentation/mac/QuickDraw/QuickDraw-267.html
 		stream.readUint32BE(); // seed
 		stream.readUint16BE(); // flags
-		_paletteColorCount = stream.readUint16BE() + 1;
+		uint16 paletteColorCount = stream.readUint16BE() + 1;
 
-		for (uint32 i = 0; i < _paletteColorCount; i++) {
+		_palette.resize(paletteColorCount, false);
+		for (uint16 i = 0; i < paletteColorCount; i++) {
 			stream.readUint16BE();
-			_palette[i * 3] = stream.readUint16BE() >> 8;
-			_palette[i * 3 + 1] = stream.readUint16BE() >> 8;
-			_palette[i * 3 + 2] = stream.readUint16BE() >> 8;
+			byte r = stream.readUint16BE() >> 8;
+			byte g = stream.readUint16BE() >> 8;
+			byte b = stream.readUint16BE() >> 8;
+			_palette.set(i, r, g, b);
 		}
 	}
 
@@ -418,13 +517,13 @@ void PICTDecoder::unpackBitsRect(Common::SeekableReadStream &stream, bool withPa
 		break;
 	case 3:
 		// We have a planar 24-bit surface
-		_outputSurface->create(width, height, Graphics::PixelFormat(4, 8, 8, 8, 8, 24, 16, 8, 0));
+		_outputSurface->create(width, height, Graphics::PixelFormat::createFormatRGB24());
 		for (uint16 y = 0; y < _outputSurface->h; y++) {
+			byte *dst = (byte *)_outputSurface->getBasePtr(0, y);
 			for (uint16 x = 0; x < _outputSurface->w; x++) {
-				byte r = *(buffer + y * _outputSurface->w * 3 + x);
-				byte g = *(buffer + y * _outputSurface->w * 3 + _outputSurface->w + x);
-				byte b = *(buffer + y * _outputSurface->w * 3 + _outputSurface->w * 2 + x);
-				*((uint32 *)_outputSurface->getBasePtr(x, y)) = _outputSurface->format.RGBToColor(r, g, b);
+				*dst++ = *(buffer + y * _outputSurface->w * 3 + _outputSurface->w * 0 + x);
+				*dst++ = *(buffer + y * _outputSurface->w * 3 + _outputSurface->w * 1 + x);
+				*dst++ = *(buffer + y * _outputSurface->w * 3 + _outputSurface->w * 2 + x);
 			}
 		}
 		break;
@@ -433,14 +532,14 @@ void PICTDecoder::unpackBitsRect(Common::SeekableReadStream &stream, bool withPa
 		// Note that we ignore the alpha channel since it seems to not be correct
 		// macOS does not ignore it, but then displays it incorrectly. Photoshop
 		// does ignore it and displays it correctly.
-		_outputSurface->create(width, height, Graphics::PixelFormat(4, 8, 8, 8, 8, 24, 16, 8, 0));
+		_outputSurface->create(width, height, Graphics::PixelFormat::createFormatRGB24());
 		for (uint16 y = 0; y < _outputSurface->h; y++) {
+			byte *dst = (byte *)_outputSurface->getBasePtr(0, y);
 			for (uint16 x = 0; x < _outputSurface->w; x++) {
-				byte a = 0xFF;
-				byte r = *(buffer + y * _outputSurface->w * 4 + _outputSurface->w + x);
-				byte g = *(buffer + y * _outputSurface->w * 4 + _outputSurface->w * 2 + x);
-				byte b = *(buffer + y * _outputSurface->w * 4 + _outputSurface->w * 3 + x);
-				*((uint32 *)_outputSurface->getBasePtr(x, y)) = _outputSurface->format.ARGBToColor(a, r, g, b);
+				// *dst++ = *(buffer + y * _outputSurface->w * 4 + _outputSurface->w * 0 + x);
+				*dst++ = *(buffer + y * _outputSurface->w * 4 + _outputSurface->w * 1 + x);
+				*dst++ = *(buffer + y * _outputSurface->w * 4 + _outputSurface->w * 2 + x);
+				*dst++ = *(buffer + y * _outputSurface->w * 4 + _outputSurface->w * 3 + x);
 			}
 		}
 		break;
@@ -449,6 +548,101 @@ void PICTDecoder::unpackBitsRect(Common::SeekableReadStream &stream, bool withPa
 	}
 
 	delete[] buffer;
+}
+
+// TODO: It should be possible to merge this with unpackBitsRect, but that's
+// a story for another day because this works for now.
+
+void PICTDecoder::unpackBits(Common::SeekableReadStream &stream, bool compressed, bool hasRegion) {
+	if (!_outputSurface) {
+		_outputSurface = new Graphics::Surface();
+		_outputSurface->create(_imageRect.width(), _imageRect.height(), Graphics::PixelFormat::createFormatCLUT8());
+	}
+
+	// Bounds rect: the bitmap's native coordinate space
+	int y1 = stream.readSint16BE();
+	int x1 = stream.readSint16BE();
+	int y2 = stream.readSint16BE();
+	int x2 = stream.readSint16BE();
+
+	stream.skip(8); // srcRect
+
+	// dstRect: where the bitmap maps to in the PICT's coordinate space.
+	// When bounds differs from picFrame (e.g., bitmap at screen coords
+	// mapped to picFrame origin), we need dstRect for correct placement.
+	int dstTop = stream.readSint16BE();
+	int dstLeft = stream.readSint16BE();
+	stream.skip(4); // dstBottom, dstRight (not needed)
+	stream.skip(2); // mode
+
+	if (hasRegion)
+		stream.skip(stream.readUint16BE() - 2);
+
+	// Compute offset: map bitmap coords (bounds) to output surface coords
+	// via dstRect and _imageRect (picFrame).
+	int yOff = dstTop - _imageRect.top - y1;
+	int xOff = dstLeft - _imageRect.left - x1;
+
+	Common::Rect outputRect(_outputSurface->w, _outputSurface->h);
+
+	if (!compressed) {
+		Common::BitStream8MSB bs(stream);
+
+		for (int y = y1; y < y2; y++) {
+			int yPos = y + yOff;
+
+			for (int x = x1; x < x2; x++) {
+				int xPos = x + xOff;
+
+				uint bit = bs.getBit();
+
+				if (outputRect.contains(xPos, yPos))
+					_outputSurface->setPixel(xPos, yPos, bit);
+			}
+		}
+
+		return;
+	}
+
+	for (int y = y1; y < y2; y++) {
+		int yPos = y + yOff;
+		int x = x1;
+
+		byte rowBytes = stream.readByte();
+		byte readBytes = 0;
+
+		while (readBytes < rowBytes) {
+			byte rowBuf[128];
+			byte bufLen;
+
+			byte value = stream.readByte();
+			readBytes++;
+
+			if (value >= 128) {
+				bufLen = (256 - value) + 1;
+				byte repeatValue = stream.readByte();
+				memset(rowBuf, repeatValue, bufLen);
+				readBytes++;
+			} else {
+				bufLen = value + 1;
+				stream.read(rowBuf, bufLen);
+				readBytes += bufLen;
+			}
+
+			Common::MemoryReadStream ms(rowBuf, bufLen);
+			Common::BitStream8MSB bs(ms);
+
+			for (int i = 0; i < 8 * bufLen; i++) {
+				int xPos = x + xOff;
+				uint bit = bs.getBit();
+
+				if (outputRect.contains(xPos, yPos))
+					_outputSurface->setPixel(xPos, yPos, bit);
+
+				x++;
+			}
+		}
+	}
 }
 
 void PICTDecoder::unpackBitsLine(byte *out, uint32 length, Common::SeekableReadStream *data, byte bitsPerPixel, byte bytesPerPixel) {

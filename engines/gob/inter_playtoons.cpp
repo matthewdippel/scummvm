@@ -17,12 +17,20 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/endian.h"
 #include "common/str.h"
+#include "common/printman.h"
 #include "common/translation.h"
 
+#include "gui/gui-manager.h"
 #include "gui/message.h"
 
 #include "gob/gob.h"
@@ -80,14 +88,17 @@ void Inter_Playtoons::setupOpcodesDraw() {
 
 void Inter_Playtoons::setupOpcodesFunc() {
 	Inter_v6::setupOpcodesFunc();
+	// NOTE: consider backporting here changes done in Inter_v7
+	// in particular, o7_printText (0x0B), o7_drawLine (0x34) and o7_invalidate (0x36)
 
 	CLEAROPCODEFUNC(0x3D);
 	OPCODEFUNC(0x0B, oPlaytoons_printText);
-	OPCODEFUNC(0x1B, oPlaytoons_F_1B);
+	OPCODEFUNC(0x1B, oPlaytoons_createButton);
 	OPCODEFUNC(0x24, oPlaytoons_putPixel);
 	OPCODEFUNC(0x27, oPlaytoons_freeSprite);
 	OPCODEFUNC(0x3F, oPlaytoons_checkData);
 	OPCODEFUNC(0x4D, oPlaytoons_readData);
+	OPCODEFUNC(0x4E, oPlaytoons_writeData);
 }
 
 void Inter_Playtoons::setupOpcodesGob() {
@@ -132,26 +143,26 @@ void Inter_Playtoons::oPlaytoons_printText(OpFuncParams &params) {
 			switch (_vm->_game->_script->peekByte()) {
 			case TYPE_VAR_INT8:
 			case TYPE_ARRAY_INT8:
-				sprintf(buf + i, "%d",
+				Common::sprintf_s(buf + i, sizeof(buf) - i, "%d",
 						(int8) READ_VARO_UINT8(_vm->_game->_script->readVarIndex()));
 				break;
 
 			case TYPE_VAR_INT16:
 			case TYPE_VAR_INT32_AS_INT16:
 			case TYPE_ARRAY_INT16:
-				sprintf(buf + i, "%d",
+				Common::sprintf_s(buf + i, sizeof(buf) - i, "%d",
 						(int16) READ_VARO_UINT16(_vm->_game->_script->readVarIndex()));
 				break;
 
 			case TYPE_VAR_INT32:
 			case TYPE_ARRAY_INT32:
-				sprintf(buf + i, "%d",
+				Common::sprintf_s(buf + i, sizeof(buf) - i, "%d",
 						(int32)VAR_OFFSET(_vm->_game->_script->readVarIndex()));
 				break;
 
 			case TYPE_VAR_STR:
 			case TYPE_ARRAY_STR:
-				sprintf(buf + i, "%s",
+				Common::sprintf_s(buf + i, sizeof(buf) - i, "%s",
 						GET_VARO_STR(_vm->_game->_script->readVarIndex()));
 				break;
 
@@ -180,8 +191,8 @@ void Inter_Playtoons::oPlaytoons_printText(OpFuncParams &params) {
 	_vm->_game->_script->skip(1);
 }
 
-void Inter_Playtoons::oPlaytoons_F_1B(OpFuncParams &params) {
-	_vm->_game->_hotspots->oPlaytoons_F_1B();
+void Inter_Playtoons::oPlaytoons_createButton(OpFuncParams &params) {
+	_vm->_game->_hotspots->createButton();
 }
 
 void Inter_Playtoons::oPlaytoons_putPixel(OpFuncParams &params) {
@@ -206,6 +217,23 @@ void Inter_Playtoons::oPlaytoons_freeSprite(OpFuncParams &params) {
 		index = _vm->_game->_script->readInt16();
 	else
 		index = _vm->_game->_script->readValExpr();
+
+	if (index < 0 || index >= Draw::kSpriteCount) {
+		warning("oPlaytoons_freeSprite: invalid sprite index %d", index);
+		return;
+	}
+
+	if (_vm->getGameType() == kGameTypeAdibou2 &&
+			_vm->_util->getFrameRate() == 5 &&
+			_vm->isCurrentTot("BS_LAB50.TOT")) {
+		// WORKAROUND: In the "puzzle shapes" game of Adibou2/Sciences, the script
+		// sets the frame rate to 5Hz for a special animation but forgets to reset it
+		// afterward, making some videos laggy (e.g. Adibou help mode).
+		// The sound was not affected in the original engine (while it is laggy as well
+		// in ScummVM), making the bug more discrete.
+		_vm->_util->setFrameRate(12);
+	}
+
 	_vm->_draw->freeSprite(index);
 }
 
@@ -313,6 +341,99 @@ void Inter_Playtoons::oPlaytoons_readData(OpFuncParams &params) {
 	delete stream;
 }
 
+void Inter_Playtoons::oPlaytoons_writeData(OpFuncParams &params) {
+	Common::String file = getFile(_vm->_game->_script->evalString(), false);
+
+	uint16 dataVar = _vm->_game->_script->readVarIndex();
+	int32 size    = _vm->_game->_script->readValExpr();
+	int32 offset  = _vm->_game->_script->evalInt();
+
+	debugC(2, kDebugFileIO, "Write to file \"%s\" (%d, %d bytes at %d)",
+		   file.c_str(), dataVar, size, offset);
+
+	WRITE_VAR(1, 1);
+
+	if (file.compareToIgnoreCase("PRINTER") == 0) {
+		// Send a sprite to the printer.
+		WRITE_VAR(1, 0);
+
+		int32 spriteIndex = -size - 1;
+		if (spriteIndex == 1000) {
+			// Just query the printable area size, without printing anything.
+			Common::Rect printArea = g_system->getPrintingManager()->getPrintableArea();
+			if (!printArea.isEmpty()) {
+				WRITE_VAR(2, printArea.width());
+				WRITE_VAR(3, printArea.height());
+			}
+
+			return;
+		}
+
+		if (spriteIndex < 0 || spriteIndex >= Draw::kSpriteCount) {
+			warning("o7_writeData: Invalid sprite index %d for printing", spriteIndex);
+			return;
+		}
+
+		SurfacePtr sprite = _vm->_draw->_spritesArray[spriteIndex];
+		if (!sprite) {
+			warning("o7_writeData: no sprite at index %d for printing", spriteIndex);
+			return;
+		}
+
+		Graphics::ManagedSurface surf(sprite->getWidth(),
+									  sprite->getHeight(),
+									  sprite->getBPP() > 1 ? _vm->getPixelFormat()
+														   : Graphics::PixelFormat::createFormatCLUT8());
+
+		if (sprite->getBPP() > 1) {
+			// Fill the background with white color, and ensure 0 is treated as the transparent color key
+			surf.fillRect(Common::Rect(0, 0, surf.w, surf.h),
+						  surf.format.RGBToColor(255, 255, 255));
+			surf.copyRectToSurfaceWithKey(sprite->getData(),
+										  sprite->getWidth() * sprite->getBPP(),
+										  0,
+										  0,
+										  sprite->getWidth(),
+										  sprite->getHeight(),
+										  0);
+		} else {
+			byte pal[768];
+			int16 numcolors = _vm->_global->_setAllPalette ? 256 : 16;
+			for (int i = 0; i < numcolors; i++) {
+				_vm->_video->setPalColor(pal + i * 3, _vm->_global->_pPaletteDesc->vgaPal[i]);
+			}
+			surf.setPalette(pal, 0, numcolors);
+			surf.copyRectToSurface(sprite->getData(),
+								   sprite->getWidth() * sprite->getBPP(),
+								   0,
+								   0,
+								   sprite->getWidth(),
+								   sprite->getHeight());
+		}
+
+		g_gui.printImage(surf);
+		return;
+	}
+
+	if (size == 0) {
+		dataVar = 0;
+		size = _vm->_game->_script->getVariablesCount() * 4;
+	}
+
+	SaveLoad::SaveMode mode = _vm->_saveLoad ? _vm->_saveLoad->getSaveMode(file.c_str()) : SaveLoad::kSaveModeNone;
+	if (mode == SaveLoad::kSaveModeSave) {
+		if (!_vm->_saveLoad->save(file.c_str(), dataVar, size, offset)) {
+			GUI::MessageDialog dialog(_("Failed to save game to file."));
+			dialog.runModal();
+		} else
+			WRITE_VAR(1, 0);
+	} else if (mode == SaveLoad::kSaveModeIgnore)
+		return;
+	else if (mode == SaveLoad::kSaveModeNone)
+		warning("Attempted to write to file \"%s\"", file.c_str());
+}
+
+
 void Inter_Playtoons::oPlaytoons_loadMultObject() {
 	assert(_vm->_mult->_objects);
 
@@ -341,7 +462,7 @@ void Inter_Playtoons::oPlaytoons_loadMultObject() {
 }
 
 void Inter_Playtoons::oPlaytoons_getObjAnimSize() {
-	int16 objIndex;
+	int32 objIndex;
 	uint16 readVar[4];
 	uint16 types[4];
 	Mult::Mult_AnimData animData;
@@ -449,37 +570,8 @@ void Inter_Playtoons::oPlaytoons_openItk() {
 	_vm->_dataIO->openArchive(file, false);
 }
 
-Common::String Inter_Playtoons::getFile(const char *path) {
-	const char *orig = path;
-
-	if      (!strncmp(path, "@:\\", 3))
-		path += 3;
-	else if (!strncmp(path, "<ME>", 4))
-		path += 4;
-	else if (!strncmp(path, "<CD>", 4))
-		path += 4;
-	else if (!strncmp(path, "<STK>", 5))
-		path += 5;
-	else if (!strncmp(path, "<ALLCD>", 7))
-		path += 7;
-
-	const char *backslash = strrchr(path, '\\');
-	if (backslash)
-		path = backslash + 1;
-
-	if (orig != path)
-		debugC(2, kDebugFileIO, "Inter_Playtoons::getFile(): Evaluating path"
-				"\"%s\" to \"%s\"", orig, path);
-
-	return path;
-}
-
 bool Inter_Playtoons::readSprite(Common::String file, int32 dataVar,
 		int32 size, int32 offset) {
-
-	// WORKAROUND: Adibou copies TEMP.CSA to TEMP01.CSA, which isn't yet implemented
-	if (file.equalsIgnoreCase("TEMP01.CSA"))
-		file = "TEMP.CSA";
 
 	bool palette = false;
 	if (size < -1000) {

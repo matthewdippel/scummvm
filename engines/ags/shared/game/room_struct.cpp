@@ -19,7 +19,7 @@
  *
  */
 
-#include "ags/shared/ac/common.h" // update_polled_stuff_if_runtime
+#include "ags/shared/ac/common.h" // quit
 #include "ags/shared/game/room_file.h"
 #include "ags/shared/game/room_struct.h"
 #include "ags/shared/gfx/bitmap.h"
@@ -75,7 +75,7 @@ WalkArea::WalkArea()
 	: CharacterView(0)
 	, ScalingFar(0)
 	, ScalingNear(NOT_VECTOR_SCALED)
-	, Light(0)
+	, PlayerView(0)
 	, Top(-1)
 	, Bottom(-1) {
 }
@@ -165,7 +165,7 @@ void RoomStruct::InitDefaults() {
 		Hotspots[i] = RoomHotspot();
 	for (size_t i = 0; i < (size_t)MAX_ROOM_REGIONS; ++i)
 		Regions[i] = RoomRegion();
-	for (size_t i = 0; i <= (size_t)MAX_WALK_AREAS; ++i)
+	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS; ++i)
 		WalkAreas[i] = WalkArea();
 	for (size_t i = 0; i < (size_t)MAX_WALK_BEHINDS; ++i)
 		WalkBehinds[i] = WalkBehind();
@@ -230,12 +230,9 @@ void load_room(const String &filename, RoomStruct *room, bool game_is_hires, con
 	room->Free();
 	room->InitDefaults();
 
-	update_polled_stuff_if_runtime();
-
 	RoomDataSource src;
 	HRoomFileError err = OpenRoomFileFromAsset(filename, src);
 	if (err) {
-		update_polled_stuff_if_runtime();  // it can take a while to load the file sometimes
 		err = ReadRoomData(room, src.InputStream.get(), src.DataVersion);
 		if (err)
 			err = UpdateRoomData(room, src.DataVersion, game_is_hires, sprinfos);

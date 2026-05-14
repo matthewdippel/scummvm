@@ -47,12 +47,15 @@ static const PlainGameDescriptor hadeschGames[] = {
 // in pretty deep paths:
 // * Setup.exe [Russian-Windows]
 // * WIN9x/WORLD/wd.pod [English-Windows]
+// * WIN95/WORLD/wd.pod [English-Windows, alternative]
+// * WIN95/HADESCH.EXE [English-Windows]
 // * CDAssets/OLYMPUS/ol.pod [English-Windows]
 // * Scenes/OLYMPUS/ol.pod [English-Mac and Russian-Windows]
-// * Hades - Copy To Hard Drive/Hades Challenge/World/wd.pod [English-Mac]
+// * Hades_-_Copy_To_Hard_Drive/Hades_Challenge/World/wd.pod [English-Mac]
 // * Hades - Copy To Hard Drive/Hades Challenge/World/wd.pod [English-Mac]
 // The difference between 2 last one is how the files were copied
 static const char *const directoryGlobs[] = {
+	"WIN95",
 	"WIN9x",
 	"WORLD",
 	"CDAssets",
@@ -66,19 +69,19 @@ static const char *const directoryGlobs[] = {
 };
 }
 
-class HadeschMetaEngineDetection : public AdvancedMetaEngineDetection {
+class HadeschMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	HadeschMetaEngineDetection() : AdvancedMetaEngineDetection(Hadesch::gameDescriptions, sizeof(ADGameDescription), Hadesch::hadeschGames) {
+	HadeschMetaEngineDetection() : AdvancedMetaEngineDetection(Hadesch::gameDescriptions, Hadesch::hadeschGames) {
 		// mac puts wd.pod in Hades - Copy To Hard Drive/Hades Challenge/World. So we need 4 levels
 		_maxScanDepth = 4;
 		_directoryGlobs = Hadesch::directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "hadesch";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Hades Challenge";
 	}
 

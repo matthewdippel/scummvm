@@ -27,6 +27,11 @@
 
 namespace Scumm {
 
+// Extra space allocated for every resource. Originaly a safety area to make
+// "precaching" of bytes in the gdi drawer easier. Now also taken into
+// consideration when doing bounds checking in o5_stringOps().
+#define SAFETY_AREA 2
+
 enum {
 	OF_OWNER_MASK = 0x0F,
 	OF_STATE_MASK = 0xF0,
@@ -44,7 +49,7 @@ public:
 	const byte *findNext(uint32 tag);
 };
 
-enum {
+enum : uint {
 	RES_INVALID_OFFSET = 0xFFFFFFFF
 };
 
@@ -77,6 +82,7 @@ class ResourceManager {
 	//friend class ScummEngine;
 protected:
 	ScummEngine *_vm;
+	Common::Mutex *_mutex;
 
 public:
 	class Resource {
@@ -180,6 +186,7 @@ public:
 	~ResourceManager();
 
 	void setHeapThreshold(int min, int max);
+	uint32 getHeapSize() { return _allocatedSize; }
 
 	void allocResTypeData(ResType type, uint32 tag, int num, ResTypeMode mode);
 	void freeResources();
@@ -200,6 +207,7 @@ public:
 	void setModified(ResType type, ResId idx);
 	bool isModified(ResType type, ResId idx) const;
 	void setOffHeap(ResType type, ResId idx);
+	bool isOffHeap(ResType type, ResId idx) const;
 	void setOnHeap(ResType type, ResId idx);
 
 	/**

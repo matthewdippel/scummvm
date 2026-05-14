@@ -21,10 +21,6 @@
 
 namespace Buried {
 
-#define GAMEOPTION_ALLOW_SKIP	GUIO_GAMEOPTIONS1
-#define GUIO_FULL_GAME			GUIO1(GAMEOPTION_ALLOW_SKIP)
-#define GUIO_GAME_DEMO			GUIO1(GUIO_NOLAUNCHLOAD)
-
 // NOTE: If variants with new languages are added, the Mayan death god
 // box puzzle will need to be updated. Check environ/mayan.cpp,
 // DeathGodPuzzleBox::isPuzzleSolved()
@@ -336,6 +332,55 @@ static const ADGameDescription gameDescriptions[] = {
 		GUIO_FULL_GAME
 	},
 
+	// German fan translation (v1) Windows 95 8BPP
+	{
+		"buried",
+		"Fanmade/8BPP",
+		AD_ENTRY2s("BIT832.EXE", "22eebe922a7e85c188618e4036bae89f", 1283072,
+				   "BIT8L32.DLL","cd7d536f7a9bcf5779461488568975ef", 2428416),
+		Common::DE_DEU,
+		Common::kPlatformWindows,
+		GF_WIN95,
+		GUIO_FULL_GAME
+	},
+
+	// German fan translation (v1) Windows 95 24BPP
+	{
+		"buried",
+		"Fanmade/24BPP",
+		AD_ENTRY2s("BIT2432.EXE", "fce36313af6124693cbb6deca6048e1b", 1277952,
+				   "BIT24L32.DLL","4aefe0a483ef304568f31efbf4575293", 6586368),
+		Common::DE_DEU,
+		Common::kPlatformWindows,
+		GF_TRUECOLOR | GF_WIN95,
+		GUIO_FULL_GAME
+	},
+
+	// German fan translation (v2) Windows 95 8BPP
+	// NOTE: contains some 24BPP graphics
+	{
+		"buried",
+		"Fanmade/8BPP",
+		AD_ENTRY2s("BIT832.EXE", "ce7584b3d70a89fee8fdff7ba9d947c2", 1283072,
+				   "BIT8L32.DLL","cd7d536f7a9bcf5779461488568975ef", 2428416),
+		Common::DE_DEU,
+		Common::kPlatformWindows,
+		GF_TRUECOLOR | GF_WIN95,
+		GUIO_FULL_GAME
+	},
+
+	// German fan translation (v2) Windows 95 24BPP
+	{
+		"buried",
+		"Fanmade/24BPP",
+		AD_ENTRY2s("BIT2432.EXE", "65514e68fc7f621bade8a194025314cb", 1277952,
+				   "BIT24L32.DLL","4aefe0a483ef304568f31efbf4575293", 6586368),
+		Common::DE_DEU,
+		Common::kPlatformWindows,
+		GF_TRUECOLOR | GF_WIN95,
+		GUIO_FULL_GAME
+	},
+
 	// English Windows Demo 8BPP
 	{
 		"buried",
@@ -387,7 +432,7 @@ static const ADGameDescription gameDescriptions[] = {
 		AD_ENTRY1s("BIT816.EXE", "30bbd89d7df8cb319e654a441efce877", 1259072),
 		Common::EN_ANY,
 		Common::kPlatformWindows,
-		ADGF_DEMO | GF_TRUECOLOR,
+		ADGF_DEMO,
 		GUIO_GAME_DEMO
 	},
 

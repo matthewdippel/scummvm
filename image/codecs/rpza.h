@@ -23,6 +23,7 @@
 #define IMAGE_CODECS_RPZA_H
 
 #include "graphics/pixelformat.h"
+#include "graphics/palette.h"
 #include "image/codecs/codec.h"
 
 namespace Image {
@@ -35,21 +36,21 @@ namespace Image {
 class RPZADecoder : public Codec {
 public:
 	RPZADecoder(uint16 width, uint16 height);
-	~RPZADecoder();
+	~RPZADecoder() override;
 
-	const Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream);
-	Graphics::PixelFormat getPixelFormat() const { return _format; }
+	const Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream) override;
+	Graphics::PixelFormat getPixelFormat() const override { return _format; }
 
-	bool containsPalette() const { return _ditherPalette != 0; }
-	const byte *getPalette() { _dirtyPalette = false; return _ditherPalette; }
-	bool hasDirtyPalette() const { return _dirtyPalette; }
-	bool canDither(DitherType type) const;
-	void setDither(DitherType type, const byte *palette);
+	bool containsPalette() const override { return _ditherPalette != 0; }
+	const byte *getPalette() override { _dirtyPalette = false; return _ditherPalette.data(); }
+	bool hasDirtyPalette() const override { return _dirtyPalette; }
+	bool canDither(DitherType type) const override;
+	void setDither(DitherType type, const byte *palette) override;
 
 private:
 	Graphics::PixelFormat _format;
 	Graphics::Surface *_surface;
-	byte *_ditherPalette;
+	Graphics::Palette _ditherPalette;
 	bool _dirtyPalette;
 	byte *_colorMap;
 	uint16 _width, _height;

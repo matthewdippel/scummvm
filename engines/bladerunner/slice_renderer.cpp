@@ -612,10 +612,13 @@ void SliceRenderer::drawShadowInWorld(int transparency, Graphics::Surface &surfa
 		0.0f, 1.0f, 0.0f, _position.y,
 		0.0f, 0.0f, 1.0f, _position.z);
 
+	float s = sin(_facing);
+	float c = cos(_facing);
+
 	Matrix4x3 mRotation(
-		cos(_facing), -sin(_facing), 0.0f, 0.0f,
-		sin(_facing),  cos(_facing), 0.0f, 0.0f,
-		        0.0f,          0.0f, 1.0f, 0.0f);
+		   c,   -s, 0.0f, 0.0f,
+		   s,    c, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f);
 
 	Matrix4x3 mScale(
 		_frameScale.x,          0.0f,              0.0f, 0.0f,
@@ -729,8 +732,10 @@ void SliceRenderer::drawShadowPolygon(int transparency, Graphics::Surface &surfa
 			if (z >= zMin) {
 				int index = (x & 3) + ((y & 3) << 2);
 				if (transparency - ditheringFactor[index] <= 0) {
+					uint32 color = 0;
 					uint8 r, g, b;
-					surface.format.colorToRGB(READ_UINT32(pixel), r, g, b);
+					getPixel(surface, pixel, color);
+					surface.format.colorToRGB(color, r, g, b);
 					r *= 0.75f;
 					g *= 0.75f;
 					b *= 0.75f;

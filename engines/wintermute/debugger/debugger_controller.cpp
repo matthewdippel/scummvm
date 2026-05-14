@@ -40,6 +40,8 @@
 
 namespace Wintermute {
 
+#if EXTENDED_DEBUGGER_ENABLED
+
 DebuggerController::~DebuggerController() {
 	delete _sourceListingProvider;
 }
@@ -61,8 +63,10 @@ bool DebuggerController::bytecodeExists(const Common::String &filename) {
 
 Error DebuggerController::addBreakpoint(const char *filename, int line) {
 	assert(SCENGINE);
-	if (bytecodeExists(filename)) {
-		SCENGINE->_breakpoints.push_back(new Breakpoint(filename, line, this));
+	Common::String scriptPath(filename);
+	scriptPath.replace('/', '\\');
+	if (bytecodeExists(scriptPath.c_str())) {
+		SCENGINE->_breakpoints.push_back(new Breakpoint(scriptPath.c_str(), line, this));
 		return Error(SUCCESS, OK);
 	} else {
 		return Error(ERROR, NO_SUCH_BYTECODE);
@@ -133,10 +137,12 @@ Error DebuggerController::enableWatchpoint(uint id) {
 
 Error DebuggerController::addWatch(const char *filename, const char *symbol) {
 	assert(SCENGINE);
-	if (!bytecodeExists(filename)) {
-		return Error(ERROR, NO_SUCH_BYTECODE, filename);
+	Common::String scriptPath(filename);
+	scriptPath.replace('/', '\\');
+	if (!bytecodeExists(scriptPath.c_str())) {
+		return Error(ERROR, NO_SUCH_BYTECODE, scriptPath.c_str());
 	}
-	SCENGINE->_watches.push_back(new Watch(filename, symbol, this));
+	SCENGINE->_watches.push_back(new Watch(scriptPath.c_str(), symbol, this));
 	return Error(SUCCESS, OK, "Watchpoint added");
 }
 
@@ -190,10 +196,9 @@ void DebuggerController::clear() {
 	_lastLine = 0xFFFFFFFF; // Invalid
 }
 
-Common::String DebuggerController::readValue(const Common::String &name, Error *error) {
+Common::String DebuggerController::readValue(const Common::String &name, Error **error) {
 	if (!_lastScript) {
-		delete error;
-		error = new Error(ERROR, NOT_ALLOWED);
+		*error = new Error(ERROR, NOT_ALLOWED);
 		return Common::String();
 	}
 	char cstr[256]; // TODO not pretty
@@ -256,7 +261,7 @@ Error DebuggerController::setValue(const Common::String &name, const Common::Str
 }
 
 void DebuggerController::showFps(bool show) {
-	_engine->_game->setShowFPS(show);
+	_engine->_game->_debugShowFPS = show;
 }
 
 Common::Array<BreakpointInfo> DebuggerController::getBreakpoints() const {
@@ -288,11 +293,11 @@ uint32 DebuggerController::getLastLine() const {
 	return _lastLine;
 }
 
-Common::String DebuggerController::getSourcePath() const {
+Common::Path DebuggerController::getSourcePath() const {
 	return _sourceListingProvider->getPath();
 }
 
-Error DebuggerController::setSourcePath(const Common::String &sourcePath) {
+Error DebuggerController::setSourcePath(const Common::Path &sourcePath) {
 	ErrorCode err = _sourceListingProvider->setPath(sourcePath);
 	return Error((err == OK ? SUCCESS : ERROR), err);
 }
@@ -312,7 +317,7 @@ Listing* DebuggerController::getListing(Error* &error) {
 Common::Array<TopEntry> DebuggerController::getTop() const {
 	Common::Array<TopEntry> res;
 	assert(SCENGINE);
-	for (uint i = 0; i < SCENGINE->_scripts.size(); i++) {
+	for (int32 i = 0; i < SCENGINE->_scripts.getSize(); i++) {
 		TopEntry entry;
 		entry.filename = SCENGINE->_scripts[i]->_filename;
 		entry.current = (SCENGINE->_scripts[i] == SCENGINE->_currentScript);
@@ -320,5 +325,7 @@ Common::Array<TopEntry> DebuggerController::getTop() const {
 	}
 	return res;
 }
+
+#endif
 
 } // end of namespace Wintermute

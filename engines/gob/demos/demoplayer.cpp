@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/endian.h"
@@ -35,9 +41,9 @@
 namespace Gob {
 
 DemoPlayer::Script DemoPlayer::_scripts[] = {
-	{kScriptSourceFile, "demo.scn"},
-	{kScriptSourceFile, "wdemo.s24"},
-	{kScriptSourceFile, "play123.scn"},
+	{kScriptSourceFile, "demo.scn"}, // DOS demo
+	{kScriptSourceFile, "wdemo.s24"}, // Windows demo
+	{kScriptSourceFile, "play123.scn"}, // Playtoons 1,2,3 Demo
 	{kScriptSourceFile, "e.scn"},
 	{kScriptSourceFile, "i.scn"},
 	{kScriptSourceFile, "s.scn"},
@@ -47,11 +53,11 @@ DemoPlayer::Script DemoPlayer::_scripts[] = {
 		"slide tumid.imd 1\nslide post.imd 1\nslide posta.imd 1\n"      \
 		"slide postb.imd 1\nslide postc.imd 1\nslide xdome.imd 20\n"    \
 		"slide xant.imd 20\nslide tum.imd 20\nslide voile.imd 20\n"     \
-		"slide int.imd 20\nslide voila.imd 1\nslide voilb.imd 1\n"},
+		"slide int.imd 20\nslide voila.imd 1\nslide voilb.imd 1\n"}, // Slide IMD demos (Inca 2)
 	{kScriptSourceFile, "coktelplayer.scn"},
-	{kScriptSourceFile, "demogb.scn"},
-	{kScriptSourceFile, "demoall.scn"},
-	{kScriptSourceFile, "demofra.scn"}
+	{kScriptSourceFile, "demogb.scn"}, // English demo scene
+	{kScriptSourceFile, "demoall.scn"}, // German demo scene
+	{kScriptSourceFile, "demofra.scn"} // French demo scene
 };
 
 DemoPlayer::DemoPlayer(GobEngine *vm) : _vm(vm) {

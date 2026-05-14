@@ -36,7 +36,7 @@
 
 #include "engines/util.h"
 #include "graphics/cursorman.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "gui/debugger.h"
 
 #include "touche/midi.h"
@@ -98,7 +98,7 @@ ToucheEngine::ToucheEngine(OSystem *system, Common::Language language)
 	_menuRedrawCounter = 0;
 	memset(_paletteBuffer, 0, sizeof(_paletteBuffer));
 
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 
 	SearchMan.addSubDirectoryMatching(gameDataDir, "database");
 
@@ -400,41 +400,45 @@ void ToucheEngine::processEvents(bool handleKeyEvents) {
 	Common::Event event;
 	while (_eventMan->pollEvent(event)) {
 		switch (event.type) {
-		case Common::EVENT_KEYDOWN:
+		case Common::EVENT_CUSTOM_ENGINE_ACTION_START:
 			if (!handleKeyEvents) {
 				break;
 			}
-			_flagsTable[600] = event.kbd.keycode;
-			if (event.kbd.keycode == Common::KEYCODE_ESCAPE) {
+			if (event.customType == kToucheActionSkipOrQuit) {
+				_flagsTable[600] = Common::KEYCODE_ESCAPE;
 				if (_displayQuitDialog) {
 					if (displayQuitDialog()) {
 						quitGame();
 					}
 				}
-			} else if (event.kbd.keycode == Common::KEYCODE_F5) {
+			} else if (event.customType == kToucheActionOpenOptions) {
 				if (_flagsTable[618] == 0 && !_hideInventoryTexts) {
 					handleOptions(0);
 				}
-			} else if (event.kbd.keycode == Common::KEYCODE_F9) {
+			} else if (event.customType == kToucheActionEnableFastWalk) {
 				_fastWalkMode = true;
-			} else if (event.kbd.keycode == Common::KEYCODE_F10) {
+			} else if (event.customType == kToucheActionDisableFastWalk) {
 				_fastWalkMode = false;
 			}
-			if (event.kbd.hasFlags(Common::KBD_CTRL)) {
-				if (event.kbd.keycode == Common::KEYCODE_f) {
-					_fastMode = !_fastMode;
-				}
+			if (event.customType == kToucheActionToggleFastMode) {
+				_fastMode = !_fastMode;
 			} else {
-				if (event.kbd.keycode == Common::KEYCODE_t) {
+				if (event.customType == kToucheActionToggleTalkTextMode) {
 					++_talkTextMode;
 					if (_talkTextMode == kTalkModeCount) {
 						_talkTextMode = 0;
 					}
 					displayTextMode(-(92 + _talkTextMode));
-				} else if (event.kbd.keycode == Common::KEYCODE_SPACE) {
+				} else if (event.customType == kToucheActionSkipDialogue) {
 					updateKeyCharTalk(2);
 				}
 			}
+			break;
+		case Common::EVENT_KEYDOWN:
+			if (!handleKeyEvents) {
+				break;
+			}
+			_flagsTable[600] = event.kbd.keycode;
 			break;
 		case Common::EVENT_LBUTTONDOWN:
 			_inp_leftMouseButtonPressed = true;
@@ -2206,7 +2210,7 @@ void ToucheEngine::drawAmountOfMoneyInInventory() {
 
 void ToucheEngine::packInventoryItems(int index) {
 	int16 *p = _inventoryStateTable[index].itemsList;
-	for (int i = 0; *p != -1; ++i, ++p) {
+	for (; *p != -1; ++p) {
 		if (p[0] == 0 && p[1] != -1) {
 			p[0] = p[1];
 			p[1] = 0;
@@ -2237,7 +2241,7 @@ void ToucheEngine::addItemToInventory(int inventory, int16 item) {
 		appendItemToInventoryList(inventory);
 		assert(inventory >= 0 && inventory < 3);
 		int16 *p = _inventoryStateTable[inventory].itemsList;
-		for (int i = 0; *p != -1; ++i, ++p) {
+		for (; *p != -1; ++p) {
 			if (*p == 0) {
 				*p = item;
 				_inventoryItemsInfoTable[item] = inventory | 0x10;
@@ -2256,7 +2260,7 @@ void ToucheEngine::removeItemFromInventory(int inventory, int16 item) {
 	} else {
 		assert(inventory >= 0 && inventory < 3);
 		int16 *p = _inventoryStateTable[inventory].itemsList;
-		for (int i = 0; *p != -1; ++i, ++p) {
+		for (; *p != -1; ++p) {
 			if (*p == item) {
 				*p = 0;
 				packInventoryItems(0);
@@ -2454,6 +2458,35 @@ void ToucheEngine::removeFromTalkTable(int keyChar) {
 
 void ToucheEngine::addConversationChoice(int16 num) {
 	debugC(9, kDebugEngine, "ToucheEngine::addConversationChoice(%d)", num);
+	// Workaround for bug #6754 - Player may only ask for boat at Rouen river
+	// gate if and only if potion is in inventory and Juliette has been
+	// kidnapped by the Cardinal to his castle. When reaching the castle without potion
+	// the game can not be finished as there is no way back to Rouen river gate.
+
+	// 018d99d5  ; prginstruction  ; 1d 0001      ; getFlag(1: "puzzles solved progress")
+	// 018d99d8  ; prginstruction  ; 06           ; push
+	// 018d99d9  ; prginstruction  ; 13 000d      ; fetchScriptWord(13)
+	// 018d99dc  ; prginstruction  ; 12           ; testLower (13 < flag[1] ? t:0xffff, f:0x0000)
+	// 018d99dd  ; prginstruction  ; 02 018d99e3  ; jz 018d99e3
+	// 018d99e0  ; prginstruction  ; 3e 0004      ; addConversationChoice("We need a boat...")
+	// 018d99e3  ; prginstruction  ; 1c           ; stopScript
+	if (_currentEpisodeNum == 103  /* Rouen river gate episode */
+			&& _currentRoomNum == 67  /* Rouen river gate */
+			&& _flagsTable[1] == 14   /* Juliette kidnapped */
+			&& num == 4  /* "We need a boat..." */) {
+		bool havePotion = false;
+		int16 *p = _inventoryStateTable[0].itemsList;
+		for (; *p != -1; ++p) {
+			if (*p == 0x0009 /* potion */) {
+				havePotion = true;
+				break;
+			}
+		}
+		if (!havePotion) {
+			return;
+		}
+	}
+
 	_conversationChoicesUpdated = true;
 	int16 msg = _programConversationTable[_currentConversation + num].msg;
 	for (int i = 0; i < NUM_CONVERSATION_CHOICES; ++i) {
@@ -3406,11 +3439,11 @@ void ToucheEngine::updatePalette() {
 	_system->getPaletteManager()->setPalette(_paletteBuffer, 0, 256);
 }
 
-bool ToucheEngine::canLoadGameStateCurrently() {
+bool ToucheEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	return _gameState == kGameStateGameLoop && _flagsTable[618] == 0 && !_hideInventoryTexts;
 }
 
-bool ToucheEngine::canSaveGameStateCurrently() {
+bool ToucheEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	return _gameState == kGameStateGameLoop && _flagsTable[618] == 0 && !_hideInventoryTexts;
 }
 
@@ -3418,7 +3451,7 @@ void ToucheEngine::initMusic() {
 	// Detect External Music Files
 	bool extMusic = true;
 	for (int num = 0; num < 26 && extMusic; num++) {
-		Common::String extMusicFilename = Common::String::format("track%02d", num+1);
+		Common::Path extMusicFilename(Common::String::format("track%02d", num+1));
 		Audio::SeekableAudioStream *musicStream = Audio::SeekableAudioStream::openStreamFile(extMusicFilename);
 		if (!musicStream)
 			extMusic = false;
@@ -3443,10 +3476,10 @@ void ToucheEngine::startMusic(int num) {
 		_fData.seek(offs);
 		_midiPlayer->play(_fData, size, true);
 	} else {
-		Common::String extMusicFilename = Common::String::format("track%02d", num);
+		Common::Path extMusicFilename(Common::String::format("track%02d", num));
 		Audio::SeekableAudioStream *extMusicFileStream = Audio::SeekableAudioStream::openStreamFile(extMusicFilename);
 		if (!extMusicFileStream) {
-			error("Unable to open %s for reading", extMusicFilename.c_str());
+			error("Unable to open %s for reading", extMusicFilename.toString().c_str());
 		}
 		Audio::LoopingAudioStream *loopStream = new Audio::LoopingAudioStream(extMusicFileStream, 0);
 		_mixer->playStream(Audio::Mixer::kMusicSoundType, &_musicHandle, loopStream, -1, _musicVolume);

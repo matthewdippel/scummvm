@@ -23,6 +23,7 @@
 
 #include "base/plugins.h"
 #include "testbed/testbed.h"
+#include "testbed/detection.h"
 
 static const PlainGameDescriptor testbed_setting[] = {
 	{ "testbed", "Testbed: The Backend Testing Framework" },
@@ -48,17 +49,18 @@ static const ADGameDescription testbedDescriptions[] = {
 	AD_TABLE_END_MARKER
 };
 
-class TestbedMetaEngineDetection : public AdvancedMetaEngineDetection {
+class TestbedMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	TestbedMetaEngineDetection() : AdvancedMetaEngineDetection(testbedDescriptions, sizeof(ADGameDescription), testbed_setting) {
+	TestbedMetaEngineDetection() : AdvancedMetaEngineDetection(testbedDescriptions, testbed_setting) {
 		_md5Bytes = 512;
-	}
-
-	const char *getEngineId() const override {
-		return "testbed";
+		_guiOptions = GUIO1(GAMEOPTION_INTERACTIVE_MODE);
 	}
 
 	const char *getName() const override {
+		return "testbed";
+	}
+
+	const char *getEngineName() const override {
 		return "TestBed: The Backend Testing Framework";
 	}
 

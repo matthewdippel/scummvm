@@ -20,7 +20,7 @@
  */
 
 #include "common/debug.h"
-#include "common/inttypes.h"
+#include "common/scummsys.h"
 #include "common/stream.h"
 #include "common/system.h"
 #include "common/textconsole.h"
@@ -36,7 +36,8 @@ extern "C" {
 namespace Image {
 
 MPEGDecoder::MPEGDecoder() : Codec() {
-	_pixelFormat = g_system->getScreenFormat();
+	_pixelFormat = getDefaultYUVFormat();
+
 	_surface = 0;
 
 	_mpegDecoder = mpeg2_init();

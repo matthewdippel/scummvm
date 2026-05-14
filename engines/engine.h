@@ -22,12 +22,14 @@
 #ifndef ENGINES_ENGINE_H
 #define ENGINES_ENGINE_H
 
+#include "common/error.h"
 #include "common/scummsys.h"
 #include "common/str.h"
 #include "common/language.h"
 #include "common/platform.h"
 #include "common/queue.h"
 #include "common/singleton.h"
+#include "engines/enhancements.h"
 
 class OSystem;
 class MetaEngineDetection;
@@ -38,6 +40,7 @@ class Mixer;
 }
 namespace Common {
 class Error;
+class FSDirectory;
 class EventManager;
 class SaveFileManager;
 class TimerManager;
@@ -78,11 +81,18 @@ void GUIErrorMessageWithURL(const Common::String &msg, const char *url);
 /**
  * Initialize graphics and show an error message.
  */
-void GUIErrorMessageFormat(Common::U32String fmt, ...);
+void GUIErrorMessageFormatU32StringPtr(const Common::U32String *fmt, ...);
 /**
  * Initialize graphics and show an error message.
  */
-void GUIErrorMessageFormat(const char *fmt, ...) GCC_PRINTF(1, 2);
+template<class... TParam>
+inline void GUIErrorMessageFormat(const Common::U32String &fmt, TParam... param) {
+	GUIErrorMessageFormatU32StringPtr(&fmt, Common::forward<TParam>(param)...);
+}
+/**
+ * Initialize graphics and show an error message.
+ */
+void GUIErrorMessageFormat(MSVC_PRINTF const char *fmt, ...) GCC_PRINTF(1, 2);
 
 
 class Engine;
@@ -94,22 +104,20 @@ class Engine;
 */
 class PauseToken {
 public:
-	PauseToken();
+	constexpr PauseToken() : _engine(nullptr) {}
 	/**
 	 * Construct a pause token.
 	 */
 	PauseToken(const PauseToken &);
-#if __cplusplus >= 201103L
 	PauseToken(PauseToken &&);
-#endif
 	~PauseToken();
+
 	/**
 	 * Assign the pause token.
 	 */
 	void operator=(const PauseToken &);
-#if __cplusplus >= 201103L
 	void operator=(PauseToken &&);
-#endif
+
 	/**
 	* Manually release the PauseToken.
 	*
@@ -124,7 +132,7 @@ public:
 	bool isActive() const { return _engine != nullptr; }
 
 private:
-	PauseToken(Engine *);
+	constexpr PauseToken(Engine *engine) : _engine(engine) {}
 
 	Engine *_engine;
 	/**
@@ -154,7 +162,7 @@ protected:
 	 */
 	Common::EventManager *_eventMan;
 	/**
-	 * The SaveFileMAnager used by the engine.
+	 * The SaveFileManager used by the engine.
 	 */
 	Common::SaveFileManager *_saveFileMan;
 
@@ -171,6 +179,8 @@ protected:
 	 * Target name for saves.
 	 */
 	const Common::String _targetName;
+
+	int32 _activeEnhancements = kEnhGameBreakingBugFixes;
 
 private:
 	/**
@@ -191,6 +201,11 @@ private:
 	 * The time when the pause was started.
 	 */
 	uint32 _pauseStartTime;
+
+	/**
+	 * The screen change ID when the pause was started
+	 */
+	int _pauseScreenChangeID;
 
 	/**
 	 * The time when the engine was started.
@@ -226,9 +241,13 @@ private:
 	 * Optional debugger for the engine.
 	 */
 	GUI::Debugger *_debugger;
+
+	/**
+	 * Flag for whether the quitGame method has been called
+	 */
+	static bool _quitRequested;
+
 public:
-
-
 	/**
 	 * Engine features.
 	 *
@@ -286,7 +305,19 @@ public:
 		 * The engine will need to read the actual resolution used by the
 		 * backend using OSystem::getWidth and OSystem::getHeight.
 		 */
-		kSupportsArbitraryResolutions
+		kSupportsArbitraryResolutions,
+
+		/**
+		 * The game provides custom help.
+		 *
+		 * This enables the help button in the main menu.
+		 */
+		 kSupportsHelp,
+
+		/**
+		 * The engine provides overrides to the quit and exit to launcher dialogs.
+		 */
+		kSupportsQuitDialogOverride,
 	};
 
 
@@ -355,6 +386,8 @@ public:
 	 * Determine whether the engine supports the specified feature.
 	 */
 	virtual bool hasFeature(EngineFeature f) const { return false; }
+
+	bool enhancementEnabled(int32 cls);
 
 	/**
 	 * Notify the engine that the sound settings in the config manager might have
@@ -425,8 +458,10 @@ public:
 
 	/**
 	 * Indicate whether a game state can be loaded.
+	 *
+	 * @param msg        Optional pointer to message explaining why it is disabled
 	 */
-	virtual bool canLoadGameStateCurrently();
+	virtual bool canLoadGameStateCurrently(Common::U32String *msg = nullptr);
 
 	/**
 	 * Save a game state.
@@ -451,8 +486,10 @@ public:
 
 	/**
 	 * Indicate whether a game state can be saved.
+	 *
+	 * @param msg        Optional pointer to message explaining why it is disabled
 	 */
-	virtual bool canSaveGameStateCurrently();
+	virtual bool canSaveGameStateCurrently(Common::U32String *msg = nullptr);
 
 	/**
 	 * Show the ScummVM save dialog, allowing users to save their game.
@@ -490,11 +527,6 @@ public:
 	 * This can mean either quitting ScummVM altogether, or returning to the launcher.
 	 */
 	static bool shouldQuit();
-
-	/**
-	 * Return the MetaEngineDetection instance used by this engine.
-	 */
-	static MetaEngineDetection &getMetaEngineDetection();
 
 	/**
 	 * Return the MetaEngine instance used by this engine.
@@ -558,6 +590,25 @@ public:
 	 * @return True if the user chooses to start anyway, false otherwise.
 	 */
 	static bool warnUserAboutUnsupportedGame(Common::String msg = Common::String());
+
+	/**
+	 * Display a warning to the user that the game contains an add-not which is not
+	 * fully supported.
+	 *
+	 * @param addOnName The name of the add-on.
+	 *
+	 * @return True if the user chooses to start anyway, false otherwise.
+	 */
+	static bool warnUserAboutUnsupportedAddOn(Common::String addOnName);
+
+	/**
+	 * Display an error message to the user that the game is an add-on than cannot be
+	 * run independently.
+	 *
+	 * @param addOnName The name of the add-on.
+	 * @param gameId    The ID of the base game that this add-on requires.
+	 */
+	static void errorAddingAddOnWithoutBaseGame(Common::String addOnName, Common::String gameId);
 
 	/**
 	 * Display an error message to the user that the game is not supported.
@@ -638,6 +689,33 @@ public:
 	virtual int getAutosaveSlot() const {
 		return 0;
 	}
+
+	/**
+	 * Can the game type currently being played have add-ons?
+	 */
+	virtual	bool gameTypeHasAddOns() const;
+
+	/**
+	 * To discard some directories we know have no chance to be add-ons
+	 */
+	virtual bool dirCanBeGameAddOn(const Common::FSDirectory &dir) const;
+
+	/**
+	 * To display a warning if a directory likely to be an add-on does not match anything
+	 */
+	virtual bool dirMustBeGameAddOn(const Common::FSDirectory &dir) const;
+
+	/**
+	 * Update the add-ons targets associated with a base game (silently, unless some unsupported version is detected).
+	 */
+	Common::ErrorCode updateAddOns(const MetaEngine *metaEngine) const;
+
+
+protected:
+	/**
+	 * Syncs the engine's mixer using the default volume syncing behavior.
+	 */
+	void defaultSyncSoundSettings();
 };
 
 
@@ -666,9 +744,11 @@ public:
 	/** Clear the chained games manager of any games. */
 	void clear();
 	/** Load a game into a slot in the chained games manager. */
-	void push(const Common::String target, const int slot = -1);
+	void push(const Common::String &target, const int slot = -1);
 	/** Pop the last game loaded into the chained games manager. */
 	bool pop(Common::String &target, int &slot);
+	/** Returns true if the chained games manager has no elements in the queue. */
+	bool empty() { return _chainedGames.empty(); }
 };
 
 /** Convenience shortcut for accessing the chained games manager. */

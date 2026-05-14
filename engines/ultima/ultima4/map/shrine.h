@@ -42,7 +42,7 @@ public:
 	Common::String getMantra() const;
 
 	void setVirtue(Virtue v);
-	void setMantra(Common::String mantra);
+	void setMantra(const Common::String &mantra);
 
 	/**
 	 * Enter the shrine
@@ -64,7 +64,7 @@ private:
 class Shrines {
 public:
 	int _cycles, _completedCycles;
-	Std::vector<Common::String> _advice;
+	Common::Array<Common::String> _advice;
 public:
 	/**
 	 * Constructor

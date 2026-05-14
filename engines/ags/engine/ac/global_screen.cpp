@@ -30,6 +30,8 @@
 #include "ags/engine/ac/runtime_defines.h"
 #include "ags/engine/ac/screen.h"
 #include "ags/engine/debugging/debug_log.h"
+#include "ags/engine/main/game_run.h"
+#include "ags/engine/media/audio/audio.h"
 #include "ags/engine/platform/base/ags_platform_driver.h"
 #include "ags/engine/gfx/graphics_driver.h"
 #include "ags/shared/gfx/bitmap.h"
@@ -40,16 +42,9 @@ using namespace AGS::Shared;
 using namespace AGS::Engine;
 
 
-
-
-
-
-
-
-
-
 void FlipScreen(int amount) {
-	if ((amount < 0) | (amount > 3)) quit("!FlipScreen: invalid argument (0-3)");
+	if ((amount < 0) || (amount > 3))
+		quit("!FlipScreen: invalid argument (0-3)");
 	_GP(play).screen_flipped = amount;
 }
 
@@ -70,6 +65,9 @@ void ShakeScreen(int severe) {
 	_GP(play).shakesc_amount = severe;
 	_GP(play).mouse_cursor_hidden++;
 
+	// FIXME: we have to sync audio here explicitly, because ShakeScreen
+	// does not call any game update function while it works
+	sync_audio_playback();
 	if (_G(gfxDriver)->RequiresFullRedrawEachFrame()) {
 		for (int hh = 0; hh < 40; hh++) {
 			_G(loopcounter)++;
@@ -77,7 +75,7 @@ void ShakeScreen(int severe) {
 
 			render_graphics();
 
-			update_polled_stuff_if_runtime();
+			update_polled_stuff();
 		}
 	} else {
 		// Optimized variant for software render: create game scene once and shake it
@@ -88,11 +86,12 @@ void ShakeScreen(int severe) {
 			const int yoff = hh % 2 == 0 ? 0 : severe;
 			_GP(play).shake_screen_yoff = yoff;
 			render_to_screen();
-			update_polled_stuff_if_runtime();
+			update_polled_stuff();
 		}
 		clear_letterbox_borders();
 		render_to_screen();
 	}
+	sync_audio_playback();
 
 	_GP(play).mouse_cursor_hidden--;
 	_GP(play).shakesc_length = 0;
@@ -132,17 +131,33 @@ void TintScreen(int red, int grn, int blu) {
 	_GP(play).screen_tint = red + (grn << 8) + (blu << 16);
 }
 
-void my_fade_out(int spdd) {
+void FadeOut(int sppd) {
 	EndSkippingUntilCharStops();
 
-	if (_GP(play).fast_forward)
-		return;
-
-	if (_GP(play).screen_is_faded_out == 0)
-		_G(gfxDriver)->FadeOut(spdd, _GP(play).fade_to_red, _GP(play).fade_to_green, _GP(play).fade_to_blue);
-
-	if (_GP(game).color_depth > 1)
+	if (_GP(play).fast_forward) {
 		_GP(play).screen_is_faded_out = 1;
+		return;
+	}
+
+	// FIXME: we have to sync audio here explicitly, because FadeOut
+	// does not call any game update function while it works
+	sync_audio_playback();
+	fadeout_impl(sppd);
+	sync_audio_playback();
+
+	// Older engines did not mark the screen as "faded out" specifically for
+	// the 8-bit games, for unknown reasons. There's at least one game where
+	// this was accidentally useful, as it did not run FadeIn after FadeOut.
+	if ((_G(loaded_game_file_version) < kGameVersion_361) && _GP(game).color_depth == 1) {
+		_GP(play).screen_is_faded_out = 0;
+	}
+}
+
+void fadeout_impl(int spdd) {
+	if (_GP(play).screen_is_faded_out == 0) {
+		_G(gfxDriver)->FadeOut(spdd, _GP(play).fade_to_red, _GP(play).fade_to_green, _GP(play).fade_to_blue, RENDER_SHOT_SKIP_ON_FADE);
+		_GP(play).screen_is_faded_out = 1;
+	}
 }
 
 void SetScreenTransition(int newtrans) {
@@ -176,10 +191,19 @@ void SetFadeColor(int red, int green, int blue) {
 void FadeIn(int sppd) {
 	EndSkippingUntilCharStops();
 
-	if (_GP(play).fast_forward)
+	if (_GP(play).fast_forward) {
+		_GP(play).screen_is_faded_out = 0;
 		return;
+	}
 
-	my_fade_in(_G(palette), sppd);
+	// Update drawables, prepare them for the transition-in
+	// in case this is called after the game state change but before any update was run
+	SyncDrawablesState();
+	// FIXME: we have to sync audio here explicitly, because FadeIn
+	// does not call any game update function while it works
+	sync_audio_playback();
+	fadein_impl(_G(palette), sppd);
+	sync_audio_playback();
 }
 
 } // namespace AGS3

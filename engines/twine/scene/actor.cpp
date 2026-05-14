@@ -20,11 +20,9 @@
  */
 
 #include "twine/scene/actor.h"
-#include "common/memstream.h"
-#include "common/system.h"
 #include "common/textconsole.h"
 #include "twine/audio/sound.h"
-#include "twine/debugger/debug_scene.h"
+#include "twine/debugger/debug_state.h"
 #include "twine/parser/entity.h"
 #include "twine/renderer/renderer.h"
 #include "twine/renderer/screens.h"
@@ -44,36 +42,33 @@ namespace TwinE {
 Actor::Actor(TwinEEngine *engine) : _engine(engine) {
 }
 
-void Actor::restartHeroScene() {
+void Actor::restartPerso() {
 	ActorStruct *sceneHero = _engine->_scene->_sceneHero;
-	sceneHero->_controlMode = ControlMode::kManual;
-	memset(&sceneHero->_dynamicFlags, 0, sizeof(sceneHero->_dynamicFlags));
-	memset(&sceneHero->_staticFlags, 0, sizeof(sceneHero->_staticFlags));
+	sceneHero->_move = ControlMode::kManual;
+	memset(&sceneHero->_workFlags, 0, sizeof(sceneHero->_workFlags));
+	memset(&sceneHero->_flags, 0, sizeof(sceneHero->_flags));
 
-	sceneHero->_staticFlags.bComputeCollisionWithObj = 1;
-	sceneHero->_staticFlags.bComputeCollisionWithBricks = 1;
-	sceneHero->_staticFlags.bIsZonable = 1;
-	sceneHero->_staticFlags.bCanDrown = 1;
-	sceneHero->_staticFlags.bCanFall = 1;
+	sceneHero->_flags.bComputeCollisionWithObj = 1;
+	sceneHero->_flags.bComputeCollisionWithBricks = 1;
+	sceneHero->_flags.bCheckZone = 1;
+	sceneHero->_flags.bCanDrown = 1;
+	sceneHero->_flags.bObjFallable = 1;
 
 	sceneHero->_armor = 1;
-	sceneHero->_positionInMoveScript = -1;
-	sceneHero->_labelIdx = -1;
-	sceneHero->_positionInLifeScript = 0;
-	sceneHero->_zone = -1;
-	sceneHero->_angle = _previousHeroAngle;
+	sceneHero->_offsetTrack = -1;
+	sceneHero->_labelTrack = -1;
+	sceneHero->_offsetLife = 0;
+	sceneHero->_zoneSce = -1;
+	sceneHero->_beta = _previousHeroAngle;
 
-	_engine->_movements->setActorAngleSafe(sceneHero->_angle, sceneHero->_angle, ANGLE_0, &sceneHero->_move);
+	_engine->_movements->initRealAngle(sceneHero->_beta, sceneHero->_beta, LBAAngles::ANGLE_0, &sceneHero->realAngle);
 	setBehaviour(_previousHeroBehaviour);
 
 	_cropBottomScreen = 0;
 }
 
 void Actor::loadBehaviourEntity(ActorStruct *actor, EntityData &entityData, int16 &bodyAnimIndex, int32 index) {
-	if (!entityData.loadFromHQR(Resources::HQR_FILE3D_FILE, index, _engine->isLBA1())) {
-		error("Failed to load actor 3d data for index: %i", index);
-	}
-
+	_engine->_resources->loadEntityData(entityData, index);
 	actor->_entityDataPtr = &entityData;
 	bodyAnimIndex = entityData.getAnimIndex(AnimationTypes::kStanding);
 	if (bodyAnimIndex == -1) {
@@ -90,7 +85,7 @@ void Actor::loadHeroEntities() {
 	loadBehaviourEntity(sceneHero, _heroEntityNORMAL, _heroAnimIdxNORMAL, FILE3DHQR_HERONORMAL);
 
 	_engine->_animations->_currentActorAnimExtraPtr = AnimationTypes::kStanding;
-	sceneHero->_animExtraPtr = _engine->_animations->_currentActorAnimExtraPtr;
+	sceneHero->_ptrAnimAction = _engine->_animations->_currentActorAnimExtraPtr;
 }
 
 void Actor::setBehaviour(HeroBehaviourType behaviour) {
@@ -116,6 +111,8 @@ void Actor::setBehaviour(HeroBehaviourType behaviour) {
 		_heroBehaviour = behaviour;
 		sceneHero->_entityDataPtr = &_heroEntityPROTOPACK;
 		break;
+	case HeroBehaviourType::kMax:
+		break;
 	}
 
 	const BodyType bodyIdx = sceneHero->_genBody;
@@ -123,65 +120,146 @@ void Actor::setBehaviour(HeroBehaviourType behaviour) {
 	sceneHero->_body = -1;
 	sceneHero->_genBody = BodyType::btNone;
 
-	initModelActor(bodyIdx, OWN_ACTOR_SCENE_INDEX);
+	initBody(bodyIdx, OWN_ACTOR_SCENE_INDEX);
 
 	sceneHero->_genAnim = AnimationTypes::kAnimNone;
-	sceneHero->_animType = AnimType::kAnimationTypeLoop;
+	sceneHero->_flagAnim = AnimType::kAnimationTypeRepeat;
 
-	_engine->_animations->initAnim(AnimationTypes::kStanding, AnimType::kAnimationTypeLoop, AnimationTypes::kAnimInvalid, OWN_ACTOR_SCENE_INDEX);
+	_engine->_animations->initAnim(AnimationTypes::kStanding, AnimType::kAnimationTypeRepeat, AnimationTypes::kNoAnim, OWN_ACTOR_SCENE_INDEX);
 }
 
-void Actor::initSpriteActor(int32 actorIdx) {
+void Actor::setFrame(int32 actorIdx, uint32 frame) {
+#if 0
+	// TODO: converted from asm - not yet adapted
+	ActorStruct *obj = _engine->_scene->getActor(actorIdx);
+	T_PTR_NUM tempNextBody = obj->NextBody;
+	void *tempNextTexture = obj->NextTexture;
+
+	if (frame >= obj->NbFrames) {
+		return;
+	}
+
+	obj->_body = tempNextBody;
+	obj->Texture = tempNextTexture;
+
+	T_PTR_NUM tempAnim = obj->_anim;
+	void (*TransFctAnim)() = nullptr; // Couldn't find this yet
+
+	if (TransFctAnim != nullptr) {
+		uint32 ebp = frame;
+		TransFctAnim();
+		tempAnim = (T_PTR_NUM)(void *)tempAnim.Ptr;
+		frame = ebp;
+	}
+
+	obj->Interpolator = 0;
+	obj->LastAnimStepX = 0;
+	obj->LastAnimStepY = 0;
+	obj->LastAnimStepZ = 0;
+
+	uint16 nbGroups = *((uint16 *)(tempAnim.Ptr + 2));
+
+	obj->LastAnimStepAlpha = 0;
+	obj->LastAnimStepBeta = 0;
+	obj->LastAnimStepGamma = 0;
+	obj->LastOfsIsPtr = 0;
+
+	uint32 lastOfsFrame = nbGroups * 8 + 8; // infos frame + 4 WORDs per group
+
+	obj->LastNbGroups = nbGroups;
+	obj->NextNbGroups = nbGroups;
+	obj->NbGroups = nbGroups;
+
+	lastOfsFrame *= frame;
+	uint32 timerRefHR = 0; // Replace with actual TimerRefHR
+
+	lastOfsFrame += 8; // Skip header
+
+	obj->LastTimer = timerRefHR;
+	obj->Time = timerRefHR;
+	obj->Status = 1; // STATUS_FRAME
+	obj->LastOfsFrame = lastOfsFrame;
+	obj->LastFrame = frame;
+
+	uint32 ecx = nbGroups * 2 - 2; // 2 DWORDs per group, no group 0
+	T_PTR_NUM ebpPtr = tempAnim;
+	tempAnim.Ptr = tempAnim.Ptr + lastOfsFrame + 16;
+
+	memcpy(obj->CurrentFrame, tempAnim.Ptr, ecx);
+
+	if (++frame == obj->NbFrames) {
+		uint16 time = *((uint16 *)(ebpPtr.Ptr + 8));
+		frame = 0;
+		tempAnim.Ptr = (void *)(8);
+	} else {
+		uint16 time = *((uint16 *)tempAnim.Ptr);
+		tempAnim.Ptr -= ebpPtr.Ptr;
+		tempAnim.Num += obj->LastTimer;
+		obj->NextFrame = frame;
+		obj->NextOfsFrame = (uint32)(tempAnim.Ptr);
+		obj->NextTimer = time;
+		obj->Master = *((uint16 *)(tempAnim.Ptr + 8));
+		obj->Status = 1; // STATUS_FRAME
+	}
+#endif
+}
+
+void Actor::initSprite(int32 spriteNum, int32 actorIdx) {
 	ActorStruct *localActor = _engine->_scene->getActor(actorIdx);
 
-	if (localActor->_staticFlags.bIsSpriteActor && localActor->_sprite != -1 && localActor->_body != localActor->_sprite) {
-		const BoundingBox *spritebbox = _engine->_resources->_spriteBoundingBox.bbox(localActor->_sprite);
-		localActor->_body = localActor->_sprite;
+	localActor->_sprite = spriteNum; // lba2
+
+	if (!localActor->_flags.bSprite3D) {
+		return;
+	}
+	if (spriteNum != -1 && localActor->_body != spriteNum) {
+		const BoundingBox *spritebbox = _engine->_resources->_spriteBoundingBox.bbox(spriteNum);
+		localActor->_body = spriteNum;
 		localActor->_boundingBox = *spritebbox;
 	}
 }
 
 TextId Actor::getTextIdForBehaviour() const {
-	if (_heroBehaviour == HeroBehaviourType::kAggressive && _autoAggressive) {
+	if (_heroBehaviour == HeroBehaviourType::kAggressive && _combatAuto) {
 		return TextId::kBehaviourAggressiveAuto;
 	}
 	// the other values are matching the text ids
 	return (TextId)(int32)_heroBehaviour;
 }
 
-int32 Actor::initBody(BodyType bodyIdx, int32 actorIdx, ActorBoundingBox &actorBoundingBox) {
+int32 Actor::searchBody(BodyType bodyIdx, int32 actorIdx, ActorBoundingBox &actorBoundingBox) {
 	if (bodyIdx == BodyType::btNone) {
 		return -1;
 	}
 	ActorStruct *actor = _engine->_scene->getActor(actorIdx);
-	const EntityBody *body = actor->_entityDataPtr->getBody((int)bodyIdx);
+	const EntityBody *body = actor->_entityDataPtr->getEntityBody((int)bodyIdx);
 	if (body == nullptr) {
 		warning("Failed to get entity body for body idx %i", (int)bodyIdx);
 		return -1;
 	}
 	actorBoundingBox = body->actorBoundingBox;
-	return body->hqrBodyIndex;
+	return (int)bodyIdx;
 }
 
-void Actor::initModelActor(BodyType bodyIdx, int16 actorIdx) {
+void Actor::initBody(BodyType gennewbody, int16 actorIdx) {
 	ActorStruct *localActor = _engine->_scene->getActor(actorIdx);
-	if (localActor->_staticFlags.bIsSpriteActor) {
+	if (localActor->_flags.bSprite3D) {
 		return;
 	}
 
-	debug(1, "Load body %i for actor %i", (int)bodyIdx, actorIdx);
+	debug(1, "Load body %i for actor %i", (int)gennewbody, actorIdx);
 
-	if (IS_HERO(actorIdx) && _heroBehaviour == HeroBehaviourType::kProtoPack && bodyIdx != BodyType::btTunic && bodyIdx != BodyType::btNormal) {
+	if (IS_HERO(actorIdx) && _heroBehaviour == HeroBehaviourType::kProtoPack && gennewbody != BodyType::btTunic && gennewbody != BodyType::btNormal) {
 		setBehaviour(HeroBehaviourType::kNormal);
 	}
 
 	ActorBoundingBox actorBoundingBox;
-	const int32 newBody = initBody(bodyIdx, actorIdx, actorBoundingBox);
+	const int32 newBody = searchBody(gennewbody, actorIdx, actorBoundingBox);
 	if (newBody == -1) {
 		localActor->_genBody = BodyType::btNone;
 		localActor->_body = -1;
 		localActor->_boundingBox = BoundingBox();
-		debug("Failed to initialize body %i for actor %i", (int)bodyIdx, actorIdx);
+		debug("Failed to initialize body %i for actor %i", (int)gennewbody, actorIdx);
 		return;
 	}
 
@@ -189,19 +267,20 @@ void Actor::initModelActor(BodyType bodyIdx, int16 actorIdx) {
 		return;
 	}
 
+	const int32 oldBody = localActor->_body;
 	localActor->_body = newBody;
-	localActor->_genBody = bodyIdx;
+	localActor->_genBody = gennewbody;
 
 	if (actorBoundingBox.hasBoundingBox) {
 		localActor->_boundingBox = actorBoundingBox.bbox;
 	} else {
-		const BodyData &bd = _engine->_resources->_bodyData[localActor->_body];
+		const BodyData &bd = localActor->_entityDataPtr->getBody(localActor->_body);
 		localActor->_boundingBox = bd.bbox;
 
 		int32 size = 0;
 		const int32 distX = bd.bbox.maxs.x - bd.bbox.mins.x;
 		const int32 distZ = bd.bbox.maxs.z - bd.bbox.mins.z;
-		if (localActor->_staticFlags.bUseMiniZv) {
+		if (localActor->_flags.bUseMiniZv) {
 			// take smaller for bound
 			if (distX < distZ)
 				size = distX / 2;
@@ -217,116 +296,138 @@ void Actor::initModelActor(BodyType bodyIdx, int16 actorIdx) {
 		localActor->_boundingBox.mins.z = -size;
 		localActor->_boundingBox.maxs.z = size;
 	}
+	if (oldBody != -1 && localActor->_anim != -1) {
+		copyInterAnim(localActor->_entityDataPtr->getBody(oldBody), localActor->_entityDataPtr->getBody(localActor->_body));
+	}
 }
 
-void Actor::initActor(int16 actorIdx) {
+void Actor::copyInterAnim(const BodyData &src, BodyData &dest) {
+	if (!src.isAnimated() || !dest.isAnimated()) {
+		return;
+	}
+
+	dest._animTimerData = src._animTimerData;
+
+	const int16 numBones = MIN<int16>((int16)src.getNumBones(), (int16)dest.getNumBones());
+	for (int16 i = 0; i < numBones; ++i) {
+		const BoneFrame *srcBoneFrame = src.getBoneState(i);
+		BoneFrame *destBoneFrame = dest.getBoneState(i);
+		*destBoneFrame = *srcBoneFrame;
+	}
+}
+
+void Actor::startInitObj(int16 actorIdx) {
 	ActorStruct *actor = _engine->_scene->getActor(actorIdx);
 
-	if (actor->_staticFlags.bIsSpriteActor) {
-		if (actor->_strengthOfHit != 0) {
-			actor->_dynamicFlags.bIsHitting = 1;
+	if (actor->_flags.bSprite3D) {
+		if (actor->_hitForce != 0) {
+			actor->_workFlags.bIsHitting = 1;
 		}
 
 		actor->_body = -1;
 
-		initSpriteActor(actorIdx);
+		initSprite(actor->_sprite, actorIdx);
 
-		_engine->_movements->setActorAngleSafe(ANGLE_0, ANGLE_0, ANGLE_0, &actor->_move);
+		_engine->_movements->initRealAngle(LBAAngles::ANGLE_0, LBAAngles::ANGLE_0, LBAAngles::ANGLE_0, &actor->realAngle);
 
-		if (actor->_staticFlags.bUsesClipping) {
-			actor->_animStep = actor->pos();
+		if (actor->_flags.bSpriteClip) {
+			actor->_animStep = actor->posObj();
 		}
 	} else {
 		actor->_body = -1;
 
 		debug(1, "Init actor %i with model %i", actorIdx, (int)actor->_genBody);
-		initModelActor(actor->_genBody, actorIdx);
+		initBody(actor->_genBody, actorIdx);
 
-		actor->_previousAnimIdx = -1;
-		actor->_animType = AnimType::kAnimationTypeLoop;
+		actor->_anim = -1;
+		actor->_flagAnim = AnimType::kAnimationTypeRepeat;
 
 		if (actor->_body != -1) {
-			_engine->_animations->initAnim(actor->_genAnim, AnimType::kAnimationTypeLoop, AnimationTypes::kAnimInvalid, actorIdx);
+			_engine->_animations->initAnim(actor->_genAnim, AnimType::kAnimationTypeRepeat, AnimationTypes::kNoAnim, actorIdx);
 		}
 
-		_engine->_movements->setActorAngleSafe(actor->_angle, actor->_angle, ANGLE_0, &actor->_move);
+		_engine->_movements->initRealAngle(actor->_beta, actor->_beta, LBAAngles::ANGLE_0, &actor->realAngle);
 	}
 
-	actor->_positionInMoveScript = -1;
-	actor->_labelIdx = -1;
-	actor->_positionInLifeScript = 0;
+	actor->_offsetTrack = -1;
+	actor->_labelTrack = -1;
+	actor->_offsetLife = 0;
 }
 
-// InitObject
-void Actor::resetActor(int16 actorIdx) {
+void Actor::initObject(int16 actorIdx) {
 	ActorStruct *actor = _engine->_scene->getActor(actorIdx);
-	*actor = ActorStruct();
+	*actor = ActorStruct(_engine->getMaxLife());
 
 	actor->_actorIdx = actorIdx;
-	actor->_pos = IVec3(0, -1, 0);
+	actor->_posObj = IVec3(0, SIZE_BRICK_Y, 0);
 
-	memset(&actor->_staticFlags, 0, sizeof(StaticFlagsStruct));
-	memset(&actor->_dynamicFlags, 0, sizeof(DynamicFlagsStruct));
+	memset(&actor->_flags, 0, sizeof(StaticFlagsStruct));
+	memset(&actor->_workFlags, 0, sizeof(DynamicFlagsStruct));
 	memset(&actor->_bonusParameter, 0, sizeof(BonusParameter));
 
-	_engine->_movements->setActorAngleSafe(ANGLE_0, ANGLE_0, ANGLE_0, &actor->_move);
+	_engine->_movements->initRealAngle(LBAAngles::ANGLE_0, LBAAngles::ANGLE_0, LBAAngles::ANGLE_0, &actor->realAngle);
 }
 
-void Actor::hitObj(int32 actorIdx, int32 actorIdxAttacked, int32 strengthOfHit, int32 angle) {
+void Actor::hitObj(int32 actorIdx, int32 actorIdxAttacked, int32 hitforce, int32 angle) {
 	ActorStruct *actor = _engine->_scene->getActor(actorIdxAttacked);
-	if (actor->_life <= 0) {
+	if (actor->_lifePoint <= 0) {
 		return;
 	}
 
-	if (IS_HERO(actorIdxAttacked) && _engine->_debugScene->_godMode) {
+	if (IS_HERO(actorIdxAttacked) && _engine->_debugState->_godMode) {
 		return;
 	}
 
 	actor->_hitBy = actorIdx;
+	debugC(1, TwinE::kDebugCollision, "Actor %d was hit by %d", actorIdxAttacked, actorIdx);
 
-	if (actor->_armor <= strengthOfHit) {
+	if (actor->_armor <= hitforce) {
 		if (actor->_genAnim == AnimationTypes::kBigHit || actor->_genAnim == AnimationTypes::kHit2) {
-			const int32 tmpAnimPos = actor->_animPosition;
-			if (actor->_animExtra != AnimationTypes::kStanding) {
+			if (actor->_nextGenAnim != AnimationTypes::kStanding) {
+				const int32 tmpAnimPos = actor->_frame;
+				actor->_frame = 1;
 				_engine->_animations->processAnimActions(actorIdxAttacked);
+				actor->_frame = tmpAnimPos;
 			}
 
-			actor->_animPosition = tmpAnimPos;
 		} else {
 			if (angle != -1) {
-				_engine->_movements->setActorAngleSafe(angle, angle, ANGLE_0, &actor->_move);
+				_engine->_movements->initRealAngle(angle, angle, LBAAngles::ANGLE_0, &actor->realAngle);
 			}
 
 			if (_engine->getRandomNumber() & 1) {
-				_engine->_animations->initAnim(AnimationTypes::kHit2, AnimType::kAnimationInsert, AnimationTypes::kAnimInvalid, actorIdxAttacked);
+				_engine->_animations->initAnim(AnimationTypes::kHit2, AnimType::kAnimationInsert, AnimationTypes::kNoAnim, actorIdxAttacked);
 			} else {
-				_engine->_animations->initAnim(AnimationTypes::kBigHit, AnimType::kAnimationInsert, AnimationTypes::kAnimInvalid, actorIdxAttacked);
+				_engine->_animations->initAnim(AnimationTypes::kBigHit, AnimType::kAnimationInsert, AnimationTypes::kNoAnim, actorIdxAttacked);
 			}
 		}
 
-		_engine->_extra->initSpecial(actor->_pos.x, actor->_pos.y + 1000, actor->_pos.z, ExtraSpecialType::kHitStars);
+		_engine->_extra->initSpecial(actor->_posObj.x, actor->_posObj.y + 1000, actor->_posObj.z, ExtraSpecialType::kHitStars);
 
-		if (!actorIdxAttacked) {
+		if (IS_HERO(actorIdxAttacked)) {
 			_engine->_movements->_lastJoyFlag = true;
 		}
-
-		actor->_life -= strengthOfHit;
-		if (actor->_life < 0) {
-			actor->_life = 0;
+		// TODO: in the original sources this in an else block - dotemu release doesn't have this (so we are going after dotmeu here)
+		// else {
+		actor->_lifePoint -= hitforce;
+		// }
+		if (actor->_lifePoint < 0) {
+			actor->_lifePoint = 0;
 		}
 	} else {
-		_engine->_animations->initAnim(AnimationTypes::kHit, AnimType::kAnimationInsert, AnimationTypes::kAnimInvalid, actorIdxAttacked);
+		_engine->_animations->initAnim(AnimationTypes::kHit, AnimType::kAnimationInsert, AnimationTypes::kNoAnim, actorIdxAttacked);
 	}
 }
 
-void Actor::processActorCarrier(int32 actorIdx) {
+void Actor::checkCarrier(int32 actorIdx) {
 	ActorStruct *actor = _engine->_scene->getActor(actorIdx);
-	if (!actor->_staticFlags.bIsCarrierActor) {
+	if (!actor->_flags.bIsCarrierActor) {
 		return;
 	}
-	for (int32 a = 0; a < _engine->_scene->_sceneNumActors; a++) {
-		if (actor->_carryBy == actorIdx) {
-			actor->_carryBy = -1;
+	for (int32 a = 0; a < _engine->_scene->_nbObjets; a++) {
+		ActorStruct *otherActor =  _engine->_scene->getActor(a);
+		if (otherActor->_carryBy == actorIdx) {
+			otherActor->_carryBy = -1;
 		}
 	}
 }
@@ -338,66 +439,100 @@ void Actor::giveExtraBonus(int32 actorIdx) {
 	if (bonusSprite == -1) {
 		return;
 	}
-	if (actor->_dynamicFlags.bIsDead) {
-		_engine->_extra->addExtraBonus(actor->pos(), ANGLE_90, ANGLE_0, bonusSprite, actor->_bonusAmount);
-		_engine->_sound->playSample(Samples::ItemPopup, 1, actor->pos(), actorIdx);
+	if (actor->_workFlags.bIsDead) {
+		_engine->_extra->addExtraBonus(actor->posObj(), LBAAngles::ANGLE_90, LBAAngles::ANGLE_0, bonusSprite, actor->_bonusAmount);
+		_engine->_sound->mixSample3D(Samples::ItemPopup, 0x1000, 1, actor->posObj(), actorIdx);
 	} else {
 		const ActorStruct *sceneHero = _engine->_scene->_sceneHero;
-		const int32 angle = _engine->_movements->getAngleAndSetTargetActorDistance(actor->pos(), sceneHero->pos());
-		const IVec3 pos(actor->_pos.x, actor->_pos.y + actor->_boundingBox.maxs.y, actor->_pos.z);
-		_engine->_extra->addExtraBonus(pos, ANGLE_70, angle, bonusSprite, actor->_bonusAmount);
-		_engine->_sound->playSample(Samples::ItemPopup, 1, pos, actorIdx);
+		const int32 angle = _engine->_movements->getAngle(actor->posObj(), sceneHero->posObj());
+		const IVec3 pos(actor->_posObj.x, actor->_posObj.y + actor->_boundingBox.maxs.y, actor->_posObj.z);
+		_engine->_extra->addExtraBonus(pos, LBAAngles::ANGLE_70, angle, bonusSprite, actor->_bonusAmount);
+		_engine->_sound->mixSample3D(Samples::ItemPopup, 0x1000, 1, pos, actorIdx);
 	}
 }
 
-void ActorStruct::loadModel(int32 modelIndex, bool lba1) {
-	_body = modelIndex;
-	if (!_staticFlags.bIsSpriteActor) {
-		debug(1, "Init actor with model %i", modelIndex);
-		if (!_entityData.loadFromHQR(Resources::HQR_FILE3D_FILE, modelIndex, lba1)) {
-			error("Failed to load entity data for index %i", modelIndex);
+// Lba2
+#define	START_AROUND_BETA	1024
+#define	END_AROUND_BETA		3072
+#define	STEP_AROUND_BETA	128	// 16 pos testees
+#define GetAngle2D(x0, z0, x1, z1) GetAngleVector2D((x1) - (x0), (z1) - (z0))
+
+void Actor::posObjectAroundAnother(uint8 numsrc, uint8 numtopos) {
+#if 0
+	ActorStruct *objsrc;
+	ActorStruct *objtopos;
+	int32 beta, dist, dist2;
+	int32 step;
+
+	objsrc = _engine->_scene->getActor(numsrc);
+	objtopos = _engine->_scene->getActor(numtopos);
+
+	int32 xb = objsrc->Obj.X;
+	int32 zb = objsrc->Obj.Z;
+
+	objtopos->Obj.Y = objsrc->Obj.Y;
+
+	dist = MAX(objsrc->XMin, objsrc->XMax);
+	dist = MAX(dist, objsrc->ZMin);
+	dist = MAX(dist, objsrc->ZMax);
+
+	dist2 = MAX(objtopos->XMin, objtopos->XMax);
+	dist2 = MAX(dist2, objtopos->ZMin);
+	dist2 = MAX(dist2, objtopos->ZMax);
+
+	dist += dist / 2 + dist2 + dist2 / 2;
+
+	beta = ClampAngle(objsrc->Obj.Beta + START_AROUND_BETA);
+
+	for (step = 0; step < (4096 / STEP_AROUND_BETA); step++, beta += STEP_AROUND_BETA) {
+		beta &= 4095;
+		_engine->_renderer->rotate(0, dist, beta);
+
+		objtopos->Obj.X = xb + X0;
+		objtopos->Obj.Z = zb + Z0;
+
+		if (_engine->_collision->checkValidObjPos(numtopos, numsrc)) {
+			// accepte position
+			break;
 		}
-		_entityDataPtr = &_entityData;
-	} else {
-		_entityDataPtr = nullptr;
 	}
+
+	objtopos->Obj.Beta = ClampAngle(GetAngle2D(xb, zb, objtopos->Obj.X, objtopos->Obj.Z));
+#endif
 }
 
-int32 ActorMoveStruct::getRealAngle(int32 time) {
-	if (numOfStep) {
-		const int32 timePassed = time - timeOfChange;
+int16 RealValue::getRealValueFromTime(int32 time) {
+	if (timeValue) {
+		const int32 delta = time - memoTicks;
 
-		if (timePassed >= numOfStep) { // rotation is finished
-			numOfStep = 0;
-			return to;
+		if (delta >= timeValue) { // rotation is finished
+			timeValue = 0;
+			return endValue;
 		}
 
-		int32 remainingAngle = NormalizeAngle(to - from);
-		remainingAngle *= timePassed;
-		remainingAngle /= numOfStep;
-		remainingAngle += from;
+		int32 t = ((endValue - startValue) * delta) / timeValue;
+		t += startValue;
 
-		return remainingAngle;
+		return (int16)t;
 	}
 
-	return to;
+	return endValue;
 }
 
-int32 ActorMoveStruct::getRealValue(int32 time) {
-	if (!numOfStep) {
-		return to;
+int16 RealValue::getRealAngle(int32 time) {
+	if (timeValue) {
+		int32 delta = time - memoTicks;
+		if (delta < timeValue) {
+			int32 t = NormalizeAngle(endValue - startValue);
+			t = (t * delta) / timeValue;
+			t += startValue;
+			return (int16)t;
+		}
+
+		timeValue = 0;
 	}
 
-	if (time - timeOfChange >= numOfStep) {
-		numOfStep = 0;
-		return to;
-	}
-
-	int32 tempStep = to - from;
-	tempStep *= time - timeOfChange;
-	tempStep /= numOfStep;
-
-	return tempStep + from;
+	return endValue;
 }
 
 bool ActorStruct::isAttackAnimationActive() const {

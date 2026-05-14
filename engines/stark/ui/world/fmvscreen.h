@@ -35,7 +35,7 @@ namespace Stark {
 
 namespace Gfx {
 class SurfaceRenderer;
-class Texture;
+class Bitmap;
 }
 
 /**
@@ -47,7 +47,7 @@ class FMVScreen : public SingleWindowScreen {
 public:
 	FMVScreen(Gfx::Driver *gfx, Cursor *cursor);
 	virtual ~FMVScreen();
-	void play(const Common::String &name);
+	void play(const Common::Path &name);
 	void stop();
 
 protected:
@@ -59,7 +59,7 @@ private:
 
 	Video::BinkDecoder *_decoder;
 	Gfx::SurfaceRenderer *_surfaceRenderer;
-	Gfx::Texture *_texture;
+	Gfx::Bitmap *_bitmap;
 };
 
 } // End of namespace Stark

@@ -137,7 +137,7 @@ void BaseSurface::copyFrom(Graphics::Surface *sourceSurface, int16 x, int16 y, N
 
 // ShadowSurface
 
-ShadowSurface::ShadowSurface(NeverhoodEngine *vm, int priority, int16 width, int16 height, BaseSurface *shadowSurface)
+	ShadowSurface::ShadowSurface(NeverhoodEngine *vm, int priority, int16 width, int16 height, const Common::SharedPtr<BaseSurface> &shadowSurface)
 	: BaseSurface(vm, priority, width, height, "shadow"), _shadowSurface(shadowSurface) {
 	// Empty
 }
@@ -151,7 +151,7 @@ void ShadowSurface::draw() {
 // FontSurface
 
 FontSurface::FontSurface(NeverhoodEngine *vm, NPointArray *tracking, uint charsPerRow, uint16 numRows, byte firstChar, uint16 charWidth, uint16 charHeight)
-	: BaseSurface(vm, 0, charWidth * charsPerRow, charHeight * numRows, "font"), _charsPerRow(charsPerRow), _numRows(numRows),
+	: BaseSurface(vm, 0, charWidth * charsPerRow, charHeight * numRows + 4, "font"), _charsPerRow(charsPerRow), _numRows(numRows),
 	_firstChar(firstChar), _charWidth(charWidth), _charHeight(charHeight), _tracking(nullptr) {
 
 	_tracking = new NPointArray();
@@ -160,7 +160,7 @@ FontSurface::FontSurface(NeverhoodEngine *vm, NPointArray *tracking, uint charsP
 }
 
 FontSurface::FontSurface(NeverhoodEngine *vm, uint32 fileHash, uint charsPerRow, uint16 numRows, byte firstChar, uint16 charWidth, uint16 charHeight)
-	: BaseSurface(vm, 0, charWidth * charsPerRow, charHeight * numRows, "font"), _charsPerRow(charsPerRow), _numRows(numRows),
+	: BaseSurface(vm, 0, charWidth * charsPerRow, charHeight * numRows + 4, "font"), _charsPerRow(charsPerRow), _numRows(numRows),
 	_firstChar(firstChar), _charWidth(charWidth), _charHeight(charHeight), _tracking(nullptr) {
 
 	SpriteResource fontSpriteResource(_vm);
@@ -182,13 +182,14 @@ void FontSurface::drawChar(BaseSurface *destSurface, int16 x, int16 y, byte chr)
 	destSurface->copyFrom(_surface, x, y, sourceRect);
 }
 
-void FontSurface::drawString(BaseSurface *destSurface, int16 x, int16 y, const byte *string, int stringLen) {
+void FontSurface::drawString(const Common::SharedPtr<BaseSurface> &destSurface, int16 x, int16 y, const byte *string, int stringLen) {
+	BaseSurface *destSurfaceRaw = destSurface.get();
 
 	if (stringLen < 0)
 		stringLen = strlen((const char*)string);
 
 	for (; stringLen > 0; --stringLen, ++string) {
-		drawChar(destSurface, x, y, *string);
+		drawChar(destSurfaceRaw, x, y, *string);
 		x += _tracking ? (*_tracking)[*string - _firstChar].x : _charWidth;
 	}
 

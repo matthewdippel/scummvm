@@ -25,6 +25,7 @@
 #include "common/array.h"
 #include "common/hash-str.h"
 #include "common/hashmap.h"
+#include "common/path.h"
 #include "common/rect.h"
 #include "common/str.h"
 #include "common/str-array.h"
@@ -48,7 +49,7 @@ public:
 	virtual ~DialogsManager();
 
 	void init(uint arraySize, const Common::String &endOfConversationText) { _dialogsVariables.resize(arraySize); _endOfConversationText = endOfConversationText; }
-	void loadGTO(const Common::String &gtoFile);
+	void loadGTO(const Common::Path &gtoFilePath);
 
 	void setupVariable(uint id, const Common::String &variable) { _dialogsVariables[id] = DialogVariable(variable, 'N'); }
 	void reinitVariables();

@@ -2,10 +2,10 @@ MODULE := backends/platform/3ds
 
 MODULE_OBJS := \
 	main.o \
+	allocHeapsOverride.o \
 	shader.shbin.o \
 	sprite.o \
-	config.o \
-	options-dialog.o \
+	options.o \
 	osystem.o \
 	osystem-graphics.o \
 	osystem-audio.o \

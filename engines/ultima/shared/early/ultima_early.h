@@ -34,7 +34,7 @@
 #include "engines/engine.h"
 #include "ultima/detection.h"
 
-#include "ultima/shared/engine/ultima.h"
+#include "ultima/shared/engine/events.h"
 
 namespace Ultima {
 
@@ -54,7 +54,6 @@ struct UltimaSavegameHeader {
 	int _totalFrames;
 };
 
-class Debugger;
 class Events;
 class Game;
 class GameBase;
@@ -65,27 +64,27 @@ namespace Gfx {
 class Screen;
 }
 
-class UltimaEarlyEngine : public UltimaEngine {
+class UltimaEarlyEngine : public Engine, public EventsCallback {
 private:
 	/**
 	 * Initialize the engine
 	 */
-	bool initialize() override;
+	virtual bool initialize();
 
 	/**
 	 * Deinitialize the engine
 	 */
+	virtual void deinitialize() {}
 
-	void deinitialize() override;
-
-	/**
-	 * Returns the data archive folder and version that's required
-	 */
-	bool isDataRequired(Common::String &folder, int &majorVersion, int &minorVersion) override;
+private:
+	Common::RandomSource _randomSource;
+protected:
+	const UltimaGameDescription *_gameDescription;
 public:
 	GameBase *_game;
 	MouseCursor *_mouseCursor;
 	Gfx::Screen *_screen;
+	EventsManager *_events;
 public:
 	UltimaEarlyEngine(OSystem *syst, const UltimaGameDescription *gameDesc);
 	~UltimaEarlyEngine() override;
@@ -96,25 +95,43 @@ public:
 	Common::Error run() override;
 
 	/**
+	 * Returns supported engine features
+	 */
+	bool hasFeature(EngineFeature f) const override;
+
+	/**
 	 * Play the game
 	 */
 	void playGame();
 
 	/**
+	 * Get a random number
+	 */
+	uint getRandomNumber(uint maxVal) { return _randomSource.getRandomNumber(maxVal); }
+
+	/**
+	 * Gets a random number
+	 */
+	uint getRandomNumber(uint min, uint max) {
+		return min + _randomSource.getRandomNumber(max - min);
+	}
+
+	/**
 	 * Get the screen
 	 */
 	Graphics::Screen *getScreen() const override;
+
 	/**
 	 * Indicates whether a game state can be loaded.
 	 * @param isAutosave	Flags whether it's an autosave check
 	 */
-	bool canLoadGameStateCurrently(bool isAutosave) override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	/**
 	 * Indicates whether a game state can be saved.
 	 * @param isAutosave	Flags whether it's an autosave check
 	 */
-	bool canSaveGameStateCurrently(bool isAutosave) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	/**
 	 * Load a savegame
@@ -125,6 +142,17 @@ public:
 	 * Save a game state.
 	 */
 	Common::Error saveGameStream(Common::WriteStream *stream, bool isAutosave = false) override;
+
+	/**
+	 * Returns the game type being played
+	 */
+	GameId getGameId() const;
+
+	/**
+	 * Returns true if the game is running an enhanced version
+	 * as compared to the original game
+	 */
+	bool isEnhanced() const;
 
 	/*
 	 * Creates a new hierarchy for the game, that contains all the logic for playing that particular game.

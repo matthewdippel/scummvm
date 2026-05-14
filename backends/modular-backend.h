@@ -62,19 +62,22 @@ public:
 	/** @name Graphics */
 	//@{
 
-	GraphicsManager *getGraphicsManager();
+	GraphicsManager *getGraphicsManager() { return _graphicsManager; }
 	const GraphicsMode *getSupportedGraphicsModes() const override;
 	int getDefaultGraphicsMode() const override;
 	bool setGraphicsMode(int mode, uint flags = kGfxModeNoFlags) override;
 	int getGraphicsMode() const override;
-	const GraphicsMode *getSupportedShaders() const override final;
-	int getDefaultShader() const override final;
-	int getShader() const override final;
-	bool setShader(int id) override final;
+#if defined(USE_IMGUI)
+	void setImGuiCallbacks(const ImGuiCallbacks &callbacks) override final;
+	void *getImGuiTexture(const Graphics::Surface &image, const byte *palette, int palCount) override final;
+	void freeImGuiTexture(void *texture) override final;
+#endif
+	bool setShader(const Common::Path &name) override final;
 	const GraphicsMode *getSupportedStretchModes() const override final;
 	int getDefaultStretchMode() const override final;
 	bool setStretchMode(int mode) override final;
 	int getStretchMode() const override final;
+	bool setRotationMode(Common::RotationMode rotation) override final;
 	uint getDefaultScaler() const override final;
 	uint getDefaultScaleFactor() const override final;
 	using BaseBackend::setScaler;
@@ -99,26 +102,29 @@ public:
 	Graphics::Surface *lockScreen() override final;
 	void unlockScreen() override final;
 	void fillScreen(uint32 col) override final;
+	void fillScreen(const Common::Rect &r, uint32 col) override final;
 	void updateScreen() override final;
+	void presentBuffer() override final;
 	void setShakePos(int shakeXOffset, int shakeYOffset) override final;
 	void setFocusRectangle(const Common::Rect& rect) override final;
 	void clearFocusRectangle() override final;
 
-	void showOverlay() override final;
+	void showOverlay(bool inGUI) override final;
 	void hideOverlay() override final;
 	bool isOverlayVisible() const override final;
 	Graphics::PixelFormat getOverlayFormat() const override final;
 	void clearOverlay() override final;
 	void grabOverlay(Graphics::Surface &surface) override final;
 	void copyRectToOverlay(const void *buf, int pitch, int x, int y, int w, int h) override final;
-	int16 getOverlayHeight() override final;
-	int16 getOverlayWidth() override final;
+	int16 getOverlayHeight() const override final;
+	int16 getOverlayWidth() const override final;
+	Common::Rect getSafeOverlayArea(int16 *width, int16 *height) const override final;
 
 	float getHiDPIScreenFactor() const override final;
 
 	bool showMouse(bool visible) override final;
 	void warpMouse(int x, int y) override final;
-	void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale = false, const Graphics::PixelFormat *format = NULL) override final;
+	void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale = false, const Graphics::PixelFormat *format = NULL, const byte *mask = NULL) override final;
 	void setCursorPalette(const byte *colors, uint start, uint num) override final;
 	bool lockMouse(bool lock) override final;
 

@@ -41,7 +41,7 @@ const Room g_roomData[] = {
 	  255,255,255,0,
 	  7,2,255,255,255,255,6,255,255,255,1 },
 
-	// location 2: Louis' (?)
+	// location 2: Louis'
 	{ "DREAMWEB.R02",
 	  2,255,33,0,
 	  255,255,255,0,
@@ -113,7 +113,7 @@ const Room g_roomData[] = {
 	  255,255,255,0,
 	  1,4,255,255,255,255,255,255,255,255,13 },
 
-	// location 14
+	// location 14: subway station
 	{ "DREAMWEB.R14",
 	  14,255,44,20,
 	  255,255,255,0,
@@ -730,7 +730,7 @@ void DreamWebEngine::dreamweb() {
 }
 
 void DreamWebEngine::loadTextFile(TextFile &file, const char *suffix) {
-	Common::String fileName = getDatafilePrefix() + suffix;
+	Common::Path fileName(getDatafilePrefix() + suffix);
 	FileHeader header;
 
 	Common::File f;
@@ -836,7 +836,7 @@ void DreamWebEngine::switchRyanOff() {
 }
 
 void DreamWebEngine::loadGraphicsFile(GraphicsFile &file, const char *suffix) {
-	Common::String fileName = getDatafilePrefix() + suffix;
+	Common::Path fileName(getDatafilePrefix() + suffix);
 	FileHeader header;
 
 	Common::File f;
@@ -1192,9 +1192,7 @@ void DreamWebEngine::commandOnly(uint8 command) {
 }
 
 bool DreamWebEngine::checkIfPerson(uint8 x, uint8 y) {
-	Common::List<People>::iterator i;
-	for (i = _peopleList.begin(); i != _peopleList.end(); ++i) {
-		People &people = *i;
+	for (auto &people : _peopleList) {
 		Reel *reel = getReelStart(people._reelPointer);
 		if (reel->frame() == 0xffff)
 			++reel;
@@ -2035,7 +2033,7 @@ void DreamWebEngine::loadRoomData(const Room &room, bool skipDat) {
 	processEvents();
 	Common::File file;
 	if (!file.open(modifyFileName(room.name)))
-		error("cannot open file %s", modifyFileName(room.name).c_str());
+		error("cannot open file %s", modifyFileName(room.name).toString(Common::Path::kNativeSeparator).c_str());
 
 	FileHeader header;
 	file.read((uint8 *)&header, sizeof(FileHeader));
@@ -2121,7 +2119,7 @@ void DreamWebEngine::restoreReels() {
 	processEvents();
 	Common::File file;
 	if (!file.open(modifyFileName(room.name)))
-		error("cannot open file %s", modifyFileName(room.name).c_str());
+		error("cannot open file %s", modifyFileName(room.name).toString(Common::Path::kNativeSeparator).c_str());
 
 	FileHeader header;
 	file.read((uint8 *)&header, sizeof(FileHeader));
@@ -2227,19 +2225,26 @@ void DreamWebEngine::atmospheres() {
 			_sound->playChannel0(a->_sound, a->_repeat);
 
 			// NB: The asm here reads
-			//	cmp reallocation,2
+			//  cmp reallocation,2
 			//  cmp mapy,0
 			//  jz fullvol
 			//  jnz notlouisvol
-			//  I'm interpreting this as if the cmp reallocation is below the jz
+			// This should probably be interpreted like this:
+			//  cmp reallocation,2
+			//  jnz notlouisvol
+			//  cmp mapy,0
+			//  jz  fullvol
+			if (_realLocation == 2) {
+				if (_mapY == 0) {
+					_sound->volumeSet(0); // "fullvol"
+					return;
+				}
 
-			if (_mapY == 0) {
-				_sound->volumeSet(0); // "fullvol"
-				return;
+				if (_mapX == 22 && _mapY == 10) {
+					_sound->volumeSet(5); // "louisvol"
+					return;
+				}
 			}
-
-			if (_realLocation == 2 && _mapX == 22 && _mapY == 10)
-				_sound->volumeSet(5); // "louisvol"
 
 			if (hasSpeech() && _realLocation == 14) {
 				if (_mapX == 33) {
@@ -2904,7 +2909,7 @@ void DreamWebEngine::clearChanges() {
 	_vars._exFramePos = 0;
 	_vars._exTextPos = 0;
 
-	memset(_exFrames._frames, 0xFF, kFrameBlocksize);
+	memset(_exFrames._frames, 0xFF, kGraphicsFileFrameSize * sizeof(Frame));
 	memset(_exFrames._data, 0xFF, kExframeslen);
 	memset(_exData, 0xFF, sizeof(_exData));
 	memset(_exText._offsetsLE, 0xFF, 2*(kNumexobjects+2));

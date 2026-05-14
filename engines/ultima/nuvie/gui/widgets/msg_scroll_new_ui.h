@@ -25,12 +25,10 @@
 #include "ultima/nuvie/misc/call_back.h"
 #include "ultima/nuvie/gui/widgets/gui_widget.h"
 #include "ultima/shared/std/containers.h"
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 
 namespace Ultima {
 namespace Nuvie {
-
-using Std::list;
 
 class Configuration;
 class Font;
@@ -56,18 +54,18 @@ class MsgScrollNewUI: public MsgScroll {
 	uint8 border_color;
 	uint16 position;
 
-	Std::string trailing_whitespace;
+	Common::String trailing_whitespace;
 
 public:
 
-	MsgScrollNewUI(Configuration *cfg, Screen *s);
+	MsgScrollNewUI(const Configuration *cfg, Screen *s);
 	~MsgScrollNewUI() override;
 
 	GUI_status callback(uint16 msg, GUI_CallBack *caller, void *data) override {
 		return GUI_PASS;
 	}
 	uint16 callback(uint16 msg, CallBack *caller, void *data) override;
-	bool can_display_prompt() override {
+	bool can_display_prompt() const override {
 		return false;
 	}
 
@@ -77,13 +75,13 @@ public:
 
 	void display_prompt() override {}
 
-	void display_string(Std::string s, Font *f, bool include_on_map_window) override;
+	void display_string(const Common::String &s, Font *f, bool include_on_map_window) override;
 
 	void set_font(uint8 font_type) override;
 	bool is_garg_font() override;
 
 	GUI_status KeyDown(const Common::KeyState &key) override;
-	GUI_status MouseDown(int x, int y, Shared::MouseButton button) override;
+	GUI_status MouseDown(int x, int y, Events::MouseButton button) override;
 
 	void move_scroll_down() override {
 		scroll_movement_event(SCROLL_DOWN);
@@ -99,7 +97,7 @@ protected:
 
 private:
 	GUI_status scroll_movement_event(MsgScrollEventType event);
-	uint16 count_empty_lines(Std::string s);
+	uint16 count_empty_lines(const Common::String &s);
 
 };
 

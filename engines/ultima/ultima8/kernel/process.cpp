@@ -38,21 +38,19 @@ Process::Process(ObjId it, uint16 ty)
 }
 
 void Process::fail() {
-	assert(!(_flags & PROC_TERMINATED));
-
 	_flags |= PROC_FAILED;
 	terminate();
 }
 
 void Process::terminate() {
-	assert(!(_flags & PROC_TERMINATED));
+	if (_flags & PROC_TERMINATED)
+		return;
 
 	Kernel *kernel = Kernel::get_instance();
 
 	// wake up waiting processes
-	for (Std::vector<ProcId>::iterator i = _waiting.begin();
-	        i != _waiting.end(); ++i) {
-		Process *p = kernel->getProcess(*i);
+	for (const auto &pid : _waiting) {
+		Process *p = kernel->getProcess(pid);
 		if (p)
 			p->wakeUp(_result);
 	}
@@ -105,7 +103,7 @@ void Process::suspend() {
 	_flags |= PROC_SUSPENDED;
 }
 
-void Process::dumpInfo() const {
+Common::String Process::dumpInfo() const {
 	Common::String info = Common::String::format(
 		"Process %d class %s, item %d, type %x, status ",
 		getPid(), GetClassType()._className, _itemNum, _type);
@@ -116,15 +114,17 @@ void Process::dumpInfo() const {
 	if (_flags & PROC_TERM_DEFERRED) info += "t";
 	if (_flags & PROC_FAILED) info += "F";
 	if (_flags & PROC_RUNPAUSED) info += "R";
+	if (_flags & PROC_TERM_DISPOSE) info += "D";
+
 	if (!_waiting.empty()) {
 		info += ", notify: ";
-		for (Std::vector<ProcId>::const_iterator i = _waiting.begin(); i != _waiting.end(); ++i) {
+		for (auto i = _waiting.begin(); i != _waiting.end(); ++i) {
 			if (i != _waiting.begin()) info += ", ";
 			info += Common::String::format("%d", *i);
 		}
 	}
 
-	g_debugger->debugPrintf("%s\n", info.c_str());
+	return info;
 }
 
 void Process::saveData(Common::WriteStream *ws) {
@@ -159,15 +159,14 @@ bool Process::loadData(Common::ReadStream *rs, uint32 version) {
 }
 
 bool Process::validateWaiters() const {
-	for (Std::vector<ProcId>::const_iterator i = _waiting.begin();
-			i != _waiting.end(); ++i) {
-		const Process *p = Kernel::get_instance()->getProcess(*i);
+	for (const auto &pid : _waiting) {
+		const Process *p = Kernel::get_instance()->getProcess(pid);
 		if (!p) {
 			// This can happen if a waiting process gets forcibly terminated.
-			warning("Invalid procid %d in waitlist for proc %d. Maybe a bug?", *i, _pid);
+			warning("Invalid procid %d in waitlist for proc %d. Maybe a bug?", pid, _pid);
 		} else if (!p->is_suspended()) {
 			// This should never happen.
-			warning("Procid %d in waitlist for proc %d but not marked suspended", *i, _pid);
+			warning("Procid %d in waitlist for proc %d but not marked suspended", pid, _pid);
 			return false;
 		}
 	}

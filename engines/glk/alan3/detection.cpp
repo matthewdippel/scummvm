@@ -35,6 +35,10 @@ void Alan3MetaEngine::getSupportedGames(PlainGameList &games) {
 	}
 }
 
+const GlkDetectionEntry* Alan3MetaEngine::getDetectionEntries() {
+	return ALAN3_GAMES;
+}
+
 GameDescriptor Alan3MetaEngine::findGame(const char *gameId) {
 	for (const PlainGameDescriptor *pd = ALAN3_GAME_LIST; pd->gameId; ++pd) {
 		if (!strcmp(gameId, pd->gameId))
@@ -51,7 +55,7 @@ bool Alan3MetaEngine::detectGames(const Common::FSList &fslist, DetectedGames &g
 		if (file->isDirectory())
 			continue;
 		Common::String filename = file->getName();
-		bool hasExt = filename.hasSuffix(".a3c");
+		bool hasExt = filename.hasSuffixIgnoreCase(".a3c");
 		if (!hasExt)
 			continue;
 

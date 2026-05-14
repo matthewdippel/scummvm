@@ -19,7 +19,6 @@
  *
  */
 
-#include "ags/shared/ac/common.h" // update_polled_stuff
 #include "ags/shared/ac/common_defines.h"
 #include "ags/shared/ac/game_struct_defines.h"
 #include "ags/shared/ac/words_dictionary.h" // TODO: extract string decryption
@@ -128,7 +127,7 @@ HError ReadMainBlock(RoomStruct *room, Stream *in, RoomFileVersion data_ver) {
 			if (data_ver >= kRoomVersion_3415)
 				room->Hotspots[i].ScriptName = StrUtil::ReadString(in);
 			else
-				room->Hotspots[i].ScriptName = String::FromStreamCount(in, MAX_SCRIPT_NAME_LEN);
+				room->Hotspots[i].ScriptName = String::FromStreamCount(in, LEGACY_MAX_SCRIPT_NAME_LEN);
 		}
 	}
 
@@ -140,8 +139,6 @@ HError ReadMainBlock(RoomStruct *room, Stream *in, RoomFileVersion data_ver) {
 		for (size_t i = 0; i < polypoint_areas; ++i)
 			wallpoints[i].Read(in);
 	*/
-
-	update_polled_stuff_if_runtime();
 
 	room->Edges.Top = in->ReadInt16();
 	room->Edges.Bottom = in->ReadInt16();
@@ -214,15 +211,15 @@ HError ReadMainBlock(RoomStruct *room, Stream *in, RoomFileVersion data_ver) {
 	room->WalkAreaCount = MAX_WALK_AREAS;
 	if (data_ver >= kRoomVersion_240)
 		room->WalkAreaCount = in->ReadInt32();
-	if (room->WalkAreaCount > MAX_WALK_AREAS + 1)
-		return new RoomFileError(kRoomFileErr_IncompatibleEngine, String::FromFormat("Too many walkable areas (in room: %d, max: %d).", room->WalkAreaCount, MAX_WALK_AREAS + 1));
+	if (room->WalkAreaCount > MAX_WALK_AREAS)
+		return new RoomFileError(kRoomFileErr_IncompatibleEngine, String::FromFormat("Too many walkable areas (in room: %d, max: %d).", room->WalkAreaCount, MAX_WALK_AREAS));
 
 	if (data_ver >= kRoomVersion_200_alpha7)
 		for (size_t i = 0; i < room->WalkAreaCount; ++i)
 			room->WalkAreas[i].ScalingFar = in->ReadInt16();
 	if (data_ver >= kRoomVersion_214)
 		for (size_t i = 0; i < room->WalkAreaCount; ++i)
-			room->WalkAreas[i].Light = in->ReadInt16();
+			room->WalkAreas[i].PlayerView = in->ReadInt16();
 	if (data_ver >= kRoomVersion_251) {
 		for (size_t i = 0; i < room->WalkAreaCount; ++i)
 			room->WalkAreas[i].ScalingNear = in->ReadInt16();
@@ -285,8 +282,9 @@ HError ReadMainBlock(RoomStruct *room, Stream *in, RoomFileVersion data_ver) {
 	}
 
 	if (data_ver >= kRoomVersion_114) {
-		for (size_t i = 0; i < (size_t)MAX_WALK_AREAS + 1; ++i)
-			room->WalkAreas[i].Light = in->ReadInt16();
+		// NOTE: this WA value was written for the second time here, for some weird reason
+		for (size_t i = 0; i < (size_t)MAX_WALK_AREAS; ++i)
+			room->WalkAreas[i].PlayerView = in->ReadInt16();
 	}
 	if (data_ver >= kRoomVersion_255b) {
 		for (size_t i = 0; i < room->RegionCount; ++i)
@@ -295,7 +293,6 @@ HError ReadMainBlock(RoomStruct *room, Stream *in, RoomFileVersion data_ver) {
 			room->Regions[i].Tint = in->ReadInt32();
 	}
 
-	update_polled_stuff_if_runtime();
 	// Primary background (LZW or RLE compressed depending on format)
 	if (data_ver >= kRoomVersion_pre114_5)
 		room->BgFrames[0].Graphic.reset(
@@ -304,16 +301,12 @@ HError ReadMainBlock(RoomStruct *room, Stream *in, RoomFileVersion data_ver) {
 		room->BgFrames[0].Graphic.reset(load_rle_bitmap8(in));
 
 	// Area masks
-	update_polled_stuff_if_runtime();
 	if (data_ver >= kRoomVersion_255b)
 		room->RegionMask.reset(load_rle_bitmap8(in));
 	else if (data_ver >= kRoomVersion_114)
 		skip_rle_bitmap8(in); // an old version - clear the 'shadow' area into a blank regions bmp (???)
-	update_polled_stuff_if_runtime();
 	room->WalkAreaMask.reset(load_rle_bitmap8(in));
-	update_polled_stuff_if_runtime();
 	room->WalkBehindMask.reset(load_rle_bitmap8(in));
-	update_polled_stuff_if_runtime();
 	room->HotspotMask.reset(load_rle_bitmap8(in));
 	return HError::None();
 }
@@ -364,25 +357,24 @@ HError ReadObjScNamesBlock(RoomStruct *room, Stream *in, RoomFileVersion data_ve
 		if (data_ver >= kRoomVersion_3415)
 			obj.ScriptName = StrUtil::ReadString(in);
 		else
-			obj.ScriptName.ReadCount(in, MAX_SCRIPT_NAME_LEN);
+			obj.ScriptName.ReadCount(in, LEGACY_MAX_SCRIPT_NAME_LEN);
 	}
 	return HError::None();
 }
 
 // Secondary backgrounds
 HError ReadAnimBgBlock(RoomStruct *room, Stream *in, RoomFileVersion data_ver) {
-	room->BgFrameCount = in->ReadByte();
+	room->BgFrameCount = in->ReadInt8();
 	if (room->BgFrameCount > MAX_ROOM_BGFRAMES)
 		return new RoomFileError(kRoomFileErr_IncompatibleEngine, String::FromFormat("Too many room backgrounds (in room: %d, max: %d).", room->BgFrameCount, MAX_ROOM_BGFRAMES));
 
-	room->BgAnimSpeed = in->ReadByte();
+	room->BgAnimSpeed = in->ReadInt8();
 	if (data_ver >= kRoomVersion_255a) {
 		for (size_t i = 0; i < room->BgFrameCount; ++i)
 			room->BgFrames[i].IsPaletteShared = in->ReadInt8() != 0;
 	}
 
 	for (size_t i = 1; i < room->BgFrameCount; ++i) {
-		update_polled_stuff_if_runtime();
 		room->BgFrames[i].Graphic.reset(
 			load_lzw(in, room->BackgroundBPP, &room->BgFrames[i].Palette));
 	}
@@ -513,7 +505,8 @@ HRoomFileError UpdateRoomData(RoomStruct *room, RoomFileVersion data_ver, bool g
 			room->RegionMask.reset(BitmapHelper::CreateBitmap(room->WalkAreaMask->GetWidth(), room->WalkAreaMask->GetHeight(), 8));
 		room->RegionMask->Blit(room->WalkAreaMask.get(), 0, 0, 0, 0, room->RegionMask->GetWidth(), room->RegionMask->GetHeight());
 		for (size_t i = 0; i < MAX_ROOM_REGIONS; ++i) {
-			room->Regions[i].Light = room->WalkAreas[i].Light;
+			// sic!! walkable areas were storing Light level in this field pre-2.55
+			room->Regions[i].Light = room->WalkAreas[i].PlayerView;
 			room->Regions[i].Tint = 255;
 		}
 	}
@@ -625,26 +618,6 @@ HRoomFileError UpdateRoomData(RoomStruct *room, RoomFileVersion data_ver, bool g
 	return HRoomFileError::None();
 }
 
-// Reader for ExtractScripText
-static String *reader_script;
-RoomFileVersion reader_ver;
-
-HError ExtractScriptTextReader(Stream *in, int block_id,
-		const String &ext_id, soff_t block_len, bool &read_next) {
-	if (block_id == kRoomFblk_Script) {
-		read_next = false;
-		char *buf = nullptr;
-		HError err = ReadScriptBlock(buf, in, reader_ver);
-		if (err) {
-			*reader_script = buf;
-			delete[] buf;
-		}
-		return err;
-	}
-	in->Seek(block_len); // skip block
-	return HError::None();
-}
-
 HRoomFileError ExtractScriptText(String &script, Stream *in, RoomFileVersion data_ver) {
 	RoomBlockReader reader(nullptr, data_ver, in);
 	HError err = reader.ReadRoomScript(script);
@@ -706,16 +679,16 @@ void WriteMainBlock(const RoomStruct *room, Stream *out) {
 		out->WriteInt16(obj.Flags);
 	out->WriteInt16(room->MaskResolution);
 
-	out->WriteInt32(MAX_WALK_AREAS + 1);
-	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS + 1; ++i)
+	out->WriteInt32(MAX_WALK_AREAS);
+	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS; ++i)
 		out->WriteInt16(room->WalkAreas[i].ScalingFar);
-	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS + 1; ++i)
-		out->WriteInt16(room->WalkAreas[i].Light);
-	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS + 1; ++i)
+	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS; ++i)
+		out->WriteInt16(room->WalkAreas[i].PlayerView);
+	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS; ++i)
 		out->WriteInt16(room->WalkAreas[i].ScalingNear);
-	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS + 1; ++i)
+	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS; ++i)
 		out->WriteInt16(room->WalkAreas[i].Top);
-	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS + 1; ++i)
+	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS; ++i)
 		out->WriteInt16(room->WalkAreas[i].Bottom);
 
 	out->WriteByteCount(0, LEGACY_ROOM_PASSWORD_LENGTH);
@@ -737,8 +710,9 @@ void WriteMainBlock(const RoomStruct *room, Stream *out) {
 
 	out->WriteInt16(0); // legacy room animations
 
-	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS + 1; ++i)
-		out->WriteInt16(room->WalkAreas[i].Light);
+	// NOTE: this WA value was written for the second time here, for some weird reason
+	for (size_t i = 0; i < (size_t)MAX_WALK_AREAS; ++i)
+		out->WriteInt16(room->WalkAreas[i].PlayerView);
 	for (size_t i = 0; i < (size_t)MAX_ROOM_REGIONS; ++i)
 		out->WriteInt16(room->Regions[i].Light);
 	for (size_t i = 0; i < (size_t)MAX_ROOM_REGIONS; ++i)

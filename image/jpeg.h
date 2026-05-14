@@ -22,6 +22,7 @@
 #ifndef IMAGE_JPEG_H
 #define IMAGE_JPEG_H
 
+#include "graphics/palette.h"
 #include "graphics/surface.h"
 #include "image/image_decoder.h"
 #include "image/codecs/codec.h"
@@ -39,9 +40,10 @@ namespace Image {
  * @brief Decoder for JPEG images.
  *
  * Used in engines:
- * - Groovie
- * - Mohawk
- * - Wintermute
+ * - groovie
+ * - mohawk
+ * - vcruise
+ * - wintermute
  * @{
  */
 
@@ -51,13 +53,21 @@ public:
 	~JPEGDecoder();
 
 	// ImageDecoder API
-	virtual void destroy();
-	virtual bool loadStream(Common::SeekableReadStream &str);
-	virtual const Graphics::Surface *getSurface() const;
+	void destroy() override;
+	bool loadStream(Common::SeekableReadStream &str) override;
+	const Graphics::Surface *getSurface() const override;
+	const Graphics::Palette &getPalette() const override { return _palette; }
 
 	// Codec API
-	const Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream);
-	Graphics::PixelFormat getPixelFormat() const;
+	const Graphics::Surface *decodeFrame(Common::SeekableReadStream &stream) override;
+	void setCodecAccuracy(CodecAccuracy accuracy) override;
+	Graphics::PixelFormat getPixelFormat() const override;
+	bool setOutputPixelFormat(const Graphics::PixelFormat &format) override {
+		if (format.isCLUT8())
+			return false;
+		_requestedPixelFormat = format;
+		return true;
+	}
 
 	// Special API for JPEG
 	enum ColorSpace {
@@ -94,17 +104,14 @@ public:
 	 */
 	void setOutputColorSpace(ColorSpace outSpace) { _colorSpace = outSpace; }
 
-	/**
-	 * Request the output pixel format. The JPEG decoder provides high performance
-	 * color conversion routines for some pixel formats. This setting allows to use
-	 * them and avoid costly subsequent color conversion.
-	 */
-	void setOutputPixelFormat(const Graphics::PixelFormat &format) { _requestedPixelFormat = format; }
-
 private:
+	// TODO: Avoid inheriting from multiple superclasses that have identical member functions.
+	using Codec::getPalette;
 	Graphics::Surface _surface;
+	Graphics::Palette _palette;
 	ColorSpace _colorSpace;
 	Graphics::PixelFormat _requestedPixelFormat;
+	CodecAccuracy _accuracy;
 
 	Graphics::PixelFormat getByteOrderRgbPixelFormat() const;
 };

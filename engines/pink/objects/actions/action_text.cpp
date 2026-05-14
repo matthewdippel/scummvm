@@ -21,8 +21,9 @@
 
 #include "common/debug.h"
 #include "common/substream.h"
+#include "common/unicode-bidi.h"
 
-#include "graphics/transparent_surface.h"
+#include "graphics/paletteman.h"
 
 #include "pink/archive.h"
 #include "pink/screen.h"
@@ -95,16 +96,28 @@ void ActionText::start() {
 	stream->read(str, stream->size());
 	delete stream;
 
-	switch(_actor->getPage()->getGame()->getLanguage()) {
+	Common::Language language = _actor->getPage()->getGame()->getLanguage();
+	screen->getWndManager()._language = language;
+	switch(language) {
 	case Common::DA_DNK:
+		// fall through
 	case Common::ES_ESP:
+		// fall through
 	case Common::FR_FRA:
+		// fall through
 	case Common::PT_BRA:
+		// fall through
+	case Common::DE_DEU:
+		// fall through
+	case Common::IT_ITA:
+		// fall through
+	case Common::NL_NLD:
 		_text = Common::String(str).decode(Common::kWindows1252);
 		break;
 
 	case Common::FI_FIN:
-	case Common::SE_SWE:
+		// fall through
+	case Common::SV_SWE:
 		_text = Common::String(str).decode(Common::kWindows1257);
 		break;
 
@@ -123,12 +136,16 @@ void ActionText::start() {
 		_text = Common::String(str).decode(Common::kWindows1251);
 		break;
 
+	case Common::EN_GRB:
+		// fall through
 	case Common::EN_ANY:
+		// fall through
 	default:
 		_text = Common::String(str);
 		break;
 	}
 
+	_text.trim();
 	delete[] str;
 
 	while ( _text.size() > 0 && (_text[ _text.size() - 1 ] == '\n' || _text[ _text.size() - 1 ] == '\r') )
@@ -136,7 +153,7 @@ void ActionText::start() {
 
 	if (_scrollBar) {
 		_txtWnd = screen->getWndManager().addTextWindow(screen->getTextFont(), _textColorIndex, _backgroundColorIndex,
-														  _xRight - _xLeft, align, nullptr, false);
+														  _xRight - _xLeft, align, nullptr);
 		_txtWnd->setTextColorRGB(_textRGB);
 		_txtWnd->enableScrollbar(true);
 		// it will hide the scrollbar when the text height is smaller than the window height
@@ -162,6 +179,7 @@ Common::Rect ActionText::getBound() {
 
 void ActionText::end() {
 	Screen *screen = _actor->getPage()->getGame()->getScreen();
+	screen->addDirtyRect(this->getBound());
 	if (_scrollBar && _txtWnd) {
 		screen->getWndManager().removeWindow(_txtWnd);
 		screen->removeTextWindow(_txtWnd);
@@ -173,15 +191,14 @@ void ActionText::end() {
 }
 
 void ActionText::draw(Graphics::ManagedSurface *surface) {
-	int xOffset = 0, yOffset = 0;
+	int yOffset = 0;
 	// we need to first fill this area with backgroundColor, in order to wash away the previous text
 	surface->fillRect(Common::Rect(_xLeft, _yTop, _xRight, _yBottom), _backgroundColorIndex);
 
 	if (_centered) {
-		xOffset = (_xRight - _xLeft) / 2 - _macText->getTextMaxWidth() / 2;
 		yOffset = (_yBottom - _yTop) / 2 - _macText->getTextHeight() / 2;
 	}
-	_macText->drawToPoint(surface, Common::Rect(0, 0, _xRight - _xLeft, _yBottom - _yTop), Common::Point(_xLeft + xOffset, _yTop + yOffset));
+	_macText->drawToPoint(surface, Common::Rect(0, 0, _xRight - _xLeft, _yBottom - _yTop), Common::Point(_xLeft, _yTop + yOffset));
 }
 
 #define BLUE(rgb) ((rgb) & 0xFF)

@@ -39,14 +39,14 @@ void MartianPlayer::load() {
 
 	// Overwrite game-specific values
 	_playerOffset.x = _vm->_screen->_scaleTable1[20];
-	_playerOffset.y = _vm->_screen->_scaleTable1[52];
+	_playerOffset.y = _vm->_screen->_scaleTable1[62];
 	_leftDelta = -9;
 	_rightDelta = 33;
 	_upDelta = 5;
 	_downDelta = -5;
 	_scrollConst = 5;
 
-	for (int i = 0; i < _vm->_playerDataCount; ++i) {
+	for (uint8 i = 0; i < _vm->_playerDataCount; ++i) {
 		_walkOffRight[i] = SIDEOFFR[i];
 		_walkOffLeft[i] = SIDEOFFL[i];
 		_walkOffUp[i] = SIDEOFFU[i];
@@ -59,6 +59,8 @@ void MartianPlayer::load() {
 	_upWalkMax = 14;
 	_downWalkMin = 15;
 	_downWalkMax = 23;
+
+	// playerPalette is configured in Player::load.
 }
 
 } // End of namespace Martian

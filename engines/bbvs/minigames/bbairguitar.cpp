@@ -299,7 +299,6 @@ void MinigameBbAirGuitar::initObjects1() {
 	for (int i = 0; i < 60; ++i)
 		_objects[i].kind = 0;
 
-	_objects[0].kind = 0;
 	_objects[0].kind = 1;
 	_objects[0].anim = getAnimation(0);
 	_objects[0].ticks = getAnimation(0)->frameTicks[0];
@@ -818,7 +817,7 @@ void MinigameBbAirGuitar::update() {
 		_gameTicks = _vm->_system->getMillis();
 	}
 
-	if (_vm->_keyCode == Common::KEYCODE_ESCAPE) {
+	if (_vm->_customAction == kActionEscape) {
 		_gameDone = querySaveModifiedTracks();
 		return;
 	}
@@ -832,7 +831,7 @@ void MinigameBbAirGuitar::update() {
 		done = !updateStatus(_vm->_mouseX, _vm->_mouseY, _vm->_mouseButtons);
 		_vm->_mouseButtons &= ~kLeftButtonClicked;
 		_vm->_mouseButtons &= ~kRightButtonClicked;
-		_vm->_keyCode = Common::KEYCODE_INVALID;
+		_vm->_customAction = kActionNone;
 	} while (--inputTicks && _gameTicks > 0 && !done);
 
 	drawSprites();

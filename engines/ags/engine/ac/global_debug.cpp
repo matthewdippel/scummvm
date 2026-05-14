@@ -39,6 +39,7 @@
 #include "ags/engine/gui/gui_dialog.h"
 #include "ags/engine/debugging/debug_log.h"
 #include "ags/engine/debugging/debugger.h"
+#include "ags/engine/main/engine.h"
 #include "ags/engine/main/main.h"
 #include "ags/shared/ac/sprite_cache.h"
 #include "ags/shared/gfx/bitmap.h"
@@ -61,11 +62,13 @@ String GetRuntimeInfo() {
 	const size_t max_normspr =  _GP(spriteset).GetMaxCacheSize() - total_lockspr;
 	const unsigned norm_spr_filled = (uint64_t)total_normspr * 100 / max_normspr;
 	String runtimeInfo = String::FromFormat(
-		"Adventure Game Studio run-time engine[ACI version %s"
+		"%s[Engine version %s"
 		"[Game resolution %d x %d (%d-bit)"
 		"[Running %d x %d at %d-bit%s[GFX: %s; %s[Draw frame %d x %d["
 		"Sprite cache KB: %zu, norm: %zu / %zu (%u%%), locked: %zu",
-		_G(EngineVersion).LongString.GetCStr(), _GP(game).GetGameRes().Width, _GP(game).GetGameRes().Height, _GP(game).GetColorDepth(),
+		get_engine_name(),
+		get_engine_version_and_build().GetCStr(),
+		_GP(game).GetGameRes().Width, _GP(game).GetGameRes().Height, _GP(game).GetColorDepth(),
 		mode.Width, mode.Height, mode.ColorDepth,
 		mode.IsWindowed() ? " W" : "",
 		_G(gfxDriver)->GetDriverName(), filter->GetInfo().Name.GetCStr(),
@@ -93,7 +96,7 @@ void script_debug(int cmdd, int dataa) {
 		//    Display("invorder decided there are %d items[display %d",_GP(play).inv_numorder,_GP(play).inv_numdisp);
 	} else if (cmdd == 1) {
 		String toDisplay = GetRuntimeInfo();
-		Display(toDisplay.GetCStr());
+		DisplayMB(toDisplay.GetCStr());
 		//    Display("shftR: %d  shftG: %d  shftB: %d", _G(_rgb_r_shift_16), _G(_rgb_g_shift_16), _G(_rgb_b_shift_16));
 		//    Display("Remaining memory: %d kb",_go32_dpmi_remaining_virtual_memory()/1024);
 		//Display("Play char bcd: %d",->GetColorDepth(_GP(spriteset)[_GP(views)[_G(playerchar)->view].frames[_G(playerchar)->loop][_G(playerchar)->frame].pic]));
@@ -147,10 +150,10 @@ void script_debug(int cmdd, int dataa) {
 			mlsnum %= TURNING_AROUND;
 		MoveList *cmls = &_GP(mls)[mlsnum];
 		for (int i = 0; i < cmls->numstage - 1; i++) {
-			short srcx = short((cmls->pos[i] >> 16) & 0x00ffff);
-			short srcy = short(cmls->pos[i] & 0x00ffff);
-			short targetx = short((cmls->pos[i + 1] >> 16) & 0x00ffff);
-			short targety = short(cmls->pos[i + 1] & 0x00ffff);
+			short srcx = cmls->pos[i].X;
+			short srcy = cmls->pos[i].Y;
+			short targetx = cmls->pos[i + 1].X;
+			short targety = cmls->pos[i + 1].Y;
 			tempw->DrawLine(Line(srcx, srcy, targetx, targety), MakeColor(i + 1));
 		}
 

@@ -22,8 +22,8 @@
 #ifndef BACKENDS_CLOUD_DOWNLOADREQUEST_H
 #define BACKENDS_CLOUD_DOWNLOADREQUEST_H
 
-#include "backends/networking/curl/request.h"
-#include "backends/networking/curl/networkreadstream.h"
+#include "backends/networking/http/request.h"
+#include "backends/networking/http/networkreadstream.h"
 #include "backends/cloud/storage.h"
 #include "common/file.h"
 
@@ -42,17 +42,17 @@ class DownloadRequest: public Networking::Request {
 	byte *_buffer;
 
 	void start();
-	void streamCallback(Networking::NetworkReadStreamResponse response);
-	void streamErrorCallback(Networking::ErrorResponse error);
+	void streamCallback(const Networking::NetworkReadStreamResponse &response);
+	void streamErrorCallback(const Networking::ErrorResponse &error);
 	void finishDownload(bool success);
-	virtual void finishError(Networking::ErrorResponse error, Networking::RequestState state = Networking::FINISHED);
+	void finishError(const Networking::ErrorResponse &error, Networking::RequestState state = Networking::FINISHED) override;
 
 public:
-	DownloadRequest(Storage *storage, Storage::BoolCallback callback, Networking::ErrorCallback ecb, Common::String remoteFileId, Common::DumpFile *dumpFile);
-	virtual ~DownloadRequest();
+	DownloadRequest(Storage *storage, Storage::BoolCallback callback, Networking::ErrorCallback ecb, const Common::String &remoteFileId, Common::DumpFile *dumpFile);
+	~DownloadRequest() override;
 
-	virtual void handle();
-	virtual void restart();
+	void handle() override;
+	void restart() override;
 
 	/** Returns a number in range [0, 1], where 1 is "complete". */
 	double getProgress() const;

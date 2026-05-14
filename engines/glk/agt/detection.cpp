@@ -34,6 +34,10 @@ void AGTMetaEngine::getSupportedGames(PlainGameList &games) {
 		games.push_back(*pd);
 }
 
+const GlkDetectionEntry* AGTMetaEngine::getDetectionEntries() {
+	return AGT_GAMES;
+}
+
 GameDescriptor AGTMetaEngine::findGame(const char *gameId) {
 	for (const PlainGameDescriptor *pd = AGT_GAME_LIST; pd->gameId; ++pd) {
 		if (!strcmp(gameId, pd->gameId))
@@ -62,7 +66,7 @@ bool AGTMetaEngine::detectGames(const Common::FSList &fslist, DetectedGames &gam
 
 		// Scan through the AGT game list for a match
 		const GlkDetectionEntry *p = AGT_GAMES;
-		while (p->_md5 && p->_filesize != filesize && md5 != p->_md5)
+		while (p->_md5 && ((p->_filesize != filesize) || (md5 != p->_md5)))
 			++p;
 
 		if (!p->_gameId) {

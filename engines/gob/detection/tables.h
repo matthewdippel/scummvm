@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_DETECTION_TABLES_H
@@ -30,22 +36,20 @@ using namespace Common;
 // Game IDs and proper names
 static const PlainGameDescriptor gobGames[] = {
 	{"gob1", "Gobliiins"},
-	{"gob1cd", "Gobliiins CD"},
 	{"gob2", "Gobliins 2"},
-	{"gob2cd", "Gobliins 2 CD"},
+	{"gob3", "Goblins Quest 3"},
 	{"ween", "Ween: The Prophecy"},
 	{"bargon", "Bargon Attack"},
 	{"babayaga", "Once Upon A Time: Baba Yaga"},
 	{"abracadabra", "Once Upon A Time: Abracadabra"},
+	{"englishfever", "English Fever"},
 	{"littlered", "Once Upon A Time: Little Red Riding Hood"},
 	{"onceupon", "Once Upon A Time"},
-	{"ajworld", "A.J.'s World of Discovery"},
-	{"gob3", "Goblins Quest 3"},
-	{"gob3cd", "Goblins Quest 3 CD"},
 	{"crousti", "Croustibat"},
+	{"lit", "Lost in Time"},
 	{"lit1", "Lost in Time Part 1"},
 	{"lit2", "Lost in Time Part 2"},
-	{"lit", "Lost in Time"},
+	{"nathanvacances", "Nathan Vacances"},
 	{"inca2", "Inca II: Wiracocha"},
 	{"woodruff", "The Bizarre Adventures of Woodruff and the Schnibble"},
 	{"dynasty", "The Last Dynasty"},
@@ -59,13 +63,59 @@ static const PlainGameDescriptor gobGames[] = {
 	{"playtnck1", "Playtoons Construction Kit 1 - Monsters"},
 	{"playtnck2", "Playtoons Construction Kit 2 - Knights"},
 	{"playtnck3", "Playtoons Construction Kit 3 - Far West"},
+	{"playtoonsdemo", "Playtoons Demo"},
+	{"magicstones", "The Land of the Magic Stones"},
 	{"bambou", "Playtoons Limited Edition - Bambou le sauveur de la jungle"},
 	{"fascination", "Fascination"},
 	{"geisha", "Geisha"},
+	{"adi1", "ADI 1"},
 	{"adi2", "ADI 2"},
 	{"adi4", "ADI 4"},
-	{"adibou2", "Adibou 2"},
+	// {"adi4mathlanguage78", "ADI 4 Math & Language 7-8 years"},
+	{"adi4mathlanguage89", "ADI 4 Math & Language 8-9 years"},
+	// {"adi4mathlanguage910", "ADI 4 Math & Language 9-10 years"},
+	{"adi4mathlanguage1011", "ADI 4 Math & Language 10-11 years"},
+	// {"adi4mathlanguage1112", "ADI 4 Math & Language 11-12 years"},
+	// {"adi4mathlanguage1213", "ADI 4 Math & Language 12-13 years"},
+	// {"adi4mathlanguage1314", "ADI 4 Math & Language 13-14 years"},
+	// {"adi4mathlanguage1415", "ADI 4 Math & Language 14-15 years"},
+	// {"adi4anglais79", "ADI 4 Anglais 7-9 years"},
+	{"adi4anglais911", "ADI 4 Anglais 9-11 years"},
+	// {"adi4anglais1112", "ADI 4 Anglais 11-12 years"},
+	// {"adi4anglais1213", "ADI 4 Anglais 12-13 years"},
+	// {"adi4anglais1314", "ADI 4 Anglais 13-14 years"},
+	// {"adi4anglais1415", "ADI 4 Anglais 14-15 years"},
+	{"adi4geo", "ADI 4 Geography"},
+	// {"adi4sciences", "ADI 4 Sciences"},
+	{"adi4euro", "ADI 4 Euro"},
+	{"adi5", "ADI 5"},
+	{"adi5language", "ADI 5 Language"},
+	{"adi5anglais", "ADI 5 Anglais"},
 	{"adibou1", "Adibou 1"},
+	{"adibou1read45", "Adibou 1 Read 4-5 years"},
+	{"adibou1count45", "Adibou 1 Count 4-5 years"},
+	{"adibou1read67", "Adibou 1 Read 6-7 years"},
+	{"adibou1count67", "Adibou 1 Count 6-7 years"},
+	{"adibou2", "Adibou 2"},
+	{"adibou2readcount45", "Adibou 2 Read/Count 4-5 years"},
+	{"adibou2readcount67", "Adibou 2 Read/Count 6-7 years"},
+	{"adibou2sciences", "Adibou 2 Nature & Sciences"},
+	{"adibou2anglais", "Adibou 2 Anglais"},
+	{"adibou2music", "Adibou 2 Music"},
+	{"adibou3", "Adibou 3"},
+	{"adibou3readcount45", "Adibou 3 Read/Count 4-5 years"},
+	{"adibou3readcount56", "Adibou 3 Read/Count 5-6 years"},
+	{"adibou3readcount67", "Adibou 3 Read/Count 6-7 years"},
+	{"adibou3sciences", "Adibou 3 Nature & Sciences"},
+	{"adibou3music", "Adibou 3 Music"},
+	{"adibou3anglais", "Adibou 3 Anglais"},
+	{"adiboucuisine", "Adibou présente la Cuisine"},
+	{"adiboudessin", "Adibou présente le Dessin"},
+	{"adiboumagie", "Adibou présente la Magie"},
+	{"adiboudchoumer", "Adiboud'chou a la mer"},
+	{"adiboudchoubanquise", "Adiboud'chou sur la banquise"},
+	{"adiboudchoucampagne", "Adiboud'chou a la campagne"},
+	{"adiboudchoujunglesavane", "Adiboud'chou dans la jungle et la savane"},
 	{0, 0}
 };
 
@@ -81,6 +131,7 @@ static const GOBGameDescription gameDescriptions[] = {
 	#include "gob/detection/tables_littlered.h" // Once Upon A Time: Little Red Riding Hood
 	#include "gob/detection/tables_onceupon.h"  // Once Upon A Time: Baba Yaga and Abracadabra
 	#include "gob/detection/tables_lit.h"       // Lost in Time
+	#include "gob/detection/tables_nathanvacances.h" // Nathan Vacances series
 	#include "gob/detection/tables_fascin.h"    // Fascination
 	#include "gob/detection/tables_geisha.h"    // Geisha
 	#include "gob/detection/tables_inca2.h"     // Inca II: Wiracocha
@@ -88,13 +139,20 @@ static const GOBGameDescription gameDescriptions[] = {
 	#include "gob/detection/tables_dynasty.h"   // The Last Dynasty
 	#include "gob/detection/tables_urban.h"     // Urban Runner
 	#include "gob/detection/tables_playtoons.h" // The Playtoons series
-	#include "gob/detection/tables_adi2.h"      // The ADI / Addy 2 series
+	#include "gob/detection/tables_magicstones.h" // Le pays des Pierres Magiques / The Land of the Magic Stones
+	#include "gob/detection/tables_englishfever.h" // English Fever
+	#include "gob/detection/tables_adi1.h"      // The ADI 1 series
+	#include "gob/detection/tables_adi2.h"      // The ADI 2 series
 	#include "gob/detection/tables_adi4.h"      // The ADI / Addy 4 series
-	#include "gob/detection/tables_adibou.h"    // The Adibou / Addy Junior series
-	#include "gob/detection/tables_ajworld.h"   // A.J.'s World of Discovery / ADI Jr.
+	#include "gob/detection/tables_adi5.h"      // The ADI / Addy 5 series
+	#include "gob/detection/tables_adibou1.h"   // Adibou 1 / A.J.'s World of Discovery / ADI Jr.
+	#include "gob/detection/tables_adibou2.h"   // The Adibou 2 / Addy Junior series
+	#include "gob/detection/tables_adibou3.h"	// Adibou 3 / Adiboo 3 series
+	#include "gob/detection/tables_adiboupresente.h"	// Adibou présente series
+	#include "gob/detection/tables_adiboudchou.h"		// Adiboud'chou / Addy Buschu series
 	#include "gob/detection/tables_crousti.h"   // Croustibat
 
-	{ AD_TABLE_END_MARKER, kGameTypeNone, kFeaturesNone, 0, 0, 0}
+	{ AD_TABLE_END_MARKER, kFeaturesNone, 0, 0, 0}
 };
 
 // File-based fallback tables

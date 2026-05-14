@@ -24,7 +24,7 @@
 #include "common/fs.h"
 #include "common/debug.h"
 #include "common/textconsole.h"
-#include "common/ini-file.h"
+#include "common/formats/ini-file.h"
 
 #include "agi/wagparser.h"
 
@@ -55,8 +55,10 @@ void WagProperty::deepCopy(const WagProperty &other) {
 	_propSize = other._propSize;
 
 	if (other._propData != nullptr) {
-		_propData = new char[other._propSize + 1UL]; // Allocate space for property's data plus trailing zero
+		_propData = (char *)calloc(other._propSize + 1UL, 1); // Allocate space for property's data plus trailing zero
 		memcpy(_propData, other._propData, other._propSize + 1UL); // Copy the whole thing
+	} else {
+		_propData = nullptr;
 	}
 }
 
@@ -73,7 +75,7 @@ bool WagProperty::read(Common::SeekableReadStream &stream) {
 	}
 
 	// Then read the property's data
-	_propData = new char[_propSize + 1UL]; // Allocate space for property's data plus trailing zero
+	_propData = (char *)calloc(_propSize + 1UL, 1); // Allocate space for property's data plus trailing zero
 	uint32 readBytes = stream.read(_propData, _propSize); // Read the data in
 	_propData[_propSize] = 0; // Set the trailing zero for easy C-style string access
 
@@ -97,7 +99,7 @@ void WagProperty::setDefaults() {
 
 void WagProperty::deleteData() {
 	if (_propData)
-		delete[] _propData;
+		free(_propData);
 	_propData = nullptr;
 }
 
@@ -170,11 +172,11 @@ bool WagFileParser::checkWagVersion(Common::SeekableReadStream &stream) {
 	}
 }
 
-void WagFileParser::addPropFromIni(Common::INIFile *iniWagFile, Common::String section, Common::String key, Agi::WagProperty::WagPropertyCode code) {
+void WagFileParser::addPropFromIni(Common::INIFile &iniWagFile, Common::String section, Common::String key, Agi::WagProperty::WagPropertyCode code) {
 	WagProperty property;
 	property.setPropCode(code);
 	Common::String value;
-	if (iniWagFile->getKey(key, section, value)) {
+	if (iniWagFile.getKey(key, section, value)) {
 		property.setPropDataSize(value);
 		_propList.push_back(property);
 	}
@@ -207,12 +209,12 @@ bool WagFileParser::parse(const Common::FSNode &node) {
 			_parsedOk = endOfProperties(*stream) && property.readOk();
 
 			if (!_parsedOk) // Error parsing stream
-				warning("Error parsing WAG file (%s). WAG file ignored", node.getPath().c_str());
+				warning("Error parsing WAG file (%s). WAG file ignored", node.getPath().toString(Common::Path::kNativeSeparator).c_str());
 		} else {
 			// Invalid WinAGI version string or it couldn't be read
 			// Let's try to read WAG file as newer INI format
-			Common::INIFile *iniWagFile = new Common::INIFile();
-			_parsedOk = iniWagFile->loadFromStream(*stream);
+			Common::INIFile iniWagFile;
+			_parsedOk = iniWagFile.loadFromStream(*stream);
 			if (_parsedOk) {
 				addPropFromIni(iniWagFile, "General", "Interpreter", WagProperty::PC_INTVERSION);
 				addPropFromIni(iniWagFile, "General", "GameID", WagProperty::PC_GAMEID);
@@ -220,11 +222,11 @@ bool WagFileParser::parse(const Common::FSNode &node) {
 				addPropFromIni(iniWagFile, "General", "GameVersion", WagProperty::PC_GAMEVERSION);
 				addPropFromIni(iniWagFile, "General", "LastEdit", WagProperty::PC_GAMELAST);
 			} else
-				warning("Invalid WAG file (%s) version or error reading it. WAG file ignored", node.getPath().c_str());
+				warning("Invalid WAG file (%s) version or error reading it. WAG file ignored", node.getPath().toString(Common::Path::kNativeSeparator).c_str());
 		}
 
 	} else // Couldn't open file
-		warning("Couldn't open WAG file (%s). WAG file ignored", node.getPath().c_str());
+		warning("Couldn't open WAG file (%s). WAG file ignored", node.getPath().toString(Common::Path::kNativeSeparator).c_str());
 
 	delete stream;
 	return _parsedOk;

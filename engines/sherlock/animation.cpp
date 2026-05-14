@@ -26,6 +26,8 @@
 
 #include "common/algorithm.h"
 
+#include "backends/keymapper/keymapper.h"
+
 namespace Sherlock {
 
 static const int NO_FRAMES = FRAMES_END;
@@ -33,7 +35,7 @@ static const int NO_FRAMES = FRAMES_END;
 Animation::Animation(SherlockEngine *vm) : _vm(vm) {
 }
 
-bool Animation::play(const Common::String &filename, bool intro, int minDelay, int fade,
+bool Animation::play(const Common::Path &filename, bool intro, int minDelay, int fade,
 		bool setPalette, int speed) {
 	Events &events = *_vm->_events;
 	Screen &screen = *_vm->_screen;
@@ -44,7 +46,8 @@ bool Animation::play(const Common::String &filename, bool intro, int minDelay, i
 	const int *soundFrames = checkForSoundFrames(filename, intro);
 
 	// Add on the VDX extension
-	Common::String vdxName = filename + ".vdx";
+	Common::Path vdxName(filename);
+	vdxName.appendInPlace(".vdx");
 
 	// Load the animation
 	Common::SeekableReadStream *stream;
@@ -56,7 +59,8 @@ bool Animation::play(const Common::String &filename, bool intro, int minDelay, i
 		stream = _vm->_res->load(vdxName, "epilogue.lib");
 
 	// Load initial image
-	Common::String vdaName = filename + ".vda";
+	Common::Path vdaName(filename);
+	vdaName.appendInPlace(".vda");
 	ImageFile images(vdaName, true, true);
 
 	events.wait(minDelay);
@@ -67,6 +71,10 @@ bool Animation::play(const Common::String &filename, bool intro, int minDelay, i
 		if (fade != 255)
 			screen.setPalette(images._palette);
 	}
+
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->disableAllGameKeymaps();
+	keymapper->getKeymap("animation")->setEnabled(true);
 
 	int frameNumber = 0;
 	Common::Point pt;
@@ -105,27 +113,26 @@ bool Animation::play(const Common::String &filename, bool intro, int minDelay, i
 				++soundNumber;
 				++soundFrames;
 
-				Common::String sampleFilename;
+				Common::Path sampleFilename;
 
 				if (!intro) {
 					// regular animation, append 1-digit number
-					sampleFilename = Common::String::format("%s%01d", filename.c_str(), soundNumber);
+					sampleFilename = filename.append(Common::String::format("%01d", soundNumber));
 				} else {
 					// intro animation, append 2-digit number
-					sampleFilename = Common::String::format("%s%02d", filename.c_str(), soundNumber);
+					sampleFilename = filename.append(Common::String::format("%02d", soundNumber));
 				}
 
 				if (sound._voices)
-					sound.playSound(sampleFilename, WAIT_RETURN_IMMEDIATELY, 100, _soundLibraryFilename.c_str());
+					sound.playSound(sampleFilename, WAIT_RETURN_IMMEDIATELY, 100, _soundLibraryFilename);
 			}
 
 			events.wait(speed * 3);
 		}
 
-		if (events.kbHit()) {
-			Common::KeyState keyState = events.getKey();
-			if (keyState.keycode == Common::KEYCODE_ESCAPE ||
-				keyState.keycode == Common::KEYCODE_SPACE) {
+		if (events.actionHit()) {
+			Common::CustomEventType action = events.getAction();
+			if (action == kActionSkipAnim) {
 				skipped = true;
 				break;
 			}
@@ -135,6 +142,11 @@ bool Animation::play(const Common::String &filename, bool intro, int minDelay, i
 		}
 	}
 
+	keymapper->getKeymap("animation")->setEnabled(false);
+	keymapper->getKeymap("sherlock-default")->setEnabled(true);
+	keymapper->getKeymap("scalpel")->setEnabled(true);
+	keymapper->getKeymap("scalpel-quit")->setEnabled(true);
+
 	events.clearEvents();
 	sound.stopSound();
 	delete stream;
@@ -142,7 +154,7 @@ bool Animation::play(const Common::String &filename, bool intro, int minDelay, i
 	return !skipped && !_vm->shouldQuit();
 }
 
-bool Animation::play3DO(const Common::String &filename, bool intro, int minDelay, bool fadeFromGrey,
+bool Animation::play3DO(const Common::Path &filename, bool intro, int minDelay, bool fadeFromGrey,
 		int speed) {
 	Events &events = *_vm->_events;
 	Screen &screen = *_vm->_screen;
@@ -159,18 +171,21 @@ bool Animation::play3DO(const Common::String &filename, bool intro, int minDelay
 	const int *soundFrames = checkForSoundFrames(filename, intro);
 
 	// Add the VDX extension
-	Common::String indexName = "prologue/" + filename + ".3dx";
+	Common::Path indexName("prologue/");
+	indexName.appendInPlace(filename);
+	indexName.appendInPlace(".3dx");
 
 	// Load the animation
-	Common::File *indexStream = new Common::File();
-
-	if (!indexStream->open(indexName)) {
-		warning("unable to open %s\n", indexName.c_str());
+	Common::File indexStream;
+	if (!indexStream.open(indexName)) {
+		warning("unable to open %s\n", indexName.toString().c_str());
 		return false;
 	}
 
 	// Load initial image
-	Common::String graphicsName = "prologue/" + filename + ".3da";
+	Common::Path graphicsName("prologue/");
+	graphicsName.appendInPlace(filename);
+	graphicsName.appendInPlace(".3da");
 	ImageFile3DO images(graphicsName, kImageFile3DOType_Animation);
 
 	events.wait(minDelay);
@@ -180,12 +195,16 @@ bool Animation::play3DO(const Common::String &filename, bool intro, int minDelay
 		fadeLimitColor = 0xCE59; // RGB565: 25, 50, 25 -> "grey"
 	}
 
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->disableAllGameKeymaps();
+	keymapper->getKeymap("animation")->setEnabled(true);
+
 	int frameNumber = 0;
 	Common::Point pt;
 	bool skipped = false;
 	while (!_vm->shouldQuit()) {
 		// Get the next sprite to display
-		int imageFrame = indexStream->readSint16BE();
+		int imageFrame = indexStream.readSint16BE();
 
 		if (imageFrame == -2) {
 			// End of animation reached
@@ -194,8 +213,8 @@ bool Animation::play3DO(const Common::String &filename, bool intro, int minDelay
 			// Read position from either animation stream or the sprite frame itself
 			if (imageFrame < 0) {
 				imageFrame += 32768;
-				pt.x = indexStream->readUint16BE();
-				pt.y = indexStream->readUint16BE();
+				pt.x = indexStream.readUint16BE();
+				pt.y = indexStream.readUint16BE();
 			} else {
 				pt = images[imageFrame]._offset;
 			}
@@ -235,10 +254,10 @@ bool Animation::play3DO(const Common::String &filename, bool intro, int minDelay
 				++soundNumber;
 				++soundFrames;
 
-				Common::String sampleFilename;
-
 				// append 1-digit number
-				sampleFilename = Common::String::format("prologue/sounds/%s%01d", filename.c_str(), soundNumber);
+				Common::Path sampleFilename("prologue/sounds/");
+				sampleFilename.appendInPlace(filename);
+				sampleFilename.appendInPlace(Common::String::format("%01d", soundNumber));
 
 				if (sound._voices)
 					sound.playSound(sampleFilename, WAIT_RETURN_IMMEDIATELY, 100); // no sound library
@@ -246,10 +265,9 @@ bool Animation::play3DO(const Common::String &filename, bool intro, int minDelay
 			events.wait(speed * 3);
 		}
 
-		if (events.kbHit()) {
-			Common::KeyState keyState = events.getKey();
-			if (keyState.keycode == Common::KEYCODE_ESCAPE ||
-				keyState.keycode == Common::KEYCODE_SPACE) {
+		if (events.actionHit()) {
+			Common::CustomEventType action = events.getAction();
+			if (action == kActionSkipAnim) {
 				skipped = true;
 				break;
 			}
@@ -259,9 +277,13 @@ bool Animation::play3DO(const Common::String &filename, bool intro, int minDelay
 		}
 	}
 
+	keymapper->getKeymap("animation")->setEnabled(false);
+	keymapper->getKeymap("sherlock-default")->setEnabled(true);
+	keymapper->getKeymap("scalpel")->setEnabled(true);
+	keymapper->getKeymap("scalpel-quit")->setEnabled(true);
+
 	events.clearEvents();
 	sound.stopSound();
-	delete indexStream;
 
 	return !skipped && !_vm->shouldQuit();
 }
@@ -296,7 +318,7 @@ void Animation::setTitleFrames(const int *frames, int count, int maxFrames) {
 	}
 }
 
-const int *Animation::checkForSoundFrames(const Common::String &filename, bool intro) {
+const int *Animation::checkForSoundFrames(const Common::Path &filename, bool intro) {
 	const int *frames = &NO_FRAMES;
 
 	if (!intro) {

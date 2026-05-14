@@ -33,21 +33,121 @@
 namespace Nancy {
 namespace UI {
 
-Button::Button(RenderObject &redrawFrom, uint16 zOrder, Graphics::ManagedSurface &surface, const Common::Rect &srcBounds, const Common::Rect &destBounds) :
-		RenderObject(redrawFrom, zOrder, surface, srcBounds, destBounds),
-		_isClicked(false) {
-	setVisible(false);
+Button::Button(uint16 zOrder,
+			Graphics::ManagedSurface &surface,
+			const Common::Rect &clickSrcBounds,
+			const Common::Rect &destBounds,
+			const Common::Rect &hoverSrcBounds,
+			const Common::Rect &disabledSrcBounds,
+			const Common::Rect &baseSrcBounds) :
+		RenderObject(zOrder, surface, clickSrcBounds, destBounds),
+		surf(surface),
+		_clickSrc(clickSrcBounds),
+		_hoverSrc(hoverSrcBounds),
+		_disabledSrc(disabledSrcBounds),
+		_baseSrc(baseSrcBounds),
+		_isClicked(false),
+		_isDisabled(false) {
+	if (!_baseSrc.isEmpty()) {
+		_drawSurface.create(surf, _baseSrc);
+		setVisible(true);
+	} else {
+		setVisible(false);
+	}
+
 	setTransparent(true);
 }
 
 void Button::handleInput(NancyInput &input) {
-	if (!_isClicked && _screenPosition.contains(input.mousePos)) {
-		g_nancy->_cursorManager->setCursorType(CursorManager::kHotspotArrow);
+	if (_isDisabled && !_disabledSrc.isEmpty()) {
+		return;
+	}
+
+	if (_screenPosition.contains(input.mousePos)) {
+		g_nancy->_cursor->setCursorType(CursorManager::kHotspotArrow);
+
+		if (!_hoverSrc.isEmpty() && !_isClicked) {
+			_drawSurface.create(surf, _hoverSrc);
+			setVisible(true);
+		}
 
 		if (input.input & NancyInput::kLeftMouseButtonUp) {
 			_isClicked = true;
-			setVisible(true);
+			if (_hoverSrc.isEmpty() && !_isDisabled) {
+				setVisible(true);
+			} else {
+				_drawSurface.create(surf, _clickSrc);
+			}
 		}
+	} else if (!_isClicked && _isVisible) {
+		if (!_baseSrc.isEmpty()) {
+			_drawSurface.create(surf, _baseSrc);
+			setVisible(true);
+		} else {
+			setVisible(false);
+		}
+	}
+}
+
+void Button::setDisabled(bool disabled) {
+	if (disabled) {
+		_isDisabled = true;
+		if (!_disabledSrc.isEmpty()) {
+			_drawSurface.create(surf, _disabledSrc);
+			setVisible(true);
+		} else {
+			if (!_baseSrc.isEmpty()) {
+				_drawSurface.create(surf, _baseSrc);
+				setVisible(true);
+			} else {
+				setVisible(false);
+			}
+		}
+	} else {
+		if (!_baseSrc.isEmpty()) {
+			_drawSurface.create(surf, _baseSrc);
+			setVisible(true);
+		} else {
+			setVisible(false);
+		}
+		_isDisabled = false;
+	}
+}
+
+Toggle::Toggle(uint16 zOrder, Graphics::ManagedSurface &surface, const Common::Rect &srcRect, const Common::Rect &destRect) :
+		RenderObject(zOrder, surface, srcRect, destRect),
+		surf(surface),
+		_clickSrc(srcRect),
+		_toggleState(false),
+		_stateChanged(false) {
+	setVisible(false);
+	setTransparent(true);
+}
+
+void Toggle::handleInput(NancyInput &input) {
+	_stateChanged = false;
+
+	if (_screenPosition.contains(input.mousePos)) {
+		g_nancy->_cursor->setCursorType(CursorManager::kHotspotArrow);
+
+		if (input.input & NancyInput::kLeftMouseButtonUp) {
+			setState(!_toggleState);
+		}
+	}
+}
+
+void Toggle::setState(bool toggleState) {
+	if (_toggleState == toggleState) {
+		return;
+	}
+
+	_toggleState = toggleState;
+	_stateChanged = true;
+
+	if (toggleState) {
+		setVisible(true);
+	} else {
+		setVisible(false);
 	}
 }
 

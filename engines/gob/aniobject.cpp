@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "gob/surface.h"
@@ -161,7 +167,7 @@ bool ANIObject::isIn(int16 x, int16 y) const {
 	if (!isVisible())
 		return false;
 
-	int16 frameX, frameY, frameWidth, frameHeight;
+	int16 frameX = 0, frameY = 0, frameWidth = 0, frameHeight = 0;
 	getFramePosition(frameX, frameY);
 	getFrameSize(frameWidth, frameHeight);
 
@@ -177,7 +183,7 @@ bool ANIObject::isIn(const ANIObject &obj) const {
 	if (!isVisible() || !obj.isVisible())
 		return false;
 
-	int16 frameX, frameY, frameWidth, frameHeight;
+	int16 frameX = 0, frameY = 0, frameWidth = 0, frameHeight = 0;
 	getFramePosition(frameX, frameY);
 	getFrameSize(frameWidth, frameHeight);
 

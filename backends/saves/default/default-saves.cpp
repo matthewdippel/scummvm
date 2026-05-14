@@ -21,7 +21,7 @@
 
 #include "common/scummsys.h"
 
-#if defined(USE_CLOUD) && defined(USE_LIBCURL)
+#ifdef USE_CLOUD
 #include "backends/cloud/cloudmanager.h"
 #endif
 #include "common/file.h"
@@ -36,18 +36,18 @@
 #include "common/fs.h"
 #include "common/archive.h"
 #include "common/config-manager.h"
-#include "common/zlib.h"
+#include "common/compression/deflate.h"
 
 #include <errno.h>	// for removeSavefile()
 
-#if defined(USE_CLOUD) && defined(USE_LIBCURL)
-const char *DefaultSaveFileManager::TIMESTAMPS_FILENAME = "timestamps";
+#ifdef USE_CLOUD
+const char *const DefaultSaveFileManager::TIMESTAMPS_FILENAME = "timestamps";
 #endif
 
 DefaultSaveFileManager::DefaultSaveFileManager() {
 }
 
-DefaultSaveFileManager::DefaultSaveFileManager(const Common::String &defaultSavepath) {
+DefaultSaveFileManager::DefaultSaveFileManager(const Common::Path &defaultSavepath) {
 	ConfMan.registerDefault("savepath", defaultSavepath);
 }
 
@@ -56,10 +56,10 @@ void DefaultSaveFileManager::checkPath(const Common::FSNode &dir) {
 	clearError();
 	if (!dir.exists()) {
 		if (!dir.createDirectory()) {
-			setError(Common::kPathDoesNotExist, "Failed to create directory '"+dir.getPath()+"'");
+			setError(Common::kPathDoesNotExist, Common::String::format("Failed to create directory '%s'", dir.getPath().toString(Common::Path::kNativeSeparator).c_str()));
 		}
 	} else if (!dir.isDirectory()) {
-		setError(Common::kPathNotDirectory, "The savepath '"+dir.getPath()+"' is not a directory");
+		setError(Common::kPathNotDirectory, Common::String::format("The savepath '%s' is not a directory", dir.getPath().toString(Common::Path::kNativeSeparator).c_str()));
 	}
 }
 
@@ -78,14 +78,14 @@ Common::StringArray DefaultSaveFileManager::listSavefiles(const Common::String &
 		return Common::StringArray();
 
 	Common::HashMap<Common::String, bool> locked;
-	for (Common::StringArray::const_iterator i = _lockedFiles.begin(), end = _lockedFiles.end(); i != end; ++i) {
-		locked[*i] = true;
+	for (const auto &lockedFile : _lockedFiles) {
+		locked[lockedFile] = true;
 	}
 
 	Common::StringArray results;
-	for (SaveFileCache::const_iterator file = _saveFileCache.begin(), end = _saveFileCache.end(); file != end; ++file) {
-		if (!locked.contains(file->_key) && file->_key.matchString(pattern, true)) {
-			results.push_back(file->_key);
+	for (const auto &file : _saveFileCache) {
+		if (!locked.contains(file._key) && file._key.matchString(pattern, true)) {
+			results.push_back(file._key);
 		}
 	}
 	return results;
@@ -113,14 +113,16 @@ Common::InSaveFile *DefaultSaveFileManager::openForLoading(const Common::String 
 	if (getError().getCode() != Common::kNoError)
 		return nullptr;
 
-	for (Common::StringArray::const_iterator i = _lockedFiles.begin(), end = _lockedFiles.end(); i != end; ++i) {
-		if (filename == *i) {
-			return nullptr; //file is locked, no loading available
+	for (const auto &lockedFile : _lockedFiles) {
+		if (filename == lockedFile) {
+			setError(Common::kReadingFailed, Common::String::format("Savefile '%s' is locked and cannot be loaded", filename.c_str()));
+			return nullptr; // file is locked, no loading available
 		}
 	}
 
 	SaveFileCache::const_iterator file = _saveFileCache.find(filename);
 	if (file == _saveFileCache.end()) {
+		setError(Common::kPathDoesNotExist, Common::String::format("Savefile '%s' does not exist", filename.c_str()));
 		return nullptr;
 	} else {
 		// Open the file for loading.
@@ -131,18 +133,18 @@ Common::InSaveFile *DefaultSaveFileManager::openForLoading(const Common::String 
 
 Common::OutSaveFile *DefaultSaveFileManager::openForSaving(const Common::String &filename, bool compress) {
 	// Assure the savefile name cache is up-to-date.
-	const Common::String savePathName = getSavePath();
+	const Common::Path savePathName = getSavePath();
 	assureCached(savePathName);
 	if (getError().getCode() != Common::kNoError)
 		return nullptr;
 
-	for (Common::StringArray::const_iterator i = _lockedFiles.begin(), end = _lockedFiles.end(); i != end; ++i) {
-		if (filename == *i) {
-			return nullptr; //file is locked, no saving available
+	for (const auto &lockedFile : _lockedFiles) {
+		if (filename == lockedFile) {
+			return nullptr; // file is locked, no saving available
 		}
 	}
 
-#if defined(USE_CLOUD) && defined(USE_LIBCURL)
+#ifdef USE_CLOUD
 	// Update file's timestamp
 	Common::HashMap<Common::String, uint32> timestamps = loadTimestamps();
 	timestamps[filename] = INVALID_TIMESTAMP;
@@ -162,7 +164,7 @@ Common::OutSaveFile *DefaultSaveFileManager::openForSaving(const Common::String 
 	}
 
 	// Open the file for saving.
-	Common::SeekableWriteStream *const sf = fileNode.createWriteStream();
+	Common::SeekableWriteStream *const sf = fileNode.createWriteStream(false);
 	if (!sf)
 		return nullptr;
 	Common::OutSaveFile *const result = new Common::OutSaveFile(compress ? Common::wrapCompressedWriteStream(sf) : sf);
@@ -179,7 +181,7 @@ bool DefaultSaveFileManager::removeSavefile(const Common::String &filename) {
 	if (getError().getCode() != Common::kNoError)
 		return false;
 
-#if defined(USE_CLOUD) && defined(USE_LIBCURL)
+#ifdef USE_CLOUD
 	// Update file's timestamp
 	Common::HashMap<Common::String, uint32> timestamps = loadTimestamps();
 	Common::HashMap<Common::String, uint32>::iterator it = timestamps.find(filename);
@@ -199,7 +201,7 @@ bool DefaultSaveFileManager::removeSavefile(const Common::String &filename) {
 		_saveFileCache.erase(file);
 		file = _saveFileCache.end();
 
-		Common::ErrorCode result = removeFile(fileNode.getPath());
+		Common::ErrorCode result = removeFile(fileNode);
 		if (result == Common::kNoError)
 			return true;
 		Common::Error error(result);
@@ -208,7 +210,8 @@ bool DefaultSaveFileManager::removeSavefile(const Common::String &filename) {
 	}
 }
 
-Common::ErrorCode DefaultSaveFileManager::removeFile(const Common::String &filepath) {
+Common::ErrorCode DefaultSaveFileManager::removeFile(const Common::FSNode &fileNode) {
+	Common::String filepath(fileNode.getPath().toString(Common::Path::kNativeSeparator));
 	if (remove(filepath.c_str()) == 0)
 		return Common::kNoError;
 	if (errno == EACCES)
@@ -224,37 +227,37 @@ bool DefaultSaveFileManager::exists(const Common::String &filename) {
 	if (getError().getCode() != Common::kNoError)
 		return false;
 
-	for (Common::StringArray::const_iterator i = _lockedFiles.begin(), end = _lockedFiles.end(); i != end; ++i) {
-		if (filename == *i)
+	for (const auto &lockedFile : _lockedFiles) {
+		if (filename == lockedFile)
 			return true;
 	}
 
 	return _saveFileCache.contains(filename);
 }
 
-Common::String DefaultSaveFileManager::getSavePath() const {
+Common::Path DefaultSaveFileManager::getSavePath() const {
 
-	Common::String dir;
+	Common::Path dir;
 
 	// Try to use game specific savepath from config
-	dir = ConfMan.get("savepath");
+	dir = ConfMan.getPath("savepath");
 
 	// Work around a bug (#1689) in the original 0.6.1 release of
 	// ScummVM, which would insert a bad savepath value into config files.
 	if (dir == "None") {
 		ConfMan.removeKey("savepath", ConfMan.getActiveDomainName());
 		ConfMan.flushToDisk();
-		dir = ConfMan.get("savepath");
+		dir = ConfMan.getPath("savepath");
 	}
 
 	return dir;
 }
 
-void DefaultSaveFileManager::assureCached(const Common::String &savePathName) {
+void DefaultSaveFileManager::assureCached(const Common::Path &savePathName) {
 	// Check that path exists and is usable.
 	checkPath(Common::FSNode(savePathName));
 
-#if defined(USE_CLOUD) && defined(USE_LIBCURL)
+#ifdef USE_CLOUD
 	Common::Array<Common::String> files = CloudMan.getSyncingFiles(); //returns empty array if not syncing
 	if (!files.empty()) updateSavefilesList(files); //makes this cache invalid
 	else _lockedFiles = files;
@@ -268,7 +271,7 @@ void DefaultSaveFileManager::assureCached(const Common::String &savePathName) {
 	_cachedDirectory.clear();
 
 	if (getError().getCode() != Common::kNoError) {
-		warning("DefaultSaveFileManager::assureCached: Can not cache path '%s': '%s'", savePathName.c_str(), getErrorDesc().c_str());
+		warning("DefaultSaveFileManager::assureCached: Can not cache path '%s': '%s'", savePathName.toString(Common::Path::kNativeSeparator).c_str(), getErrorDesc().c_str());
 		return;
 	}
 
@@ -282,11 +285,11 @@ void DefaultSaveFileManager::assureCached(const Common::String &savePathName) {
 	}
 
 	// Build the savefile name cache.
-	for (Common::FSList::const_iterator file = children.begin(), end = children.end(); file != end; ++file) {
-		if (_saveFileCache.contains(file->getName())) {
-			warning("DefaultSaveFileManager::assureCached: Name clash when building cache, ignoring file '%s'", file->getName().c_str());
+	for (const auto &file : children) {
+		if (_saveFileCache.contains(file.getName())) {
+			warning("DefaultSaveFileManager::assureCached: Name clash when building cache, ignoring file '%s'", file.getName().c_str());
 		} else {
-			_saveFileCache[file->getName()] = *file;
+			_saveFileCache[file.getName()] = file;
 		}
 	}
 
@@ -295,7 +298,7 @@ void DefaultSaveFileManager::assureCached(const Common::String &savePathName) {
 	_cachedDirectory = savePathName;
 }
 
-#if defined(USE_CLOUD) && defined(USE_LIBCURL)
+#ifdef USE_CLOUD
 
 Common::HashMap<Common::String, uint32> DefaultSaveFileManager::loadTimestamps() {
 	Common::HashMap<Common::String, uint32> timestamps;
@@ -359,19 +362,19 @@ Common::HashMap<Common::String, uint32> DefaultSaveFileManager::loadTimestamps()
 
 void DefaultSaveFileManager::saveTimestamps(Common::HashMap<Common::String, uint32> &timestamps) {
 	Common::DumpFile f;
-	Common::String filename = concatWithSavesPath(TIMESTAMPS_FILENAME);
+	Common::Path filename = concatWithSavesPath(TIMESTAMPS_FILENAME);
 	if (!f.open(filename, true)) {
-		warning("DefaultSaveFileManager: failed to open '%s' file to save timestamps", filename.c_str());
+		warning("DefaultSaveFileManager: failed to open '%s' file to save timestamps", filename.toString(Common::Path::kNativeSeparator).c_str());
 		return;
 	}
 
-	for (Common::HashMap<Common::String, uint32>::iterator i = timestamps.begin(); i != timestamps.end(); ++i) {
-		uint32 v = i->_value;
+	for (auto &timestamp : timestamps) {
+		uint32 v = timestamp._value;
 		if (v < 1) v = 1; // 0 timestamp is treated as EOF up there, so we should never save zeros
 
-		Common::String data = i->_key + Common::String::format(" %u\n", v);
+		Common::String data = timestamp._key + Common::String::format(" %u\n", v);
 		if (f.write(data.c_str(), data.size()) != data.size()) {
-			warning("DefaultSaveFileManager: failed to write timestamps data into '%s'", filename.c_str());
+			warning("DefaultSaveFileManager: failed to write timestamps data into '%s'", filename.toString(Common::Path::kNativeSeparator).c_str());
 			return;
 		}
 	}
@@ -381,22 +384,13 @@ void DefaultSaveFileManager::saveTimestamps(Common::HashMap<Common::String, uint
 	f.close();
 }
 
-#endif // ifdef USE_LIBCURL
+#endif // ifdef USE_CLOUD
 
-Common::String DefaultSaveFileManager::concatWithSavesPath(Common::String name) {
+Common::Path DefaultSaveFileManager::concatWithSavesPath(Common::String name) {
 	DefaultSaveFileManager *manager = dynamic_cast<DefaultSaveFileManager *>(g_system->getSavefileManager());
-	Common::String path = (manager ? manager->getSavePath() : ConfMan.get("savepath"));
-	if (path.size() > 0 && (path.lastChar() == '/' || path.lastChar() == '\\'))
-		return path + name;
-
-	//simple heuristic to determine which path separator to use
-	int backslashes = 0;
-	for (uint32 i = 0; i < path.size(); ++i)
-		if (path[i] == '/') --backslashes;
-		else if (path[i] == '\\') ++backslashes;
-
-	if (backslashes > 0) return path + '\\' + name;
-	return path + '/' + name;
+	Common::Path path = (manager ? manager->getSavePath() : ConfMan.getPath("savepath"));
+	path.joinInPlace(name);
+	return path;
 }
 
 #endif // !defined(DISABLE_DEFAULT_SAVEFILEMANAGER)

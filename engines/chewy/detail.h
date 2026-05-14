@@ -22,6 +22,7 @@
 #ifndef CHEWY_DETAIL_H
 #define CHEWY_DETAIL_H
 
+#include "common/path.h"
 #include "common/scummsys.h"
 #include "common/stream.h"
 #include "chewy/ngstypes.h"
@@ -229,7 +230,7 @@ private:
 	int16 _globalDelay = 0;
 	bool _aniFreezeflag = false;
 	bool _fullTaf = false;
-	Common::String _tafName;
+	Common::Path _tafName;
 	byte *_tafLoadBuffer = nullptr;
 	int16 _directTafAni = 0;
 };

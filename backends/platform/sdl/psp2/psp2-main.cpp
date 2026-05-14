@@ -25,17 +25,17 @@
 
 #include "common/scummsys.h"
 #include "backends/platform/sdl/psp2/psp2.h"
-#include "backends/plugins/sdl/sdl-provider.h"
+#include "backends/plugins/psp2/psp2-provider.h"
 #include "base/main.h"
+
+#ifdef ENABLE_PROFILING
+	#include <vitagprof.h>
+#endif
 
 int _newlib_heap_size_user = 192 * 1024 * 1024;
 char boot_params[1024];
 
 int main(int argc, char *argv[]) {
-
-#ifdef __PSP2_DEBUG__
-	psp2shell_init(3333, 10);
-#endif
 
 	scePowerSetArmClockFrequency(444);
 	scePowerSetBusClockFrequency(222);
@@ -50,7 +50,7 @@ int main(int argc, char *argv[]) {
 	g_system->init();
 
 #ifdef DYNAMIC_MODULES
-	PluginManager::instance().addPluginProvider(new SDLPluginProvider());
+	PluginManager::instance().addPluginProvider(new PSP2PluginProvider());
 #endif
 
 	sceAppMgrGetAppParam(boot_params);
@@ -99,8 +99,8 @@ exit:
 	// Free OSystem
 	g_system->destroy();
 
-#ifdef __PSP2_DEBUG__
-	psp2shell_exit();
+#ifdef ENABLE_PROFILING
+	gprof_stop("ux0:/data/gmon.out", 1);
 #endif
 
 	return res;

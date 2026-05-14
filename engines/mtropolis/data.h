@@ -23,6 +23,8 @@
 #define MTROPOLIS_DATA_H
 
 #include "common/array.h"
+#include "common/data-io.h"
+#include "common/endian.h"
 #include "common/error.h"
 #include "common/hashmap.h"
 #include "common/hash-str.h"
@@ -37,6 +39,73 @@
 // This is separated from asset construction for a number of reasons, mainly that data parsing has
 // several quirky parses, and there are a lot of fields where, due to platform-specific byte
 // swaps, we know the size of the value but don't know what it means.
+
+namespace MTropolis {
+
+class PlugIn;
+
+namespace Data {
+
+enum DataFormat {
+	kDataFormatUnknown,
+
+	kDataFormatMacintosh,
+	kDataFormatWindows,
+};
+
+} // End of namespace Data
+
+} // End of namespace MTropolis
+
+namespace Common {
+
+template<>
+struct DataFormatTraits<MTropolis::Data::DataFormat> {
+	static inline bool isLittleEndian(MTropolis::Data::DataFormat dataFormat) {
+		return dataFormat != MTropolis::Data::kDataFormatMacintosh;
+	}
+};
+
+template<>
+struct DataIO<MTropolis::Data::DataFormat, Common::XPFloat> {
+	static const uint kMaxSize = 10;
+
+	static inline uint computeSize(MTropolis::Data::DataFormat dataFormat) {
+		if (dataFormat == MTropolis::Data::kDataFormatMacintosh)
+			return 10;
+		else if (dataFormat == MTropolis::Data::kDataFormatWindows)
+			return 8;
+		else
+			return 0;
+	}
+
+	static inline void encode(MTropolis::Data::DataFormat dataFormat, byte *data, const Common::XPFloat &value) {
+		if (dataFormat == MTropolis::Data::kDataFormatMacintosh) {
+			DataIO<MTropolis::Data::DataFormat, uint16>::encode(dataFormat, data + 0, value.signAndExponent);
+			DataIO<MTropolis::Data::DataFormat, uint64>::encode(dataFormat, data + 2, value.mantissa);
+		} else if (dataFormat == MTropolis::Data::kDataFormatWindows) {
+			uint64 doubleBits = 0;
+			bool overflowed = false;
+			value.toDoubleBitsSafe(doubleBits, overflowed);
+			DataIO<MTropolis::Data::DataFormat, uint64>::encode(dataFormat, data, doubleBits);
+		}
+	}
+
+	static inline void decode(MTropolis::Data::DataFormat dataFormat, const byte *data, Common::XPFloat &value) {
+		if (dataFormat == MTropolis::Data::kDataFormatMacintosh) {
+			DataIO<MTropolis::Data::DataFormat, uint16>::decode(dataFormat, data + 0, value.signAndExponent);
+			DataIO<MTropolis::Data::DataFormat, uint64>::decode(dataFormat, data + 2, value.mantissa);
+		} else if (dataFormat == MTropolis::Data::kDataFormatWindows) {
+			uint64 doubleBits = 0;
+			DataIO<MTropolis::Data::DataFormat, uint64>::decode(dataFormat, data, doubleBits);
+			value = value.fromDoubleBits(doubleBits);
+		}
+	}
+};
+
+} // End of namespace Common
+
+
 namespace MTropolis {
 
 class PlugIn;
@@ -45,6 +114,21 @@ namespace Data {
 
 struct PlugInModifier;
 struct PlugInModifierData;
+
+// Project format and data format are 2 separate things.
+//
+// A cross-platform project can be booted in either Mac or Win mode and contains
+// separate scene streams for Mac and Win.  Which one is loaded depends on what the
+// game platform is loaded as.
+//
+// The following table describes the behavior:
+//
+// Project type          | ProjectFormat | Catalog and asset data format | Scene data format |
+// ------------------------------------------------------------------------------------------|
+// Mac                   | Macintosh     | Macintosh                     | Macintosh         |
+// Win                   | Windows       | Windows                       | Windows           |
+// Cross-Platform as Mac | Neutral       | Windows                       | Macintosh         |
+// Cross-Platform as Win | Neutral       | Windows                       | Windows           |
 
 enum ProjectFormat {
 	kProjectFormatUnknown,
@@ -76,7 +160,7 @@ enum TextAlignmentCode {
 
 namespace DataObjectTypes {
 
-enum DataObjectType {
+enum DataObjectType : uint {
 	kUnknown								= 0,
 
 	kProjectLabelMap						= 0x22,
@@ -88,6 +172,7 @@ enum DataObjectType {
 	kAssetCatalog							= 0xd,
 	kGlobalObjectInfo						= 0x17,
 	kUnknown19								= 0x19,
+	kUnknown2B								= 0x2b,
 
 	kProjectStructuralDef					= 0x2,
 	kSectionStructuralDef					= 0x3,
@@ -95,22 +180,24 @@ enum DataObjectType {
 
 	kGraphicElement							= 0x8,
 	kMovieElement							= 0x5,
-	kMToonElement							= 0x6,		// NYI
+	kMToonElement							= 0x6,
 	kImageElement							= 0x7,
 	kSoundElement							= 0xa,
 	kTextLabelElement						= 0x15,
 
+	kAVIMovieElement						= 0x25,
 	kAliasModifier							= 0x27,
 	kChangeSceneModifier					= 0x136,
-	kReturnModifier							= 0x140,	// NYI
+	kReturnModifier							= 0x140,
 	kSoundEffectModifier					= 0x1a4,
+	kSimpleMotionModifier					= 0x1fe,
 	kDragMotionModifier						= 0x208,
-	kPathMotionModifierV1					= 0x21c,	// NYI - Obsolete version
+	kPathMotionModifierV1					= 0x21c,
 	kPathMotionModifierV2					= 0x21b,
 	kVectorMotionModifier					= 0x226,
 	kSceneTransitionModifier				= 0x26c,
 	kElementTransitionModifier				= 0x276,
-	kSharedSceneModifier					= 0x29a,	// NYI
+	kSharedSceneModifier					= 0x29a,
 	kIfMessengerModifier					= 0x2bc,
 	kBehaviorModifier						= 0x2c6,
 	kMessengerModifier						= 0x2da,
@@ -121,11 +208,12 @@ enum DataObjectType {
 	kKeyboardMessengerModifier				= 0x302,
 	kTextStyleModifier						= 0x32a,
 	kGraphicModifier						= 0x334,
-	kImageEffectModifier					= 0x384,	// NYI
+	kImageEffectModifier					= 0x384,
 	kMiniscriptModifier						= 0x3c0,
-	kCursorModifierV1						= 0x3ca,	// NYI - Obsolete version
+	kCursorModifierV1						= 0x3ca,
 	kGradientModifier						= 0x4b0,	// NYI
-	kColorTableModifier						= 0x4c4,	// NYI
+	kColorTableModifier						= 0x4c4,
+	kSoundFadeModifier						= 0x4ce,
 	kSaveAndRestoreModifier					= 0x4d8,
 
 	kCompoundVariableModifier				= 0x2c7,
@@ -136,6 +224,7 @@ enum DataObjectType {
 	kPointVariableModifier					= 0x326,
 	kFloatingPointVariableModifier			= 0x328,
 	kStringVariableModifier					= 0x329,
+	kObjectReferenceVariableModifierV1		= 0x33e,
 	kDebris									= 0xfffffffe,	// Deleted modifier in alias list
 	kPlugInModifier							= 0xffffffff,
 
@@ -145,6 +234,7 @@ enum DataObjectType {
 	kImageAsset								= 0xe,
 	kMToonAsset								= 0xf,
 	kTextAsset								= 0x1f,
+	kAVIMovieAsset							= 0x24,
 
 	kAssetDataChunk							= 0xffff,
 };
@@ -167,9 +257,10 @@ namespace StructuralFlags {
 	};
 } // End of namespace StructuralFlags
 
+
 class DataReader {
 public:
-	DataReader(int64 globalPosition, Common::SeekableReadStreamEndian &stream, ProjectFormat projectFormat);
+	DataReader(int64 globalPosition, Common::SeekableReadStream &stream, DataFormat dataFormat, RuntimeVersion runtimeVersion, bool autoDetectVersion);
 
 	bool readU8(uint8 &value);
 	bool readU16(uint16 &value);
@@ -182,6 +273,9 @@ public:
 	bool readF32(float &value);
 	bool readF64(double &value);
 	bool readPlatformFloat(Common::XPFloat &value);
+
+	template<class... T>
+	bool readMultiple(T &...values);
 
 	bool read(void *dest, size_t size);
 
@@ -202,18 +296,42 @@ public:
 	int64 tell() const;
 	inline int64 tellGlobal() const { return _globalPosition + tell(); }
 
-	ProjectFormat getProjectFormat() const;
-	bool isBigEndian() const;
+	DataFormat getDataFormat() const;
+
+	void setPermitDamagedStrings(bool permit);
+
+	bool isVersionAutoDetect() const;
+	RuntimeVersion getRuntimeVersion() const;
+	void setRuntimeVersion(RuntimeVersion runtimeVersion);
 
 private:
 	bool checkErrorAndReset();
 
-	Common::SeekableReadStreamEndian &_stream;
-	ProjectFormat _projectFormat;
+	Common::SeekableReadStream &_stream;
+	DataFormat _dataFormat;
 	int64 _globalPosition;
+
+	bool _permitDamagedStrings;
+
+	RuntimeVersion _runtimeVersion;	// NOTE: May change during parsing if auto-detecting
+	bool _autoDetect;
 };
 
+template<class... T>
+bool DataReader::readMultiple(T &...values) {
+	byte buffer[Common::DataMultipleIO<DataFormat, T...>::kMaxSize];
+	const uint actualSize = Common::DataMultipleIO<DataFormat, T...>::computeSize(_dataFormat);
+
+	if (!read(buffer, actualSize))
+		return false;
+
+	Common::DataMultipleIO<DataFormat, T...>::decode(_dataFormat, buffer, values...);
+	return true;
+}
+
 struct Rect {
+	Rect();
+
 	bool load(DataReader &reader);
 
 	bool toScummVMRect(Common::Rect &outRect) const;
@@ -226,6 +344,8 @@ struct Rect {
 };
 
 struct Point {
+	Point();
+
 	bool load(DataReader &reader);
 	bool toScummVMPoint(Common::Point &outPoint) const;
 
@@ -234,6 +354,8 @@ struct Point {
 };
 
 struct Event {
+	Event();
+
 	bool load(DataReader &reader);
 
 	uint32 eventID;
@@ -241,6 +363,8 @@ struct Event {
 };
 
 struct ColorRGB16 {
+	ColorRGB16();
+
 	bool load(DataReader &reader);
 
 	uint16 red;
@@ -249,6 +373,8 @@ struct ColorRGB16 {
 };
 
 struct IntRange {
+	IntRange();
+
 	bool load(DataReader &reader);
 
 	int32 min;
@@ -276,6 +402,15 @@ struct Label {
 	uint32 superGroupID;
 	uint32 labelID;
 };
+
+struct UniversalTime {
+	bool load(DataReader &reader);
+
+	int32 value;
+	int32 scale;
+	int32 base;
+};
+
 
 // mTropolis uses two separate type-tagged value formats.
 //
@@ -306,6 +441,8 @@ struct InternalTypeTaggedValue {
 	};
 
 	union ValueUnion {
+		ValueUnion();
+
 		uint8 asBool;
 		XPFloatPOD asFloat;
 		int32 asInteger;
@@ -313,7 +450,13 @@ struct InternalTypeTaggedValue {
 		VariableReference asVariableReference;
 		Label asLabel;
 		Point asPoint;
+
+		template<class T>
+		void constructField(T ValueUnion::*fieldPtr);
 	};
+
+	InternalTypeTaggedValue();
+	~InternalTypeTaggedValue();
 
 	uint16 type;
 	ValueUnion value;
@@ -325,6 +468,7 @@ struct PlugInTypeTaggedValue : public Common::NonCopyable {
 	enum TypeCode {
 		kNull = 0x00,
 		kInteger = 0x01,
+		kUniversalTime = 0x09,
 		kPoint = 0xa,
 		kIntegerRange = 0xb,
 		kFloat = 0xf,
@@ -332,25 +476,40 @@ struct PlugInTypeTaggedValue : public Common::NonCopyable {
 		kEvent = 0x17,
 		kLabel = 0x64,
 		kString = 0x66,
+		kRGBColor = 0x6c,
 		kIncomingData = 0x6e,
 		kVariableReference = 0x73,	// Has extra data
 	};
 
 	union ValueUnion {
+		ValueUnion();
+		~ValueUnion();
+
 		int32 asInt;
 		Point asPoint;
+		UniversalTime asUniversalTime;
+		ColorRGB16 asColor;
 		IntRange asIntRange;
 		XPFloatPOD asFloat;
 		uint16 asBoolean;
 		Event asEvent;
 		Label asLabel;
 		uint32 asVarRefGUID;
+		Common::String asString;
+
+		template<class T>
+		void constructField(T ValueUnion::*fieldPtr);
+
+		template<class T>
+		void destructField(T ValueUnion::*fieldPtr);
 	};
+
+	PlugInTypeTaggedValue();
+	~PlugInTypeTaggedValue();
 
 	uint16 type;
 	ValueUnion value;
 
-	Common::String str;
 	Common::Array<uint8> extraData;
 
 	bool load(DataReader &reader);
@@ -374,6 +533,8 @@ protected:
 };
 
 struct ProjectHeader : public DataObject {
+	ProjectHeader();
+
 	uint32 persistFlags;
 	uint32 sizeIncludingTag;
 	uint16 unknown1;
@@ -391,7 +552,7 @@ struct ProjectLabelMap : public DataObject {
 		LabelTree();
 		~LabelTree();
 
-		enum {
+		enum : uint {
 			kExpandedInEditor = 0x80000000,
 		};
 
@@ -435,6 +596,8 @@ private:
 };
 
 struct PresentationSettings : public DataObject {
+	PresentationSettings();
+
 	uint32 persistFlags;
 	uint32 sizeIncludingTag;
 	uint8 unknown1[2];
@@ -452,21 +615,35 @@ struct AssetCatalog : public DataObject {
 		kFlag1LimitOnePerSegment = 2,
 	};
 
+	struct AssetInfoRev4Fields {
+		AssetInfoRev4Fields();
+
+		uint32 assetType;
+		uint32 flags2;
+	};
+
 	struct AssetInfo {
+		AssetInfo();
+
 		uint32 flags1;
 		uint16 nameLength;
 		uint16 alwaysZero;
-		uint32 unknown1;	 // Possibly scene ID
+		uint32 streamID;
 		uint32 filePosition; // Contains a static value in Obsidian
-		uint32 assetType;
-		uint32 flags2;
+
+		AssetInfoRev4Fields rev4Fields;
+
 		Common::String name;
 	};
+
+	AssetCatalog();
 
 	uint32 persistFlags;
 	uint32 totalNameSizePlus22;
 	uint8 unknown1[4];
 	uint32 numAssets;
+	bool haveRev4Fields;
+
 	Common::Array<AssetInfo> assets;
 
 protected:
@@ -474,6 +651,8 @@ protected:
 };
 
 struct Unknown19 : public DataObject {
+	Unknown19();
+
 	uint32 persistFlags;
 	uint32 sizeIncludingTag;
 	uint8 unknown1[2];
@@ -482,11 +661,25 @@ protected:
 	DataReadErrorCode load(DataReader &reader) override;
 };
 
+struct Unknown2B : public DataObject {
+	Unknown2B();
+
+	uint32 persistFlags;
+	uint32 sizeIncludingTag;
+
+protected:
+	DataReadErrorCode load(DataReader &reader) override;
+};
+
 struct StructuralDef : public DataObject {
+	StructuralDef();
+
 	uint32 structuralFlags;
 };
 
 struct ProjectStructuralDef : public DataObject {
+	ProjectStructuralDef();
+
 	uint32 unknown1; // Seems to always be 0x16 or 0x9
 	uint32 sizeIncludingTag;
 	uint32 guid;
@@ -500,6 +693,8 @@ protected:
 };
 
 struct SectionStructuralDef : public StructuralDef {
+	SectionStructuralDef();
+
 	uint32 sizeIncludingTag;
 	uint32 guid;
 	uint16 lengthOfName;
@@ -515,6 +710,8 @@ protected:
 };
 
 struct SubsectionStructuralDef : public StructuralDef {
+	SubsectionStructuralDef();
+
 	uint32 structuralFlags;
 	uint32 sizeIncludingTag;
 	uint32 guid;
@@ -578,6 +775,8 @@ enum SceneTransitionDirection {
 } // End of namespace SceneTransitionDirections
 
 struct GraphicElement : public StructuralDef {
+	GraphicElement();
+
 	// Possible element flags: NotDirectToScreen, CacheBitmap, Hidden
 	uint32 sizeIncludingTag;
 	uint32 guid;
@@ -597,6 +796,8 @@ protected:
 };
 
 struct ImageElement : public StructuralDef {
+	ImageElement();
+
 	// Possible element flags: NotDirectToScreen, CacheBitmap, Hidden
 	uint32 sizeIncludingTag;
 	uint32 guid;
@@ -617,6 +818,8 @@ protected:
 };
 
 struct TextLabelElement : public StructuralDef {
+	TextLabelElement();
+
 	// Possible element flags: NotDirectToScreen, CacheBitmap, Hidden
 	uint32 sizeIncludingTag;
 	uint32 guid;
@@ -653,10 +856,12 @@ protected:
 };
 
 struct SoundElement : public StructuralDef {
-	enum SoundFlags {
+	enum SoundFlags : uint {
 		kPaused = 0x40000000,
 		kLoop = 0x80000000,
 	};
+
+	SoundElement();
 
 	// Possible element flags: Loop, Paused
 	uint32 sizeIncludingTag;
@@ -679,6 +884,8 @@ protected:
 };
 
 struct MovieElement : public StructuralDef {
+	explicit MovieElement(bool avi);
+
 	// Possible flags: NotDirectToScreen, CacheBitmap, Hidden, Loop, Loop + Alternate, Paused
 	uint32 sizeIncludingTag;
 	uint32 guid;
@@ -701,11 +908,15 @@ struct MovieElement : public StructuralDef {
 
 	Common::String name;
 
+	bool isAVI;
+
 protected:
 	DataReadErrorCode load(DataReader &reader) override;
 };
 
 struct MToonElement : public StructuralDef {
+	MToonElement();
+
 	// Possible flags: NotDirectToScreen, CacheBitmap, Hidden, Loop, Paused, PlayEveryFrame (inverted as "Maintain Rate")
 	uint32 sizeIncludingTag;
 	uint32 guid;
@@ -729,29 +940,39 @@ protected:
 };
 
 struct GlobalObjectInfo : public DataObject {
-	DataReadErrorCode load(DataReader &reader) override;
+	GlobalObjectInfo();
 
 	uint32 persistFlags;
 	uint32 sizeIncludingTag;
 	uint16 numGlobalModifiers;
 	uint8 unknown1[4];
+
+protected:
+	DataReadErrorCode load(DataReader &reader) override;
 };
 
 class ProjectCatalog : public DataObject {
-
 public:
 	struct StreamDesc {
+		StreamDesc();
+
 		char streamType[25];
 		uint16 segmentIndexPlusOne;
-		uint32 size;
-		uint32 pos;
+		uint32 winSize;
+		uint32 winPos;
+		uint32 macSize;
+		uint32 macPos;
 	};
 
 	struct SegmentDesc {
+		SegmentDesc();
+
 		uint32 segmentID;
 		Common::String label;
 		Common::String exportedPath;
 	};
+
+	ProjectCatalog();
 
 	uint32 persistFlags;
 	uint32 sizeOfStreamAndSegmentDescs;
@@ -767,6 +988,7 @@ protected:
 };
 
 struct StreamHeader : public DataObject {
+	StreamHeader();
 
 	uint32 marker;
 	uint32 sizeIncludingTag;
@@ -784,6 +1006,8 @@ struct BehaviorModifier : public DataObject {
 		kBehaviorFlagSwitchable = 1,
 	};
 
+	BehaviorModifier();
+
 	uint32 modifierFlags;
 	uint32 sizeIncludingTag;
 	uint8 unknown2[2];
@@ -791,6 +1015,7 @@ struct BehaviorModifier : public DataObject {
 	uint32 unknown4;
 	uint16 unknown5;
 	uint32 unknown6;
+	uint32 unknown8; // revision 2 only.
 	Point editorLayoutPosition;
 	uint16 lengthOfName;
 	uint16 numChildren;
@@ -807,6 +1032,8 @@ protected:
 
 struct MiniscriptProgram {
 	struct LocalRef {
+		LocalRef();
+
 		uint32 guid;
 		uint8 lengthOfName;
 		uint8 unknown2;
@@ -815,11 +1042,15 @@ struct MiniscriptProgram {
 	};
 
 	struct Attribute {
+		Attribute();
+
 		uint8 lengthOfName;
 		uint8 unknown3;
 
 		Common::String name;
 	};
+
+	MiniscriptProgram();
 
 	uint32 unknown1;
 	uint32 sizeOfInstructions;
@@ -831,28 +1062,32 @@ struct MiniscriptProgram {
 	Common::Array<LocalRef> localRefs;
 	Common::Array<Attribute> attributes;
 
-	ProjectFormat projectFormat;
-	bool isBigEndian;
+	DataFormat dataFormat;
 
 	bool load(DataReader &reader);
 };
 
 // Header used for most modifiers, but not all
 struct TypicalModifierHeader {
+	TypicalModifierHeader();
+
 	uint32 modifierFlags;
 	uint32 sizeIncludingTag;
 	uint32 guid;
 	uint8 unknown3[6];
 	uint32 unknown4;
+	uint32 unknown5;  // V2 header only
 	Point editorLayoutPosition;
 	uint16 lengthOfName;
 
 	Common::String name;
 
-	bool load(DataReader &reader);
+	bool load(DataReader &reader, bool isV2);
 };
 
 struct MiniscriptModifier : public DataObject {
+	MiniscriptModifier();
+
 	TypicalModifierHeader modHeader;
 	Event enableWhen;
 	uint8 unknown6[11];
@@ -864,8 +1099,37 @@ protected:
 	DataReadErrorCode load(DataReader &reader) override;
 };
 
+struct ColorTableModifier : public DataObject {
+	ColorTableModifier();
+
+	TypicalModifierHeader modHeader;
+	Event applyWhen;
+	uint32 unknown1;
+	uint8 unknown2[4];
+	uint32 assetID;
+
+protected:
+	DataReadErrorCode load(DataReader &reader) override;
+};
+
+struct SoundFadeModifier : public DataObject {
+	SoundFadeModifier();
+
+	TypicalModifierHeader modHeader;
+	uint8 unknown1[4];
+	Event enableWhen;
+	Event disableWhen;
+	uint16 fadeToVolume;
+	uint8 codedDuration[4];
+	uint8 unknown2[18];
+
+protected:
+	DataReadErrorCode load(DataReader &reader) override;
+};
 
 struct SaveAndRestoreModifier : public DataObject {
+	SaveAndRestoreModifier();
+
 	TypicalModifierHeader modHeader;
 	uint8 unknown1[4];
 	Event saveWhen;
@@ -888,7 +1152,7 @@ protected:
 	DataReadErrorCode load(DataReader &reader) override;
 };
 
-enum MessageFlags {
+enum MessageFlags : uint {
 	kMessageFlagNoRelay = 0x20000000,
 	kMessageFlagNoCascade = 0x40000000,
 	kMessageFlagNoImmediate = 0x80000000,
@@ -896,6 +1160,8 @@ enum MessageFlags {
 
 
 struct MessengerModifier : public DataObject {
+	MessengerModifier();
+
 	TypicalModifierHeader modHeader;
 
 	uint32 messageFlags;
@@ -916,6 +1182,8 @@ protected:
 };
 
 struct SetModifier : public DataObject {
+	SetModifier();
+
 	TypicalModifierHeader modHeader;
 
 	uint8 unknown1[4];
@@ -939,23 +1207,28 @@ protected:
 };
 
 struct AliasModifier : public DataObject {
+	AliasModifier();
+
 	uint32 modifierFlags;
 	uint32 sizeIncludingTag;
 	uint16 aliasIndexPlusOne;
 	uint32 unknown1;
 	uint32 unknown2;
-	uint16 lengthOfName;
+	uint32 unknown3;
+	uint32 lengthOfName;
 	uint32 guid;
 	Point editorLayoutPosition;
 
 	Common::String name;
+
+	bool haveGUID;
 
 protected:
 	DataReadErrorCode load(DataReader &reader) override;
 };
 
 struct ChangeSceneModifier : public DataObject {
-	enum ChangeSceneFlags {
+	enum ChangeSceneFlags : uint {
 		kChangeSceneFlagNextScene			= 0x80000000,
 		kChangeSceneFlagPrevScene			= 0x40000000,
 		kChangeSceneFlagSpecificScene		= 0x20000000,
@@ -963,6 +1236,8 @@ struct ChangeSceneModifier : public DataObject {
 		kChangeSceneFlagAddToDestList		= 0x08000000,
 		kChangeSceneFlagWrapAround			= 0x04000000,
 	};
+
+	ChangeSceneModifier();
 
 	TypicalModifierHeader modHeader;
 	uint32 changeSceneFlags;
@@ -976,6 +1251,8 @@ protected:
 };
 
 struct SoundEffectModifier : public DataObject {
+	SoundEffectModifier();
+
 	static const uint32 kSpecialAssetIDSystemBeep = 0xffffffffu;
 
 	TypicalModifierHeader modHeader;
@@ -991,15 +1268,10 @@ protected:
 	DataReadErrorCode load(DataReader &reader) override;
 };
 
-struct PathMotionModifierV2 : public DataObject {
-	struct PointDef {
-		enum FrameFlags {
-			kFrameFlagPlaySequentially = 1,
-		};
+struct PathMotionModifier : public DataObject {
+	struct PointDefMessageSpec {
+		PointDefMessageSpec();
 
-		Point point;
-		uint32 frame;
-		uint32 frameFlags;
 		uint32 messageFlags;
 		Event send;
 		uint16 unknown11;
@@ -1015,12 +1287,30 @@ struct PathMotionModifierV2 : public DataObject {
 		bool load(DataReader &reader);
 	};
 
+	struct PointDef {
+		PointDef();
+
+		enum FrameFlags {
+			kFrameFlagPlaySequentially = 1,
+		};
+
+		Point point;
+		uint32 frame;
+		uint32 frameFlags;
+
+		PointDefMessageSpec messageSpec;
+
+		bool load(DataReader &reader, bool haveMessageSpec);
+	};
+
 	enum Flags {
 		kFlagReverse = 0x00100000,
 		kFlagLoop = 0x10000000,
 		kFlagAlternate = 0x02000000,
 		kFlagStartAtBeginning = 0x08000000,
 	};
+
+	explicit PathMotionModifier(uint version);
 
 	TypicalModifierHeader modHeader;
 	uint32 flags;
@@ -1035,13 +1325,34 @@ struct PathMotionModifierV2 : public DataObject {
 	uint8 unknown5[4];
 	uint32 unknown6;
 
+	bool havePointDefMessageSpecs;
+
 	Common::Array<PointDef> points;
 
 protected:
 	DataReadErrorCode load(DataReader &reader) override;
 };
 
+struct SimpleMotionModifier : public DataObject {
+	SimpleMotionModifier();
+
+	TypicalModifierHeader modHeader;
+
+	Event executeWhen;
+	Event terminateWhen;
+	uint16 motionType;
+	uint16 directionFlags;
+	uint16 steps;
+	uint32 delayMSecTimes4800;
+	uint8 unknown1[4];
+
+protected:
+	DataReadErrorCode load(DataReader &reader) override;
+};
+
 struct DragMotionModifier : public DataObject {
+	DragMotionModifier();
+
 	TypicalModifierHeader modHeader;
 
 	Event enableWhen;
@@ -1082,6 +1393,8 @@ protected:
 };
 
 struct VectorMotionModifier : public DataObject {
+	VectorMotionModifier();
+
 	TypicalModifierHeader modHeader;
 
 	Event enableWhen;
@@ -1099,6 +1412,8 @@ protected:
 };
 
 struct SceneTransitionModifier : public DataObject {
+	SceneTransitionModifier();
+
 	TypicalModifierHeader modHeader;
 
 	Event enableWhen;
@@ -1115,6 +1430,8 @@ protected:
 };
 
 struct ElementTransitionModifier : public DataObject {
+	ElementTransitionModifier();
+
 	enum TransitionType {
 		kTransitionTypeRectangularIris = 0x03e8,
 		kTransitionTypeOvalIris = 0x03f2,
@@ -1142,7 +1459,24 @@ protected:
 	DataReadErrorCode load(DataReader &reader) override;
 };
 
+struct SharedSceneModifier : public DataObject {
+	SharedSceneModifier();
+
+	TypicalModifierHeader modHeader;
+
+	uint8 unknown1[4];
+	Event executeWhen;
+	uint32 sectionGUID;
+	uint32 subsectionGUID;
+	uint32 sceneGUID;
+
+protected:
+	DataReadErrorCode load(DataReader &reader) override;
+};
+
 struct IfMessengerModifier : public DataObject {
+	IfMessengerModifier();
+
 	TypicalModifierHeader modHeader;
 
 	uint32 messageFlags;
@@ -1165,6 +1499,8 @@ protected:
 };
 
 struct TimerMessengerModifier : public DataObject {
+	TimerMessengerModifier();
+
 	TypicalModifierHeader modHeader;
 
 	enum TimerFlags {
@@ -1197,6 +1533,8 @@ protected:
 };
 
 struct BoundaryDetectionMessengerModifier : public DataObject {
+	BoundaryDetectionMessengerModifier();
+
 	enum Flags {
 		kDetectTopEdge = 0x1000,
 		kDetectBottomEdge = 0x0800,
@@ -1226,6 +1564,8 @@ protected:
 };
 
 struct CollisionDetectionMessengerModifier : public DataObject {
+	CollisionDetectionMessengerModifier();
+
 	enum ModifierFlags {
 		kDetectLayerInFront = 0x10000000,
 		kDetectLayerBehind = 0x08000000,
@@ -1293,6 +1633,8 @@ struct KeyboardMessengerModifier : public DataObject {
 		kDelete = 0x7f,
 	};
 
+	KeyboardMessengerModifier();
+
 	TypicalModifierHeader modHeader;
 	uint32 messageFlagsAndKeyStates;
 	uint16 unknown2;
@@ -1315,9 +1657,10 @@ protected:
 };
 
 struct TextStyleModifier : public DataObject {
+	TextStyleModifier();
+
 	TypicalModifierHeader modHeader;
 
-	TypicalModifierHeader m_modHeader;
 	uint8 unknown1[4];
 	uint16 macFontID;
 	uint8 flags;
@@ -1338,6 +1681,8 @@ protected:
 };
 
 struct GraphicModifier : public DataObject {
+	GraphicModifier();
+
 	TypicalModifierHeader modHeader;
 
 	uint16 unknown1;
@@ -1382,7 +1727,67 @@ protected:
 	DataReadErrorCode load(DataReader &reader) override;
 };
 
+struct ImageEffectModifier : public DataObject {
+	ImageEffectModifier();
+
+	enum Types {
+		kTypeInvert = 1,
+		kTypeSelectedBevels = 2,
+		kTypeDeselectedBevels = 3,
+		kTypeToneDown = 4,
+		kTypeToneUp = 5,
+	};
+
+	TypicalModifierHeader modHeader;
+
+	uint32 flags;
+	uint16 type;
+	Event applyWhen;
+	Event removeWhen;
+	uint16 bevelWidth;
+	uint16 toneAmount;
+	uint8 unknown2[2];
+
+protected:
+	DataReadErrorCode load(DataReader &reader) override;
+};
+
+struct ReturnModifier : public DataObject {
+	ReturnModifier();
+
+	TypicalModifierHeader modHeader;
+
+	Event executeWhen;
+	uint16 unknown1;
+
+protected:
+	DataReadErrorCode load(DataReader &reader) override;
+};
+
+struct CursorModifierV1 : public DataObject {
+	CursorModifierV1();
+
+	struct MacOnlyPart {
+		MacOnlyPart();
+
+		Event applyWhen;
+		uint32 unknown1;
+		uint16 unknown2;
+		uint32 cursorIndex;
+	};
+
+	TypicalModifierHeader modHeader;
+
+	bool hasMacOnlyPart;
+	MacOnlyPart macOnlyPart;
+
+protected:
+	DataReadErrorCode load(DataReader &reader) override;
+};
+
 struct CompoundVariableModifier : public DataObject {
+	CompoundVariableModifier();
+
 	// This doesn't follow the usual modifier header layout
 	uint32 modifierFlags;
 	uint32 sizeIncludingTag;
@@ -1402,6 +1807,8 @@ protected:
 };
 
 struct BooleanVariableModifier : public DataObject {
+	BooleanVariableModifier();
+
 	TypicalModifierHeader modHeader;
 	uint8 value;
 	uint8 unknown5;
@@ -1411,6 +1818,8 @@ protected:
 };
 
 struct IntegerVariableModifier : public DataObject {
+	IntegerVariableModifier();
+
 	TypicalModifierHeader modHeader;
 	uint8 unknown1[4];
 	int32 value;
@@ -1420,6 +1829,8 @@ protected:
 };
 
 struct IntegerRangeVariableModifier : public DataObject {
+	IntegerRangeVariableModifier();
+
 	TypicalModifierHeader modHeader;
 	uint8 unknown1[4];
 	IntRange range;
@@ -1429,6 +1840,8 @@ protected:
 };
 
 struct VectorVariableModifier : public DataObject {
+	VectorVariableModifier();
+
 	TypicalModifierHeader modHeader;
 	uint8 unknown1[4];
 	XPFloatVector vector;
@@ -1438,6 +1851,8 @@ protected:
 };
 
 struct PointVariableModifier : public DataObject {
+	PointVariableModifier();
+
 	TypicalModifierHeader modHeader;
 
 	uint8 unknown5[4];
@@ -1448,6 +1863,8 @@ protected:
 };
 
 struct FloatingPointVariableModifier : public DataObject {
+	FloatingPointVariableModifier();
+
 	TypicalModifierHeader modHeader;
 	uint8 unknown1[4];
 	Common::XPFloat value;
@@ -1457,10 +1874,23 @@ protected:
 };
 
 struct StringVariableModifier : public DataObject {
+	StringVariableModifier();
+
 	TypicalModifierHeader modHeader;
 	uint32 lengthOfString;
 	uint8 unknown1[4];
 	Common::String value;
+
+protected:
+	DataReadErrorCode load(DataReader &reader) override;
+};
+
+struct ObjectReferenceVariableModifierV1 : public DataObject {
+	ObjectReferenceVariableModifierV1();
+
+	TypicalModifierHeader modHeader;
+	uint32 unknown1;
+	Event setToSourcesParentWhen;
 
 protected:
 	DataReadErrorCode load(DataReader &reader) override;
@@ -1472,6 +1902,8 @@ struct PlugInModifierData {
 };
 
 struct PlugInModifier : public DataObject {
+	PlugInModifier();
+
 	uint32 modifierFlags;
 	uint32 codedSize;	// Total size on Mac but (size + (name length * 255)) on Windows for some reason
 	char modifierName[17];
@@ -1493,6 +1925,8 @@ protected:
 };
 
 struct Debris : public DataObject {
+	Debris();
+
 	uint32 persistFlags;
 	uint32 sizeIncludingTag;
 
@@ -1501,6 +1935,8 @@ protected:
 };
 
 struct ColorTableAsset : public DataObject {
+	ColorTableAsset();
+
 	uint32 persistFlags;
 	uint32 sizeIncludingTag;
 	uint8 unknown1[4];
@@ -1517,6 +1953,7 @@ struct MovieAsset : public DataObject {
 	struct MacPart {
 		uint8 unknown5_1[66];
 		uint8 unknown6[12];
+		uint8 unknown8[4];
 	};
 
 	struct WinPart {
@@ -1529,6 +1966,8 @@ struct MovieAsset : public DataObject {
 		MacPart mac;
 		WinPart win;
 	};
+
+	MovieAsset();
 
 	uint32 persistFlags;
 	uint32 assetAndDataCombinedSize;
@@ -1544,6 +1983,21 @@ struct MovieAsset : public DataObject {
 	bool haveMacPart;
 	bool haveWinPart;
 	PlatformPart platform;
+
+	Common::String extFileName;
+
+protected:
+	DataReadErrorCode load(DataReader &reader) override;
+};
+
+struct AVIMovieAsset : public DataObject {
+	AVIMovieAsset();
+
+	uint8 unknown1[12];
+	uint32 assetID;
+	uint8 unknown2[4];
+	uint16 extFileNameLength;
+	uint8 unknown3[60];
 
 	Common::String extFileName;
 
@@ -1577,6 +2031,8 @@ struct AudioAsset : public DataObject {
 		uint32 position;
 		uint32 cuePointID;
 	};
+
+	AudioAsset();
 
 	uint32 persistFlags;
 	uint32 assetAndDataCombinedSize;
@@ -1620,6 +2076,8 @@ struct ImageAsset : public DataObject {
 		MacPart mac;
 	};
 
+	ImageAsset();
+
 	uint32 persistFlags;
 	uint32 unknown1;
 	uint8 unknown2[4];
@@ -1654,6 +2112,11 @@ struct MToonAsset : public DataObject {
 		uint8 unknown11[54];
 	};
 
+	union PlatformUnion {
+		MacPart mac;
+		WinPart win;
+	};
+
 	struct FrameDef {
 		struct MacPart {
 			uint8 unknown17[4];
@@ -1667,6 +2130,8 @@ struct MToonAsset : public DataObject {
 			MacPart mac;
 			WinPart win;
 		};
+
+		FrameDef();
 
 		uint8 unknown12[4];
 		Rect rect1;
@@ -1689,6 +2154,8 @@ struct MToonAsset : public DataObject {
 	};
 
 	struct FrameRangeDef {
+		FrameRangeDef();
+
 		uint32 startFrame;
 		uint32 endFrame;
 		uint8 lengthOfName;
@@ -1703,17 +2170,25 @@ struct MToonAsset : public DataObject {
 		kEncodingFlag_Trimming = 0x08,
 	};
 
+	struct FrameRangePart {
+		FrameRangePart();
+
+		uint32 tag;
+		uint32 sizeIncludingTag;
+
+		uint32 numFrameRanges;
+		Common::Array<FrameRangeDef> frameRanges;
+	};
+
+	MToonAsset();
+
 	uint32 marker;
 	uint8 unknown1[8];
 	uint32 assetID;
 
 	bool haveMacPart;
 	bool haveWinPart;
-
-	union PlatformUnion {
-		MacPart mac;
-		WinPart win;
-	} platform;
+	PlatformUnion platform;
 
 	uint32 frameDataPosition;
 	uint32 sizeOfFrameData;
@@ -1731,7 +2206,7 @@ struct MToonAsset : public DataObject {
 	uint32 codecID;
 	uint8 unknown4_1[8];
 	uint32 codecDataSize;
-	uint8 unknown4_2[4];
+	Point registrationPoint;
 
 	Common::Array<FrameDef> frames;
 
@@ -1744,14 +2219,6 @@ struct MToonAsset : public DataObject {
 	// char[4] codec ID
 	// byte[8] unknown (all 0?)
 	Common::Array<uint8> codecData;
-
-	struct FrameRangePart {
-		uint32 tag;
-		uint32 sizeIncludingTag;
-
-		uint32 numFrameRanges;
-		Common::Array<FrameRangeDef> frameRanges;
-	};
 
 	FrameRangePart frameRangesPart;
 
@@ -1783,6 +2250,8 @@ struct TextAsset : public DataObject {
 		MacPart mac;
 		WinPart win;
 	};
+
+	TextAsset();
 
 	uint32 persistFlags;
 	uint32 sizeIncludingTag;
@@ -1819,6 +2288,8 @@ protected:
 };
 
 struct AssetDataChunk : public DataObject {
+	AssetDataChunk();
+
 	uint32 unknown1;
 	uint32 sizeIncludingTag;
 	int64 filePosition;

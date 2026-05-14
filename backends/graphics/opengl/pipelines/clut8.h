@@ -31,12 +31,13 @@ class CLUT8LookUpPipeline : public ShaderPipeline {
 public:
 	CLUT8LookUpPipeline();
 
-	void setPaletteTexture(const GLTexture *paletteTexture) { _paletteTexture = paletteTexture; }
+	void setPaletteTexture(const Texture *paletteTexture) { _paletteTexture = paletteTexture; }
 
-	virtual void drawTexture(const GLTexture &texture, const GLfloat *coordinates, const GLfloat *texcoords);
+protected:
+	void drawTextureInternal(const Texture &texture, const GLfloat *coordinates, const GLfloat *texcoords) override;
 
 private:
-	const GLTexture *_paletteTexture;
+	const Texture *_paletteTexture;
 };
 #endif // !USE_FORCED_GLES
 

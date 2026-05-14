@@ -20,15 +20,12 @@
  */
 
 #include "common/scummsys.h"
-
-#include "zvision/scripting/controls/slot_control.h"
-
+#include "common/stream.h"
 #include "zvision/zvision.h"
-#include "zvision/scripting/script_manager.h"
 #include "zvision/graphics/cursors/cursor_manager.h"
 #include "zvision/graphics/render_manager.h"
-
-#include "common/stream.h"
+#include "zvision/scripting/script_manager.h"
+#include "zvision/scripting/controls/slot_control.h"
 
 namespace ZVision {
 
@@ -54,18 +51,16 @@ SlotControl::SlotControl(ZVision *engine, uint32 key, Common::SeekableReadStream
 			int width;
 			int height;
 
-			sscanf(values.c_str(), "%d %d %d %d", &x, &y, &width, &height);
-
-			_hotspot = Common::Rect(x, y, width, height);
+			if (sscanf(values.c_str(), "%d %d %d %d", &x, &y, &width, &height) == 4)
+				_hotspot = Common::Rect(x, y, width, height);
 		} else if (param.matchString("rectangle", true)) {
 			int x;
 			int y;
 			int width;
 			int height;
 
-			sscanf(values.c_str(), "%d %d %d %d", &x, &y, &width, &height);
-
-			_rectangle = Common::Rect(x, y, width, height);
+			if (sscanf(values.c_str(), "%d %d %d %d", &x, &y, &width, &height) == 4)
+				_rectangle = Common::Rect(x, y, width, height);
 		} else if (param.matchString("cursor", true)) {
 			_cursor = _engine->getCursorManager()->getCursorId(values);
 		} else if (param.matchString("distance_id", true)) {
@@ -182,9 +177,9 @@ bool SlotControl::process(uint32 deltaTimeInMillis) {
 
 				char buf[16];
 				if (_engine->getGameId() == GID_NEMESIS)
-					sprintf(buf, "%d%cobj.tga", curItem, _distanceId);
+					Common::sprintf_s(buf, "%d%cobj.tga", curItem, _distanceId);
 				else
-					sprintf(buf, "g0z%cu%2.2x1.tga", _distanceId, curItem);
+					Common::sprintf_s(buf, "g0z%cu%2.2x1.tga", _distanceId, curItem);
 
 				Graphics::Surface *srf = _engine->getRenderManager()->loadImage(buf);
 

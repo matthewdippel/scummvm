@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/endian.h"
@@ -84,7 +90,7 @@ char Video_v1::spriteUncompressor(byte *sprBuf, int16 srcWidth, int16 srcHeight,
 				temp = *srcPtr++;
 				if ((temp != 0) || (transp == 0))
 					destPtr.set(temp);
-				destPtr++;
+				++destPtr;
 				curWidth++;
 				if (curWidth >= srcWidth) {
 					curWidth = 0;
@@ -112,7 +118,7 @@ char Video_v1::spriteUncompressor(byte *sprBuf, int16 srcWidth, int16 srcHeight,
 					temp = memBuffer[(offset + counter2) % 4096];
 					if ((temp != 0) || (transp == 0))
 						destPtr.set(temp);
-					destPtr++;
+					++destPtr;
 
 					curWidth++;
 					if (curWidth >= srcWidth) {

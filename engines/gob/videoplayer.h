@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_VIDEOPLAYER_H
@@ -44,12 +50,13 @@ class DataStream;
 class VideoPlayer {
 public:
 	enum Flags {
-		kFlagNone                  = 0x000000,
-		kFlagUseBackSurfaceContent = 0x000040, ///< Use the back surface as a video "base".
-		kFlagFrontSurface          = 0x000080, ///< Draw directly into the front surface.
-		kFlagNoVideo               = 0x000100, ///< Only sound.
-		kFlagOtherSurface          = 0x000800, ///< Draw into a specific sprite.
-		kFlagScreenSurface         = 0x400000  ///< Draw into a newly created sprite of screen dimensions.
+		kFlagNone                               = 0x000000,
+		kFlagUseBackSurfaceContentOrDoubleVideo = 0x000040, ///< Use the back surface as a video "base".
+		// In later version of the engine, this 0x40 flag indicates instead that the video should be doubled.
+		kFlagFrontSurface                       = 0x000080, ///< Draw directly into the front surface.
+		kFlagNoVideo                            = 0x000100, ///< Only sound.
+		kFlagOtherSurface                       = 0x000800, ///< Draw into a specific sprite.
+		kFlagScreenSurface                      = 0x400000  ///< Draw into a newly created sprite of screen dimensions.
 	};
 
 	/** Video format. */
@@ -84,9 +91,9 @@ public:
 		int16 breakKey; ///< Keycode of the break/abort key.
 
 		uint16 palCmd;      ///< Palette command.
-		 int16 palStart;    ///< Palette entry to start with.
-		 int16 palEnd;      ///< Palette entry to end at.
-		 int32 palFrame;    ///< Frame to apply the palette command at.
+		int16 palStart;    ///< Palette entry to start with.
+		int16 palEnd;      ///< Palette entry to end at.
+		int32 palFrame;    ///< Frame to apply the palette command at.
 
 		bool noBlock; ///< Non-blocking "live" video?
 
@@ -97,6 +104,11 @@ public:
 
 		bool hasSound; ///< Does the video have sound?
 		bool canceled; ///< Was the video canceled?
+
+		int slot; ///< Explicit slot index (-1 = auto).
+		bool reuseSlotWitSameFilename;
+
+		bool noWaitSound;
 
 		Properties();
 	};
@@ -109,7 +121,7 @@ public:
 	int  openVideo(bool primary, const Common::String &file, Properties &properties);
 	bool closeVideo(int slot = 0);
 
-	void closeLiveSound();
+	void closeLiveVideos();
 	void closeAll();
 
 	bool reopenVideo(int slot = 0);
@@ -123,21 +135,31 @@ public:
 
 	bool play(int slot, Properties &properties);
 	void waitEndFrame(int slot, bool onlySound = false);
+	int32 getExpectedFrameFromCurrentTime(int slot);
 
 	bool isPlayingLive() const;
+	bool isSoundPlaying() const;
 
-	void updateLive(bool force = false);
+	void updateVideos(bool force = false, int exceptSlot = -1);
+	void liveVideosLoop();
 
 	bool slotIsOpen(int slot = 0) const;
 
 	Common::String getFileName(int slot = 0) const;
 
-	uint32 getFrameCount  (int slot = 0) const;
-	uint32 getCurrentFrame(int slot = 0) const;
-	uint16 getWidth       (int slot = 0) const;
-	uint16 getHeight      (int slot = 0) const;
-	uint16 getDefaultX    (int slot = 0) const;
-	uint16 getDefaultY    (int slot = 0) const;
+	uint32 getFrameCount     (int slot = 0) const;
+	uint32 getCurrentFrame   (int slot = 0) const;
+	uint16 getWidth          (int slot = 0) const;
+	uint16 getHeight         (int slot = 0) const;
+	uint16 getDefaultX       (int slot = 0) const;
+	uint16 getDefaultY       (int slot = 0) const;
+	uint32 getFlags          (int slot = 0) const;
+	uint16 getSoundFlags     (int slot = 0) const;
+	uint32 getVideoBufferSize(int slot = 0) const;
+	bool   hasVideo          (int slot = 0) const;
+
+
+	bool getFrameCoords(int slot, int16 frame, int16 &x, int16 &y, int16 &width, int16 &height) const;
 
 	const Common::List<Common::Rect> *getDirtyRects(int slot = 0) const;
 
@@ -146,12 +168,12 @@ public:
 
 	int32 getSubtitleIndex(int slot = 0) const;
 
-	void writeVideoInfo(const Common::String &file, int16 varX, int16 varY,
-			int16 varFrames, int16 varWidth, int16 varHeight);
+	void writeVideoInfo(const Common::String &file, uint16 varX, uint16 varY,
+						uint16 varFrames, uint16 varWidth, uint16 varHeight);
 
 	bool copyFrame(int slot, Surface &dest,
 			uint16 left, uint16 top, uint16 width, uint16 height, uint16 x, uint16 y,
-			int32 transp = -1) const;
+			int32 transp = -1, bool yAxisReflexion = false) const;
 
 private:
 	struct Video {
@@ -159,10 +181,17 @@ private:
 		Common::String fileName;
 
 		SurfacePtr surface;
+		SurfacePtr tmpSurfDouble; ///< Intermediate 1x surface for video doubling
+		int16 doubleVideoDestX;   ///< Saved destination X on target surface for the doubled video
+		int16 doubleVideoDestY;   ///< Saved destination Y on target surface for the doubled video
+		Common::SharedPtr<Graphics::Surface> tmpSurfBppConversion;
+		uint32 *highColorMap;
 
 		Properties properties;
 
+		bool doubleVideo; ///< Should the video be doubled (each pixel drawn as a 2x2 block)
 		bool live;
+		bool autoUpdate; ///< Should the video be automatically advanced by updateVideos()
 
 		Video();
 
@@ -173,6 +202,9 @@ private:
 	};
 
 	static const int kVideoSlotCount = 32;
+	static const int kPrimaryVideoSlot = 0;
+	static const int kLiveVideoSlotCount = 6;
+	static const int kVideoSlotWithCurFrameVarCount = 4;
 
 	static const char *const _extensions[];
 
@@ -185,6 +217,8 @@ private:
 
 	bool _noCursorSwitch;
 	bool _woodruffCohCottWorkaround;
+	uint32 _lastLiveVideosLoopCall;
+
 
 	const Video *getVideoBySlot(int slot) const;
 	Video *getVideoBySlot(int slot);
@@ -197,6 +231,7 @@ private:
 
 	bool reopenVideo(Video &video);
 
+	bool lastFrameReached(Video &video, Properties &properties);
 	bool playFrame(int slot, Properties &properties);
 
 	void checkAbort(Video &video, Properties &properties);
@@ -204,7 +239,7 @@ private:
 
 	void copyPalette(const Video &video, int16 palStart, int16 palEnd);
 
-	void updateLive(int slot, bool force = false);
+	void updateVideo(int slot, bool force = false);
 };
 
 } // End of namespace Gob

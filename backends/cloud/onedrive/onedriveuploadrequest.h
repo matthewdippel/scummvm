@@ -23,8 +23,8 @@
 #define BACKENDS_CLOUD_ONEDRIVE_ONEDRIVEUPLOADREQUEST_H
 
 #include "backends/cloud/storage.h"
-#include "backends/networking/curl/curljsonrequest.h"
-#include "backends/networking/curl/request.h"
+#include "backends/networking/http/httpjsonrequest.h"
+#include "backends/networking/http/request.h"
 #include "common/callback.h"
 
 namespace Cloud {
@@ -42,16 +42,16 @@ class OneDriveUploadRequest: public Networking::Request {
 
 	void start();
 	void uploadNextPart();
-	void partUploadedCallback(Networking::JsonResponse response);
-	void partUploadedErrorCallback(Networking::ErrorResponse error);
-	void finishUpload(StorageFile status);
+	void partUploadedCallback(const Networking::JsonResponse &response);
+	void partUploadedErrorCallback(const Networking::ErrorResponse &error);
+	void finishUpload(const StorageFile &status);
 
 public:
-	OneDriveUploadRequest(OneDriveStorage *storage, Common::String path, Common::SeekableReadStream *contents, Storage::UploadCallback callback, Networking::ErrorCallback ecb);
-	virtual ~OneDriveUploadRequest();
+	OneDriveUploadRequest(OneDriveStorage *storage, const Common::String &path, Common::SeekableReadStream *contents, Storage::UploadCallback callback, Networking::ErrorCallback ecb);
+	~OneDriveUploadRequest() override;
 
-	virtual void handle();
-	virtual void restart();
+	void handle() override;
+	void restart() override;
 };
 
 } // End of namespace OneDrive

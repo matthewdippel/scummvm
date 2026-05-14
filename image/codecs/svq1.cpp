@@ -32,7 +32,7 @@
 #include "common/system.h"
 #include "common/debug.h"
 #include "common/textconsole.h"
-#include "common/huffman.h"
+#include "common/compression/huffman.h"
 
 #include "graphics/yuv_to_rgb.h"
 
@@ -47,6 +47,8 @@ SVQ1Decoder::SVQ1Decoder(uint16 width, uint16 height) {
 	debug(1, "SVQ1Decoder::SVQ1Decoder(width:%d, height:%d)", width, height);
 	_width = width;
 	_height = height;
+	_pixelFormat = getDefaultYUVFormat();
+
 	_frameWidth = _frameHeight = 0;
 	_surface = 0;
 
@@ -88,14 +90,14 @@ SVQ1Decoder::~SVQ1Decoder() {
 	}
 }
 
-#define ALIGN(x, a) (((x)+(a)-1)&~((a)-1))
+#define SVQ1_ALIGN(x, a) (((x)+(a)-1)&~((a)-1))
 
 const Graphics::Surface *SVQ1Decoder::decodeFrame(Common::SeekableReadStream &stream) {
 	debug(1, "SVQ1Decoder::decodeImage()");
 
 	Common::BitStream32BEMSB frameData(stream);
 
-	uint32 frameCode = frameData.getBits(22);
+	uint32 frameCode = frameData.getBits<22>();
 	debug(1, " frameCode: %d", frameCode);
 
 	if ((frameCode & ~0x70) || !(frameCode & 0x60)) { // Invalid
@@ -103,23 +105,23 @@ const Graphics::Surface *SVQ1Decoder::decodeFrame(Common::SeekableReadStream &st
 		return _surface;
 	}
 
-	byte temporalReference = frameData.getBits(8);
+	byte temporalReference = frameData.getBits<8>();
 	debug(1, " temporalReference: %d", temporalReference);
 	static const char *const types[4] = { "I (Key)", "P (Delta from Previous)", "B (Delta from Next)", "Invalid" };
-	byte frameType = frameData.getBits(2);
+	byte frameType = frameData.getBits<2>();
 	debug(1, " frameType: %d = %s Frame", frameType, types[frameType]);
 
 	if (frameType == 0) { // I Frame
 		// TODO: Validate checksum if present
 		if (frameCode == 0x50 || frameCode == 0x60) {
-			uint32 checksum = frameData.getBits(16);
+			uint32 checksum = frameData.getBits<16>();
 			debug(1, " checksum:0x%02x", checksum);
 			// We're currently just ignoring the checksum
 		}
 
 		if ((frameCode ^ 0x10) >= 0x50) {
 			// Skip embedded string
-			byte stringLen = frameData.getBits(8);
+			byte stringLen = frameData.getBits<8>();
 			for (uint16 i = 0; i < stringLen-1; i++)
 				frameData.skip(8);
 		}
@@ -136,12 +138,12 @@ const Graphics::Surface *SVQ1Decoder::decodeFrame(Common::SeekableReadStream &st
 			{ 320, 240 }  // 6
 		};
 
-		byte frameSizeCode = frameData.getBits(3);
+		byte frameSizeCode = frameData.getBits<3>();
 		debug(1, " frameSizeCode: %d", frameSizeCode);
 
 		if (frameSizeCode == 7) {
-			_frameWidth = frameData.getBits(12);
-			_frameHeight = frameData.getBits(12);
+			_frameWidth = frameData.getBits<12>();
+			_frameHeight = frameData.getBits<12>();
 		} else {
 			_frameWidth = standardFrameSizes[frameSizeCode].w;
 			_frameHeight = standardFrameSizes[frameSizeCode].h;
@@ -164,7 +166,7 @@ const Graphics::Surface *SVQ1Decoder::decodeFrame(Common::SeekableReadStream &st
 		debug(1, " usePacketChecksum: %d", usePacketChecksum);
 		bool componentChecksumsAfterImageData = frameData.getBit() != 0;
 		debug(1, " componentChecksumsAfterImageData: %d", componentChecksumsAfterImageData);
-		byte unk4 = frameData.getBits(2);
+		byte unk4 = frameData.getBits<2>();
 		debug(1, " unk4: %d", unk4);
 		if (unk4 != 0)
 			warning("Invalid Frame Header in SVQ1 Frame Decode");
@@ -179,10 +181,10 @@ const Graphics::Surface *SVQ1Decoder::decodeFrame(Common::SeekableReadStream &st
 			frameData.skip(8);
 	}
 
-	uint yWidth = ALIGN(_frameWidth, 16);
-	uint yHeight = ALIGN(_frameHeight, 16);
-	uint uvWidth = ALIGN(yWidth / 4, 16);
-	uint uvHeight = ALIGN(yHeight / 4, 16);
+	uint yWidth = SVQ1_ALIGN(_frameWidth, 16);
+	uint yHeight = SVQ1_ALIGN(_frameHeight, 16);
+	uint uvWidth = SVQ1_ALIGN(yWidth / 4, 16);
+	uint uvHeight = SVQ1_ALIGN(yHeight / 4, 16);
 	uint uvPitch = uvWidth + 4; // we need at least one extra column and pitch must be divisible by 4
 
 	byte *current[3];
@@ -251,7 +253,7 @@ const Graphics::Surface *SVQ1Decoder::decodeFrame(Common::SeekableReadStream &st
 	// Now we'll create the surface
 	if (!_surface) {
 		_surface = new Graphics::Surface();
-		_surface->create(yWidth, yHeight, g_system->getScreenFormat());
+		_surface->create(yWidth, yHeight, _pixelFormat);
 		_surface->w = _width;
 		_surface->h = _height;
 	}

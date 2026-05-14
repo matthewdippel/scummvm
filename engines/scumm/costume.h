@@ -45,10 +45,10 @@ public:
 
 	void loadCostume(int id) override;
 	void costumeDecodeData(Actor *a, int frame, uint usemask) override;
-	byte increaseAnims(Actor *a) override;
+	bool increaseAnims(Actor *a) override;
 
 protected:
-	byte increaseAnim(Actor *a, int slot);
+	bool increaseAnim(Actor *a, int slot);
 };
 
 class NESCostumeLoader : public BaseCostumeLoader {
@@ -58,13 +58,13 @@ public:
 	const byte *_dataOffsets;
 	byte _numAnim;
 
-	NESCostumeLoader(ScummEngine *vm) : BaseCostumeLoader(vm) {}
+	NESCostumeLoader(ScummEngine *vm) : BaseCostumeLoader(vm), _id(0), _baseptr(nullptr), _dataOffsets(nullptr), _numAnim(0) {}
 	void loadCostume(int id) override;
 	void costumeDecodeData(Actor *a, int frame, uint usemask) override;
-	byte increaseAnims(Actor *a) override;
+	bool increaseAnims(Actor *a) override;
 
 protected:
-	byte increaseAnim(Actor *a, int slot);
+	bool increaseAnim(Actor *a, int slot);
 };
 
 class V0CostumeLoader : public ClassicCostumeLoader {
@@ -72,20 +72,16 @@ public:
 	V0CostumeLoader(ScummEngine *vm) : ClassicCostumeLoader(vm) {}
 	void loadCostume(int id) override;
 	void costumeDecodeData(Actor *a, int frame, uint usemask) override;
-	byte increaseAnims(Actor *a) override;
+	bool increaseAnims(Actor *a) override;
 	byte getFrame(Actor *a, int limb);
 
 protected:
-	byte increaseAnim(Actor *a, int limb);
+	bool increaseAnim(Actor *a, int limb);
 };
 
 class ClassicCostumeRenderer : public BaseCostumeRenderer {
 protected:
 	ClassicCostumeLoader _loaded;
-
-	byte _scaleIndexX;						/* must wrap at 256 */
-	byte _scaleIndexY;
-	uint16 _palette[32];
 
 public:
 	ClassicCostumeRenderer(ScummEngine *vm) : BaseCostumeRenderer(vm), _loaded(vm) {}
@@ -97,14 +93,14 @@ public:
 protected:
 	byte drawLimb(const Actor *a, int limb) override;
 
-	void proc3(Codec1 &v1);
-	void proc3_ami(Codec1 &v1);
+	byte paintCelByleRLE(int xMoveCur, int yMoveCur);
 
-	void procC64(Codec1 &v1, int actor);
+	void byleRLEDecode_C64(ByleRLEData &compData, int actor);
+	void byleRLEDecode_ami(ByleRLEData &compData);
+	void byleRLEDecode_PCEngine(ByleRLEData &compData);
 
-	void procPCEngine(Codec1 &v1);
-
-	byte mainRoutine(int xmoveCur, int ymoveCur);
+private:
+	void markAsDirty(const Common::Rect &rect, ByleRLEData &compData, bool &decode) override;
 };
 
 class NESCostumeRenderer : public BaseCostumeRenderer {

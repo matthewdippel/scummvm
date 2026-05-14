@@ -46,6 +46,7 @@
 namespace Grim {
 
 GfxBase::GfxBase() :
+		type(Graphics::RendererType::kRendererTypeDefault),
 		_renderBitmaps(true), _renderZBitmaps(true), _shadowModeActive(false),
 		_currentPos(0, 0, 0), _dimLevel(0.0f),
 		_screenWidth(0), _screenHeight(0),
@@ -163,7 +164,6 @@ void GfxBase::createSpecialtyTexture(uint id, const uint8 *data, int width, int 
 	_specialtyTextures[id]._width = width;
 	_specialtyTextures[id]._height = height;
 	_specialtyTextures[id]._bpp = 4;
-	_specialtyTextures[id]._colorFormat = BM_RGBA;
 	createTexture(&_specialtyTextures[id], data, nullptr, true);
 }
 
@@ -238,6 +238,18 @@ Texture *GfxBase::getSpecialtyTexturePtr(Common::String name) {
 		return nullptr;
 	}
 	return &_specialtyTextures[id];
+}
+
+void GfxBase::prepareMovieFrame(Graphics::Surface *frame, const byte *palette) {
+	if (!palette)
+		return prepareMovieFrame(frame);
+
+	Graphics::Surface *converted = frame->convertTo(getMovieFormat(), palette);
+	if (converted) {
+		prepareMovieFrame(converted);
+		converted->free();
+		delete converted;
+	}
 }
 
 }

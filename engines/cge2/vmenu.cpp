@@ -110,13 +110,17 @@ char *VMenu::vmGather(Common::Array<Choice *> list) {
 		len += strlen(list[i]->_text);
 		++h;
 	}
-	_vmgt = new char[len + h];
-	*_vmgt = '\0';
-	for (uint i = 0; i < list.size(); i++) {
-		if (*_vmgt)
-			strcat(_vmgt, "|");
-		strcat(_vmgt, list[i]->_text);
-		++h;
+	len += h;
+	_vmgt = new char[len];
+
+	if (len) {
+		*_vmgt = '\0';
+		for (uint i = 0; i < list.size(); i++) {
+			if (*_vmgt)
+				Common::strcat_s(_vmgt, len, "|");
+			Common::strcat_s(_vmgt, len, list[i]->_text);
+			++h;
+		}
 	}
 
 	return _vmgt;
@@ -131,9 +135,9 @@ VMenu::~VMenu() {
 	}
 }
 
-void VMenu::touch(uint16 mask, V2D pos, Common::KeyCode keyCode) {
+void VMenu::touch(uint16 mask, V2D pos) {
 	if (_items) {
-		Sprite::touch(mask, pos, keyCode);
+		Sprite::touch(mask, pos);
 
 		int n = 0;
 		bool ok = false;
@@ -154,7 +158,8 @@ void VMenu::touch(uint16 mask, V2D pos, Common::KeyCode keyCode) {
 
 		Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
 		if (_lastN != n) {
-			ttsMan->say(_menu[n]->_text, Common::TextToSpeechManager::INTERRUPT);
+			if (ttsMan != nullptr && ConfMan.getBool("tts_enabled_objects"))
+				ttsMan->say(_menu[n]->_text, Common::TextToSpeechManager::INTERRUPT);
 			_lastN = n;
 		}
 

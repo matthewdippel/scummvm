@@ -1,9 +1,11 @@
 MODULE := engines/plumbers
 
 MODULE_OBJS = \
-	plumbers.o \
+	3do.o \
 	console.o \
-	metaengine.o
+	metaengine.o \
+	plumbers.o \
+	windows.o
 
 # This module can be built as a plugin
 ifeq ($(ENABLE_PLUMBERS), DYNAMIC_PLUGIN)

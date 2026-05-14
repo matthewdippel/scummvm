@@ -23,27 +23,25 @@
 #define BACKENDS_CLOUD_ONEDRIVE_ONEDRIVETOKENREFRESHER_H
 
 #include "backends/cloud/storage.h"
-#include "backends/networking/curl/curljsonrequest.h"
+#include "backends/networking/http/httpjsonrequest.h"
 
 namespace Cloud {
 namespace OneDrive {
 
 class OneDriveStorage;
 
-class OneDriveTokenRefresher: public Networking::CurlJsonRequest {
+class OneDriveTokenRefresher: public Networking::HttpJsonRequest {
 	OneDriveStorage *_parentStorage;
-	Common::Array<Common::String> _headers;
 
-	void tokenRefreshed(Storage::BoolResponse response);
+	void tokenRefreshed(const Storage::BoolResponse &response);
 
-	virtual void finishJson(Common::JSONValue *json);
-	virtual void finishError(Networking::ErrorResponse error, Networking::RequestState state = Networking::FINISHED);
+	void finishJson(const Common::JSONValue *json) override;
+	void finishError(const Networking::ErrorResponse &error, Networking::RequestState state = Networking::FINISHED) override;
+	void finishErrorIrrecoverable(const Networking::ErrorResponse &error, Networking::RequestState state = Networking::FINISHED);
+
 public:
 	OneDriveTokenRefresher(OneDriveStorage *parent, Networking::JsonCallback callback, Networking::ErrorCallback ecb, const char *url);
-	virtual ~OneDriveTokenRefresher();
-
-	virtual void setHeaders(Common::Array<Common::String> &headers);
-	virtual void addHeader(Common::String header);
+	~OneDriveTokenRefresher() override;
 };
 
 } // End of namespace OneDrive

@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_EXPRESSION_H
@@ -114,7 +120,7 @@ public:
 	void printExpr(char stopToken);
 	void printVarIndex();
 
-	int16 parseVarIndex(uint16 *size = 0, uint16 *type = 0);
+	uint16 parseVarIndex(uint16 *size = 0, uint16 *type = 0);
 	int16 parseValExpr(byte stopToken = 99);
 	int16 parseExpr(byte stopToken, byte *type);
 

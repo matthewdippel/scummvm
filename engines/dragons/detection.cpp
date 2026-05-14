@@ -119,18 +119,18 @@ static const char * const directoryGlobs[] = {
 	nullptr
 };
 
-class DragonsMetaEngineDetection : public AdvancedMetaEngineDetection {
+class DragonsMetaEngineDetection : public AdvancedMetaEngineDetection<Dragons::DragonsGameDescription> {
 public:
-	DragonsMetaEngineDetection() : AdvancedMetaEngineDetection(Dragons::gameDescriptions, sizeof(Dragons::DragonsGameDescription), dragonsGames) {
+	DragonsMetaEngineDetection() : AdvancedMetaEngineDetection(Dragons::gameDescriptions, dragonsGames) {
 		_maxScanDepth = 2;
 		_directoryGlobs = directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "dragons";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Blazing Dragons";
 	}
 

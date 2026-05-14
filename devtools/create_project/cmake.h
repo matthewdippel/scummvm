@@ -34,7 +34,7 @@ namespace CreateProjectTool {
  */
 class CMakeProvider final : public ProjectProvider {
 public:
-	CMakeProvider(StringList &global_warnings, std::map<std::string, StringList> &project_warnings, const int version = 0);
+	CMakeProvider(StringList &global_warnings, std::map<std::string, StringList> &project_warnings, StringList &global_errors);
 
 protected:
 
@@ -45,21 +45,16 @@ protected:
 	void addResourceFiles(const BuildSetup &setup, StringList &includeList, StringList &excludeList) final {}
 
 	void createProjectFile(const std::string &name, const std::string &uuid, const BuildSetup &setup, const std::string &moduleDir,
-						   const StringList &includeList, const StringList &excludeList) final;
+						   const StringList &includeList, const StringList &excludeList, const std::string &pchIncludeRoot, const StringList &pchDirs, const StringList &pchExclude) final;
 
 	void writeFileListToProject(const FileNode &dir, std::ostream &projectFile, const int indentation,
-								const std::string &objPrefix, const std::string &filePrefix) final;
+								const std::string &objPrefix, const std::string &filePrefix,
+								const std::string &pchIncludeRoot, const StringList &pchDirs, const StringList &pchExclude) final;
 
 	const char *getProjectExtension() final;
 
 private:
 	std::stringstream enginesStr;
-
-	enum SDLVersion {
-		kSDLVersionAny,
-		kSDLVersion1,
-		kSDLVersion2
-	};
 
 	/**
 	 * CMake properties for a library required by a feature
@@ -73,9 +68,18 @@ private:
 		const char *includesVar;
 		const char *librariesVar;
 		const char *libraries;
+		const char *winLibraries;
 	};
 
-	const Library *getLibraryFromFeature(const char *feature, bool useSDL2) const;
+	struct LibraryProps : Library {
+		LibraryProps(const char *_feature, const char *_pkgConfig = nullptr, SDLVersion _sdlVersion = kSDLVersionAny) :
+			Library({_feature, _pkgConfig, _sdlVersion, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr}) {}
+		LibraryProps &LibrariesVar(const char *var) { librariesVar = var; return *this; }
+		LibraryProps &Libraries(const char *libs) { libraries = libs; return *this; }
+		LibraryProps &WinLibraries(const char *libs) { winLibraries = libs; return *this; }
+	};
+
+	const Library *getLibraryFromFeature(const char *feature, SDLVersion useSDL) const;
 
 	void writeWarnings(std::ofstream &output) const;
 	void writeDefines(const BuildSetup &setup, std::ofstream &output) const;

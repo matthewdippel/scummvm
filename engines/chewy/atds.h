@@ -227,14 +227,14 @@ public:
 	void setControlBit(int16 txtNr, int16 bitIdx);
 	void delControlBit(int16 txtNr, int16 bitIdx);
 	void set_ats_str(int16 txtNr, int16 txtMode, int16 strNr, int16 mode);
-	void set_ats_str(int16 txtNr, int16 strNr, int16 mode);
+	void set_all_ats_str(int16 txtNr, int16 strNr, int16 mode);
 	int16 start_aad(int16 diaNr, bool continueWhenSpeechEnds = false);
 	void stopAad();
 	void print_aad(int16 scrX, int16 scrY);
 	int16 aadGetStatus();
 	void set_string_end_func(void (*strFunc)(int16 diaNr, int16 strNr, int16 personNr, int16 mode));
 	void aad_search_dia(int16 diaNr, char **ptr);
-	int16 aad_get_zeilen(char *str, int16 *txtLen);
+	int16 aadGetTxtLen(char *str);
 
 	bool startDialogCloseup(int16 diaNr);
 	void stopDialogCloseup();
@@ -282,16 +282,16 @@ private:
 	bool _continueWhenSpeechEnds = false;
 
 	SplitStringInit _ssi[AAD_MAX_PERSON] = {
-		{ 0, 100, 0 },
-		{ 0, 100, 0 },
-		{ 0, 100, 0 },
-		{ 0, 100, 0 },
-		{ 0, 100, 0 },
-		{ 0, 100, 0 },
-		{ 0, 100, 0 },
-		{ 0, 100, 0 },
-		{ 0, 100, 0 },
-		{ 0, 100, 0 },
+		{ nullptr, 100, 0 },
+		{ nullptr, 100, 0 },
+		{ nullptr, 100, 0 },
+		{ nullptr, 100, 0 },
+		{ nullptr, 100, 0 },
+		{ nullptr, 100, 0 },
+		{ nullptr, 100, 0 },
+		{ nullptr, 100, 0 },
+		{ nullptr, 100, 0 },
+		{ nullptr, 100, 0 },
 	};
 
 	char *_splitPtr[MAX_STR_SPLIT] = { nullptr };

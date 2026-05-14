@@ -23,7 +23,7 @@
 #define THEME_PARSER_H
 
 #include "common/scummsys.h"
-#include "common/xmlparser.h"
+#include "common/formats/xmlparser.h"
 
 namespace GUI {
 
@@ -100,6 +100,7 @@ protected:
 				XML_PROP(file, true)
 				XML_PROP(hotspot, true)
 				XML_PROP(resolution, false)
+				XML_PROP(type, false)
 			KEY_END()
 
 			XML_KEY(defaults)
@@ -204,6 +205,7 @@ protected:
 					XML_PROP(align, false)
 					XML_PROP(padding, false)
 					XML_PROP(spacing, false)
+					XML_PROP(resolution, false)
 
 					XML_KEY(import)
 						XML_PROP(layout, true)
@@ -268,6 +270,10 @@ protected:
 	Graphics::DrawStep *defaultDrawStep();
 	bool parseDrawStep(ParserNode *stepNode, Graphics::DrawStep *drawstep, bool functionSpecific);
 	bool parseCommonLayoutProps(ParserNode *node, const Common::String &var);
+
+	bool parseList(const char *key, int count, ...);
+	bool parseList(const Common::String &keyStr, int count, ...);
+	bool vparseList(const char *key, int count, va_list args);
 
 	Graphics::DrawStep *_defaultStepGlobal;
 	Graphics::DrawStep *_defaultStepLocal;

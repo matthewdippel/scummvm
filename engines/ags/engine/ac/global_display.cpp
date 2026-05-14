@@ -43,6 +43,8 @@ namespace AGS3 {
 
 using namespace AGS::Shared;
 
+void DisplayAtYImpl(int ypos, const char *texx, bool as_speech);
+
 void Display(const char *texx, ...) {
 	char displbuf[STD_BUFFER_SIZE];
 	va_list ap;
@@ -54,6 +56,10 @@ void Display(const char *texx, ...) {
 
 void DisplaySimple(const char *text) {
 	DisplayAtY(-1, text);
+}
+
+void DisplayMB(const char *text) {
+	DisplayAtYImpl(-1, text, false);
 }
 
 void DisplayTopBar(int ypos, int ttexcol, int backcol, const char *title, const char *text) {
@@ -79,7 +85,7 @@ void DisplayTopBar(int ypos, int ttexcol, int backcol, const char *title, const 
 		_GP(topBar).font = _GP(play).top_bar_font;
 
 	// DisplaySpeech normally sets this up, but since we're not going via it...
-	if (_GP(play).cant_skip_speech & SKIP_AUTOTIMER)
+	if (_GP(play).speech_skip_style & SKIP_AUTOTIMER)
 		_GP(play).messagetime = GetTextDisplayTime(text);
 
 	DisplayAtY(_GP(play).top_bar_ypos, text);
@@ -141,18 +147,23 @@ void DisplayMessage(int msnum) {
 }
 
 void DisplayAt(int xxp, int yyp, int widd, const char *text) {
+	if (_GP(play).screen_is_faded_out > 0)
+		debug_script_warn("Warning: blocking Display call during fade-out.");
+
 	data_to_game_coords(&xxp, &yyp);
 	widd = data_to_game_coord(widd);
 
 	if (widd < 1) widd = _GP(play).GetUIViewport().GetWidth() / 2;
 	if (xxp < 0) xxp = _GP(play).GetUIViewport().GetWidth() / 2 - widd / 2;
-	_display_at(xxp, yyp, widd, text, DISPLAYTEXT_MESSAGEBOX, 0, 0, 0, false);
+	display_at(xxp, yyp, widd, text);
 }
 
-void DisplayAtY(int ypos, const char *texx) {
+void DisplayAtYImpl(int ypos, const char *texx, bool as_speech) {
 	const Rect &ui_view = _GP(play).GetUIViewport();
 	if ((ypos < -1) || (ypos >= ui_view.GetHeight()))
 		quitprintf("!DisplayAtY: invalid Y co-ordinate supplied (used: %d; valid: 0..%d)", ypos, ui_view.GetHeight());
+	if (_GP(play).screen_is_faded_out > 0)
+		debug_script_warn("Warning: blocking Display call during fade-out.");
 
 	// Display("") ... a bit of a stupid thing to do, so ignore it
 	if (texx[0] == 0)
@@ -161,7 +172,7 @@ void DisplayAtY(int ypos, const char *texx) {
 	if (ypos > 0)
 		ypos = data_to_game_coord(ypos);
 
-	if (_GP(game).options[OPT_ALWAYSSPCH])
+	if (as_speech)
 		DisplaySpeechAt(-1, (ypos > 0) ? game_to_data_coord(ypos) : ypos, -1, _GP(game).playercharacter, texx);
 	else {
 		// Normal "Display" in text box
@@ -173,9 +184,12 @@ void DisplayAtY(int ypos, const char *texx) {
 			_GP(play).disabled_user_interface--;
 		}
 
-		_display_at(-1, ypos, ui_view.GetWidth() / 2 + ui_view.GetWidth() / 4,
-		            get_translation(texx), DISPLAYTEXT_MESSAGEBOX, 0, 0, 0, false);
+		display_at(-1, ypos, ui_view.GetWidth() / 2 + ui_view.GetWidth() / 4, get_translation(texx));
 	}
+}
+
+void DisplayAtY(int ypos, const char *texx) {
+	DisplayAtYImpl(ypos, texx, _GP(game).options[OPT_ALWAYSSPCH] != 0);
 }
 
 void SetSpeechStyle(int newstyle) {
@@ -189,11 +203,11 @@ void SetSkipSpeech(SkipSpeechStyle newval) {
 		quit("!SetSkipSpeech: invalid skip mode specified");
 
 	debug_script_log("SkipSpeech style set to %d", newval);
-	_GP(play).cant_skip_speech = user_to_internal_skip_speech((SkipSpeechStyle)newval);
+	_GP(play).speech_skip_style = user_to_internal_skip_speech((SkipSpeechStyle)newval);
 }
 
 SkipSpeechStyle GetSkipSpeech() {
-	return internal_skip_speech_to_user(_GP(play).cant_skip_speech);
+	return internal_skip_speech_to_user(_GP(play).speech_skip_style);
 }
 
 } // namespace AGS3

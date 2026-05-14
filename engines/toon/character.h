@@ -17,6 +17,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, MojoTouch has
+ * exclusively licensed this code on March 23th, 2024, to be used in
+ * closed-source products.
+ * Therefore, any contributions (commits) to it will also be dual-licensed.
+ *
  */
 
 #ifndef TOON_CHARACTER_H
@@ -90,7 +97,7 @@ public:
 	virtual AnimationInstance *getAnimationInstance();
 	virtual void setAnimationInstance(AnimationInstance *instance);
 	virtual void save(Common::WriteStream *stream);
-	virtual void load(Common::ReadStream *stream);
+	virtual void load(Common::ReadStream *stream, int32 saveGameVersion);
 	virtual void stopWalk();
 	virtual void stopSpecialAnim();
 	virtual void updateIdle();

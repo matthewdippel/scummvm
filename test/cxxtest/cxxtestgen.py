@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''Usage: %s [OPTIONS] <input file(s)>
 Generate test source file for CxxTest.
 
@@ -162,7 +162,7 @@ def expandWildcards( patterns ):
 
 def fixBackslashes( fileName ):
     '''Convert backslashes to slashes in file name'''
-    return re.sub( r'\\', '/', fileName, 0 )
+    return re.sub( r'\\', '/', fileName )
 
 def scanInputFiles(files):
     '''Scan all input files for test suites'''

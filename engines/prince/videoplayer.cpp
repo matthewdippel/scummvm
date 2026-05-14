@@ -21,13 +21,12 @@
 
 #include "prince/prince.h"
 #include "engines/util.h"
-#include "graphics/palette.h"
 #include "graphics/surface.h"
 #include "video/avi_decoder.h"
 
 namespace Prince {
 
-void PrinceEngine::playVideo(Common::String videoFilename) {
+void PrinceEngine::playVideo(const Common::Path &videoFilename) {
 		// Set the correct video mode
 		initGraphics(640, 480, nullptr);
 		if (_system->getScreenFormat().bytesPerPixel == 1) {
@@ -40,7 +39,7 @@ void PrinceEngine::playVideo(Common::String videoFilename) {
 	Video::VideoDecoder *videoDecoder = new Video::AVIDecoder();
 	if (!videoDecoder->loadFile(videoFilename)) {
 		delete videoDecoder;
-		warning("Unable to open video %s", videoFilename.c_str());
+		warning("Unable to open video %s", videoFilename.toString().c_str());
 		initGraphics(640, 480);
 		return;
 	}
@@ -67,7 +66,7 @@ void PrinceEngine::playVideo(Common::String videoFilename) {
 
 		Common::Event event;
 		while (_system->getEventManager()->pollEvent(event)) {
-			if ((event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE) ||
+			if ((event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.customType == kActionSkip) ||
 				event.type == Common::EVENT_LBUTTONUP)
 				skipVideo = true;
 		}

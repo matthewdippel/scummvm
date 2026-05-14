@@ -19,12 +19,13 @@
  *
  */
 
+#define FORBIDDEN_SYMBOL_EXCEPTION_printf
+
 #include "base/plugins.h"
 #include "common/md5.h"
 #include "common/memstream.h"
 #include "common/str-array.h"
 #include "common/file.h"
-#include "common/translation.h"
 #include "common/config-manager.h"
 
 #include "glk/detection.h"
@@ -60,7 +61,14 @@
 #include "graphics/surface.h"
 #include "common/config-manager.h"
 #include "common/file.h"
-#include "common/translation.h"
+
+#include "engines/metaengine.h"
+#include "engines/engine.h"
+
+#include "common/hash-str.h"
+
+#include "common/gui_options.h"
+
 
 static const DebugChannelDef debugFlagList[] = {
 	{Glk::kDebugCore, "core", "Core engine debug level"},
@@ -118,7 +126,7 @@ GlkDetectedGame::GlkDetectedGame(const char *id, const char *desc, const Common:
 	FileProperties fp;
 	fp.md5 = md5;
 	fp.size = filesize;
-	matchedFiles[filename] = fp;
+	matchedFiles[Common::Path(filename)] = fp;
 }
 
 } // End of namespace Glk
@@ -175,10 +183,83 @@ PlainGameDescriptor GlkMetaEngineDetection::findGame(const char *gameId) const {
 	FIND_GAME(TADS);
 #endif
 
-	return PlainGameDescriptor();
+	return PlainGameDescriptor::empty();
 }
 
 #undef FIND_GAME
+
+Common::String GlkMetaEngineDetection::findFileByGameId(const Common::String &gameId) {
+	// Get the list of files in the folder and return detection against them
+	Common::FSNode folder = Common::FSNode(ConfMan.getPath("path"));
+	Common::FSList fslist;
+	folder.getChildren(fslist, Common::FSNode::kListFilesOnly);
+
+	// Iterate over the files
+	for (Common::FSList::iterator i = fslist.begin(); i != fslist.end(); ++i) {
+		// Run a detection on each file in the folder individually
+		Common::FSList singleList;
+		singleList.push_back(*i);
+		DetectedGames games = detectGames(singleList);
+
+		// If a detection was found with the correct game Id, we have a winner
+		if (!games.empty() && games.front().gameId == gameId)
+			return (*i).getName();
+	}
+
+	// No match found
+	return Common::String();
+}
+
+Common::Error GlkMetaEngineDetection::identifyGame(DetectedGame &game, const void **descriptor) {
+	*descriptor = nullptr;
+
+	// Populate the game description
+	Glk::GlkGameDescription *gameDesc = new Glk::GlkGameDescription;
+
+	gameDesc->_gameId = ConfMan.get("gameid");
+	gameDesc->_filename = ConfMan.get("filename");
+
+	gameDesc->_language = Common::UNK_LANG;
+	gameDesc->_platform = Common::kPlatformUnknown;
+	if (ConfMan.hasKey("language"))
+		gameDesc->_language = Common::parseLanguage(ConfMan.get("language"));
+	if (ConfMan.hasKey("platform"))
+		gameDesc->_platform = Common::parsePlatform(ConfMan.get("platform"));
+
+	// If the game description has no filename, the engine has been launched directly from
+	// the command line. Do a scan for supported games for that Id in the game folder
+	if (gameDesc->_filename.empty()) {
+		gameDesc->_filename = findFileByGameId(gameDesc->_gameId);
+		if (gameDesc->_filename.empty()) {
+			delete gameDesc;
+			return Common::kNoGameDataFoundError;
+		}
+	}
+
+	// Get the MD5
+	Common::File f;
+	if (!f.open(Common::FSNode(ConfMan.getPath("path")).getChild(gameDesc->_filename))) {
+		delete gameDesc;
+		return Common::kNoGameDataFoundError;
+	}
+
+	Common::String fileName = f.getName();
+	if (fileName.hasSuffixIgnoreCase(".D64"))
+		gameDesc->_md5 = Common::computeStreamMD5AsString(f);
+	else
+		gameDesc->_md5 = Common::computeStreamMD5AsString(f, 5000);
+	f.close();
+
+	*descriptor = gameDesc;
+
+	PlainGameDescriptor pdesc(findGame(ConfMan.get("gameid").c_str()));
+
+	if (!pdesc.gameId || !*pdesc.gameId)
+		return Common::kUnknownError;
+
+	game = DetectedGame(getName(), pdesc);
+	return Common::kNoError;
+}
 
 DetectedGames GlkMetaEngineDetection::detectGames(const Common::FSList &fslist, uint32 /*skipADFlags*/, bool /*skipIncomplete*/) {
 #ifndef RELEASE_BUILD
@@ -231,29 +312,81 @@ void GlkMetaEngineDetection::detectClashes() const {
 #endif
 }
 
-const ExtraGuiOptions GlkMetaEngineDetection::getExtraGuiOptions(const Common::String &) const {
-	ExtraGuiOptions  options;
-#if defined(USE_TTS)
-	static const ExtraGuiOption ttsSpeakOptions = {
-		_s("Enable Text to Speech"),
-		_s("Use TTS to read the text"),
-		"speak",
-		false,
-	        0,
-		0
-	};
-	static const ExtraGuiOption ttsSpeakInputOptions = {
-		_s("Also read input text"),
-		_s("Use TTS to read the input text"),
-		"speak_input",
-		false,
-		0,
-		0
-	};
-	options.push_back(ttsSpeakOptions);
-	options.push_back(ttsSpeakInputOptions);
-#endif
-	return options;
+uint GlkMetaEngineDetection::getMD5Bytes() const {
+	return 5000;
 }
+
+void GlkMetaEngineDetection::dumpDetectionEntries() const {
+#if 0
+	enum class EngineName : uint8 {
+    	COMPREHEND,
+    	LEVEL9,
+    	OTHER
+	};
+
+	struct Detection {
+		const Glk::GlkDetectionEntry *entries;
+		EngineName engineName;
+	};
+
+	const Detection detectionEntries[] = {
+    	{ Glk::Adrift::AdriftMetaEngine::getDetectionEntries(), EngineName::OTHER },
+        { Glk::AdvSys::AdvSysMetaEngine::getDetectionEntries(), EngineName::OTHER },
+        { Glk::AGT::AGTMetaEngine::getDetectionEntries(), EngineName::OTHER },
+        { Glk::Alan2::Alan2MetaEngine::getDetectionEntries(), EngineName::OTHER },
+        { Glk::Alan3::Alan3MetaEngine::getDetectionEntries(), EngineName::OTHER },
+        { Glk::Archetype::ArchetypeMetaEngine::getDetectionEntries(), EngineName::OTHER },
+        { Glk::Comprehend::ComprehendMetaEngine::getDetectionEntries(), EngineName::COMPREHEND },
+        { Glk::Glulx::GlulxMetaEngine::getDetectionEntries(), EngineName::OTHER },
+        { Glk::Hugo::HugoMetaEngine::getDetectionEntries(), EngineName::OTHER },
+        { Glk::JACL::JACLMetaEngine::getDetectionEntries(), EngineName::OTHER },
+        { Glk::Level9::Level9MetaEngine::getDetectionEntries(), EngineName::LEVEL9 },
+        { Glk::Magnetic::MagneticMetaEngine::getDetectionEntries(), EngineName::OTHER },
+        { Glk::Quest::QuestMetaEngine::getDetectionEntries(), EngineName::OTHER },
+        { Glk::Scott::ScottMetaEngine::getDetectionEntries(), EngineName::OTHER },
+        { Glk::ZCode::ZCodeMetaEngine::getDetectionEntries(), EngineName::OTHER },
+#ifndef RELEASE_BUILD
+        { Glk::TADS::TADSMetaEngine::getDetectionEntries(), EngineName::OTHER },
+#endif
+        { nullptr, EngineName::OTHER }
+    };
+
+	for (const Detection *detection = detectionEntries; detection->entries; ++detection) {
+		EngineName engineName =	detection->engineName;
+
+		for (const Glk::GlkDetectionEntry *entry = detection->entries; entry->_gameId; ++entry) {
+			PlainGameDescriptor pd = findGame(entry->_gameId);
+			const char *title = pd.description;
+			const char *extra = engineName == EngineName::COMPREHEND ? "" : entry->_extra;
+
+			printf("game (\n");
+			printf("\tname \"%s\"\n", escapeString(entry->_gameId).c_str());
+			printf("\ttitle \"%s\"\n", escapeString(title).c_str());
+			printf("\textra \"%s\"\n", escapeString(extra).c_str());
+			printf("\tlanguage \"%s\"\n", escapeString(getLanguageLocale(entry->_language)).c_str());
+			printf("\tplatform \"%s\"\n", escapeString(getPlatformCode(entry->_platform)).c_str());
+			printf("\tsourcefile \"%s\"\n", escapeString(getName()).c_str());
+			printf("\tengine \"%s\"\n", escapeString(getName()).c_str());
+
+			Common::String checksum = entry->_md5;
+
+			// Filename for Comprehend Engine's md5 is stored in the extra field.
+			// For other engines, filename is not available, so it has been kept as the gameId
+			const char *fname = engineName == EngineName::COMPREHEND ? entry->_extra : entry->_gameId;
+
+			// Level9 engine does not use md5 checksums, so checksums are not printed.
+			if (engineName == EngineName::LEVEL9) {
+				printf("\trom ( name \"%s\" size %lld )\n", escapeString(fname).c_str(), static_cast<long long int>(entry->_filesize));
+			} else {
+				printf("\trom ( name \"%s\" size %lld md5-%d %s )\n", escapeString(fname).c_str(), static_cast<long long int>(entry->_filesize), getMD5Bytes(), checksum.c_str());
+			}
+
+			printf(")\n\n");
+		}
+	}
+#endif
+}
+
+
 
 REGISTER_PLUGIN_STATIC(GLK_DETECTION, PLUGIN_TYPE_ENGINE_DETECTION, GlkMetaEngineDetection);

@@ -25,7 +25,7 @@
 #include "glk/conf.h"
 #include "glk/screen.h"
 #include "common/config-manager.h"
-#include "common/unzip.h"
+#include "common/compression/unzip.h"
 
 namespace Glk {
 namespace ZCode {
@@ -229,7 +229,7 @@ void GlkInterface::initialize() {
 }
 
 void GlkInterface::addSound() {
-	Common::FSNode gameDir(ConfMan.get("path"));
+	Common::FSNode gameDir(ConfMan.getPath("path"));
 	SoundSubfolder::check(gameDir);
 	SoundZip::check(gameDir, _storyId);
 }

@@ -82,7 +82,7 @@ uint8 MohawkEngine::getGameType() const {
 	return _gameDescription->gameType;
 }
 
-Common::String MohawkEngine_LivingBooks::getBookInfoFileName() const {
+Common::Path MohawkEngine_LivingBooks::getBookInfoFileName() const {
 	return _gameDescription->desc.filesDescriptions[0].fileName;
 }
 
@@ -121,26 +121,26 @@ bool MohawkEngine_Riven::hasFeature(EngineFeature f) const {
 
 } // End of Namespace Mohawk
 
-class MohawkMetaEngine : public AdvancedMetaEngine {
+class MohawkMetaEngine : public AdvancedMetaEngine<Mohawk::MohawkGameDescription> {
 public:
 	const char *getName() const override {
 		return "mohawk";
 	}
 
 	bool hasFeature(MetaEngineFeature f) const override;
-	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override;
+	Common::Error createInstance(OSystem *syst, Engine **engine, const Mohawk::MohawkGameDescription *desc) const override;
 
 	SaveStateList listSaves(const char *target) const override;
 	SaveStateList listSavesForPrefix(const char *prefix, const char *extension) const;
 	int getMaximumSaveSlot() const override { return 999; }
-	void removeSaveState(const char *target, int slot) const override;
+	bool removeSaveState(const char *target, int slot) const override;
 	SaveStateDescriptor querySaveMetaInfos(const char *target, int slot) const override;
 
 	Common::KeymapArray initKeymaps(const char *target) const override;
 
 
 	void registerDefaultSettings(const Common::String &target) const override;
-	GUI::OptionsContainerWidget *buildEngineOptionsWidgetDynamic(GUI::GuiObject *boss, const Common::String &name, const Common::String &target) const override;
+	GUI::OptionsContainerWidget *buildEngineOptionsWidget(GUI::GuiObject *boss, const Common::String &name, const Common::String &target) const override;
 	Common::String getSavegameFile(int saveGameIdx, const char *target) const override {
 		if (!target)
 			target = getName();
@@ -229,20 +229,21 @@ SaveStateList MohawkMetaEngine::listSaves(const char *target) const {
 	return saveList;
 }
 
-void MohawkMetaEngine::removeSaveState(const char *target, int slot) const {
+bool MohawkMetaEngine::removeSaveState(const char *target, int slot) const {
 	Common::String gameId = ConfMan.get("gameid", target);
 
 	// Removing saved games is only supported in Myst/Riven currently.
 #ifdef ENABLE_MYST
 	if (gameId == "myst") {
-		Mohawk::MystGameState::deleteSave(slot);
+		return Mohawk::MystGameState::deleteSave(slot);
 	}
 #endif
 #ifdef ENABLE_RIVEN
 	if (gameId == "riven") {
-		Mohawk::RivenSaveLoad::deleteSave(slot);
+		return Mohawk::RivenSaveLoad::deleteSave(slot);
 	}
 #endif
+	return false;
 }
 
 SaveStateDescriptor MohawkMetaEngine::querySaveMetaInfos(const char *target, int slot) const {
@@ -280,9 +281,7 @@ Common::KeymapArray MohawkMetaEngine::initKeymaps(const char *target) const {
 	return AdvancedMetaEngine::initKeymaps(target);
 }
 
-Common::Error MohawkMetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const {
-	const Mohawk::MohawkGameDescription *gd = (const Mohawk::MohawkGameDescription *)desc;
-
+Common::Error MohawkMetaEngine::createInstance(OSystem *syst, Engine **engine, const Mohawk::MohawkGameDescription *gd) const {
 	switch (gd->gameType) {
 	case Mohawk::GType_MYST:
 	case Mohawk::GType_MAKINGOF:
@@ -335,10 +334,18 @@ void MohawkMetaEngine::registerDefaultSettings(const Common::String &target) con
 		return Mohawk::MohawkMetaEngine_Riven::registerDefaultSettings();
 	}
 
+	// Rest of the Mohawk games.
+	ConfMan.registerDefault("fix_audio_pops", true);
+
+	if (!ConfMan.hasKey("fix_audio_pops", target)) {
+		ConfMan.setBool("fix_audio_pops", true, target);
+		ConfMan.flushToDisk();
+	}
+
 	return MetaEngine::registerDefaultSettings(target);
 }
 
-GUI::OptionsContainerWidget *MohawkMetaEngine::buildEngineOptionsWidgetDynamic(GUI::GuiObject *boss, const Common::String &name, const Common::String &target) const {
+GUI::OptionsContainerWidget *MohawkMetaEngine::buildEngineOptionsWidget(GUI::GuiObject *boss, const Common::String &name, const Common::String &target) const {
 	Common::String gameId = ConfMan.get("gameid", target);
 
 #ifdef ENABLE_MYST
@@ -352,7 +359,7 @@ GUI::OptionsContainerWidget *MohawkMetaEngine::buildEngineOptionsWidgetDynamic(G
 	}
 #endif
 
-	return MetaEngine::buildEngineOptionsWidgetDynamic(boss, name, target);
+	return new Mohawk::MohawkDefaultOptionsWidget(boss, name, target);
 }
 
 #if PLUGIN_ENABLED_DYNAMIC(MOHAWK)

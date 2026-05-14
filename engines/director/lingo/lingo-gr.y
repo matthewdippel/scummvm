@@ -51,7 +51,15 @@
 // %glr-parser
 
 %{
-#define FORBIDDEN_SYMBOL_ALLOW_ALL
+#define FORBIDDEN_SYMBOL_EXCEPTION_FILE
+#define FORBIDDEN_SYMBOL_EXCEPTION_fprintf
+#define FORBIDDEN_SYMBOL_EXCEPTION_fwrite
+#define FORBIDDEN_SYMBOL_EXCEPTION_fread
+#define FORBIDDEN_SYMBOL_EXCEPTION_stdin
+#define FORBIDDEN_SYMBOL_EXCEPTION_stdout
+#define FORBIDDEN_SYMBOL_EXCEPTION_stderr
+#define FORBIDDEN_SYMBOL_EXCEPTION_exit
+#define FORBIDDEN_SYMBOL_EXCEPTION_getc
 
 #include "common/endian.h"
 #include "common/hash-str.h"
@@ -67,15 +75,14 @@
 #include "director/lingo/lingo-the.h"
 
 extern int yylex();
-extern int yyparse();
 
 using namespace Director;
 
 static void yyerror(const char *s) {
 	LingoCompiler *compiler = g_lingo->_compiler;
 	compiler->_hadError = true;
-	warning("######################  LINGO: %s at line %d col %d in %s id: %d",
-		s, compiler->_linenumber, compiler->_colnumber, scriptType2str(compiler->_assemblyContext->_scriptType),
+	warning("%s  LINGO: %s at line %d col %d in %s id: %d",
+		(g_director->_noFatalLingoError ? "####" : "######################"), s, compiler->_linenumber, compiler->_colnumber, scriptType2str(compiler->_assemblyContext->_scriptType),
 		compiler->_assemblyContext->_id);
 	if (compiler->_lines[2] != compiler->_lines[1])
 		warning("# %3d: %s", compiler->_linenumber - 2, Common::String(compiler->_lines[2], compiler->_lines[1] - 1).c_str());
@@ -129,18 +136,21 @@ static void checkEnd(Common::String *token, Common::String *expect, bool require
 %token<f> tFLOAT
 %token<s> tVARID tSTRING tSYMBOL
 %token<s> tENDCLAUSE
-%token tCAST tFIELD tSCRIPT tWINDOW
-%token tDELETE tDOWN tELSE tEXIT tFRAME tGLOBAL tGO tHILITE tIF tIN tINTO tMACRO
+%token tCAST tFIELD tSCRIPT tWINDOW tMEMBER tCASTLIB
+%token tDELETE tDOWN tELSE tEXIT tFRAME tGLOBAL tGO tHILITE tIF tIN tINTO tMACRO tRETURN
 %token tMOVIE tNEXT tOF tPREVIOUS tPUT tREPEAT tSET tTHEN tTO tWHEN
 %token tWITH tWHILE tFACTORY tOPEN tPLAY tINSTANCE
 %token tGE tLE tEQ tNEQ tAND tOR tNOT tMOD
 %token tAFTER tBEFORE tCONCAT tCONTAINS tSTARTS
 %token tCHAR tCHARS tITEM tITEMS tLINE tLINES tWORD tWORDS
 %token tABBREVIATED tABBREV tABBR tLONG tSHORT
-%token tDATE tLAST tMENU tMENUITEM tMENUITEMS tNUMBER tTHE tTIME
+%token tDATE tLAST tMENU tMENUS tMENUITEM tMENUITEMS tNUMBER tTHE tTIME tXTRAS tCASTLIBS
 %token tSOUND tSPRITE tINTERSECTS tWITHIN tTELL tPROPERTY
 %token tON tMETHOD tENDIF tENDREPEAT tENDTELL
 %token tASSERTERROR
+
+// D5
+// %token tCASE tOTHERWISE
 
 %type<w> tWHEN
 
@@ -192,12 +202,13 @@ static void checkEnd(Common::String *token, Common::String *expect, bool require
 // %nonassoc tVARID
 
 %destructor { delete $$; } <s>
+%destructor { delete $$; } <node>
 
 %%
 
 // TOP-LEVEL STUFF
 
-script: scriptpartlist					{ g_lingo->_compiler->_assemblyAST = new ScriptNode($scriptpartlist); } ;
+script: scriptpartlist					{ g_lingo->_compiler->_assemblyAST = Common::SharedPtr<Node>(new ScriptNode($scriptpartlist)); $$ = nullptr; } ;
 
 scriptpartlist: scriptpart[item]				{
 		NodeList *list = new NodeList;
@@ -300,12 +311,11 @@ CMDID: tVARID
 	| tABBREV		{ $$ = new Common::String("abbrev"); }
 	| tABBR			{ $$ = new Common::String("abbr"); }
 	| tAFTER		{ $$ = new Common::String("after"); }
-	| tAND			{ $$ = new Common::String("and"); }
 	| tBEFORE		{ $$ = new Common::String("before"); }
 	| tCAST			{ $$ = new Common::String("cast"); }
+	| tCASTLIB		{ $$ = new Common::String("castLib"); }
 	| tCHAR			{ $$ = new Common::String("char"); }
 	| tCHARS		{ $$ = new Common::String("chars"); }
-	| tCONTAINS		{ $$ = new Common::String("contains"); }
 	| tDATE			{ $$ = new Common::String("date"); }
 	| tDELETE		{ $$ = new Common::String("delete"); }
 	| tDOWN			{ $$ = new Common::String("down"); }
@@ -321,16 +331,14 @@ CMDID: tVARID
 	| tLINE			{ $$ = new Common::String("line"); }
 	| tLINES		{ $$ = new Common::String("lines"); }
 	| tLONG			{ $$ = new Common::String("long"); }
+	| tMEMBER		{ $$ = new Common::String("member"); }
 	| tMENU			{ $$ = new Common::String("menu"); }
 	| tMENUITEM		{ $$ = new Common::String("menuItem"); }
 	| tMENUITEMS	{ $$ = new Common::String("menuItems"); }
-	| tMOD			{ $$ = new Common::String("mod"); }
 	| tMOVIE		{ $$ = new Common::String("movie"); }
 	| tNEXT			{ $$ = new Common::String("next"); }
-	| tNOT			{ $$ = new Common::String("not"); }
 	| tNUMBER		{ $$ = new Common::String("number"); }
 	| tOF			{ $$ = new Common::String("of"); }
-	| tOR			{ $$ = new Common::String("or"); }
 	| tPREVIOUS		{ $$ = new Common::String("previous"); }
 	| tREPEAT		{ $$ = new Common::String("repeat"); }
 	| tSCRIPT		{ $$ = new Common::String("script"); }
@@ -338,7 +346,6 @@ CMDID: tVARID
 	| tSHORT		{ $$ = new Common::String("short"); }
 	| tSOUND		{ $$ = new Common::String("sound"); }
 	| tSPRITE		{ $$ = new Common::String("sprite"); }
-	| tSTARTS		{ $$ = new Common::String("starts"); }
 	| tTHE			{ $$ = new Common::String("the"); }
 	| tTIME			{ $$ = new Common::String("time"); }
 	| tTO			{ $$ = new Common::String("to"); }
@@ -366,6 +373,7 @@ ID: CMDID
 	| tPLAY			{ $$ = new Common::String("play"); }
 	| tPROPERTY		{ $$ = new Common::String("property"); }
 	| tPUT			{ $$ = new Common::String("put"); }
+	| tRETURN		{ $$ = new Common::String("return"); }
 	| tSET			{ $$ = new Common::String("set"); }
 	| tTELL			{ $$ = new Common::String("tell"); }
 	| tTHEN			{ $$ = new Common::String("then"); }
@@ -422,6 +430,8 @@ proc: CMDID cmdargs '\n'				{ $$ = new CmdNode($CMDID, $cmdargs, g_lingo->_compi
 	| tNEXT tREPEAT '\n'				{ $$ = new NextRepeatNode(); }
 	| tEXIT tREPEAT '\n'				{ $$ = new ExitRepeatNode(); }
 	| tEXIT '\n'						{ $$ = new ExitNode(); }
+	| tRETURN '\n'						{ $$ = new ReturnNode(nullptr); }
+	| tRETURN expr '\n'					{ $$ = new ReturnNode($expr); }
 	| tDELETE chunk '\n'				{ $$ = new DeleteNode($chunk); }
 	| tHILITE chunk '\n'				{ $$ = new HiliteNode($chunk); }
 	| tASSERTERROR stmtoneliner			{ $$ = new AssertErrorNode($stmtoneliner); }
@@ -436,7 +446,7 @@ cmdargs: /* empty */									{
 		args->push_back($expr);
 		$$ = args; }
 	| expr ',' nonemptyexprlist[args] trailingcomma		{
-		// This matches `cmd args, ...)
+		// This matches `cmd arg, ...)
 		$args->insert_at(0, $expr);
 		$$ = $args; }
 	| expr expr_nounarymath trailingcomma				{
@@ -454,13 +464,24 @@ cmdargs: /* empty */									{
 		// This matches `cmd()`
 		$$ = new NodeList; }
 	| '(' expr ',' ')' {
-		// This matches `cmd(args,)`
+		// This matches `cmd(arg,)`
 		NodeList *args = new NodeList;
 		args->push_back($expr);
 		$$ = args; }
 	| '(' expr ',' nonemptyexprlist[args] trailingcomma ')' {
-		// This matches `cmd(args, ...)`
+		// This matches `cmd(arg, ...)`
 		$args->insert_at(0, $expr);
+		$$ = $args; }
+	| '(' var[method] expr_nounarymath trailingcomma ')'	{
+		// This matches `obj(method arg)`
+		NodeList *args = new NodeList;
+		args->push_back($method);
+		args->push_back($expr_nounarymath);
+		$$ = args; }
+	| '(' var[method] expr_nounarymath ',' nonemptyexprlist[args] trailingcomma ')'	{
+		// This matches `obj(method arg, ...)`
+		$args->insert_at(0, $expr_nounarymath);
+		$args->insert_at(0, $method);
 		$$ = $args; }
 	;
 
@@ -540,7 +561,13 @@ ifelsestmt: tIF expr tTHEN stmt[stmt1] tELSE stmt[stmt2] {
 		$$ = new IfElseStmtNode($expr, $stmtlist1, $stmtlist2); }
 	;
 
-endif: /* empty */	{ warning("LingoCompiler::parse: no end if"); }
+endif: /* empty */	{
+		LingoCompiler *compiler = g_lingo->_compiler;
+		warning("LingoCompiler::parse: no end if at line %d col %d in %s id: %d",
+			compiler->_linenumber, compiler->_colnumber, scriptType2str(compiler->_assemblyContext->_scriptType),
+			compiler->_assemblyContext->_id);
+
+		}
 	| tENDIF '\n' ;
 
 loop: tREPEAT tWHILE expr '\n' stmtlist tENDREPEAT '\n' {
@@ -617,6 +644,17 @@ simpleexpr_nounarymath:
 	| tNOT simpleexpr[arg]  %prec tUNARY	{ $$ = new UnaryOpNode(LC::c_not, $arg); }
 	| ID '(' ')'					{ $$ = new FuncNode($ID, new NodeList); }
 	| ID '(' nonemptyexprlist[args] trailingcomma ')'	{ $$ = new FuncNode($ID, $args); }
+	| ID '(' var[method] expr_nounarymath trailingcomma ')'	{
+		// This matches `obj(method arg)`
+		NodeList *args = new NodeList;
+		args->push_back($method);
+		args->push_back($expr_nounarymath);
+		$$ = new FuncNode($ID, args); }
+	| ID '(' var[method] expr_nounarymath ',' nonemptyexprlist[args] trailingcomma ')'	{
+		// This matches `obj(method arg, ...)`
+		$args->insert_at(0, $expr_nounarymath);
+		$args->insert_at(0, $method);
+		$$ = new FuncNode($ID, $args); }
 	| '(' expr ')'					{ $$ = $expr; } ;
 	| var
 	| chunk
@@ -637,6 +675,8 @@ varorthe: var
 
 chunk: tFIELD refargs		{ $$ = new FuncNode(new Common::String("field"), $refargs); }
 	| tCAST refargs			{ $$ = new FuncNode(new Common::String("cast"), $refargs); }
+	| tMEMBER refargs		{ $$ = new FuncNode(new Common::String("member"), $refargs); }
+	| tCASTLIB refargs		{ $$ = new FuncNode(new Common::String("castLib"), $refargs); }
 	| tCHAR expr[idx] tOF simpleexpr[src]	{
 		$$ = new ChunkExprNode(kChunkChar, $idx, nullptr, $src); }
 	| tCHAR expr[start] tTO expr[end] tOF simpleexpr[src]	{
@@ -675,12 +715,12 @@ refargs: simpleexpr								{
 		// This matches `ref()`
 		$$ = new NodeList; }
 	| '(' expr ',' ')' {
-		// This matches `ref(args,)`
+		// This matches `ref(arg,)`
 		NodeList *args = new NodeList;
 		args->push_back($expr);
 		$$ = args; }
 	| '(' expr ',' nonemptyexprlist[args] trailingcomma ')'	{
-		// This matches `ref(args, ...)`
+		// This matches `ref(arg, ...)`
 		$args->insert_at(0, $expr);
 		$$ = $args; }
 	;
@@ -719,6 +759,9 @@ thenumberof:
 	| tTHE tNUMBER tOF tITEMS inof simpleexpr	{ $$ = new TheNumberOfNode(kNumberOfItems, $simpleexpr); }
 	| tTHE tNUMBER tOF tLINES inof simpleexpr	{ $$ = new TheNumberOfNode(kNumberOfLines, $simpleexpr); }
 	| tTHE tNUMBER tOF tMENUITEMS inof menu		{ $$ = new TheNumberOfNode(kNumberOfMenuItems, $menu); }
+	| tTHE tNUMBER tOF tMENUS					{ $$ = new TheNumberOfNode(kNumberOfMenus, nullptr); }
+	| tTHE tNUMBER tOF tXTRAS					{ $$ = new TheNumberOfNode(kNumberOfXtras, nullptr); } // D5
+	| tTHE tNUMBER tOF tCASTLIBS				{ $$ = new TheNumberOfNode(kNumberOfCastlibs, nullptr); } // D5
 	;
 
 inof: tIN | tOF ;
@@ -739,11 +782,17 @@ list: '[' exprlist ']'			{ $$ = new ListNode($exprlist); }
 	| '[' proplist ']'			{ $$ = new PropListNode($proplist); }
 	;
 
+// A property list must start with a proppair, but it may be followed by
+// keyless expressions, which will be compiled as equivalent to the
+// proppair <index>: <expr>.
 proplist: proppair[item]				{
-		NodeList *list = new NodeList; 
+		NodeList *list = new NodeList;
 		list->push_back($item);
 		$$ = list; }
 	| proplist[prev] ',' proppair[item]	{
+		$prev->push_back($item);
+		$$ = $prev; }
+	| proplist[prev] ',' expr[item]	{
 		$prev->push_back($item);
 		$$ = $prev; }
 	;
@@ -751,6 +800,8 @@ proplist: proppair[item]				{
 proppair: tSYMBOL ':' expr		{ $$ = new PropPairNode(new SymbolNode($tSYMBOL), $expr); }
 	| ID ':' expr				{ $$ = new PropPairNode(new SymbolNode($ID), $expr); }
 	| tSTRING ':' expr 			{ $$ = new PropPairNode(new StringNode($tSTRING), $expr); }
+	| tINT ':' expr             { $$ = new PropPairNode(new IntNode($tINT), $expr); }
+	| tFLOAT ':' expr           { $$ = new PropPairNode(new FloatNode($tFLOAT), $expr); }
 	;
 
 unarymath: '+' simpleexpr[arg]  %prec tUNARY	{ $$ = $arg; }
@@ -837,7 +888,7 @@ exprlist: /* empty */						{ $$ = new NodeList; }
 	;
 
 nonemptyexprlist: expr[item]				{
-		NodeList *list = new NodeList; 
+		NodeList *list = new NodeList;
 		list->push_back($item);
 		$$ = list; }
 	| nonemptyexprlist[prev] ',' expr[item]	{

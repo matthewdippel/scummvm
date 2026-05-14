@@ -26,6 +26,10 @@
 #include "graphics/fonts/bdf.h"
 #include "graphics/fontman.h"
 
+#ifdef USE_FREETYPE2
+#include "graphics/fonts/ttf.h"
+#endif
+
 namespace Common {
 	class SeekableReadStream;
 	class MacResManager;
@@ -33,26 +37,52 @@ namespace Common {
 
 namespace Graphics {
 
+struct TTFMap {
+	const char *ttfName;
+	uint16 slant;
+};
+
 class MacFONTFont;
 class MacFontFamily;
 
 enum {
 	kMacFontNonStandard = -1,
-	kMacFontChicago = 0,
-	kMacFontGeneva = 1,
+	kMacFontSystem = 0,
+	kMacFontApplication = 1,
+
 	kMacFontNewYork = 2,
+	kMacFontGeneva = 3,
 	kMacFontMonaco = 4,
 	kMacFontVenice = 5,
 	kMacFontLondon = 6,
 	kMacFontAthens = 7,
 	kMacFontSanFrancisco = 8,
+	kMacFontToronto = 9,
 	kMacFontCairo = 11,
 	kMacFontLosAngeles = 12,
+	kMacFontZapfDingbats = 13,
+	kMacFontBookman = 14,
+	kMacFontHelveticaNarrow = 15,
 	kMacFontPalatino = 16,
+	kMacFontZapfChancery = 18,
 	kMacFontTimes = 20,
 	kMacFontHelvetica = 21,
 	kMacFontCourier = 22,
-	kMacFontSymbol = 23
+	kMacFontSymbol = 23,
+	kMacFontTaliesin = 24,
+	kMacFontAvantGarde = 33,
+	kMacFontNewCenturySchoolbook = 34,
+	kMacFontChicago = 16383,
+
+	kMacFontOsaka = 16384,
+	kMacFontBookMinchoM = 16396,
+	kMacFontMonoGothic = 16433,
+	kMacFontMonoMing = 16435,
+	kMacFontOsakaMono = 16436,
+	kMacFontMediumGothic = 16640,
+	kMacFontMing = 16641,
+	kMacFontHeiseiMincho = 16700,
+	kMacFontHeiseiKakuGothic = 16701
 };
 
 enum {
@@ -79,7 +109,7 @@ struct FontInfo {
 
 class MacFont {
 public:
-	MacFont(int id = kMacFontChicago, int size = 12, int slant = kMacFontRegular) {
+	MacFont(int id = kMacFontSystem, int size = 12, int slant = kMacFontRegular) {
 		_id = id;
 		_size = size ? size : 12;
 		_slant = slant;
@@ -94,17 +124,17 @@ public:
 	void setId(int id) { _id = id; }
 	int getSize() const { return _size; }
 	int getSlant() const { return _slant; }
-	Common::String getName() { return _name; }
+	Common::String getName() const { return _name; }
 	void setName(Common::String &name) { setName(name.c_str()); }
 	void setName(const char *name);
-	const Graphics::Font *getFallback() { return _fallback; }
-	bool isGenerated() { return _generated; }
+	const Graphics::Font *getFallback() const { return _fallback; }
+	bool isGenerated() const { return _generated; }
 	void setGenerated(bool gen) { _generated = gen; }
-	bool isTrueType() { return _truetype; }
-	Font *getFont() { return _font; }
+	bool isTrueType() const { return _truetype; }
+	Font *getFont() const { return _font; }
 	void setFont(Font *font, bool truetype) { _font = font; _truetype = truetype; }
 	void setFallback(const Font *font, Common::String name = "");
-	Common::String getFallbackName() { return _fallbackName; }
+	Common::String getFallbackName() const { return _fallbackName; }
 
 private:
 	int _id;
@@ -147,7 +177,7 @@ public:
 	 * @return the font name or NULL if ID goes beyond the mapping
 	 */
 	const Common::String getFontName(uint16 id, int size, int slant = kMacFontRegular, bool tryGen = false);
-	const Common::String getFontName(MacFont &font);
+	const Common::String getFontName(const MacFont &font);
 	int getFontIdByName(Common::String name);
 
 	Common::Language getFontLanguage(uint16 id);
@@ -156,9 +186,9 @@ public:
 	Common::String getFontName(uint16 id);
 
 	void loadFonts(Common::SeekableReadStream *stream);
-	void loadFonts(const Common::String &fileName);
+	void loadFonts(const Common::Path &fileName);
 	void loadFonts(Common::MacResManager *fontFile);
-	void loadWindowsFont(const Common::String fileName);
+	void loadWindowsFont(const Common::Path &fileName);
 
 	/**
 	 * Register a font name if it doesn't already exist.
@@ -169,6 +199,25 @@ public:
 
 	void forceBuiltinFonts() { _builtInFonts = true; }
 	int parseSlantFromName(const Common::String &name);
+	Common::String getNameFromSlant(int slantVal);
+
+	const Common::Array<MacFontFamily *> &getFontFamilies() { return _fontFamilies; }
+
+	void printFontRegistry(int debugLevel, uint32 channel);
+
+	int registerTTFFont(const Graphics::TTFMap ttfList[]);
+
+	int getFamilyId(int newId, int newSlant);
+
+#ifdef USE_FREETYPE2
+	/**
+	 * Set the TTF rendering mode used when loading TTF fonts.
+	 * Defaults to kTTFRenderModeMonochrome for classic Mac look.
+	 * Set to kTTFRenderModeLight for anti-aliased text.
+	 */
+	void setTTFRenderMode(TTFRenderMode mode) { _ttfRenderMode = mode; }
+	TTFRenderMode getTTFRenderMode() const { return _ttfRenderMode; }
+#endif
 
 private:
 	void loadFontsBDF();
@@ -180,6 +229,7 @@ private:
 
 #ifdef USE_FREETYPE2
 	void generateTTFFont(MacFont &toFront, Common::SeekableReadStream *stream);
+	TTFRenderMode _ttfRenderMode = Graphics::kTTFRenderModeMonochrome;
 #endif
 
 private:
@@ -189,7 +239,7 @@ private:
 	Common::Language _language;
 	Common::HashMap<Common::String, Graphics::Font *> _winFontRegistry;
 	Common::HashMap<Common::String, MacFont *> _fontRegistry;
-	Common::HashMap<Common::String, MacFontFamily *> _fontFamilies;
+	Common::Array<MacFontFamily *> _fontFamilies;
 
 	Common::HashMap<int, FontInfo *> _fontInfo;
 	Common::HashMap<Common::String, int> _fontIds;
@@ -197,7 +247,7 @@ private:
 	int parseFontSlant(Common::String slant);
 
 	/* Unicode font */
-	Common::HashMap<int, const Graphics::Font *> _uniFonts;
+	Common::HashMap<Common::String, const Graphics::Font *> _uniFontRegistry;
 
 	Common::HashMap<Common::String, Common::SeekableReadStream *> _ttfData;
 };

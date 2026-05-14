@@ -55,7 +55,9 @@ enum GameFeatures {
 	GF_DEMO             = 1 << 8,
 	GF_PACKED           = 1 << 9,
 	GF_BROKEN_FF_RATING = 1 << 10,
-	GF_WAVSFX           = 1 << 11
+	GF_WAVSFX           = 1 << 11,
+	GF_MT32_XMIDI       = 1 << 12,
+	GF_MT32_TRACK10_FIX = 1 << 13
 };
 
 enum GameFileTypes {
@@ -72,7 +74,8 @@ enum GameFileTypes {
 	GAME_TEXTFILE = 1 << 10,
 	GAME_VGAFILE  = 1 << 11,
 	GAME_GFXIDXFILE = 1 << 12,
-	GAME_CABFILE  = 1 << 13
+	GAME_CABFILE  = 1 << 13,
+	GAME_LANGFILE = 1 << 14
 
 };
 

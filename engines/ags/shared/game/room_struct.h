@@ -46,7 +46,7 @@
 #ifndef AGS_SHARED_GAME_ROOM_INFO_H
 #define AGS_SHARED_GAME_ROOM_INFO_H
 
-#include "ags/lib/std/memory.h"
+#include "common/std/memory.h"
 #include "ags/lib/allegro.h" // RGB
 #include "ags/shared/ac/common_defines.h"
 #include "ags/shared/game/interactions.h"
@@ -102,12 +102,10 @@ enum RoomFlags {
 #define MAX_ROOM_BGFRAMES  5   // max number of frames in animating bg scene
 
 #define MAX_ROOM_HOTSPOTS  50  // v2.62: 20 -> 30; v2.8: -> 50
+#define MAX_ROOM_OBJECTS_v300 40 // for some legacy logic support
 #define MAX_ROOM_OBJECTS   256 // v3.6.0: 40 -> 256 (now limited by room format)
 #define MAX_ROOM_REGIONS   16
-// TODO: this is remains of the older code, MAX_WALK_AREAS = real number - 1, where
-// -1 is for the solid wall. When fixing this you need to be careful, because some
-// walk-area indexes are 0-based and some 1-based (and some arrays have MAX_WALK_AREAS + 1 size)
-#define MAX_WALK_AREAS     15
+#define MAX_WALK_AREAS     16
 #define MAX_WALK_BEHINDS   16
 
 #define MAX_MESSAGES       100
@@ -124,8 +122,10 @@ typedef std::shared_ptr<Bitmap> PBitmap;
 // Various room options
 struct RoomOptions {
 	// Index of the startup music in the room
+	// this is a deprecated option, used before 3.2.* with old audio API.
 	int  StartupMusic;
-	// If saving and loading game is disabled in the room
+	// If saving and loading game is disabled in the room;
+	// this is a deprecated option that affects only built-in save/load dialogs
 	bool SaveLoadDisabled;
 	// If player character is turned off in the room
 	bool PlayerCharOff;
@@ -133,7 +133,7 @@ struct RoomOptions {
 	int  PlayerView;
 	// Room's music volume modifier
 	RoomVolumeMod MusicVolume;
-	// A collection of boolean options
+	// A collection of RoomFlags
 	int  Flags;
 
 	RoomOptions();
@@ -223,8 +223,8 @@ struct WalkArea {
 	int32_t     ScalingFar;
 	// Scaling at the nearest point, or NOT_VECTOR_SCALED for uniform scaling
 	int32_t     ScalingNear;
-	// Light level (-100 -> +100)
-	int32_t     Light;
+	// Optional override for player character view
+	int32_t     PlayerView;
 	// Top and bottom Y of the area
 	int32_t     Top;
 	int32_t     Bottom;
@@ -315,7 +315,7 @@ public:
 	// Game's unique ID, corresponds to GameSetupStructBase::uniqueid.
 	// If this field has a valid value and does not match actual game's id,
 	// then engine will refuse to start this room.
-	// May be set to NO_GAME_ID_IN_ROOM_FILE to let it run within any _GP(game).
+	// May be set to NO_GAME_ID_IN_ROOM_FILE to let it run within any game.
 	int32_t                 GameID;
 	// Loaded room file's data version. This value may be used to know when
 	// the room must have behavior specific to certain version of AGS.
@@ -353,7 +353,7 @@ public:
 	size_t                  RegionCount;
 	RoomRegion              Regions[MAX_ROOM_REGIONS];
 	size_t                  WalkAreaCount;
-	WalkArea                WalkAreas[MAX_WALK_AREAS + 1];
+	WalkArea                WalkAreas[MAX_WALK_AREAS];
 	size_t                  WalkBehindCount;
 	WalkBehind              WalkBehinds[MAX_WALK_BEHINDS];
 

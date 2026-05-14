@@ -87,7 +87,7 @@ private:
 	Common::FSNode _rootFolder;
 	Common::List<ArchiveEntry *> _archiveList;
 	bool _extractedFiles;
-	Common::String _directoryName;
+	Common::Path _directoryName;
 
 	bool _useEnglishSpeech;
 	Common::String ensureSpeechLang(const Common::String &fileName);
@@ -107,7 +107,7 @@ public:
 	 *
 	 * Set the PackageManager to run on extracted game files.s
 	 */
-	void setRunWithExtractedFiles(const Common::String &directoryName) {
+	void setRunWithExtractedFiles(const Common::Path &directoryName) {
 		_extractedFiles = true;
 		_directoryName = directoryName;
 	}
@@ -118,14 +118,14 @@ public:
 	 * @param MountPosition The directory name under which the package should be mounted
 	 * @return              Returns true if the mount was successful, otherwise false.
 	 */
-	bool loadPackage(const Common::String &fileName, const Common::String &mountPosition);
+	bool loadPackage(const Common::Path &fileName, const Common::String &mountPosition);
 	/**
 	 * Mounts the contents of a directory in the specified directory in the directory tree.
 	 * @param               The name of the directory to mount
 	 * @param MountPosition The directory name under which the package should be mounted
 	 * @return              Returns true if the mount was successful, otherwise false.
 	 */
-	bool loadDirectoryAsPackage(const Common::String &directoryName, const Common::String &mountPosition);
+	bool loadDirectoryAsPackage(const Common::Path &directoryName, const Common::String &mountPosition);
 	/**
 	 * Downloads a file from the directory tree
 	 * @param FileName      The filename of the file to load
@@ -153,13 +153,14 @@ public:
 		const char *versionStr = "<?xml version=\"1.0\"?>";
 		uint fileSize;
 		char *data = (char *)getFile(fileName, &fileSize);
-		char *result = (char *)malloc(fileSize + strlen(versionStr) + 1);
+		size_t resultSize = fileSize + strlen(versionStr) + 1;
+		char *result = (char *)malloc(resultSize);
 		if (!result)
 			error("[PackageManager::getXmlFile] Cannot allocate memory");
 
-		strcpy(result, versionStr);
+		Common::strcpy_s(result, resultSize, versionStr);
 		Common::copy(data, data + fileSize, result + strlen(versionStr));
-		result[fileSize + strlen(versionStr)] = '\0';
+		result[resultSize - 1] = '\0';
 
 		delete[] data;
 		if (pFileSize)

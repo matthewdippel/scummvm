@@ -27,12 +27,13 @@
 /* AVALOT		The kernel of the program. */
 
 #include "avalanche/avalanche.h"
+#include "avalanche/outro.h"
 
-#include "common/math.h"
 #include "common/random.h"
 #include "common/system.h"
 #include "common/config-manager.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
+#include "math/utils.h"
 
 namespace Avalanche {
 
@@ -216,7 +217,7 @@ void AvalancheEngine::setup() {
 		MainMenu *mainmenu = new MainMenu(this);
 		mainmenu->run();
 		delete mainmenu;
-		if (_letMeOut)
+		if (_letMeOut || shouldQuit())
 			return;
 
 		newGame();
@@ -249,8 +250,7 @@ void AvalancheEngine::runAvalot() {
 		if (delay <= 55)
 			_system->delayMillis(55 - delay); // Replaces slowdown(); 55 comes from 18.2 Hz (B Flight).
 	};
-
-	_closing->exitGame();
+	_outro->run();
 }
 
 void AvalancheEngine::init() {
@@ -325,11 +325,10 @@ void AvalancheEngine::loadAlso(byte num) {
 			}
 		}
 	}
-	Common::String filename;
-	filename = Common::String::format("also%d.avd", num);
+	Common::Path filename(Common::String::format("also%d.avd", num));
 	Common::File file;
 	if (!file.open(filename))
-		error("AVALANCHE: File not found: %s", filename.c_str());
+		error("AVALANCHE: File not found: %s", filename.toString(Common::Path::kNativeSeparator).c_str());
 
 	file.seek(128);
 
@@ -416,10 +415,10 @@ void AvalancheEngine::loadAlso(byte num) {
 }
 
 void AvalancheEngine::loadBackground(byte num) {
-	Common::String filename = Common::String::format("place%d.avd", num);
+	Common::Path filename(Common::String::format("place%d.avd", num));
 	Common::File file;
 	if (!file.open(filename))
-		error("AVALANCHE: File not found: %s", filename.c_str());
+		error("AVALANCHE: File not found: %s", filename.toString(Common::Path::kNativeSeparator).c_str());
 
 	file.seek(146);
 	if (!_roomnName.empty())
@@ -808,7 +807,9 @@ void AvalancheEngine::enterRoom(Room roomId, byte ped) {
 		break;
 
 	case kRoomOutsideNottsPub:
+	case kRoomOutsideDucks:
 		if (ped == 2) {
+			// Shut the door
 			_background->draw(-1, -1, 2);
 			_graphics->refreshBackground();
 			_sequence->startDuckSeq();
@@ -908,15 +909,6 @@ void AvalancheEngine::enterRoom(Room roomId, byte ped) {
 		_npcFacing = 1; // Port.
 		break;
 
-	case kRoomOutsideDucks:
-		if (ped == 2) {
-			// Shut the door
-			_background->draw(-1, -1, 2);
-			_graphics->refreshBackground();
-			_sequence->startDuckSeq();
-		}
-		break;
-
 	case kRoomDucks:
 		_npcFacing = 1; // Duck.
 		break;
@@ -932,7 +924,7 @@ void AvalancheEngine::thinkAbout(byte object, bool type) {
 	_thinks = object;
 	object--;
 
-	Common::String filename;
+	Common::Path filename;
 	if (type == kThing) {
 		filename = "thinks.avd";
 	} else { // kPerson
@@ -1079,30 +1071,39 @@ void AvalancheEngine::guideAvvy(Common::Point cursorPos) {
 	case 0:
 	default:
 		_animation->stopWalking();
+		_animation->setDirection(kDirStopped);
 		break; // Clicked on Avvy: no movement.
 	case 1:
 		_animation->setMoveSpeed(0, kDirLeft);
+		_animation->setDirection(kDirLeft);
 		break;
 	case 2:
 		_animation->setMoveSpeed(0, kDirRight);
+		_animation->setDirection(kDirRight);
 		break;
 	case 3:
 		_animation->setMoveSpeed(0, kDirUp);
+		_animation->setDirection(kDirUp);
 		break;
 	case 4:
 		_animation->setMoveSpeed(0, kDirUpLeft);
+		_animation->setDirection(kDirLeft);
 		break;
 	case 5:
 		_animation->setMoveSpeed(0, kDirUpRight);
+		_animation->setDirection(kDirUpRight);
 		break;
 	case 6:
 		_animation->setMoveSpeed(0, kDirDown);
+		_animation->setDirection(kDirDown);
 		break;
 	case 7:
 		_animation->setMoveSpeed(0, kDirDownLeft);
+		_animation->setDirection(kDirDownLeft);
 		break;
 	case 8:
 		_animation->setMoveSpeed(0, kDirDownRight);
+		_animation->setDirection(kDirDownRight);
 		break;
 	}    // No other values are possible.
 
@@ -1307,7 +1308,7 @@ uint16 AvalancheEngine::bearing(byte whichPed) {
 
 	int16 deltaX = avvy->_x - curPed->_x;
 	int16 deltaY = avvy->_y - curPed->_y;
-	uint16 result = Common::rad2deg<float,uint16>(atan((float)deltaY / (float)deltaX)); // TODO: Would atan2 be preferable?
+	uint16 result = Math::rad2deg<float,uint16>(atan((float)deltaY / (float)deltaX)); // TODO: Would atan2 be preferable?
 	if (avvy->_x < curPed->_x) {
 		return result + 90;
 	} else {
@@ -1497,7 +1498,7 @@ Common::String AvalancheEngine::getName(People whose) {
 		"Spurge",     "Jacques"
 	};
 
-	static const char lasses[4][15] = {"Arkata", "Geida", "\0xB1", "the Wise Woman"};
+	static const char lasses[4][15] = {"Arkata", "Geida", "\xB1", "the Wise Woman"};
 
 	if (whose <= kPeopleJacques)
 		return Common::String(lads[whose - kPeopleAvalot]);

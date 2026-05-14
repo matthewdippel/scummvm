@@ -21,7 +21,6 @@
 
 #include "engines/stark/ui/cursor.h"
 #include "engines/stark/gfx/driver.h"
-#include "engines/stark/gfx/texture.h"
 #include "engines/stark/services/gameinterface.h"
 #include "engines/stark/services/global.h"
 #include "engines/stark/services/services.h"
@@ -85,7 +84,7 @@ void Cursor::setItemActive(bool itemActive) {
 
 void Cursor::onScreenChanged() {
 	if (_mouseText) {
-		_mouseText->resetTexture();
+		_mouseText->reset();
 	}
 }
 
@@ -166,8 +165,8 @@ void Cursor::setMouseHint(const Common::String &hint) {
 		if (!hint.empty()) {
 			_mouseText = new VisualText(_gfx);
 			_mouseText->setText(hint);
-			_mouseText->setColor(Color(0xFF, 0xFF, 0xFF));
-			_mouseText->setBackgroundColor(Color(0x00, 0x00, 0x00, 0x80));
+			_mouseText->setColor(Gfx::Color(0xFF, 0xFF, 0xFF));
+			_mouseText->setBackgroundColor(Gfx::Color(0x00, 0x00, 0x00, 0x80));
 			_mouseText->setFont(FontProvider::kSmallFont);
 			_mouseText->setTargetWidth(96);
 		} else {

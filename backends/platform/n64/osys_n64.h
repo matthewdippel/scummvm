@@ -30,7 +30,7 @@
 #include "base/main.h"
 
 #include "graphics/surface.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/pixelformat.h"
 
 #include "audio/mixer_intern.h"
@@ -69,7 +69,7 @@ enum GraphicModeID {
 	OVERS_MPAL_340X240
 };
 
-class OSystem_N64 : public EventsBaseBackend, public PaletteManager {
+class OSystem_N64 : virtual public BaseBackend, public Common::EventSource, public PaletteManager {
 protected:
 	Audio::MixerImpl *_mixer;
 
@@ -109,6 +109,7 @@ protected:
 
 	uint16	_overlayHeight, _overlayWidth;
 	bool	_overlayVisible;
+	bool	_overlayInGUI;
 
 	bool	_disableFpsLimit; // When this is enabled, the system doesn't limit screen updates
 
@@ -164,14 +165,14 @@ public:
 	virtual void unlockScreen();
 	virtual void setShakePos(int shakeXOffset, int shakeYOffset);
 
-	virtual void showOverlay();
+	virtual void showOverlay(bool inGUI);
 	virtual void hideOverlay();
 	virtual bool isOverlayVisible() const { return _overlayVisible; }
 	virtual void clearOverlay();
 	virtual void grabOverlay(Graphics::Surface &surface);
 	virtual void copyRectToOverlay(const void *buf, int pitch, int x, int y, int w, int h);
-	virtual int16 getOverlayHeight();
-	virtual int16 getOverlayWidth();
+	virtual int16 getOverlayHeight() const;
+	virtual int16 getOverlayWidth() const;
 	virtual Graphics::PixelFormat getOverlayFormat() const {
 		return Graphics::PixelFormat(2, 5, 5, 5, 0, 11, 6, 1, 0);
 	}
@@ -179,7 +180,7 @@ public:
 	virtual bool showMouse(bool visible);
 
 	virtual void warpMouse(int x, int y);
-	virtual void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format);
+	virtual void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format, const byte *mask);
 	virtual void setCursorPalette(const byte *colors, uint start, uint num);
 
 	virtual bool pollEvent(Common::Event &event);

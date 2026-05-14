@@ -76,8 +76,8 @@ enum {
 
 // Engine Debug Flags
 enum {
-	kRivenDebugScript   = (1 << 0),
-	kRivenDebugPatches  = (1 << 1)
+	kRivenDebugScript = 1,
+	kRivenDebugPatches,
 };
 
 struct ZipMode {
@@ -106,8 +106,8 @@ public:
 	// Display debug rectangles around the hotspots
 	bool _showHotspots;
 
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 	Common::String getSaveStateName(int slot) const override {

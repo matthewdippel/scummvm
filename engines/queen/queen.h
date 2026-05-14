@@ -39,6 +39,31 @@ class SeekableReadStream;
  */
 namespace Queen {
 
+enum QUEENActions {
+	kActionNone,
+	kActionFastMode,
+	kActionSkipText,
+	kActionScrollUp,
+	kActionScrollDown,
+	kActionInvSlot1,
+	kActionInvSlot2,
+	kActionInvSlot3,
+	kActionInvSlot4,
+	kActionSkipCutaway,
+	kActionJournal,
+	kActionSave,
+	kActionLoad,
+	kActionOpen,
+	kActionClose,
+	kActionMove,
+	kActionGive,
+	kActionLook,
+	kActionPickUp,
+	kActionTalk,
+	kActionUse,
+	kActionCloseJournal,
+};
+
 struct GameStateHeader {
 	uint32 version;
 	uint32 flags;
@@ -93,8 +118,8 @@ public:
 	void update(bool checkPlayerInput = false);
 
 	bool canLoadOrSave() const;
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 	Common::Error loadGameState(int slot) override;
 	int getAutosaveSlot() const override { return 99; }

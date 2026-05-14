@@ -26,11 +26,6 @@
 
 #include "kingdom/kingdom.h"
 
-static const DebugChannelDef debugFlagList[] = {
-	{Kingdom::kDebugGeneral, "general", "General debug level"},
-	DEBUG_CHANNEL_END
-};
-
 static const PlainGameDescriptor kingdomGames[] = {
 	{"kingdom", "Kingdom: The Far Reaches"},
 	{nullptr, nullptr}
@@ -46,8 +41,8 @@ static const ADGameDescription gameDescriptions[] = {
 		AD_ENTRY1s("KINGDEMO.EXE", "2ce478fc13086d0ddb02a2867ba307dc", 167154),
 		Common::EN_ANY,
 		Common::kPlatformDOS,
-		ADGF_UNSTABLE | ADGF_DEMO,
-		GUIO1(GUIO_NONE)
+		ADGF_DEMO,
+		GUIO0()
 	},
 
 	// Kingdom PC DOS version v1.26 EN, provided by Strangerke
@@ -58,8 +53,8 @@ static const ADGameDescription gameDescriptions[] = {
 		AD_ENTRY1s("KINGDOM.EXE", "64d3e03b963396ced402f3dc958765c0", 199693),
 		Common::EN_ANY,
 		Common::kPlatformDOS,
-		ADGF_UNSTABLE,
-		GUIO1(GUIO_NONE)
+		ADGF_NO_FLAGS,
+		GUIO0()
 	},
 
 	// Kingdom 3DO, provided by Strangerke
@@ -70,33 +65,39 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::EN_ANY,
 		Common::kPlatform3DO,
 		ADGF_UNSTABLE,
-		GUIO1(GUIO_NONE)
+		GUIO0()
 	},
 
-	AD_TABLE_END_MARKER
-};
+	// Kingdom PC Win version v1.0 EN, provided by Strangerke
+	{
+		"kingdom",
+		nullptr,
+		AD_ENTRY1s("REACHES.EXE", "37ba9463795c882e8ec7aef36a00152e", 207360),
+		Common::EN_ANY,
+		Common::kPlatformWindows,
+		ADGF_UNSTABLE,
+		GUIO0()
+	},
+
+	AD_TABLE_END_MARKER};
 
 } // End of namespace Kingdom
 
-class KingdomMetaEngineDetection : public AdvancedMetaEngineDetection {
+class KingdomMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	KingdomMetaEngineDetection() : AdvancedMetaEngineDetection(Kingdom::gameDescriptions, sizeof(ADGameDescription), kingdomGames) {
-	}
-
-	const char *getEngineId() const override {
-		return "kingdom";
+	KingdomMetaEngineDetection() : AdvancedMetaEngineDetection(Kingdom::gameDescriptions, kingdomGames) {
 	}
 
 	const char *getName() const override {
+		return "kingdom";
+	}
+
+	const char *getEngineName() const override {
 		return "Kingdom: The Far Reaches' Engine";
 	}
 
 	const char *getOriginalCopyright() const override {
 		return "Kingdom: The far Reaches (C) 1995 Virtual Image Productions";
-	}
-
-	const DebugChannelDef *getDebugChannels() const override {
-		return debugFlagList;
 	}
 };
 

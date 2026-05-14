@@ -25,7 +25,7 @@
 // dirty rectangles technique.
 //
 // TODO: do research/profiling to find out if this dirty rectangles thing
-// is still giving ANY notable perfomance boost at all.
+// is still giving ANY notable performance boost at all.
 //
 // TODO: would that give any benefit to reorganize the code and move dirty
 // rectangles into SoftwareGraphicDriver?
@@ -45,7 +45,7 @@
 //
 //=============================================================================
 
-#include "ags/lib/std/vector.h"
+#include "common/std/vector.h"
 #include "ags/engine/ac/draw_software.h"
 #include "ags/shared/gfx/bitmap.h"
 #include "ags/shared/util/scaling.h"
@@ -185,17 +185,20 @@ void invalidate_rect_on_surf(int x1, int y1, int x2, int y2, DirtyRects &rects) 
 		return;
 	}
 
+	if (x1 > x2 || y1 > y2)
+		return;
+
 	int a;
 
 	const Size &surfsz = rects.SurfaceSize;
-	if (x1 >= surfsz.Width) x1 = surfsz.Width - 1;
-	if (y1 >= surfsz.Height) y1 = surfsz.Height - 1;
+
+	if (x1 >= surfsz.Width || y1 >= surfsz.Height || x2 < 0 || y2 < 0)
+		return;
+
 	if (x2 >= surfsz.Width) x2 = surfsz.Width - 1;
 	if (y2 >= surfsz.Height) y2 = surfsz.Height - 1;
 	if (x1 < 0) x1 = 0;
 	if (y1 < 0) y1 = 0;
-	if (x2 < 0) x2 = 0;
-	if (y2 < 0) y2 = 0;
 	rects.NumDirtyRegions++;
 
 	// ** Span code

@@ -245,10 +245,12 @@ void Screen::plotPoint(int x, int y, uint8 color) {
 	}
 }
 
-static void plot(int x, int y, int color, void *data) {
-	Screen *screen = (Screen *)data;
-	screen->plotPoint(x, y, (uint8) color);
-}
+class ScreenPrimitives : public Graphics::Primitives {
+	void drawPoint(int x, int y, uint32 color, void *data) override {
+		Screen *screen = (Screen *)data;
+		screen->plotPoint(x, y, (uint8) color);
+	}
+};
 
 /**
  * Draws a line from one point to another. This is only used for debugging.
@@ -260,7 +262,7 @@ static void plot(int x, int y, int color, void *data) {
  */
 
 void Screen::drawLine(int x0, int y0, int x1, int y1, uint8 color) {
-	Graphics::drawLine(x0, y0, x1, y1, color, &plot, this);
+	ScreenPrimitives().drawLine(x0, y0, x1, y1, color, this);
 }
 
 /**
@@ -571,7 +573,7 @@ int32 Screen::initializeBackgroundLayer(byte *parallax) {
 			_blockSurfaces[_layer][i]->transparent = block_is_transparent;
 
 		} else
-			_blockSurfaces[_layer][i] = NULL;
+			_blockSurfaces[_layer][i] = nullptr;
 	}
 
 	free(memchunk);
@@ -676,7 +678,7 @@ int32 Screen::initializePsxBackgroundLayer(byte *parallax) {
 			_blockSurfaces[_layer][tileIndex]->transparent = block_is_transparent;
 
 		} else
-			_blockSurfaces[_layer][tileIndex] = NULL;
+			_blockSurfaces[_layer][tileIndex] = nullptr;
 
 		if (posY == _yBlocks[_layer] - 1) {
 			stripeNumber++;
@@ -822,7 +824,7 @@ int32 Screen::initializePsxParallaxLayer(byte *parallax) {
 
 			_blockSurfaces[_layer][tileIndex]->transparent = block_is_transparent;
 		} else
-			_blockSurfaces[_layer][tileIndex] = NULL;
+			_blockSurfaces[_layer][tileIndex] = nullptr;
 	}
 
 	_layer++;
@@ -846,7 +848,7 @@ void Screen::closeBackgroundLayer() {
 				if (_blockSurfaces[i][j])
 					free(_blockSurfaces[i][j]);
 			free(_blockSurfaces[i]);
-			_blockSurfaces[i] = NULL;
+			_blockSurfaces[i] = nullptr;
 		}
 	}
 

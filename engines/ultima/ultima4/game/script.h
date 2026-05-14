@@ -24,7 +24,9 @@
 
 #include "ultima/ultima4/core/types.h"
 #include "ultima/shared/conf/xml_node.h"
+#include "ultima/shared/std/containers.h"
 #include "common/file.h"
+#include "common/list.h"
 
 namespace Ultima {
 namespace Ultima4 {
@@ -54,7 +56,7 @@ public:
 	class Provider {
 	public:
 		virtual ~Provider() {}
-		virtual Common::String translate(Std::vector<Common::String> &parts) = 0;
+		virtual Common::String translate(Common::Array<Common::String> &parts) = 0;
 	};
 
 private:
@@ -217,14 +219,14 @@ private:
 	 * Gets a property as Common::String from the script, and
 	 * translates it using scriptTranslate.
 	 */
-	Common::String getPropAsStr(Std::list<Shared::XMLNode *> &nodes, const Common::String &prop, bool recursive);
+	Common::String getPropAsStr(Common::List<Shared::XMLNode *> &nodes, const Common::String &prop, bool recursive);
 
 	Common::String getPropAsStr(Shared::XMLNode *node, const Common::String &prop, bool recursive = false);
 
 	/**
 	 * Gets a property as int from the script
 	 */
-	int getPropAsInt(Std::list<Shared::XMLNode *> &nodes, const Common::String &prop, bool recursive);
+	int getPropAsInt(Common::List<Shared::XMLNode *> &nodes, const Common::String &prop, bool recursive);
 
 	int getPropAsInt(Shared::XMLNode *node, const Common::String &prop, bool recursive = false);
 
@@ -406,7 +408,7 @@ private:
 	 * Static variables
 	 */
 private:
-	typedef Std::map<Common::String, Action> ActionMap;
+	typedef Common::HashMap<Common::String, Action> ActionMap;
 	ActionMap _actionMap;
 
 private:
@@ -418,7 +420,7 @@ private:
 	State _state;                    /**< The state the script is in */
 	Shared::XMLNode *_currentScript;       /**< The currently running script */
 	Shared::XMLNode *_currentItem;         /**< The current position in the script */
-	Std::list<Shared::XMLNode *> _translationContext;  /**< A list of nodes that make up our translation context */
+	Common::List<Shared::XMLNode *> _translationContext;  /**< A list of nodes that make up our translation context */
 	Common::String _target;                  /**< The name of a target script */
 	InputType _inputType;            /**< The type of input required */
 	Common::String _inputName;               /**< The variable in which to place the input (by default, "input") */
@@ -431,8 +433,8 @@ private:
 	Common::String _choices;
 	int _iterator;
 
-	Std::map<Common::String, Variable *> _variables;
-	Std::map<Common::String, Provider *> _providers;
+	Common::HashMap<Common::String, Variable *> _variables;
+	Common::HashMap<Common::String, Provider *> _providers;
 };
 
 } // End of namespace Ultima4

@@ -169,11 +169,11 @@ bool QueenEngine::canLoadOrSave() const {
 	return !_input->cutawayRunning() && !(_resource->isDemo() || _resource->isInterview()) && _gameStarted;
 }
 
-bool QueenEngine::canLoadGameStateCurrently() {
+bool QueenEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	return canLoadOrSave();
 }
 
-bool QueenEngine::canSaveGameStateCurrently() {
+bool QueenEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	return canLoadOrSave();
 }
 
@@ -282,7 +282,7 @@ Common::String QueenEngine::getSaveStateName(int slot) const {
 
 void QueenEngine::makeGameStateName(int slot, char *buf) const {
 	Common::String name = getSaveStateName(slot);
-	strcpy(buf, name.c_str());
+	Common::strcpy_s(buf, 20, name.c_str());
 }
 
 int QueenEngine::getGameStateSlot(const char *filename) const {
@@ -303,7 +303,7 @@ void QueenEngine::findGameStateDescriptions(char descriptions[100][32]) {
 		if (i >= 0 && i < SAVESTATE_MAX_NUM) {
 			GameStateHeader header;
 			Common::InSaveFile *f = readGameStateHeader(i, &header);
-			strcpy(descriptions[i], header.description);
+			Common::strcpy_s(descriptions[i], header.description);
 			delete f;
 		}
 	}

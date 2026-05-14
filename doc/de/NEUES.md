@@ -1,37 +1,1545 @@
 Umfangreichere Informationen über die Änderungen des aktuellen Codes findest Du unter:
         https://github.com/scummvm/scummvm/commits/
 
-#### 2.7.0 (DD.MM.YYYY)
+#### 2026.3.0 (XX.06.2026)
+
+ Neue Spiele:
+   - Unterstützung für Nancy Drew: The Haunted Carousel hinzugefügt.
+   - Unterstützung für Nancy Drew: Danger on Deception Island hinzugefügt.
+
+ Allgemein:
+   - Klickbare Links in der Benutzeroberfläche werden jetzt durch einen veränderten Cursor hervorgehoben.
+   - Die Fenstergröße wird jetzt korrekt wiederhergestellt, wenn in 3D-Engines von Vollbild zurück zum Fenster-Modus gewechselt wird.
+   - NULL OPL-Treiber für schwächere Systeme implementiert.
+
+ AGOS:
+   - Unterstützung für die von der Amiga- und Macintosh-Versionen von Simon2 verwendeten
+     Sprachdateien hinzugefügt.
+
+ GLK:
+   - Text- und Engine-Optionen können jetzt über die Benutzeroberfläche gesetzt werden.
+
+ LastExpress:
+   - Das Spiel wird schon seit einer Weile (2026.1.0) unterstützt,
+     wir haben aber vergessen, hier einen News-Eintrag hinzuzufügen. Ups!
+   - Mehrere Ungenauigkeiten in der Charakter-Logik wurden korrigiert,
+     sodass einige seltene Probleme mit Charakteren nun nicht mehr auftreten
+	 sollten.
+
+ MM:
+   - Verbesserte Unterstützung für Tastenkürzel in MM1.
+   - Charaktere können in MM1 Enhanced nur die Gegenstände verkaufen, die sie besitzen.
+   - In MM1 Enhanced ist kostenfreies Heilen jetzt nur noch an ausgewählten Tempeln möglich.
+   - In MM1 Enhanced wird die Musik nicht mehr fälschlicherweise neu gestartet, wenn der
+     GMM geöffnet und wieder geschlossen wird.
+
+ MYST3:
+   - Fehler in der Animation des Kontroll-Rads am Strand von J'nanin behoben.
+   - Die Kamera kann nun frei bewegt werden, nachdem ein Symbol am Uhren-Turm in J'nanin abgelegt wurde.
+
+ SLUDGE:
+   - Zwei weitere Spiele wurden zur Erkennungs-Datenbank hinzugefügt:
+     "Sam and Max Flintlocked" und "Full Moon".
+
+
+#### 2026.2.0 "Railmonicon" (28.03.2026)
+
+ Neue Spiele:
+   - Unterstützung für Necronomicon: The Dawning of Darkness hinzugefügt.
+   - Unterstützung für die DOS-Versionen von American Laser Games hinzugefügt:
+     Crime Patrol, Crime Patrol 2: Drug Wars, The Last Bounty Hunter,
+     Mad Dog McCree, Mad Dog II: The Lost Gold, Space Pirates und
+     Who Shot Johnny Rock?.
+
+ Allgemein:
+   - Verbesserte PC-Speaker-Emulation.
+   - Unterstützung für Mehrfach-Auswahl in der Spiele-Liste im ScummVM-Launcher hinzugefügt.
+   - ImGui-Bibliothek auf Version 1.92.6-docker aktualisiert.
+   - Intelligente Suche in der Icon-Ansicht im ScummVM-Launcher korrigiert.
+   - Simulation eines MT-32-Displays für Nachrichten hinzugefügt.
+   - Übersetzungen können jetzt direkt aus einem lokal vorliegenden Verzeichnis
+     `/po` geladen werden. Das ist hilfreich für Übersetzer, da hier keine Neuerstellung
+     der translations.dat-Datei erforderlich ist.
+   - Der Zeit- und Speicher-Bedarf für das Kompilieren der TinyGL-Komponente wurde
+     deutlich reduziert.
+   - Ein "Hilfe"-Button wurde zur Benutzeroberfläche hinzugefügt.
+     Ebenso wurde die Geschwindigkeit des Dialogs verbessert.
+   - Unterstützung für entpackte GUI-Themes hinzugefügt.
+
+ AGOS:
+   - Musik-Unterstützung für die Atari ST-Versionen von Elvira 1 und 2 hinzugfügt.
+   - Verbesserte Unterstützung für die Acorn-Versionen von Simon the Sorcerer.
+     Sowohl der originale Mauszeiger als auch das für die Musik verwendete Format
+     Desktop Tracker werden jetzt unterstützt.
+   - Verbesserte Genauigkeit der Schrift-Darstellung in der DOS-Version von
+     Personal Nightmare und der Amiga-Demoversion von Elvira 1.
+   - Unterstützung für die originalen Mauszeiger der Amiga-Version von
+     Personal Nightmare hinzugefügt.
+   - "Warte"-Befehl in Personal Nightmare korrigiert - auf moderenen Systemen
+     wurde der Befehl zu schnell ausgeführt.
+   - Fehlerhafte Farben der Invantar-Icons in den Amiga- und Atari ST-Versionen
+     von Personal Nightmare korrigiert.
+   - Fehlende Farb-Darstellung für Simons Sprite in der Acorn-Disketten-Demo
+     von Simon the Sorcerer 1 behoben.
+
+ Alcachofa:
+   - Unterstützung für eine frühere CD-Ausgabe der spanischen Version von
+     Mortadelo y Filemón: Una Aventura de Cine - Edición Especial hinzugefügt.
+   - Unterstützung für die russische Version von Mort & Phil: A Movie Adventure
+     (Секретные агенты: Киномонстры атакуют) hinzugefügt.
+
+ Bagel:
+   - Verhalten der Enter-/Escape-Taste im Raten-Dialog in The Guessing Game korrigiert.
+   - Die Enter-Taste kann jetzt genutzt werden, um alle Info-Dialoge zu schließen.
+   - Oberflächen-Animationen im Mankala-Minigame korrigiert.
+   - Fehlerhafte Evolutions-Logik in Game of Life korrigiert.
+   - Absturz beim Betreten der Brettspiel-Geschäfte korrigiert.
+   - Absturz beim Ausblenden des Spinners für den Beginn einer Brettspielrunde korrigiert.
+   - Laufende Sprachausgabe wird jetzt korrekt beendet, wenn ein Mini-Spiel verlassen wird.
+   - Der Name der angelegten Spielstände kann jetzt auch mit der Enter-Taste bestätigt werden.
+
+ Freescape:
+   - Sound-Emulation für die CPC-, C64- und Amiga-Versionen von Driller, Dark Side,
+     Total Eclipse und Castle Master hinzugefügt.
+   - Musik-UNterstützung für die Atari ST-Version von Total Eclipse hinzugefügt.
+   - Unterstützung für die Steuerung über die WASD-Tasten hinzugefügt. Shift wird zum Sprinten benutzt.
+   - Verbesserte Touchscreen-Steuerung und alternative Eingabe-Zuordnungen für Mobil-Geräte.
+   - Debugger mit Befehlen für Position und Spielwelt hinzugefügt.
+   - Unterstützung für das Laden komprimierter Daten für die Atari ST-Version von Driller hinzugefügt.
+   - Korrektur einer Darstellungs-FEhler.
+   - Korrektur der Position einiger UI-Elemente und des Spielstands für mehrere Veröffentlichungen.
+
+ Gob:
+   - Anzahl der Übertragung der Bild-Daten optimiert, wodurch Gobliiins und Ween
+     auf schwächeren Plattformen deutlich besser laufen. Andere Gob-Spiele sind
+     ebenfalls positiv davon betroffen.
+   - Flackernder Cursor während einiger Videos in Gob3 und Lost in Time behoben.
+   - Blount ist im Gob3-Gehirnlevel nicht mehr inaktiv.
+
+ M4:
+   - Musik-Unterstützung in Ripley hinzugefügt.
+   - Mehrere Fehler in Ripley korrigiert.
+   - Mehrere Fehler in Orion Burger korrigiert.
+
+ MM:
+   - Speicherkorruption beim Beenden von M&M1 behoben.
+   - Darstellungsfehler in M&M1, die beim Aufnehmen von Gegenständen auftreten.
+   - Fehlerhafte Namen beim Angriff von Monstern in Kampf-Szenen korrigiert.
+
+ MYST3:
+   - Umgebungs-Geräusche im Tonhöhen-Puzzle in Amateria wiederhergestellt.
+   - Die Animationen im Drehteller-Puzzle in Amateria werden jetzt korrekt zurückgesetzt.
+   - Synchronisationsprobleme bei aufeinanderfolgenden Videos korrigiert.
+   - Übersprungene Frames in einigen sich wiederholenden Videos korrigiert.
+   - Umgebungsgeräusche in geskripteten Videos korrigiert.
+   - Mehrere Verbesserungen bei der Darstellung von Untertiteln und des Inventars
+     in Verbindung mit dem Widescreen-Mod vorgenommen.
+   - Skalierungs-Fehler in Untertiteln, Gegenständen, der Inventarleiste sowie des Hauptmenüs
+     in Verbindung mit dem Widescreen-Mod vorgenommen.
+
+ QdEngine:
+   - Fehler bei der Wegfindung in optimierten (Release-) Versionen für Windows behoben.
+
+ SCUMM:
+   - Unterstützung für den originalen Titel-Bildschirm in Maniac Mansion hinzugefügt
+     (funktioniert nur mit PRG-Dateien).
+   - Unterstützung für das Wiedergabe-Feature der nicht-interaktiven Demos von
+     Monkey Island 1, Monkey Island 2 und Fate of Atlantis hinzugefügt.
+   - Originale Mauszeiger für die Apple II-Version von Maniac Mansion implementiert.
+   - Fehler behoben, der dafür sorgt, dass das Logo in der NES-Version von Maniac Mansion
+     im Intro stecken bleibt.
+
+ Sherlock:
+   - Gelegentlicher Absturz bei der Nutzung von Inventar-Items in Rose Tattoo behoben.
+   - Absturz behoben, der auftritt, wenn die Tastatur genutzt wird, während in Rose Tattoo Darts gespielt wird.
+   - Darstellung und Logik der Anzeigetafel der Darts-Spiele in Rose Tattoo korrigiert.
+
+ SLUDGE:
+   - Absturz am Anfang von Nathan's Second Chance behoben.
+
+ Sword2:
+   - Fehlerhafte Sample-Rate der Musikwiedergabe in Broken Sword 1 unter
+     PS3, Wii und OSXPPC korrigiert.
+
+ Sword2:
+   - Absturz im Zusammenhang mit einigen DXA-Videos wie etwa im Intro behoben.
+
+ Teenagent:
+   - Fehler "could not locate language block" beim Start der polnischen und russischen Versionen behoben.
+
+ Tinsel:
+   - Zuweisung der Farb-Palette für die PSX-Versionen von Discworld 1 hinzugefügt.
+     Vor dieser Änderung wurde der Bildschirm nicht dunkel, wenn die Augenbinde
+     in Akt 3 verwendet wird.
+   - Durch das Drücken der ESC-Taste kann jetzt in allen Versionen von Discworld 1
+     die Einführung übersprungen werden.
+   - Skript-Fehler in Akt 2 in Discworld 1 korrigiert, der dafür sorgt, dass die
+     Sprachausgabe der Amazone beendet wird, wenn der Seestern eine Münze wirft.
+   - Skript-Fehler in Akt 3 einiger früher Discworld 1-Versionen korrigiert, der
+     verursacht, dass der "calculate odds"-Button nicht immer gelöscht wird, wenn
+     die Wache nach Wahrscheinlichkeiten gefragt wird.
+   - Absturz in Akt 4 von Discworld 1 behoben, der auftritt, wenn mit (unsichtbaren)
+     City Guards interagiert wird. Der Absturz wird durch einen Skript-Fehler in einigen
+     frühen Versionen verursacht.
+   - Fehler in Akt 4 von Discworld 1 behoben, der verursacht, dass der Drache zu früh auf
+     dem Marktplatz erscheint. Der Fehler ist im Code einiger frühen Versionen enthalten.
+   - Fehler in Discworld 1 behoben, der verursacht, dass das Fenster für Konversationen in
+     L-Space nicht geschlossen wird, wenn mit dem Bar-Mann gesprochen wurde.
+
+ WAGE:
+   - Kampf-System implementiert.
+   - Korrektur mehrerer Darstellungsfehler.
+   - Maus-Scrolling in Text-Fenstern implementiert.
+   - Der Startbildschirm der Spiele und der entsprechende Start-Sound kann für Spiele,
+     die die entsprechenden Dateien mitbringen, aktiviert werden. Dazu werden neue
+     Menüpunkte zum "About"-Dialog hinzugefügt.
+
+ Atari-Portierung:
+   - m86k-Code-Optimierungen für die SCUMM-Engine und Audio-Abmischung hinzugefügt,
+     um Nutzer-Feedback zu sammeln.
+
+ macOS-Portierung:
+   - Unterstützung für die neuere Text-to-Speech API von macOS 10.14+ hinzugefügt.
+   - Unterstützung für das Hilfe-Menü und die Zwischenablage-Funktionen in macOS 10.4-10.5 wiederhergestellt.
+
+ iOS-Portierung:
+   - Unterstützung für Text-to-Speech hinzugefügt.
+   - Das CoreMIDI-Feature für die macOS-version wurde auf iOS/tvOS portiert, sodass
+     jetzt auch externe MIDI-Geräte für die Audio-Ausgabe genutzt werden können.
+
+
+#### 2026.1.0 "Like a version" (31.01.2026)
+
+ Neue Spiele:
+   - Unterstützung für Dark Seed hinzugefügt.
+   - Unterstützung für God of Thunder hinzugefügt.
+   - Unterstützung für The Adventures of Willy Beamish hinzugefügt.
+   - Unterstützung für Heart of China hinzugefügt.
+   - Unterstützung für Nancy Drew: Secret of the Scarlet Hand hinzugefügt.
+   - Unterstützung für Nancy Drew: Ghost Dogs of Moon Lake hinzugefügt.
+   - Unterstützung für Ripley's Believe It or Not!: The Riddle of Master Lu hinzugefügt.
+   - Unterstützung für Little Longnose hinzugefügt.
+   - Unterstützung für Pilot Brothers 3: Back Side of the Earth hinzugefügt.
+   - Unterstützung für Pilot Brothers 3D: The Case of Garden Pests hinzugefügt.
+   - Unterstützung für Pilot Brothers 3D-2: Kennel Club Secrets hinzugefügt.
+   - Unterstützung für Features of National Fishing hinzugefügt.
+   - Unterstützung für Mom Don't Worry hinzugefügt.
+   - Unterstützung für Dog-n-cat: In the Footsteps of Unprecedented Beasts hinzugefügt.
+   - Unterstützung für Dog-n-cat: Island of Dr Ratiarty hinzugefügt.
+   - Unterstützung für Out of this World (Another World) hinzugefügt.
+   - Unterstützung für auf SLUDGE basierende Spiele wie Out of Order,
+     The Secret of Tremendous Corporation, Robin's Rescue und andere hinzugefügt,
+     aktuell insgesamt 12 Titel.
+   - Unterstützung für Adibou 2: Nature & Sciences hinzugefügt.
+   - Unterstützung für WAGE-basierte Spiele hinzugefügt - bis jetzt mehr als 160 Titel.
+   - Unterstützung für Penumbra: Overture hinzugefügt.
+   - Unterstützung für Tex Murphy: Martian Memorandum hinzugefügt.
+   - Unterstützung für Mort&Phil: A Movie Adventure (Special Edition) hinzugefügt.
+   - Unterstützung für Trick or Treat hinzugefügt.
+   - Unterstützung für Hodj 'n' Podj hinzugefügt.
+
+ Access:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+   - Fehlerhafte Wiedergabe der Schritt-Sounds hkorrigiert.
+
+ ADL:
+   - Unterstützung für Text-to-speech hinzugefügt.
+
+ AGI:
+   - Unterstützung für Text-to-speech hinzugefügt.
+   - Unterstützung für die französische Übersetzung von SQ2 hinzugefügt.
+   - Unterstützung für die hebräischen Übersetzungen von KQ1, KQ2 und KQ3 hinzugefügt.
+   - Ton-Wiedergabeprobleme in Mickey's Space Adventure auf PS3, Wii und weiteren
+     Big-Endian-Plattformen korrigiert.
+
+ AGS:
+   - Erkennungs-Datenbank aktualisiert.
+
+ Buried:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ CinE:
+   - Unterstützung für Text-to-speech hinzugefügt.
+
+ Cruise:
+   - Unterstützung für Text-to-speech hinzugefügt.
+
+ Cryomni3D:
+   - Unterstützung für die chinesische DOS/Win95-CD-Version von Versailles hinzugefügt.
+
+ Draci:
+   - Unterstützung für Text-to-speech hinzugefügt.
+
+ Drascula:
+   - Hervorgehobene Charaktere werden jetzt korrekt dargestellt.
+   - Unterstützung für Text-to-speech hinzugefügt.
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ EFH:
+   - Gegenstände, die nicht ausgerüstet werden, können jetzt korrekt
+     übergeben und abgelegt werden.
+   - Team-Mitglieder können jetzt in allen Fällen korrekt ausgetauscht werden.
+   - Das Spiel kann jetzt auch über das Status-Menü beendet werden.
+   - Unterstützung für Text-to-speech hinzugefügt.
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Freescape:
+   - Unterstützung für Rotation/Rollen in Driller und Dark Side hinzugefügt.
+   - Vollständige Unterstützung für TinyGL in allen Spielen hinzugefügt.
+   - Mehrere kleine Detail-Verbesserungen in allen Spielen vorgenommen, einschließlich
+     fehlender Grafiken und Sounds.
+
+ Gob:
+   - Unterstützung für Text-to-speech hinzugefügt.
+
+ Grim:
+   - Unterstützung für die von Fans erstellte polnische Übersetzung von Grim Fandango hinzugefügt.
+
+ Hugo:
+   - Unterstützung für Text-to-speech hinzugefügt.
+   - Nicht erkannte Befehle, fehlende Punkte sowie Grafikfehler in der DOS-Version von Hugo 2 korrigiert.
+   - Fehler beim Bewegen des Charakters durch Klicken korrigiert.
+   - Das Hauptmenü kann jetzt korrekt geschlossen werden.
+
+ Hypno:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+   - Unterstützung für von Dritten erstellte Untertitel hinzugefügt.
+
+ Illusions:
+   - Absturz behoben, der dann auftritt, wenn früh im Spiel das Hauptmenü aufgerufen wird.
+
+ Kyra:
+   - CPU-Auslastung im Hauptmenü von LoL reduziert.
+   - CPU-Auslastung in EoB 1 und 2 reduziert.
+   - Neues Auswahlfeld in der Benutzeroberfläche für Eye of the Beholder 1 und 2 hinzugefügt,
+     mit der geworfene Waffen jetzt intelligenter aus dem Inventar ersetzt werden können.
+   - Die Spieldatenkorrektur für die NPCs Ileria und Beohram wird in Eye of the Beholder 1 jetzt
+     hinter einem Feature-Flag und einem Auswahlfeld in der ScummVM-Benutzeroberfläche verborgen.
+
+ Lab:
+   - Unterstütung für Tastenkürzel hinzugefügt.
+
+ Lure:
+   - Unterstützung für die russische Version zu lure.dat hinzugefügt.
+
+ MADE:
+   - Unterstützung für Text-to-speech hinzugefügt.
+
+ MM:
+   - Der Schutz gegen Elementar-Zaubersprüche funktioniert jetzt korrekt.
+   - Unterstützung für Text-to-speech hinzugefügt.
+   - Fehlerhaftes Verhalten der Monster in M&M1 in Kampfsituationen behoben.
+   - Farb-Darstellung der Türen im erweiterten Modus von M&M1 korrigiert.
+   - Fehlerhafte Darstellung des Hauptmenüs im erweiterten Modus von M&M1 korrigiert.
+
+ Mohawk:
+   - Störgeräusche in der Sprachausgabe einiger Spiele behoben (Fehler im Original).
+
+ NANCY:
+   - Untersützung für die Speicher-/Lade-Bildschirme von ScummVM hinzugefügt.
+   - Absturz behoben, der auftritt, wenn Dateien von der Zip-Disk in Secret of the
+     Scarlet Hand eingelesen werden.
+
+ Neverhood:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ NGI:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+   - Absturz behoben, der immer dann auftritt, wenn das Hauptmenü mehrfach hintereinander aufgerufen wird.
+
+ Nuvie:
+   - Funktion "Charakter übertragen" zum Hauptmenü hinzugefügt.
+
+ Parallaction:
+   - Unterstützung für Text-to-speech hinzugefügt.
+
+ Petka:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Pink:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Prince:
+   - Unterstützung für Text-to-speech hinzugefügt.
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Private:
+   - Einige wichtige fehlende Grafiken und Sounds hinzugefügt.
+     Der Funktionsumfang der Engine entspricht nun dem Original-Spiel.
+   - Einige nicht zugängliche Orte sowie fehlende Interaktionen oder Unterhaltungen wurden hinzugefügt.
+   - Zur Verbesserung der Benutzerfreundlichkeit können entscheidende Bereiche hervorgehoben werden.
+   - Unterstützung für von Dritten erstellte Untertitel hinzugefügt.
+   - Einige fehlende Funktionen zum Desktop-Bildschirm hinzugefügt; Fehlerkorrekturen.
+   - Einige kleinere Fehler in Grafiken und der Cursor-Darstellung korrigiert.
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Queen:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ SCI:
+   - Fehler korrigiert, der zum Verlust von Spielständen in PHANT1 geführt hat (Fehler in ScummVM 2.9.0)
+   - Absturz in der deutschen Version von QFG4 v1.1 hinzugefügt, der auftritt, wenn die Höhle am Ende des Spiels betreten wird.
+   - Fehler in der japanischen PC-98-Version von PQ2 korrigiert, der zu fehlender Text-Darstellung in einigen Bereichen geführt hat.
+   - Absturz in der Amiga-Version von KQ1 behoben, der auftritt, wenn der Name des Gnoms falsch geraten wird.
+   - Absturz in der Amiga-Version von LONGBOW behoben, der auftritt, wenn die Abtei betreten wird.
+   - Fehler in der Amiga-Version von SQ4 korrigiert, der dazu führt, dass es drei Minuten dauert, bis der Titel-Bildschirm angezeigt wird.
+   - Fehlerhaftes Verhalten des Telefons in PQ2 korrigiert, das auftritt, wenn eine falsche Nummer gewählt wird.
+   - Skript-Fehler in ECO1, LSL6 und PEPPER korrigiert.
+   - Unterstützung für die Macintosh-Version von SLATER hinzugefügt.
+   - Die virtuelle Tastatur wird jetzt korrekt ausgelöst, wenn eine Text-Eingabe erwartet wird.
+
+ SCUMM:
+   - Unterstützung für die "klassischen" SE-Varianten von MI1, MI2, DOTT und FT hinzugefügt.
+   - Unterstützung für die neue Sprachausgabe und verbesserten Soundeffekte der
+     Remastered-Version von Day of the Tentacle hinzugefügt.
+   - Unterstützung für die Sprachausgabe in den SE-Versionen von MI1 und MI2 hinzugefügt.
+   - Verbesserung der Grafik-Unterstützung für die Macintosh-Versionen von DOTT, Sam & Max, The Dig,
+     Full Throttle, Maniac Mansion und der PowerPC-Version von Fate of Atlantis.
+   - Audio-Fehler in der Sega-CD-Version von MI1 korrigiert.
+   - Option hinzugefügt, über welche die Sega CD-Version von MI1 mit der "Shadow Mode"-Farbpalette
+     dargestellt wird. Die Farbpalette wurde für diese Veröffentlichung ursprünglich benutzt.
+	 (Es ist unklar, ob die deutlich dunklere Darstellung beabsichtigt ist oder nicht.)
+   - Unterstützung für Tastenkürzel hinzugefügt.
+   - Unterstützung für die katalanischen Fan-Übersetzungen von Maniac Mansion, Indy 3, Monkey 1
+     und Indy 4 hinzugefügt.
+   - Erkennungs-Routine für die Macintosh-Version von MI1 des ersten LucasArts Mac CD Game-Pack
+     korrigiert.
+     Bisher musstest du sicherstellen, dass du nur die Daten-Dateien, aber nicht die (leeren) Resource-Forks kopiert hast.
+   - Mehrere Abstürze behoben, die durch das Laden einiger alten Spielstände verursacht wurden.
+   - Fehler bei der Darstellung der Hintergrund-Ebenen korrigiert, die zu Problemen in The Dig geführt haben.
+   - Fehler bei der Decodierung von SMUSH-Videos korrigiert. Dieser Fehler hat zu einigen
+     Artefakten/Pixeln geführt, die im Abschluss-Video von The Dig aufgetreten sind.
+   - Mehrere kleine Darstellungsfehler in Backyard Baseball (1997) und Pajama Sam 3 korrigiert.
+   - Fehlende Grafik-Effekte in Spy Fox in Cheese Chase hinzugefügt.
+   - Fehler in Spy Fox in Cheese Chase korrigiert, der dazu geführt hat, dass selbst gesetzte
+     Level gegenüber den eingebauten immer bevorzugt wurden.
+
+ Sherlock:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Stark:
+   - Der OpenGL-Renderer funktioniert jetzt auch auf älteren GPUs,
+     die keine Nicht-Zweierpotenz-Texturen unterstützen.
+
+ Supernova:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Sword1:
+   - Störgeräusche anstelle der gewünschten Audio-Ausgabe unter PS3,
+     Wii und anderen Big-Endian-Portierungen korrigiert.
+   - Korrektur einiger Leaks in der Spiele-Engine, die in einigen Fällen zu Abstürzen führen konnten.
+
+ Sword25:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Teenagent:
+   - Unterstützung für die polnische, tschechische und russischen Versionen hinzugefügt.
+     Eine neue Version von teenagent.dat wurde erstellt.
+   - Unterstützung für Tastenkürzel hinzugefügt.
+   - Unterstützung für Text-to-speech hinzugefügt.
+   - Unterstützung für die polnische CD-Version mit Sprachausgabe hinzugefügt.
+
+ Tetraedge:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Titanic:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Toltecs:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Toon:
+   - Die Gift-O-Matic-Maschine läuft jetzt in der korrekten Geschwindigkeit, sodass
+     das Verhalten jetzt der originalen Hardware entspricht.
+
+ Touche:
+   - Absturz behoben, der auftritt, wenn das Spiel kurz vor der Sprachausgabe beendet wird.
+
+ TwinE:
+   - Ursprüngliche Fehlerkorrekturen aktiviert (Tür zum Hauptquartier von FunFrock und Probleme beim Speichern).
+
+ V-Cruise:
+   - Fehlerhafte Text-Darstellung in der chinesischen und japanischen Version korrigiert.
+   - Unterstützung für die japanische DVD-Version von Schizm: Mysterious Journey hinzugefügt.
+
+ Voyeur:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Wintermute:
+   - Der 3D-Renderer wird jetzt auch standardmäßig für 2D-Spiele genutzt.
+   - Unterstützung für Text-to-speech hinzugefügt.
+   - Unterstützung für mehrere Fan-Übersetzungen hinzugefügt.
+
+ Desktop-Portierungen:
+   - Die Benutzer können das Ändern der Größe des ScummVM-Fensters jetzt deaktivieren (mit Strg+R).
+   - Unterstützung für SDL3 hinzugefügt (auch wenn SDL2 aktuell noch als Standard genutzt wird).
+   - Unterstützung für skalierende Shader in 3D-Engines hinzugefügt.
+   - Letzte Überbleibsel des ResidualVM-Merges entfernt: Die Code-Basis ist jetzt vollständig zusammengeführt.
+
+ Android-Portierung:
+   - Unterstützung für Android 16 hinzugefügt.
+   - Unterstützung für skalierende Shader in 3D-Engines hinzugefügt.
+   - Letzte Überbleibsel des ResidualVM-Merges entfernt: Die Code-Basis ist jetzt vollständig zusammengeführt.
+   - Gesperrte Bildbereiche werden jetzt berücksichtigt.
+   - Statt libcurl wird jetzt die Android-Netzwerkimplementierung genutzt: Ab sofort werden HTTPS-Zertifikate des Systems verwendet.
+   - In aktuellen Android-Versionen funktioniert das drücken und halten des "Zurück"-Buttons jetzt korrekt.
+
+ Atari-Portierung:
+   - Pfad-Angaben unter FreeMiNT und TOS in scummvm.cfg vereinheitlicht
+     (am Besten löschst Du die alte Konfigurationsdatei).
+   - .dat-Dateinamen, die länger als 8+3 sind, werden jetzt korrekt übersetzt.
+   - Langsame Darstellung in Eco Quests Intro korrigiert.
+   - Langsame Cursor-Darstellung in Phantasmagoria, KQ7 und anderen SCI32-Spielen korrigiert.
+   - Stack-Größe auf 256k angehoben, um einen Stack-Overflow in einigen Engines (wie Supernova)
+     zu vermeiden.
+   - Spiele können jetzt wieder korrekt über die Kommandozeile gestartet werden.
+
+ DS-Portierung:
+   - Aktualisierung auf das aktuelle devkitPRO SDK.
+
+ iOS-Portierung:
+   - Unterstützung für skalierende Shader in 3D-Engines hinzugefügt.
+   - Unterstützung für Kantenglättung in 3D-Engines hinzugefügt.
+   - Letzte Überbleibsel des ResidualVM-Merges entfernt: Die Code-Basis ist jetzt vollständig zusammengeführt.
+   - Gesperrte Bildbereiche werden jetzt berücksichtigt.
+
+ PS3-Portierung:
+   - Abstürze behoben, die bei Spielen, die als Grafik-Effekt den Bildschirm zittern lassen, auftreten.
+
+#### 2.9.1 "Slappin da BASS" (25.05.2025)
+
+ AGI:
+   - Unterstützung für frühe Versionen von Christmas Card 1986 mit Werbung
+     für Tandy-Hardware hinzugefügt.
+   - Korrektur vieler Grafikfehler und verbesserte Wiedergabegeschwindigkeit in Mickey's Space
+     Adventure, Winnie The Pooh In The Hundred Acre Wood und Troll's Tale.
+   - Spielstände in Mickey's Space Adventure werden jetzt auf dem Planeten wiederhergestellt,
+     auf dem sie gespeichert wurden, und nicht länger immer auf der Erde.
+
+ AGS:
+   - Unterstützung für Old Skies und Rosewater hinzugefügt.
+   - Unterstützung für Geschwindigkeitsänderungen von Audio-Clips hinzugefügt.
+     Diese werden in einigen Spielen verwendet, um die Hintergrundmusik oder andere
+     Audio-Effekte zu verlangsamen.
+   - Fehler korrigiert, durch den in einigen Fällen Lautstärkeänderungen nicht korrekt
+     ausgelöst wurden (beispielsweise um die Musiklautstärke in Entwicklerkommentaren oder
+     wenn in der Blackwell-Serie ein Charakter spricht, zu verringern)
+   - Erkennungs-Datenbank für einige AGS-Spiele aktualisiert.
+
+ Asylum:
+   - Absturz im Hauptmenü von Sanitarium korrigiert, der auftritt, wenn der Cursor in den
+     oberen Bereich des Bildschirms bewegt wird.
+
+ BAGEL:
+   - Absturz behoben, der auftritt, wenn die Kreditkarte in den Spielautomat gesteckt wird.
+
+ Bladerunner:
+   - 2x-Skalierung und Vollbild-Unterstützung in der nicht-interaktiven Demo-Version korrigiert.
+   - Memory-Leaks behoben, die zu Out-of-Memory-Situationen auf manchen Plattformen führen können.
+   - Fehler bei der Wegfindung behoben, der in einigen Fällen zu Soft-Locks führen kann.
+
+ Hopkins:
+   - Absturz behoben, der auftritt, wenn mit dem Aufzug zwischen Stockwerken gewechselt wird.
+
+ MADS:
+   - Inventar und Verben-Menü werden in Rex Nebular jetzt korrekt aktualisiert.
+
+ NGI:
+   - Behandlung von Spiel-Ressourcen verbessert, was zur Verbesserung der Leistung auf Android führt.
+
+ SCI:
+   - Absturz in der CD-Version von KQ6 korrigiert, wenn im hochauflösenden Modus vom Inventar-Fenster aus
+     mit Rotten Tomato gesprochen wird. (Fehler in ScummVM 2.9.0)
+   - Fehler korrigiert, durch den der Titel-Bildschirm in der Amiga-Version von KQ4 übersprungen wird. (Fehler in ScummVM 2.8.0)
+   - Absturz in der Thieves' Guild in QFG4 v1.0 behoben. (Fehler in ScummVM 2.1.0)
+   - Fehler korrigiert, der verursacht, dass in BRAIN1, LSL5 und SQ1 Nachrichten alle 18,2 Minuten verschwinden. (Fehler im Original-Spiel)
+   - Fehler in SQ5 korrigiert, durch den die Kometen in der Einfürhung nicht erscheinen, wenn das Spiel
+     auf einer Maschine läuft, die schneller als ein 386er ist. (Fehler im Original-Spiel)
+   - Absturz in LSL1 behoben, der auftritt, wenn das Casino betreten wird. (Fehler im Original-Spiel)
+   - Absturz in LSL6 behoben, der auftritt, wenn das Hotel betreten wird. (Fehler im Original-Spiel)
+   - Fehler in LSL6-HIRES behoben, durch den die Tram verschwindet, wenn das Spiel neu gestartet wird.
+     (Fehler im Original-Spiel)
+   - Der Hilfe-Cursor in LSL6 wird jetzt korrekt angezeigt. (Fehler im Original-Spiel)
+   - Absturz in QFG1 EGA behoben, der auftritt, wenn auf den Stolperdraht getreten wird. (Fehler im Original-Spiel)
+   - Absturz in KQ1 behoben, der auftritt, wenn in der Höhle ertrunken wird. (Fehler im Original-Spiel)
+   - Absturz im Zusammenhang mit dem Telefon an Tag 5 in GK1 in allen Spiel-Geschwindigkeiten behoben.
+     (Fehler im Original-Spiel)
+   - Fehlerhafter Blauton im Dithering von EGA-Vektorgrafiken behoben (Alle SCI-Tools seit dem SCI-Decoder von 1992)
+
+ SCUMM:
+   - Verhalten von ScummVM 2.7.0 wiederhergestellt: Die DOS-v2-v4-Spiele (Maniac Mansion bis Monkey2)
+     können in ihrer EGA-Version jetzt wieder mit der Amiga-Farbpalette gespielt werden, in dem die
+	 Option zur Änderung des Render-Modus für das Spiel aktiviert wird.
+   - Die iMUSE-Tracks werden im Booty Store von Monkey2 jetzt korrekt abgespielt.
+   - Fehler bei der Charakter-Positionierung in SCUMMv2 und nierdiger behoben. Dieses Problem konnte
+     beispielsweise am Flughafen von Zak McKracken auftreten.
+   - Absturz im Multiplayer-Modus von Moonbase Commander behoben.
+   - Störungen bei der Wiedergabe von Sound-Effekten in der Sega CD-Version von Monkey1 behoben.
+   - Fehler beim Überschreiben eines bestehenden Spielstands in COMI behoben.
+   - Fehler behoben, der dazu führt, dass bei der Verringerung der Lautstärke in iMUSE
+     (z.B. im Intro von Sam & Max) exzessive MIDI-Nachrichten erzeugt werden, die zu verlangsamter,
+	 fehlerhafter Sprachausgabe bei der Nutzung älterer MIDI-Hardware führen kann.
+   - Absturz behoben, der auftritt, wenn ein älterer Spielstand geladen und gerade
+     ein iMUSE-Überang wiedergegeben werden.
+   - Jolly Roger-Verbesserung für Moneky1 korrigiert. Die Aktivierung dieser Verbesserung
+     würde verhindern, dass diese Flagge erscheint, obwohl sie nicht mehr sichtbar sein sollte.
+	 Die entsprechende Fehlerbehebung war in einigen VGA-Diskettenversionen fehlerhaft.
+   - Darstellung des Zigarrenrauchs von Smirks Zigarre in der FM-Towns-Version von Monkey1 behoben.
+
+ Sky:
+   - Absturz im Intro von Beneath a Steel Sky auf einigen Plattformen wie Android behoben.
+
+ Sword1:
+   - Fehlerhafte Audio-Balance bei der Nutzung der Windows-Programmdatei behoben.
+
+ Tetraedge:
+   - Verbesserte Unterstützung für OpenGL vs. Software-Rendering, was die Engine davor
+     schützt, auf Android und einigen anderen Plattformen einen Fehler auszulösen.
+
+ Tinsel:
+   - Fehler behoben, der dazu führt, dass das Speichern/Laden-Menü in Discworld nicht mehr erreicht werden kann.
+
+ Tucker:
+   - Zwischensequenzen können jetzt auch dann übersprungen werden, wenn die ESC-Taste zugewiesen ist.
+
+ TwinE:
+   - Absturz behoben, der auftritt, wenn ein Spiel zum zweiten Mal über den Launcher gestartet wird.
+   - Das Drücken der Leertaste löst die Benutzen/Sprechen-Aktion im normalen Modus jetzt korrekt aus.
+   - Bewegungsabläufe des Meca-Pinguins korrigiert.
+   - Einige Fehler bei der Audiowiedergabe behoben.
+
+ TWP:
+   - Wenn Thimbleweed Park auf Plattformen gestartet wird, die keine Unterstützung für
+     OpenGL-Shader anbieten, wird jetzt eine entsprechende Fehlermeldung ausgegeben.
+
+ 3DS-Portierung:
+   - Fehler behoben, durch den die Darstellung auf dem oberen Bildschirm teilweise fehlerhaft war.
+
+ Android-Portierung:
+   - Spielstände und Konfiguration können jetzt gesichert und wiederhergestellt werden.
+   - Die NEON-Unterstützung ist jetzt standardmäßig aktiviert, was zu einer verbesserten Leistung auf
+     der überwiegenden Mehrzahl älterer Android-Geräte führt.
+   - Ein Fehler in der ARMv7a-Version von Android 6.0 und älter wurde behoben, der in einigen
+     Fällen dazu geführt hat, dass beispielsweise die Spieloptionen nicht angezeigt wurden.
+   - Stack-Allocation für den Android-Java-Thread erhöht, was zur Leistungsverbesserung von
+     Engines führt, die den Stack stark nutzen.
+
+ Atari-Portierung:
+   - SysEX-MIDI-Nachrichten werden jetzt korrekt gesendet.
+   - Abstürze und Wiedergabestörungen im Zusammenhang mit einigen Audio-Einstellungen behoben.
+   - Performance-Probleme mit SCI32-Spielen wie Phantasmagoria oder KQ7 behoben.
+   - Mehrere GUI/Backend-Fehlerkorrekturen und Optimierungen.
+
+ iOS/iPadOS-Portierung:
+   - Soundfonts für FluidSynth werden jetzt auch in Sandboxed-Dateisystemen korrekt erkannt.
+
+ macOS-Portierung:
+   - Fehler behoben, der dazu führt, dass ScummVM nicht gestartet werden kann, sofern die
+     Monitor-Einstellungen nicht auf "Millionen von Farben" auf älteren macOS-Versionen gesetzt ist.
+   - Die Unterstützung für die Audio-CD-Wiedergabe von originalen CDs auf Snow Leopard und älter
+     funktioniert jetzt korrekt.
+
+ Windows-Portierung:
+   - Die Windows 9x-Version unterstützt jetzt wieder FLAC.
+
+#### 2.9.0 "Close Encounters of the 2.9th Kind" (22.12.2024)
+
+ Neue Spiele:
+   - Unterstützung für Orion Burger hinzugefügt.
+   - Unterstützung für Total Eclipse und Total Eclipse 2 hinzugefügt.
+   - Unterstützung für Thimbleweed Park hinzugefügt.
+   - Unterstützung für The Space Bar hinzugefügt.
+   - Unterstützung für Moonbase Commander hinzugefügt.
+   - Unterstützung für Backyard Basketball hinzugefügt.
+   - Unterstützung für Unrest hinzugefügt.
+   - Unterstützung für Rise of the Dragon hinzugefügt.
+   - Unterstützung für Castle Master hinzugefügt.
+   - Unterstützung für Wait for it! Issue 3. Song for a Hare. hinzugefügt.
+   - Unterstützung für Mask Show hinzugefügt.
+   - Unterstützung für Marvellous Mice Adventures: Meeting Sea Rat hinzugefügt.
+   - Unterstützung für The Adventures of the Good Soldier Schweik hinzugefügt.
+   - Unterstützung für Marvellous Mice Adventures: Sea Rat's Birthday hinzugefügt.
+
+ Neue Plattformen:
+   - Unterstützung für SailfishOS hinzugefügt.
+
+ Allgemein:
+   - Fehler bei der Erkennung der GLSL-Version auf einigen OpenGL ES2-Plattformen behoben.
+   - libopenmpt wurde als neue, optionale Abhängigkeit zur Sound-Behandlung hinzugefügt.
+   - Die Option "Seitenverhältnis korrigieren" ist jetzt standardmäßig aktiv.
+   - libmpcdec (musepack) wurde als neue, optionale Abhängigkeit zur Sound-Behandlung hinzugefügt.
+   - Die Kommandozeilenoption --copy-protection wurde in die Benutzeroberfläche integriert.
+   - Speicherverbrauch auf Plattformen mit dynamischen Erkennungs-Bibliotheken reduziert.
+   - Verbesserte Nutzbarkeit der Benutzeroberfläche auf geräten mit kleinen Displays.
+
+ ADL:
+   - Der "gemusterte" Mauszeiger von Apple II wurde als Darstellungsoption hinzugefügt.
+   - Kaputte Zeichenketten in Time Zone entfernt.
+   - Gegenstände können jetzt mit "GET ALL" in einer Szene korrekt aufgehoben werden.
+   - Der Status nicht besuchter Räume wird jetzt korrekt wiederhergestellt.
+
+ AGI:
+   - Apple II-Spiele werden jetzt erkannt. Auch, wenn diese nicht offiziell unterstützt werden, können die meisten Spiele gestartet werden.
+   - Anzeigedauer für zeitbasierte Text-Boxen korrigiert. Diese wurden nur halb so lang wie vorgesehen
+     angezeigt, weshalb unter anderem der Intro-Text in King's Quest III nur schwer zu lesen war.
+   - Der "vorhersagende" Eingabe-Dialog, der bei einem Eingabefeld angezeigt wird, ist jetzt eine optionale
+     Spiel-Einstellung und standardmäßig deaktiviert.
+   - Fehler behoben, durch den die Hexen am Ende von Black Couldron nicht verschwinden.
+   - Fehler behoben, durch den Maus-Events in King's Quest III nicht korrekt ausgeführt wurden.
+   - Absturz auf einigen Plattformen behoben, der auftritt, wenn in Mixed-Up Mother Goose der Kinderreim abgespielt wird.
+   - Uhr in der Apple IIgs-Version von Gold Rush korrigiert.
+   - Audiofehler in der PC-Booter-Version von Donald Duck's Playground korrigiert.
+   - Erkennung von PC-Booter-Spielen verbessert.
+   - Unterstützung für Sound-Wiedergabe in CoCo3-Spielen hinzugefügt.
+   - Zahlreiche Fehler in Winnie The Pooh In The Hundred Acre Wood korrigiert, unter anderem
+     wurde behoben, dass Tigger niemals erscheint und Eeyore seinen Ballon nicht annimmt.
+
+ AGOS:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+   - Fehler in der Zeit-Behandlung von Spielständen behoben, der zu Problemen wie Abstürzen im
+     dritten Ägypten-Level von Waxworks und einer fehlenden Regenerierung von Kraftpunkten in
+     Elvira 2 geführt hat.
+
+ AGS:
+   - Der AGS-Code wurde mit der Upstream-Version 3.6.1.30 synchronisiert.
+   - Kommandozeilenoption --language hinzugefügt, mit der die Sprache eines Spiels gesetzt werden kann.
+   - Fehlerhaftes Verhalten der Treppen in älteren Episoden von Maniac Mansion Mania korrigiert,
+     die durch fehlerhafte Wegfindung verursacht wurde.
+   - Fehlerhafte Tastatur-Eingabe im Speicher-Bildschirm in einigen Spielen (z.B. An English Haunting) behoben.
+   - Farblose Texte in Spielen, die das SpriteFont-Plugin verwenden (z.B. Detective Gallo) behoben.
+   - Fehlerhafte Wiedergabe von .mod-Dateien in einigen seltenen Fällen behoben.
+   - Fehlerhaftes Upscaling in einigen alten Spielen behoben.
+   - Fehlerhafte Farbdarstellung, die in seltenen Fällen bei der Verwendung von AVX2-Optimierungen auftritt, behoben.
+   - Einige Überprüfungen auf nicht unterstützte Videos behoben, um Abstürze zu vermeiden.
+   - Mehrere Aktualisierungen der Erkennungsdatenbank.
+
+ Asylum:
+   - Die Steuerung ist jetzt auch über die Pfeiltasten der Tastatur möglich.
+
+ BBVS:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Bladerunner:
+   - Absturz für Izo in Hawker's Circle korrigiert.
+   - Die "Designers cut"-Einstellung kann jetzt im Voraus gesetzt werden und wird für ein neues Spiel übernommen.
+   - Verbesserte Zuverlässigkeit bei der Nutzung selbst gewählter Seeds für den Zufallsgenerator.
+
+ Chewy:
+   - Status der Cyber Crown vor der Surimy-Attacke behoben.
+   - Fehler bei der Darstellung von Hotspot-Texten behoben.
+   - Keyboard-Handling im Inventar-Bildschirm behoben.
+   - Entsperrte Zwischensequenten im Kino-Bildschirm behoben.
+   - Fehlerhafte Musikwiedergabe während des zweiten Hafen-Besuchs behoben.
+   - Fehlerhafte Bewegung von Chewys Boot während des Boote-Rennens behoben.
+   - Nichelle wird nach der Kong-Attacke nun korrekt im Raum platziert.
+
+ Cine:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Composer:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Cruise:
+   - Unterstützung für russische Fan-Übersetzung hinzugefügt.
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Draci:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Dreamweb:
+   - Absturz bei Raumwechsel behoben, der dann auftritt, wenn nicht-essentielle Spiele-Items
+     gehalten werden.
+
+ EFH:
+   - Mehrere Abstürze behoben, die auftreten, wenn das Spiel während einer Interaktion verlassen wird.
+
+ Freescape:
+   - Unterstützung für die Atari/Amiga-Versionen von Dark Side hinzugefügt.
+   - "Authentische Grafik"-Modus hinzugefügt.
+   - Einige Fehler in den verschiedenen Render-Modi behoben.
+   - Verbesserte Unterstützung für Tastenkürzel.
+   - Verbesserte Unterstützung für Seitenverhältniskorrektur, basierend auf DOSBox.
+
+ GLK/ADVSYS:
+   - Verbesserte Interpretation von Eingabe-Befehlen.
+
+ Gob:
+   - Blount wird im Gehirn-Level von Gob3 nicht mehr deaktiviert.
+   - Flackernder Mauszeiger in einigen Videos in Gob3 und Lost in Time korrigiert.
+
+ Groovie:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Hopkins:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Hugo:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Hypno:
+   - Hängender Maus-Cursor auf einigen Plattformen behoben.
+
+ Illusions:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Kyra:
+   - (EOB) Unterstützung für originale AD&D-Regeln hinzugefügt, um Verbesserungen und Fehlerbehebungen
+     im originalen Spiele-Code von Eye of the Beholder I und II zu realisieren.
+   - (EOB) Fehler behoben, durch den Charaktere mit mehreren Klassen eine fehlerhafte Anzahl von HP
+     verursacht durch Rundungsfehler erhalten haben.
+   - (EOB) Schaden von Projektil-Waffen korrigiert (laut der Regeln der zweiten Ausgabe der AD&D-Regeln).
+   - (EOB) Elben erhalten +1 Trefferpunkte mit Schwertern und Bogen (laut des offiziellen Spiele-Handbuchs).
+   - Die NPCs Ileria (weiblich) und Beohram (Paladin) in Eye of the Beholder I wurden verbessert.
+   - (EOB) Einige weitere Fehlerbehebungen.
+
+ Lure:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ M4:
+   - Der Status von Dialogen wird jetzt korrekt wiederhergestellt.
+
+ MADE:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ MADS:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ MM:
+   - Unterstützung für MT32/LAPC-1 für die Xeen-Engine hinzugefügt.
+   - Fehler in Xeen behoben, der dafür sorgt, dass einige Sound-Effekte abrupt beendet werden.
+   - Fehlerhafte SP/Edelstein-Voraussetzungen im erweiterten Modus von MM1 korrigiert.
+   - Spruch-Punkte und Edelsteine werden jetzt korrekt abgezogen, wenn Zaubersprüche verwendet werden.
+
+ Nancy:
+   - Absturz beim Start des Spiels und einige kaputte Rätsel in The Vampire Diaries korrigiert.
+   - Absturz in den russischen Versionen einiger früher Nancy Drew-Spiele behoben.
+
+ NGI:
+   - Unterstützung für die litauische Version von Full Pipe hinzugefügt.
+
+ PINK:
+   - Absturz behoben, der auftritt, wenn sich das Mädchen in einer Meerjungfrau verwandelt.
+
+ SAGA:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+   - Fehler behoben, der zu einem nicht abschließbaren Spiel geführt hat, wenn einige Aktionen
+     in Nimdoks Kapitel in IHNM nicht durchgeführt wurden.
+
+ SCI:
+   - CGA- (4 Farben und schwarz/weiß) und Hercules-Rendering für die meisten
+     SCI 0-DOS-Spiele hinzugefügt. Zusätzlich wurde ein EGA-Dithering- und VGA-
+     Graustufenmodus für viele SCI 1-DOS-Spiele sowie ein 16-Farben-Modus für die
+     Windows-Version von KQ6 hinzugefügt. Für alle PC-98-Spiele steht jetzt ein
+     Modus für 8 Farben zur Verfügung.
+   - Sprachdateien-Patch von AllTinker für die CD-Version von Gabriel Knight 1 hinzugefügt.
+     Dieser Patch korrigiert die meisten Störgeräusche in den DPCM8-Audiodaten der Sprachausgabe.
+   - Verbesserte Unterstützung für PCjr-Audio.
+   - Verbesserte Einstellungen für die CD-Version von KQ6. Die DOS-Version verhält sich nun eher wie das Original.
+   - Verbesserte Unterstützung für die Mac-Version von KQ6.
+   - Benutzeroberfläche zum speichern/laden in der FM-Towns-Version von KQ5 hinzugefügt.
+   - Zahlreiche Skriptfehler in verschiedenen Spielen behoben.
+   - Skalierungsfehler in SCI1.1-Spielen behoben.
+   - Unbekannte Fan-Spiele werden nun besser über die Rückfalloption der Erkennungsdatenbank erkannt.
+   - Unterstützung für die spanische Version von SQ3 hinzugefügt.
+   - Unterstützung für die russischen Versionen von Camelot, Laura Bow und PQ2 hinzugefügt.
+   - Unterstützung für die russische Fan-Übersetzung von QFG3 hinzugefügt.
+
+ SCUMM:
+   - Karten-Generator von Moonbase Console in Moonbase Commander hinzugefügt.
+   - Verbesserung der Grafik-Unterstützung für die Mac-Versionen von MI1, MI2 und Fate of Atlantis.
+   - Verbesserung der Audio-Unterstützung für die Macintosh-Versionen von Loom, Last Crusade und MI1.
+
+ Sherlock:
+   - Unterstützung für die russische Übersetzung von Rose Tattoo hinzugefügt.
+
+ Stark:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Sword1:
+   - Audio-Modus "Windows Audio-Engine" zu den ScummVM-Optionen hinzugefügt.
+     Diese Option erlaubt die Simulation der DirectSound Audio-Treiber basierend auf der
+     Windows 95-Programmdatei.
+     Dank dieser Option nutzt das Spiel weichere (logarithmische) Audio-Kurven, entfernt jedoch
+     Ein- und Ausblende-Effekte für Sound-Effekte, Einblende-Effekte für Musik und automatische
+     Lautstärken-Anpassung wenn die Sprachausgabe abgespielt wird. Diese Option ist standardmäßig
+     deaktiviert, da das Spiel vor dem Hintergrund von DOS- und AIL-Soundtreibern entwickelt wurde.
+     Diese Option steht nicht für die Macintosh- und PSX-Versionen zur Verfügung.
+   - Unterstützung für Tastenkürzel hinzugefügt.
+   - Verbesserte Unterstützung auf Big-Endian-Systemen.
+   - Unterstützung für weitere Spiele-Versionen hinzugefügt.
+   - Die Sprache der Untertitel kann in der PC-Version nun wieder ausgewählt werden.
+
+ Sword25:
+   - Sound-Schleifen in Szenen-Hintergründen korrigiert.
+   - Charakter-Beleuchtung in Gang-Sequenzen korrigiert.
+
+ Teenagent:
+   - Unterstützung für die polnische Diskettenversion hinzugefügt.
+
+ Tinsel:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Titanic:
+   - Absturz behoben, der auftritt, wenn das Wort "that" in einer Konversation verwendet wird.
+
+ Tony:
+   - Absturz bei schnellem Cursor-Wechsel behoben.
+
+ TsAGE:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+   - Unterstützung für russische Fan-Übersetzung von Ringworld hinzugefügt.
+   - Unterstützung für russische Fan-Übersetzung von Blue Force hinzugefügt.
+
+ Toon:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Touche:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Trecision:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+
+ Tucker:
+   - Unterstützung für Tastenkürzel hinzugefügt.
+   - Fehler behoben, durch den die untere Halle im zweiten Kapitel nicht betreten werden konnte.
+
+ TwinE:
+   - Einige Fehler der Kollisionserkennung behoben.
+
+ Ultima:
+   - Fehler behobenb, durch den die Wegfindung in Ultima VI einige Türen nicht erkannt hat.
+   - Standard-Tastenbelgung für Gamepasds in Ultima VIII angepasst.
+   - Verbesserung der Spieler-Bewegung über Tastatureingaben in Ultima VIII.
+   - Verwendung der Zielscheibe in Ultima VIII pausiert das Spiel nun nicht mehr.
+   - Die Minikarte in Ultima VIII verwendet jetzt die Farbpalette des Spiels.
+   - Item-Aufteilung in der Spiele-Karte von Ultima VIII korrigiert.
+   - Fehler in der Animation, Audio-Wiedergabe und Szenen-Wechsel in Ultima VIII korrigiert.
+
+ Voyeur:
+   - Unterstützung für die Interplay-Logo-Animation hinzugefügt.
+
+ ZVision:
+   - Verbesserte Unterstützung von RTL-Sprachen.
+
+ Android-Portierung:
+   - Unterstützung für Android 15 hinzugefügt.
+   - Spiele können jetzt direkt vom Homescreen aus mit einem langen Druck auf das ScummVM-Icon
+     oder über die Auswahl eines Widgets gestartet werden.
+   - Überarbeitung des Gamepad-Modus mit einer verbesserten Benutzeroberfläche.
+   - Die Benutzeroberfläche wird jetzt anhand der Pixeldichte des Displays skaliert.
+   - Mehrere Stabilitätsverbesserungen.
+
+ macOS-Portierung:
+   - Der Auto-Updater verwendet nun Sparkle 2.x.
+   - Spielstände werden jetzt standardmäßig im Application Support-Verzeichnis gespeichert.
+
+ 3DS-Portierung:
+   - Port-spezifische Optionen in die Benutzeroberfläche integriert.
+   - Verbesserte Speicherverfügbarkeit auf 3DS-Geräten der ersten Generation.
+   - Abstürze aufgrund verändertem Speicherverhalten in neuen 3DS-Geräten behoben.
+
+ iOS-Portierung:
+   - Unterstützung für Apple Pencil hinzugefügt.
+   - App-Icons für den "Dark"- und "Tinted"-Modus hinzugefügt.
+   - Mehrere Stabilitätsverbesserungen.
+
+#### 2.8.1 "Oh MMy!" (31.03.2024)
+
+ Allgemein:
+   - Fehler bei der Erkennung der GLSL-Version auf einigen OpenGL ES2-Plattformen behoben.
+   - Es wird nun nicht mehr versucht, Shader unter alten OpenGL-Versionen zu nutzen.
+
+ AGI:
+   - Absturz in Space Quest 1 Version 1.0X behoben.
+   - Nachrichten-Boxen in Mixed-Up Mother Goose korrigiert.
+   - Grafik-Darstellung in der Amiga-Version von Miged-Up Mother Goose korrigiert.
+   - Die Uhrzeit und die beiden höchsten Geschwindigkeitsstufen funktionieren nun auch in Gold Rush korrekt.
+   - Fehler behoben, der dafür sorgt, dass die Atari ST-Version von Manhunter 1 nicht startet.
+   - Fehler behoben, der dafür sorgt, dass die CoCo3-Version von Leisure Suit Larry 1 nicht startet.
+   - Fehler behoben, der dafür sorgt, dass die CoCo3-Version einiger inoffizieller Ports nicht starten.
+   - Amiga-Menüs in Space Quest 1, Manhunter 1 und Manhunter 2 korrigiert.
+   - Fehler bei der Darstellung von Graham in King's Quest 1 korrigiert.
+   - Fehler behoben, der dafür sorgt, dass Alexander in King's Quest 3 auf Treppen stecken bleibt.
+   - Fehler behoben, der dafür sorgt, dass Larry in Leisure Suit Larry 1 nicht zum Ladendieb wird.
+   - Fehler bei der Darstellung der Enten-Familie in Donald Duck's Playground behoben.
+   - "Phil's Quest: The Search for Tolbaga" kann jetzt ohne direkten Tod gespielt werden.
+   - Die Buttons im Fan-Spiel "DG: The AGIMouse Adventure" frieren jetzt nicht mehr ein.
+   - Nicht erkannte Wörter im Fan-Spiel "V - The Graphical Adventure" korrigiert.
+   - Erkennung der Macintosh-Version von Mixed-Up Mother Goose korrigiert.
+
+ AGS:
+   - Die Erkennungs-Datenbank wurde aktualisiert.
+   - Charaktere von Sierra-Spielen können nun einfacher in QfG2 AGDI importiert werden.
+   - Grafikfehler in Unavowed und Heroine's Quest behoben.
+   - Schrift-Darstellung in Kathy Rain korrigiert.
+   - Absturz in Alum korrigiert.
+   - Absturz am Beginn von Falcon City behoben.
+
+ SWORD2:
+   - Absturz behoben, der dann auftritt, wenn das Spiel beendet wird, während es pausiert ist.
+
+ MM:
+   - Engine ist jetzt aktiviert, sodass MM1 und Xeen kompiliert werden kann.
+   - Unterstützung für MT32/LAPC-1 für die Xeen-Engine hinzugefügt.
+   - Fehler in Xeen behoben, der dafür sorgt, dass einige Sound-Effekte abrupt beendet werden.
+
+ mTropolis:
+   - Absturz in Muppet Treasure Island auf einigen Plattformen behoben.
+   - Das Juwelen-Puzzle in Muppet Treasure Island wird jetzt korrekt randomisiert.
+
+ NANCY:
+   - Telefon-Hinweise in Secrets Can Kill korrigiert.
+   - Abstürze und Grafikfehler auf ARM-Geräten im Labyrinth-Minispiel in
+     Message in a Haunted Mansion korrigiert.
+   - Die "M"-Taste auf der Tastatur funktioniert in Message in a Haunted Mansion jetzt korrekt.
+   - Allgemeine Tastenkürzel werden jetzt im Engine-Tastenkürzel-Menü angezeigt.
+   - Das virtuelle Keyboard wird im Lade-/Speicher-Menü korrekt ausgelöst.
+
+ SCUMM:
+   - Grafikfehler (und teilweise auch Abstürze) in den Mac-Versionen von Loom und
+     Indiana Jones and the Last Crusade bei der Verwendung von Menü-Tastenkürzeln behoben.
+   - Die originalen Lade- und Speicher-Bildschirme in den Mac-Versionen von Indiana Jones
+     and the last Crusade können nun korrekt aktiviert und deaktiviert werden.
+   - Unterstützung für die Macintosh-Benutzeroberfläche in Monkey Island 1, Monkey Island 2
+     und Indiana Jones and the Fate of Atlantis hinzugefügt.
+   - Unterstützung für EPX-Grafikfilter für die Macintosh-Versionen der Spiele hinzugefügt.
+   - Verhalten der Funktion zum automatischen Speichern von Spielständen bei der Verwendung der originalen Benutzeroberfläche korrigiert.
+   - Genauere Sound-Treiber für folgende Macintosh-Spiele hinzugefügt:
+     Indiana Jones and the Last Crusade, Loom und Monkey Island 1.
+   - Verbesserte Genauigkeit des MIDI-iMUSE-Systems.
+   - Das Grafik-System für Humongous Entertainment-Spiele wurde komplett neu entickelt,
+     weshalb diese Titel nun genauer dargestellt werden.
+   - Viele Verbesserungen der Genauigkeit der Engine.
+
+ TWINE:
+   - Leitern können nun wieder korrekt genutzt werden.
+   - Fehler beim Zoomen in Szenen korrigiert.
+   - Animationsfehler nach der Nutzung der Holomap korrigiert.
+
+ Ultima:
+   - Die Minimap funktioniert in Ultima VIII jetzt korrekt.
+   - Fehler bei der Nutzung von Büchern in Ultima VIII behoben.
+   - Fehler bei der Text-Darstellung von Plaketten in Ultima VIII behoben.
+   - Ultima VIII stürzt nicht mehr ab, wenn Items an den Rand des Bildschirms gezogen werden.
+   - In Ultima VIII springt der Charakter nicht mehr unerwartet, wenn die linke Maustaste geklickt wird.
+   - Kamera im Shrine of the Anicent Ones in Ultima VIII korrigiert.
+   - Ungültige Item-Ablage innerhalb von Containern in Ultima VIII korrigiert.
+   - Nie endender Lava-Sound in Ultima VIII korrigiert.
+
+ V-Cruise:
+   - Absturz in Reah: Face the Unknown und Schizm: Mysterious Journey behoben, der auftritt,
+     wenn die Musik stummgeschaltet ist.
+
+ Android-Portierung:
+   - Absturz in der eingebauten Hilfe korrigiert, der bei der Nutzung des deutschen Sprachpaketes auftritt.
+
+ Atari-Portierung:
+   - Absturz beim Beenden von ScummVM korrigiert.
+   - Spielablauf in BBVS (und möglicherweise anderen Spielen) durch die Verwendung präziserer Mathematik verbessert.
+
+ macOS-Portierung:
+   - Fehler behoben, der dazu geführt hat, dass in einigen Mac-Spielen die Ressourcen nicht korrekt geladen werden.
+   - Das Programm-Icon wurde an moderne Standards angepasst.
+
+
+#### 2.8.0 "Mysteries, Mammoths, and Muppets" (30.12.2023)
+
+ Neue Spiele:
+   - Unterstützung für die macOS-Versionen von Syberia und Syberia II hinzugefügt.
+   - Unterstützung für The Vampire Diaries, Nancy Drew: Secrets Can Kill,
+     Nancy Drew: Stay Tuned for Danger, Nancy Drew: Message in a Haunted Mansion,
+     Nancy Drew: Treasure in the Royal Tower und Nancy Drew: The Final Scene hinzugefügt.
+   - Unterstützung für Reah: Face the Unknown und Schizm: Mysterious Journey hinzugefügt.
+   - Unterstützung für Might and Magic Book One hinzugefügt.
+   - Unterstützung für Muppet Tresure Island hinzugefügt.
+   - Unterstützung für Primordia, Shardlight und Technobabylon hinzugefügt.
+   - Unterstützung für The Excavation of Hob's Barrow, Strangeland und Whispers
+     of a Machine hinzugefügt.
+   - Unterstützung für AGS-Spiele von Stranga und Cloak and Dagger hinzugefügt.
+   - Unterstützung für Adibou 1 (Adi Jr.) hinzugefügt.
+   - Unterstützung für Dark Side hinzugefügt.
+   - Unterstützung für Kingdom: The Far Reaches hinzugefügt.
+   - Unterstützung für Escape From Hell hinzugefügt.
+   - Unterstützung für Wrath of the Gods, Gadget: Invention, Travel and Adventure,
+     The Dark Eye und 4 weitere Director-Titel hinzugefügt.
+
+ Neue Plattformen:
+   - Vollständig erneute Portierung für libretro hinzugefügt.
+   - Unterstützung für Atari hinzugefügt.
+
+ Allgemein:
+   - libvpx wurde als neue, optionale Abhängigkeit hinzugefügt.
+   - libmikmod wurde als neue, optionale Abhängigkeit hinzugefügt.
+   - Unterstützung für PC98-Font-ROMs hinzugefügt.
+   - libsonivox wurde als neue, optionale Abhängigkeit zur Unterstützung von EAS
+     (Embedded Audio Synthesis) hinzugefügt.
+   - Unterstützung für YUV442 und YUV444 im Theora-Decoder hinzugefügt.
+   - Spezielle CPU-Routinen zum Grafik-Blitting zu ManagedSurface hinzugefügt.
+   - Unterstützung für General MIDI ist jetzt standardmäßig aktiviert.
+
+ AGS:
+   - Code-Basis mit dem offiziellen AGS-Code in Version 3.6.0.53 synchronisiert.
+   - Beschleunigung der Grafik-Manipulation auf moderner Hardware mit CPU-spezifischem Code.
+   - Unterstützung für frühes Font-Rendering hinzugefügt, die dem originalen Interpreter entspricht.
+   - Unterstützung für die Wiedergabe von transcodierten Videos hinzugefügt, die nicht unterstützte
+     Codecs ersetzen können.
+   - Die Wiedergabe von MOD-Audio-Tracks ist jetzt vollständig.
+   - Fehler behoben, der dazu führt, dass die Hintergrundmusik nicht in allen Fällen korrekt wiederholt wird.
+   - Einige Fehler in diversen Spielen (z.B. Strangeland, Chronicle of Innsmouth) korrigiert.
+   - Mehrere Updates der Spiel-Erkennungs-Tabellen.
+
+ Asylum:
+   - Unterstützung für die chinesische Version von Sanitarium hinzugefügt.
+
+ Dragons:
+   - Die Copyright-Hinweise und das Hauptmenü werden nun korrekt übersetzt.
+
+ Freescape:
+   - Die Kollisions- und Projektil-Erkennung wurde mittels sweepAABB verbessert.
+
+ GrimE:
+   - Unterstützung für die chinesische Version von Grim Fandango hinzugefügt.
+   - Unterstützung für die von Fargus, ENPY und 7Wolf erstellte russische Version
+     von Grim Fandango hinzugefügt.
+
+ Kyra:
+   - Unterstützung für die französische Amiga-Version von Kyra1 und die tschechische DOS-Fan-Übersetzung hinzugefügt.
+   - Spielsteuerung und Menüdarstellung für alle Plattformen verbessert.
+   - Unterstützung für die chinesische Version von EOB2 hinzugefügt.
+   - Unterstützung für die PC-98-Version von EAB2 hinzugefügt.
+
+ Mohawk:
+   - Die Genauigkeit der Code-Erzeugung für die Domes wurde erheblich verbessert und entspricht nun dem Original.
+
+ Private:
+   - Unterstützung für die japanische Windows-Version hinzugefügt.
+
+ SCUMM:
+   - Unterstützung für die entpackten RuSCUMM-Patches für russische Übersetzungen hinzugefügt.
+   - Der offizielle Roland MT-32-Patch für Monkey Island 1 kann nun auf allen EGA-Versionen
+     und nicht nur der englischen Version angewendet werden.
+   - Der Sound-Code für alle Spiele von Humongous Entertainment wurde komplett überarbeitet.
+   - Originalgetreue Nachbildung der Macintosh-Oberfläche für Indiana Jones and the Last Crusade und Loom.
+   - Korrektur der Charakter-Animation bei Richtungswechseln in Full Throttle, The Dig und The Curse of Monkey Island.
+   - In Loom kann über Strg+D nun eine Liste der bekannten Melodien angezeigt werden.
+   - Fehlerhafte Kanji-Zeichen in der japanischen SegaCD-Version von Monkey Island 1 korrigiert.
+     Die Schrift-Darstellung ist nun pixelgetreu.
+   - Unterstützung für die Macintosh- und DOS/V-Versionen von Indiana Jones and the Fate of Atlantis,
+     die von MicroMouse vertrieben wurden, hinzugefügt.
+   - Unterstützung für Netzwerk-Multiplayer-Spiele für Backyard Football, Backyard Baseball 2001 und
+     Backyard Football 2002 hinzugefügt.
+
+
+ Sherlock:
+   - Unterstützung für die chinesische Version von Serrated Scalpel hinzugefügt.
+   - Fehlende Daten zu Spielständen hinzugefügt, ohne die das Spiel nicht gewonnen werden kann.
+
+ Sword1:
+   - Überarbeitung des Palettenüberblendungssystems und der Spieltimer, um sie an die
+     die ursprünglichen DOS-Version anzupassen.
+   - Der gesamte Menü-Code wurde neu geschrieben, damit er dem Original entspricht. Dies umfasst
+     die Wiederherstellung der Geschwindigkeitseinstellung.
+   - Wiederherstellung der korrekten Schriftarten und Menütexte für alle russischen Versionen des Spiels.
+   - Die Audio-Engine wurde so umgeschrieben, dass sie mit dem Original übereinstimmt. Komprimierte Dateien werden
+     weiterhin unterstützt.
+   - Die Untertitel-Routine für die PSX-Version wurde an das Original angepasst.
+   - Georges Ruhe-Animation wurde wiederhergestellt.
+   - Pausenfunktionalität wiederhergestellt: Drücke "P"!
+   - Wiederhergestellte Debug-Befehle: CTRL-G zum Umschalten der Anzeige von begehbaren Rastern auf dem Bildschirm,
+     CTRL-T zum Anzeigen von Debug-Informationen, SHIFT-M zum Anzeigen eines Fadenkreuzes
+     für den Mauszeiger und Georges Position, und die Tasten 1 und 4 zum Umschalten zwischen
+     dem langsamen und dem schnellen Frame-Pacing-Modus.
+   - Die korrekte Schriftart für den Game-Over-Bildschirm wurde wiederhergestellt.
+   - Verschiedene andere kleine Ungenauigkeiten wurden behoben.
+   - Insgesamt sollte sich die PC-Version des Spiels auf ScummVM nicht mehr
+     von der originalen ausführbaren Datei unterscheiden.
+   - Abspann für die PSX-Version implementiert.
+
+ Sword2:
+   - Unterstützung für die chinesische Übersetzung hinzugefügt.
+
+ Tinsel:
+   - Fehler behoben, der dazu geführt hat, dass keine Tonbänder mehr verfügbar sind.
+
+ Twine:
+   - Unterstützung für die japanische Übersetzung hinzugefügt.
+
+ Ultima:
+   - Reaktionsgeschwindigkeit von Ultima VI verbessert.
+   - Absturz beim Laden von Spielständen in Ultima VI behoben, der auftritt, wenn Dialoge geöffnet sind.
+   - Sortierung der erzeugten Items in Ultima VI korrigiert.
+   - Automatische Ausrüstung von Wurf-Waffen in Ultima VI korrigiert.
+   - Absturz in Ultima VI beim Öffnen der neuen Zauberbuch-Oberfläche behoben.
+   - Fehlerhafte Farbdarstellung bei Charakteren und der Benutzeroberfläche in Ultima VI korrigiert.
+   - Absturz in Ultima VI behoben, der auftritt, wenn Wände betrachtet werden.
+   - Verschiedene Fehler korrigiert, die zu Abstürzen geführt haben.
+   - Die Genauigkeit des Verhaltens von Gegnern und Projektilen wurde verbessert.
+   - Mehrere Probleme mit der Darstellung in Ultima VIII korrigiert.
+   - Unterstützung für die spanische Fan-Übersetzung von Ultima VIII hinzugefügt.
+   - Unterstützung für Spielstand-Dateien von Pentagram hinzugefüt.
+   - Konfigurierbare Doppelklick-Zeit für Ultima VIII hinzugefügt.
+
+ Voyeur:
+   - Unterstützung für die deutsche Fan-Übersetzung hinzugefügt.
+
+ Xeen:
+   - Die Engine "xeen" wurde für Might & Magic zu "mm" umbenannt.
+   - Neue Engine-Option hinzugefügt, mit der die Gesundheits-Edelsteine durch
+     eine HP/SP-Leiste ersetzt werden können.
+
+ RiscOS-Version:
+   - Doppeltes Buffering wird jetzt im Vollbildmodus genutzt, wenn V-Sync aktiviert ist.
+   - Unterstützung für Hardware-Farbpaletten hinzugefügt.
+
+
+#### 2.7.1 (31.07.2023)
+
+ Allgemein:
+  - Die Wiedergabe-Geschwindigkeit von Theora-Videos wurde korrigiert.
+  - Log-Betrachter für die scummvm.log-Datei hinzugefügt.
+  - Das Debug-Level kann nun in der ScummVM-GUI angepasst werden.
+  - Fehler behoben, durch den einige Shader unter bestimmten Umständen nicht geladen werden konnten.
+  - Fehler behoben, der bei einigen Schüttel-Effekten (wie in DOTT) zum Absturz von SDL1-Ports geführt hat.
+
+ AGI:
+   - In den Spiel-Optionen kann jetzt wieder ein beliebiger Render-Modus ausgewählt werden.
+
+ AGS:
+   - Mehrere Spiele und Varianten wurden zur Spiele-Datenbank hinzugefügt.
+   - Diverse Abstürze in einigen Spielen behoben.
+   - Mehrere Grafikfehler in Resonance, Kathy Rain und Blackwell Convergence behoben.
+   - Fehler behoben, der dafür sorgt, dass in "The Cat Lady" und anderen Spielen kein Sound abgespielt wird.
+   - Die Thumbnails für Spielstände werden jetzt wieder korrekt erzeugt.
+   - Die eingestellte Übersetzung wird jetzt wieder korrekt abgespeichert und wiederhergstellt.
+   - Fehlerhafte Übersetzung in der Linux-Version von Zniw Adventure korrigiert.
+   - Fehlerhafte Gehgeschwindigkeit in alten Spielen (z.B. Apprentice) korrigiert.
+   - Fehler behoben, der dazu führt, dass violetter Text transparent dargestellt wird.
+   - Kleine Änderungen an Debug- und Fehlermeldungen sowie am Code-Styling vorgenommen.
+   - Test-Darstellung verbessert.
+
+ CRYOMNI3D:
+   - Fehler beim Dateizugriff behoben, der verhindert hat, dass Versailles vollständig durchgespielt werden kann.
+
+ FREESCAPE:
+   - Unterstützung für OpenGL-Shader hinzugaefügt.
+   - Die Spiele laden nun die originalen Bilder aus den Daten-Dateien.
+   - Erkennungsdatenbank für Driller und andere nicht unterstützte Spiele überarbeitet und erweitert.
+   - Objekt-Spieler-Kollisionen sind nun robuster.
+
+ HDB:
+   - Fehler behoben, der verhindert, dass der rote Umschlag mit der Tastatur aufgehoben werden kann.
+
+ HYPNO:
+   - Unterstützung für koreanische Schritarten in Wetlands hinzugefügt.
+
+ Private:
+   - Die Engine kann jetzt auch ohne 16-Bit-unterstützung genutzt werden.
+
+ SAGA:
+   - Zusätzliche Ressourcen werden nun auch in der Amiga-Version von ITE korrekt geladen.
+   - Abstürze oder fehlerhaftes Verhalten im Zusammenhang mit einigen Spieler-Aktionen behoben.
+
+ SAGA2:
+   - Fehler behoben, der zu einem Absturz bei der Nutzung einiger Zaubersprüche führt.
+
+ SCUMM:
+   - Die Steuerung der Musiklautstärke in Loom funktioniert nun wieder korrekt.
+   - Absturz in Full Throttle behoben, der auftritt, wenn die "A"-Taste im Debug-Modus gedrückt wird.
+   - Warnung wegen fehlender Musikdateien in Monkey Island 1 Ultimate Talkie ausgeblendet.
+   - Fehlerhafter oder unsichtbarer Mauszeiger in Sam & Max korrigiert, der auftritt, wenn
+     im originalen Menü ein Spielstand gespeichert und wieder geladen wird.
+   - Mehrere Probleme mit Spielständen und Abstürzen in frühen FM-Towns-Spielen korrigiert.
+   - Die originalen Banner der Benutzeroberfläche werden jetzt in allen Fällen korrekt ausgeblendet.
+
+ Sword1:
+   - Die tschechischen und polnischen Versionen mit DXA-Zwischensequenzen werden nun korrekt erkannt.
+   - Unterstützung für alternative französische und italienische Versionen hinzugefügt.
+   - Unterstützung für die brasilianische Version von TecToy hinzugefügt.
+
+ Sword2:
+   - Unterstützung für die GOG.com-Version hinzugefügt.
+   - Unterstützung für eine alternative polnische Version hinzugefügt.
+
+ Tinsel:
+   - Ältere Spielstände von Discworld II werden jetzt korrekt geladen.
+
+ Touche:
+   - Unterstützung für von old-games.ru erstellte russische Übersetzung hinzugefügt.
+
+ iOS-Portierung:
+   - Die Auswahl des Standard-Themes funktioniert jetzt auch auf modernen Geräten korrekt.
+   - Verbesserte Unterstützung für Autostart-Konfigurationen.
+
+ macOS-Portierung:
+   - Verbesserte Unterstützung für Autostart-Konfigurationen.
+
+ RISC OS-Portierung:
+   - Absturz unter RISC OS 5 bei der Nutzung von Spielen, die viel RAM benötigen, behoben.
+
+
+#### 2.7.0 "The Real Slim Shader" (26.02.2023)
 
  Neue Spiele:
    - Unterstützung für Soldier Boyz hinzugefügt.
    - Unterstützung für die C64- und ZX Spectrum-Versionen der GLK Scott Adams Interactive Fiction-Spiele
      hinzugefügt.
    - Unterstützung für die TI99/4A-Versionen der GLK Scott Adams-Spiele 1-12 hinzugefügt.
+   - Unterstützung für Obsidian hinzugefügt.
+   - Unterstützung für Added support for Pink Panther: Passport to Peril hinzugefügt.
+   - Unterstützung für Pink Panther: Hokus Pokus Pink hinzugefügt.
+   - Unterstützung für Adibou 2 (Adi Junior) "Environment", "Lesen/Rechnen 4 & 5" und "Lesen/Rechnen 6 & 7" hinzugefügt.
+   - Unterstützung für Driller/Space Station Oblivion (DOS/EGA/CGA, Amiga, Atari ST, ZX Spectrum und Amstrad CPC-Versionen) hinzugefügt.
+   - Unterstützung für Halls of the Dead: Faery Tale Adventure II hinzugefügt.
+   - Unterstützung für Chop Suey, Eastern Mind, und 16 weitere Director 3- und Director 4-Titel hinzugefügt.
+
+ Neue Plattformen:
+   - Unterstützung für RetroMini RS90 mit OpenDingux Beta-Firmware hinzugefügt.
+   - Unterstützung für die erste Generation von Miyoo (New BittBoy, Pocket Go und PowKiddy Q90-V90-Q20)
+     mit der TriForceX MiyooCFW-Firmware hinzugefügt.
+   - Unterstützung für Miyoo mini hinzugefügt.
+   - Unterstützung für KolibriOS hinzugefügt.
 
  Allgemein:
    - Anzahl an falsch-positiven Einträgen reduziert, wenn das Gerät nach Spielen durchsucht wird.
+   - Code der Roland MT-32-Emulation auf Munt mt32emu 2.7.0 aktualisiert.
+   - Unterstützung für shader-basierte Skalierungen hinzugefügt.
+   - Unterstützung für Mono-Ausgabe hinzugefügt (über die Kommandozeilen-Option --output-channels=CHANNELS)
+   - Verbesserte Cursor-Skalierung im OpenGL-Modus.
+   - Absturz beim Zugriff auf Verzeichnisse, die Dateien mit "\1" im Dateinamen enthalten, behoben.
+   - Dem Zufallsgenerator kann nun ein bestimmter Start-Wert über die GUI oder Kommandozeile übergeben werden.
+   - Unterstützung für einen Modus zur automatischen Erkennung zu ScummVM hinzugefügt.
+     Dazu wird die ScummVM-Programmdatei in 'scummvm-auto' umbenannt oder eine leere Datei mit dem
+     Dateinamen 'scummvm-autorun' im ScummVM-Programmverzeichnis abgelegt.
+   - Unterstützung für zusätzliche Kommandozeilenparameter, die automatisch genutzt werden, hinzugefügt.
+     Die Anweisungen werden zeilenweise in einer Datei namens 'scummvm-autorun' abgelegt.
+   - Unterstützung für eine Konfigurationsdatei mit Anweisungen hinzugefügt, die dann gelten,
+     wenn keine reguläre Konfigurationsdatei existiert. Die Datei wird über --initial-cfg=DATEI oder
+     -i übergeben.
+   - Die Unterstützung für Spiel-Dateien, die eine Dateigröße von mehr als 2GB erreichen, wurde auf
+     weiteren Plattformen hinzugefügt.
+
+ AGI:
+   - Unterstützung der französischen Übersetzungen verbessert.
 
  AGOS:
    - Option hinzugefügt, mit der die Ausblende-Effekte bei einem Raum-Wechsel in Simon 1 und 2
      deaktiviert werden können.
 
+ AGS:
+   - Unterstützung für die originalen Installationsdateien von Maniac Mansion Deluxe und The New Adventures of Zak McKracken hinzugefügt.
+
+ Director:
+   - Unterstützung für die Pippin-Version von L-Zone hinzugefügt.
+   - Absturz beim Zugriff auf Dateien mit einem Slash im Dateinamen behoben.
+
+ Dreamweb:
+   - Das Spiel kann nun direkt von den originalen Installations-Disketten gespielt werden.
+
+ Hadesch:
+   - Unterstützung für eine weitere Version von 1997 hinzugefügt.
+
  Kyra:
    - Unterstützung für die koreanische Version von Legend of Kyrandia 1 hinzugefügt.
+   - Unterstützung für die Macintosh-Version von Kyra1, die auf mehreren Disketten verteilt wurde, hinzugefügt.
    - Unterstützung für die hebräische Version von Legend of Kyrandia 3 hinzugefügt.
+
+ MADS:
+   - Unterstützung für das Datei-Layout des Installationsprogramms der Disketten-Version von Rex Nebular hinzugefügt.Added support for original floppy installer file layout for Rex Nebular.
+
+ Neverhood:
+   - Unterstützung für die japanische Version von Neverhood hinzugefügt.
+   - Unterstützung für die Übersetzungen von -=CHE@TER=- & Rigel hinzugefügt.
+
+ Plumbers:
+   - Absturz in der Windows-Version behoben.
+
+ Private:
+   - Die Macintosh-Version kann nun direkt von der Installations-CD gespielt werden.
+   - Unterstützung für die japanische Macintosh-Version hinzugefügt.
+
+ Queen:
+   - Eine zusätzliche Option erlaubt die Verwendung einer verbesserten Schriftart für die hebräische Version.
+
+ SAGA:
+   - Unterstützung für die chinesische Version von Inherit the Earth hinzugefügt.
+   - Unterstützung für die chinesische Version von I Have no Mouth and I Must Scream hinzugefügt.
+   - Unterstützung für die koreanische Version von I Have no Mouth and I Must Scream hinzugefügt.
+   - Inherit the Earth kann nun direkt mit den Dateien des Disketten-Installationsprogramms gespielt werden.
+   - Unterstützung für die Amiga-Versionen (AGA/ECS, Retail/Demo, Englisch/Deutsch) von Inherit the Earth hinzugefügt.
+
+ SCI:
+   - Verbesserte Text-Darstellung in den Macintosh-Versionen der Spiele.
+   - Unterstützung für Casio MT-540, CT-460 und CSM-1-MIDI-Geräte für alle
+     SCI0-Spiele hinzugefügt, welche die genannten Geräte unterstützen.
 
  SCUMM:
    - Unterstützung von CGA-, CGA Composite-, CGA schwarz/weiß- und Herkules-Grafikmodi
      für die SCUMM 1-Versionen von Zak McKracken und Maniac Mansion hinzugefügt.
-     Die Genauigkeit der CGA- und Hercules-Modi der SCUMM 2-Versionen von
+   - Die Genauigkeit der CGA- und Hercules-Modi der SCUMM 2-Versionen von
      Zak McKracken und Maniac Mansion wurde verbessert.
-     Einige Grafik-Fehler im CGA-Modus von Loom wurden ebenfalls korrigiert.
+   - Verbesserte Genauigkeit der Darstekkzbg von CGA- und Hercules-Grafikmodi
+     in der EGA-Version von Monkey Island 1 (die VGA-Version unterstützt weder CGA noch Hercules).
+   - Einige Grafik-Fehler im CGA-Modus von Loom wurden korrigiert.
+   - EGA-Dithering-Modus für die VGA-Versionen von Loom, Monkey Island 1 und 2
+     sowie für Indiana Jones 4 hinzugefügt.
+   - Mögliche Sackgasse in der Ultimate Talkie Edition von Monkey Island 2 korrigiert.
+     Diese ist immer dann aufgetreten, wenn der Spieler am Ende von Part II
+     einen benötigten Gegenstand nicht aufhebt, bevor Captain Dread Guybrush
+     zurück zu Scabb Island bringt.
+   - Einige Fehler in den Originalversionen der Spiele sowie Logik- und Continuity-Fehler
+     korrigiert (nur, wenn die Option "Verwende spiel-spezifische Verbesserungen" aktiv ist).
+   - Verbesserte Dekodierung einiger westeuropäischen Zeichenketten, wenn diese über
+     die ScummVM-Oberfläche dargestellt werden - beispielsweise, wenn ein Spiel pausiert wird.
+   - Der Kopf des Navigators zeigte in der ursprünglichen Version von Monkey Island 1 (ohne
+     die verbesserte Verben-Oberfläche) nicht in alle möglichen Richtungen.
+   - Leicht abweichende Text-Positionierung in den v4-Spielen sowie in Loom v3 korrigiert.
+   - Spiele-Credits am Ende von Sam & Max können jetzt - so wie im Original -
+     mit dem Fadenkreuz-Mauszeiger abgeschossen werden.
+   - Probleme mit der Lippen-Synchronisation in der finalen Szene von Freddi Fish 4 korrigiert.
+   - Die Lade-Animation des Mauszeigers in The Dig und COMI wurde nicht immer dargestellt.
+   - Genauigkeit einiger Audio-Treiber verbessert. Die Fehler haben sich merklich auf die
+     Änderung der Tonhöhe in der Intro-Musik von DOTT ausgewirkt.
+   - In COMI liest Guybrush die Uhr von Puerto Pollo nur in der englischen, italienischen
+     und der (von Fans erstellten) russischen Version des Spiels, was das Verhalten des
+     originalen Interpreters widerspiegelt (vermutlich aufgrund der schlechten Resultate
+     in den anderen Sprachen).
+   - Verbesserte Unterstützung der hebräischen Versionen der Spiele von Humongous Entertainment.
+   - Unterstützung für Roland MT-32 in Sam & Max korrigiert.
+   - Unterstützung für die originale Benutzeroberfläche und die Speicher-Menüs
+     von LucasArts-Spielen hinzugefügt (DOS, Windows, Amiga, Macintosh,
+     FM-Towns, Atari ST, Sega CD, NES- und Commodore 64-Versionen).
+     Aktiviere ebenfalls die Option "Beim Verlassen um Bestätigung bitten" für
+     eine noch authentischere Spielerfahrung!
+   - Einige kleinere Timing-Probleme in der SMUSH-Video-Engine korrigiert, die hauptsächlich
+     Full Throttle betreffen.
+   - Audiomodus mit niedriger Latenz für Full Throttle, The Dig und The Curse of Monkey Island
+     hinzugefügt. Dieser Modus kann die Audio-Performance gerade auf mobilen Geräten verbessern,
+     ist allerdings auch etwas weniger genau als die ursprüngliche Wiedergabe.
+   - Die CD-Audiowiedergabe wird in den CD-Versionen von Monkey Island 1 und Loom
+     nach dem Laden eines Spielstands nun korrekt fortgesetzt.
+
+ Sherlock:
+   - Unterstützung für die chinesische Version von Rose Tattoo hinzugefügt.
+
+ Sky:
+   - Unterstützung für die chinesische Version von Beneath a Steel Sky hinzugefügt.
+
+ Sword1:
+   - Unterstützung für die russische Übersetzung von Novy Disk hinzugefügt.
+   - Ein Fehler beim Start der Windows-Demo-Versionen wurde korrigiert.
+   - Die Spiele-Erkennung nutzt nun MD5-Checksummen. Teile uns deine nicht erkannten Versionen mit!
+
+ Sword2:
+   - Die Spiele-Erkennung nutzt nun MD5-Checksummen. Teile uns deine nicht erkannten Versionen mit!
+
+ Tinsel:
+   - Die Farbe der Untertitel in Discworld II wird nun auch auf Big-Endian-Ports korrekt dargestellt.
 
  Toon:
-   - Die Spiel-Menüs verhalten sich nun wie das Original.
+   - Die Spiel-Menüs verhalten sich nun wie im Original.
 
+ TwinE:
+   - Darstellungsfehler bei Türen behoben.
+   - Fehlerhafte Musikwiedergabe in dem Verhaltens- und Inventarmenü korrigiert.
+   - Kashes werden nun statt Herzen als Fallback ausgegeben.
+   - Items flackern nicht mehr, wenn sie erscheinen werden.
+   - Der Meca-Pinguin spawnt nun im korrekten Winkel.
+   - Hintergründe werden nun korrekt dargestellt, wenn Zwischenszenen im Fernseher angesehen werden.
+   - Der Bildschirm wird nun nicht mehr zentriert, wenn ein Inventar-Item aktiviert wird.
+   - Wenn man W drückt, um mit Leuten zu sprechen, springt man nicht mehr automatisch.
 
-#### 2.6.0 "Insane Escapism" (2022-08-01)
+ Ultima8:
+   - Die Minimap kann nun gespeichert und in ihrer Größe verändert werden.
+   - Der Curor verhält sich nun originalgetreuer.
+   - Der Schieberegler für die Item-Anzahl verhält sich nun originalgetreuer.
+
+ Xeen:
+   - Fehlerkorrekturen für mehrere Abstürze in Clouds of Xeen.
+   - Shops werden nun erst nach der Verabschiedung verlassen.
+   - Die Karte wird nun nicht mehr neu geladen, wenn die Erstellung eines Charakters abgeschlossen ist.
+   - Die Logik, nach der die Wolken in Swords of Xeen fallen, wurde korrigiert.
+   - Fehlerkorrektur für das GateMaster-Monster in der Underworld-Map.
+
+ 3DS-Portierung:
+   - Der Relocation-Parser wurde um Unterstützung für PREL31, welches von neuen Compilern verwendet wird, erweitert.
+   - Weitere Optionen zur automatischen Konfiguration in ./configure hinzugefügt.
+
+ Android-Portierung:
+   - Unterstützung für das Added Storage Access Framework hinzugefügt.
+   - Verbesserte Unterstützung für Game-Controller.
+
+ iOS-Portierung:
+   - Unterstützung für Zeigegeräte hinzugefügt.
+   - Verbesserte Unterstützung des Touchpad-Modus.
+   - Unterstützung für Spiele hinzugefügt, die ein Pixel-Format von 32 Bit verwenden.
+
+ Nintendo DS-Portierung:
+   - Splash-Screen auf dem oberen Bildschirm hinzugefügt, wenn der Launcher aktiv ist.
+
+ OpenDingux-Portierung:
+   - Unterstützung für dynamische Plugins hinzugefügt.
+
+ PS Vita-Portierung:
+   - Unterstützung für dynamische Plugins hinzugefügt.
+
+ PSP-Portierung:
+   - Verbesserte Unterstützung von Spielen, die ein Pixel-Format von 32 Bit verwenden.
+
+ RISC OS-Portierung:
+   - Unterstützung für die 26-bit-Versionen von RISC OS hinzugefügt.
+
+#### 2.6.1 "Incremental Escapism" (31.10.2022)
+
+ Allgemein:
+   - Verschiedene Verbesserungen für die icon-basierte Ansicht des Launchers vorgenommen.
+   - Mögliche Grafikfehler bei der Nutzung des OpenGL-Renderers behoben.
+
+ AGS:
+   - Absturz von AGDIs KQ1-Remake (und einigen anderen Spielen) auf Big-Endian-Systemen behoben.
+
+ AGOS:
+   - Mehrere Fehler korrigiert, die zu Abstürzen in den Demo-Versionen von The Feeble Files
+     und Personal Nightmare sowie in der Vollversion von Waxworks geführt haben.
+   - Absturz während des Dialogs mit den Piraten in Simon the Sorcerer 2 behoben.
+
+ Asylum:
+   - Menü zur Tastatur-Konfiguration repariert.
+   - Unterstützung für Tastenkürzel im Dialog-Bildschirm hinzugefügt.
+   - Das Spielmenü kann nun über ein Tastenkürzel aufgerufen werden.
+   - Fehler behoben, der dazu führt, dass die Steuerung zurückgesetzt wird, wenn das Hive-Puzzle verlassen wird.
+   - Animationsfehler bei der Darstellung der schwebenden Körper in Kapitel 4 korrigiert.
+
+ Ultima:
+   - Darstellungsfehler behoben, der auftritt, wenn die Minikarte vom Spiel-Bildschirm wegbewegt wird.
+   - Möglicher Absturz bei der Nutzung der Autosave-Funktion behoben.
+
+ SCI:
+   - Mehrere Fehler und Skript-Probleme in KQ4, KQ5, LB2, LONGBOW, PQ1, PQ3, QFG2, QFG3, QFG4 und SQ5 behoben.
+   - Zahlreiche Verbesserungen an verschiedenen Stellen des Engine-Codes.
+
+ SCUMM:
+   - Mögliche Abstürze in Spielen, die iMUSE verwenden, korrigiert.
+   - Fehlende .SOU- und .BUN-Dateien führen nun nicht mehr zu einem Absturz.
+   - Abstürze in v7- und v8-Spielen auf Systemen mit striktem Aligment behoben.
+   - Fehlerhafte Lippen-Synchronisation in COMI auf Big-Endian-Systemen (wie der PS3 oder Wii) korrigiert.
+
+ Tinsel:
+   - Fehler behoben, der dazu führt, dass in Discworld einige Gegenstände nicht im Inventar abgelegt werden konnten.
+
+ Toltecs:
+   - Abstürze auf einigen Systemen mit striktem Aligment behoben.
+
+ Toon:
+   - Fehler behoben, der dazu führt, dass Musik und Soundeffekte standardmäßig stummgeschaltet werden,
+     wenn das Spiel Toonstruck zu ScummVM hinzugefügt wird.
+
+ Android-Portierung:
+   - Die Maus-Koordinaten werden nun korrekt zwischen den Bildschirm-Koordinaten und den virtuellen Koordinaten konvertiert.
+
+ Windows-Portierung:
+  - Fehler korrigiert, der dazu führt, dass das Löschen des Icon-Caches einen zusätzlichen ScummVM-Ordner im APPDATA-Verzeichnis anlegt.
+
+#### 2.6.0 "Insane Escapism" (01.08.2022)
 
  Neue Spiele:
    - Unterstützung für Sanitarium hinzugefügt.
@@ -254,7 +1762,7 @@ Umfangreichere Informationen über die Änderungen des aktuellen Codes findest D
    - Fehler beim Öffnen der Karte in Rose Tattoo behoben.
    - Der Klang der Klingelschnur in Serrated Scalpel wird nun korrekt abgespielt.
    - Das Inventar wird nun korrekt aktualisiert, wenn in Serrated Scalpel die Uhr untersucht wird.
-   - Nebel-Overlay von Kleopatras Nadel in Rose Tatoo korrigiert.Fix fog overlay at Cleopatra's Needle in Rose Tattoo.
+   - Nebel-Overlay von Kleopatras Nadel in Rose Tattoo korrigiert.Fix fog overlay at Cleopatra's Needle in Rose Tattoo.
    - Grafikfehler in Serrated Scalpel behoben, der auftritt, wenn Gegenstände untersucht werden, während das Inventar geöffnet ist.
    - Die Geschwindigkeit des Darts-Spiel in Serrated Scalpel ist nun näher am Original-Spiel.
    - Absturz behoben, der auftritt, wenn der Cursor an das Ende einer Zeichenkette im Speichern-Dialog von Rose Tattoo bewegt wird.

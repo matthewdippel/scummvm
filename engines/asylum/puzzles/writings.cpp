@@ -95,7 +95,7 @@ bool PuzzleWritings::init(const AsylumEvent &)  {
 	getText()->drawCentered(Common::Point(10, 375), 590, getText()->get(MAKE_RESOURCE(kResourcePackText, textId++)));
 	getText()->drawCentered(Common::Point(10, 405), 590, getText()->get(MAKE_RESOURCE(kResourcePackText, textId)));
 
-	_textSurface.copyFrom(getScreen()->getSurface());
+	_textSurface.copyFrom(*getScreen()->getSurface());
 
 	return false;
 }
@@ -154,7 +154,7 @@ bool PuzzleWritings::update(const AsylumEvent &)  {
 	return true;
 }
 
-bool PuzzleWritings::mouseRightUp(const AsylumEvent &) {
+bool PuzzleWritings::exitPuzzle() {
 	getCursor()->hide();
 	getSharedData()->setFlag(kFlag1, true);
 	getScreen()->stopPaletteFade(0, 0, 0);

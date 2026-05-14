@@ -132,6 +132,14 @@ KyraEngine_HoF::KyraEngine_HoF(OSystem *system, const GameFlags &flags) : KyraEn
 	_setCharPalFinal = false;
 	_useCharPal = false;
 
+	_gui = nullptr;
+	_bookShown = _fadeMessagePalette = false;
+	_ingamePakList = _musicFileListIntro = _musicFileListFinale = _musicFileListIngame = _ingameSoundList = _ingameTimJpStr = nullptr;
+	_ingamePakListSize = _musicFileListIntroSize = _musicFileListFinaleSize = _musicFileListIngameSize = _cdaTrackTableIntroSize = _cdaTrackTableIngameSize = _cdaTrackTableFinaleSize = 0;
+	_cdaTrackTableIntro = _cdaTrackTableIngame = _cdaTrackTableFinale = nullptr;
+	_ingameSoundListSize = _ingameSoundIndexSize = _ingameTalkObjIndexSize = _ingameTimJpStrSize = _itemAnimDefinitionSize = 0;
+	_ingameSoundIndex = nullptr;
+	_ingameTalkObjIndex = nullptr;
 	memset(_characterFacingCountTable, 0, sizeof(_characterFacingCountTable));
 
 	_defaultFont = (_flags.lang == Common::ZH_TWN) ? Screen::FID_CHINESE_FNT : ((_flags.lang == Common::JA_JPN) ? Screen::FID_SJIS_FNT : Screen::FID_8_FNT);
@@ -169,27 +177,23 @@ void KyraEngine_HoF::pauseEngineIntern(bool pause) {
 		_pauseStart = 0;
 
 		_nextIdleAnim += pausedTime;
-		_tim->refreshTimersAfterPause(pausedTime);
+		if (_tim)
+			_tim->refreshTimersAfterPause(pausedTime);
 	}
 }
 
 Common::Error KyraEngine_HoF::init() {
 	_screen = new Screen_HoF(this, _system);
 	assert(_screen);
-	_screen->setResolution();
+
+	Common::Error err = _screen->setResolution();
+	if (err.getCode() != Common::kNoError)
+		return err;
 
 	setDebugger(new Debugger_HoF(this));
 
 	KyraEngine_v1::init();
 	initStaticResource();
-
-	_text = new TextDisplayer_HoF(this, _screen);
-	assert(_text);
-	_gui = new GUI_HoF(this);
-	assert(_gui);
-	_gui->initStaticData();
-	_tim = new TIMInterpreter(this, _screen, _system);
-	assert(_tim);
 
 	if (_flags.isDemo && !_flags.isTalkie) {
 		_screen->loadFont(_screen->FID_8_FNT, "FONT9P.FNT");
@@ -201,7 +205,21 @@ Common::Error KyraEngine_HoF::init() {
 		_screen->loadFont(_screen->FID_8_FNT, "8FAT.FNT");
 		_screen->loadFont(_screen->FID_BOOKFONT_FNT, "BOOKFONT.FNT");
 	}
+
+	if (_flags.lang == Common::KO_KOR) {
+		_screen->loadFont(Screen::FID_KOREAN_FNT, "KOREAN.FNT");
+		_defaultFont = Screen::FID_KOREAN_FNT;
+		_bookFont = Screen::FID_KOREAN_FNT;
+	}
 	_screen->setFont(_defaultFont);
+
+	_text = new TextDisplayer_HoF(this, _screen);
+	assert(_text);
+	_gui = new GUI_HoF(this);
+	assert(_gui);
+	_gui->initStaticData();
+	_tim = new TIMInterpreter(this, _screen, _system);
+	assert(_tim);
 
 	_screen->setAnimBlockPtr(3504);
 	_screen->setScreenDim(0);
@@ -284,6 +302,9 @@ void KyraEngine_HoF::startup() {
 	// for FM-TOWNS and DOS
 	_trackMap = _dosTrackMap;
 	_trackMapSize = _dosTrackMapSize;
+
+	// Restore the default font after intro sequences may have changed it
+	_screen->setFont(_defaultFont);
 
 	allocAnimObjects(1, 10, 30);
 
@@ -775,45 +796,39 @@ void KyraEngine_HoF::cleanup() {
 #pragma mark - Localization
 
 void KyraEngine_HoF::loadCCodeBuffer(const char *file) {
-	char tempString[13];
-	strcpy(tempString, file);
+	Common::String tempString = file;
 	changeFileExtension(tempString);
 
 	delete[] _cCodeBuffer;
-	_cCodeBuffer = _res->fileData(tempString, nullptr);
+	_cCodeBuffer = _res->fileData(tempString.c_str(), nullptr);
 }
 
 void KyraEngine_HoF::loadOptionsBuffer(const char *file) {
-	char tempString[13];
-	strcpy(tempString, file);
+	Common::String tempString = file;
 	changeFileExtension(tempString);
 
 	delete[] _optionsBuffer;
-	_optionsBuffer = _res->fileData(tempString, nullptr);
+	_optionsBuffer = _res->fileData(tempString.c_str(), nullptr);
 }
 
 void KyraEngine_HoF::loadChapterBuffer(int chapter) {
-	char tempString[14];
-
 	static const char *const chapterFilenames[] = {
 		"CH1.XXX", "CH2.XXX", "CH3.XXX", "CH4.XXX", "CH5.XXX"
 	};
 
 	assert(chapter >= 1 && chapter <= ARRAYSIZE(chapterFilenames));
-	strcpy(tempString, chapterFilenames[chapter-1]);
+	Common::String tempString = chapterFilenames[chapter-1];
 	changeFileExtension(tempString);
 
 	delete[] _chapterBuffer;
-	_chapterBuffer = _res->fileData(tempString, nullptr);
+	_chapterBuffer = _res->fileData(tempString.c_str(), nullptr);
 	_currentChapter = chapter;
 }
 
-void KyraEngine_HoF::changeFileExtension(char *buffer) {
-	while (*buffer != '.')
-		++buffer;
-
-	++buffer;
-	strcpy(buffer, _languageExtension[_lang]);
+void KyraEngine_HoF::changeFileExtension(Common::String &file) {
+	uint insertAt = file.findFirstOf('.');
+	if (insertAt != Common::String::npos)
+		file = file.substr(0, insertAt + 1) + _languageExtension[_lang];
 }
 
 uint8 *KyraEngine_HoF::getTableEntry(uint8 *buffer, int id) {
@@ -823,7 +838,7 @@ uint8 *KyraEngine_HoF::getTableEntry(uint8 *buffer, int id) {
 Common::String KyraEngine_HoF::getTableString(int id, uint8 *buffer, bool decode) {
 	Common::String string((char *)getTableEntry(buffer, id));
 
-	if (decode && _flags.lang != Common::JA_JPN) {
+	if (decode && _flags.lang != Common::JA_JPN && _flags.lang != Common::KO_KOR) {
 		string = Util::decodeString2(Util::decodeString1(string));
 	}
 
@@ -878,7 +893,7 @@ void KyraEngine_HoF::showChapterMessage(int id, int16 palIndex) {
 void KyraEngine_HoF::updateCommandLineEx(int str1, int str2, int16 palIndex) {
 	Common::String str = getTableString(str1, _cCodeBuffer, true);
 
-	if (_flags.lang != Common::ZH_TWN && _flags.lang != Common::JA_JPN && _flags.lang != Common::HE_ISR) {
+	if (_flags.lang != Common::ZH_TWN && _flags.lang != Common::JA_JPN && _flags.lang != Common::KO_KOR && _flags.lang != Common::HE_ISR) {
 		if (uint32 i = (uint32)str.findFirstOf(' ') + 1) {
 			str.erase(0, i);
 			str.setChar(toupper(str[0]), 0);
@@ -886,7 +901,7 @@ void KyraEngine_HoF::updateCommandLineEx(int str1, int str2, int16 palIndex) {
 	}
 
 	if (str2 > 0) {
-		if (_flags.lang != Common::ZH_TWN && _flags.lang != Common::JA_JPN && _flags.lang != Common::HE_ISR)
+		if (_flags.lang != Common::ZH_TWN && _flags.lang != Common::JA_JPN && _flags.lang != Common::KO_KOR && _flags.lang != Common::HE_ISR)
 			str += " ";
 		if (_flags.lang == Common::HE_ISR)
 			str = getTableString(str2, _cCodeBuffer, 1) + " " + str + ".";
@@ -944,13 +959,8 @@ void KyraEngine_HoF::loadItemShapes() {
 }
 
 void KyraEngine_HoF::loadCharacterShapes(int shapes) {
-	char file[10];
-	strcpy(file, "_ZX.SHP");
-
-	_characterShapeFile = shapes;
-	file[2] = '0' + shapes;
-
-	uint8 *data = _res->fileData(file, nullptr);
+	uint8 *data = _res->fileData(Common::String::format("_Z%c.SHP", '0' + (char)shapes).c_str(), nullptr);
+	assert(data);
 	for (int i = 9; i <= 32; ++i)
 		addShapeToPool(data, i, i-9);
 	delete[] data;
@@ -971,16 +981,14 @@ void KyraEngine_HoF::loadInventoryShapes() {
 }
 
 void KyraEngine_HoF::runStartScript(int script, int unk1) {
-	char filename[14];
-	strcpy(filename, "_START0X.EMC");
-	filename[7] = script + '0';
+	Common::String filename = Common::String::format("_START0%c.EMC", '0' + (char)script);
 
 	EMCData scriptData;
 	EMCState scriptState;
 	memset(&scriptData, 0, sizeof(EMCData));
 	memset(&scriptState, 0, sizeof(EMCState));
 
-	_emc->load(filename, &scriptData, &_opcodes);
+	_emc->load(filename.c_str(), &scriptData, &_opcodes);
 	_emc->init(&scriptState, &scriptData);
 	scriptState.regs[6] = unk1;
 	_emc->start(&scriptState, 0);
@@ -1010,6 +1018,12 @@ void KyraEngine_HoF::loadNPCScript() {
 
 		case 3:
 			filename[5] = 'J';
+			break;
+
+		case 5:
+			// Korean fan translation: no Korean NPC script exists, fall back
+			// to the English one (_NPCE.EMC) which is present on DOS CD.
+			filename[5] = 'E';
 			break;
 
 		default:
@@ -1390,24 +1404,21 @@ void KyraEngine_HoF::restoreGfxRect32x32(int x, int y) {
 #pragma mark -
 
 void KyraEngine_HoF::openTalkFile(int newFile) {
-	char talkFilename[16];
+	Common::Path talkFilename;
 
 	if (_oldTalkFile > 0) {
-		sprintf(talkFilename, "CH%dVOC.TLK", _oldTalkFile);
+		talkFilename = Common::Path(Common::String::format("CH%dVOC.TLK", _oldTalkFile));
 		_res->unloadPakFile(talkFilename);
 		_oldTalkFile = -1;
 	}
 
-	if (newFile == 0)
-		strcpy(talkFilename, "ANYTALK.TLK");
-	else
-		sprintf(talkFilename, "CH%dVOC.TLK", newFile);
+	talkFilename = newFile ? Common::Path(Common::String::format("CH%dVOC.TLK", newFile)) : Common::Path("ANYTALK.TLK");
 
 	_oldTalkFile = newFile;
 
 	if (!_res->loadPakFile(talkFilename)) {
 		if (speechEnabled()) {
-			warning("Couldn't load voice file '%s', falling back to text only mode", talkFilename);
+			warning("Couldn't load voice file '%s', falling back to text only mode", talkFilename.toString().c_str());
 			_configVoice = 0;
 
 			// Sync the config manager with the new settings
@@ -1419,10 +1430,10 @@ void KyraEngine_HoF::openTalkFile(int newFile) {
 void KyraEngine_HoF::snd_playVoiceFile(int id) {
 	char vocFile[9];
 	assert(id >= 0 && id <= 9999999);
-	sprintf(vocFile, "%07d", id);
+	Common::sprintf_s(vocFile, "%07d", id);
 	if (_sound->isVoicePresent(vocFile)) {
 		// Unlike the original I have added a timeout here. I have chosen a size that makes sure that it
-		// won't get triggered in bug #11309 or similiar situations, but still avoids infinite hangups
+		// won't get triggered in bug #11309 or similar situations, but still avoids infinite hangups
 		// if something goes wrong.
 		uint32 timeout = _system->getMillis() + 5000;
 		while (snd_voiceIsPlaying() && _system->getMillis() < timeout && !skipFlag() && !shouldQuit())
@@ -1933,6 +1944,10 @@ void KyraEngine_HoF::writeSettings() {
 
 	case 3:
 		_flags.lang = Common::JA_JPN;
+		break;
+
+	case 5:
+		_flags.lang = Common::KO_KOR;
 		break;
 
 	case 0:

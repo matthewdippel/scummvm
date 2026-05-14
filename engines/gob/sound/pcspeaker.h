@@ -17,12 +17,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_SOUND_PCSPEAKER_H
 #define GOB_SOUND_PCSPEAKER_H
 
-#include "audio/mixer.h"
+#include "common/scummsys.h"
 
 namespace Audio {
 class PCSpeaker;
@@ -32,7 +38,7 @@ namespace Gob {
 
 class PCSpeaker {
 public:
-	PCSpeaker(Audio::Mixer &mixer);
+	PCSpeaker();
 	~PCSpeaker();
 
 	void speakerOn(int16 frequency, int32 length = -1);
@@ -40,10 +46,7 @@ public:
 	void onUpdate(uint32 millis);
 
 private:
-	Audio::Mixer *_mixer;
-
-	Audio::PCSpeaker *_stream;
-	Audio::SoundHandle _handle;
+	Audio::PCSpeaker *_speaker;
 };
 
 } // End of namespace Gob

@@ -66,7 +66,7 @@
 #include "ultima/ultima4/sound/music.h"
 #include "ultima/ultima4/sound/sound.h"
 #include "ultima/ultima4/views/dungeonview.h"
-#include "ultima/ultima4/meta_engine.h"
+#include "ultima/ultima4/metaengine.h"
 #include "common/savefile.h"
 #include "common/system.h"
 
@@ -475,8 +475,8 @@ bool creatureRangeAttack(const Coords &coords, Creature *m) {
 	return false;
 }
 
-Std::vector<Coords> gameGetDirectionalActionPath(int dirmask, int validDirections, const Coords &origin, int minDistance, int maxDistance, bool (*blockedPredicate)(const Tile *tile), bool includeBlocked) {
-	Std::vector<Coords> path;
+Common::Array<Coords> gameGetDirectionalActionPath(int dirmask, int validDirections, const Coords &origin, int minDistance, int maxDistance, bool (*blockedPredicate)(const Tile *tile), bool includeBlocked) {
+	Common::Array<Coords> path;
 	Direction dirx = DIR_NONE,
 	          diry = DIR_NONE;
 
@@ -492,7 +492,7 @@ Std::vector<Coords> gameGetDirectionalActionPath(int dirmask, int validDirection
 
 	/*
 	 * try every tile in the given direction, up to the given range.
-	 * Stop when the the range is exceeded, or the action is blocked.
+	 * Stop when the range is exceeded, or the action is blocked.
 	 */
 
 	MapCoords t_c(origin);
@@ -671,11 +671,9 @@ void gameDestroyAllCreatures(void) {
 		for (i = 0; i < AREA_CREATURES; i++) {
 			CombatMap *cm = getCombatMap();
 			CreatureVector creatures = cm->getCreatures();
-			CreatureVector::iterator obj;
-
-			for (obj = creatures.begin(); obj != creatures.end(); obj++) {
-				if ((*obj)->getId() != LORDBRITISH_ID)
-					cm->removeObject(*obj);
+			for (const auto *obj : creatures) {
+				if (obj->getId() != LORDBRITISH_ID)
+					cm->removeObject(obj);
 			}
 		}
 	} else {
@@ -712,14 +710,12 @@ const int colors[] = {
 void showMixturesSuper(int page = 0) {
 	g_screen->screenTextColor(FG_WHITE);
 	for (int i = 0; i < 13; i++) {
-		char buf[4];
 
 		const Spell *s = g_spells->getSpell(i + 13 * page);
 		int line = i + 8;
 		g_screen->screenTextAt(2, line, "%s", s->_name);
 
-		snprintf(buf, 4, "%3d", g_ultima->_saveGame->_mixtures[i + 13 * page]);
-		g_screen->screenTextAt(6, line, "%s", buf);
+		g_screen->screenTextAt(6, line, "%s", Common::String::format("%3d", g_ultima->_saveGame->_mixtures[i + 13 * page]).c_str());
 
 		g_screen->screenShowChar(32, 9, line);
 		int comp = s->_components;
@@ -729,8 +725,7 @@ void showMixturesSuper(int page = 0) {
 		}
 		g_screen->screenTextColor(FG_WHITE);
 
-		snprintf(buf, 3, "%2d", s->_mp);
-		g_screen->screenTextAt(19, line, "%s", buf);
+		g_screen->screenTextAt(19, line, "%s", Common::String::format("%2d", s->_mp).c_str());
 	}
 }
 
@@ -749,7 +744,7 @@ void mixReagentsSuper() {
 		{ "Paws", {3, 4, 2, 8, 6, 7} },
 		{ "SkaraBr", {2, 4, 9, 6, 4, 8} },
 	};
-	const int shopcount = sizeof(shops) / sizeof(shops[0]);
+	const int shopcount = ARRAYSIZE(shops);
 
 	int oldlocation = g_context->_location->_viewMode;
 	g_context->_location->_viewMode = VIEW_MIXTURES;

@@ -230,7 +230,17 @@ private:
 	const char *_missingFiles;
 };
 
-MidiPlayer_Midi::MidiPlayer_Midi(SciVersion version) : MidiPlayer(version), _playSwitch(true), _masterVolume(15), _mt32Type(kMt32TypeNone), _mt32LCDSize(20), _hasReverb(false), _defaultReverb(-1), _useMT32Track(true), _missingFiles(nullptr) {
+MidiPlayer_Midi::MidiPlayer_Midi(SciVersion version) : 
+	MidiPlayer(version),
+	_playSwitch(true),
+	_masterVolume(15),
+	_mt32Type(kMt32TypeNone),
+	_mt32LCDSize(20),
+	_hasReverb(false),
+	_defaultReverb(-1),
+	_useMT32Track(true),
+	_missingFiles(nullptr) {
+
 	MidiDriver::DeviceHandle dev = MidiDriver::detectDevice(MDT_MIDI);
 	_driver = MidiDriver::createMidi(dev);
 
@@ -368,8 +378,6 @@ void MidiPlayer_Midi::controlChange(int channel, int control, int value) {
 }
 
 void MidiPlayer_Midi::setPatch(int channel, int patch) {
-	bool resetVol = false;
-
 	assert(channel <= 15);
 
 	// No need to do anything if a patch change is sent on the rhythm channel of an MT-32
@@ -382,8 +390,7 @@ void MidiPlayer_Midi::setPatch(int channel, int patch) {
 		_channels[channel].patch = patch;
 		_channels[channel].velocityMapIdx = _velocityMapIdx[patch];
 
-		if (_channels[channel].mappedPatch == MIDI_UNMAPPED)
-			resetVol = true;
+		bool resetVol = (_channels[channel].mappedPatch == MIDI_UNMAPPED);
 
 		_channels[channel].mappedPatch = patchToSend = _patchMap[patch];
 
@@ -674,8 +681,8 @@ void MidiPlayer_Midi::sendMt32SysEx(const uint32 addr, const SciSpan<const byte>
 
 void MidiPlayer_Midi::readMt32Patch(const SciSpan<const byte> &data) {
 	// MT-32 patch contents:
-	// - 0-19        after-SysEx message
-	// - 20-39       before-SysEx message
+	// - 0-19        after-SysEx message   (KQ4/LSL2: before)
+	// - 20-39       before-SysEx message  (KQ4/LSL2: after)
 	// - 40-59       goodbye SysEx message
 	// - 60-61       volume
 	// - 62          reverb
@@ -693,12 +700,28 @@ void MidiPlayer_Midi::readMt32Patch(const SciSpan<const byte> &data) {
 
 	Common::MemoryReadStream stream(data.toStream());
 
+	// before-SysEx and after-SysEx texts swapped positions after KQ4 and LSL2.
+	uint beforeTextPos;
+	uint afterTextPos;
+	switch (g_sci->getGameId()) {
+	case GID_KQ4:
+	case GID_LSL2:
+		beforeTextPos = 0;
+		afterTextPos = _mt32LCDSize;
+		break;
+	default:
+		beforeTextPos = _mt32LCDSize;
+		afterTextPos = 0;
+		break;
+	}
+
 	// Send before-SysEx text
-	stream.seek(_mt32LCDSize);
+	stream.seek(beforeTextPos);
 	sendMt32SysEx(0x200000, stream, _mt32LCDSize);
 
 	// Save goodbye message
 	assert(sizeof(_goodbyeMsg) >= _mt32LCDSize);
+	stream.seek(_mt32LCDSize * 2);
 	stream.read(_goodbyeMsg, _mt32LCDSize);
 
 	const uint8 volume = MIN<uint16>(stream.readUint16LE(), 100);
@@ -745,7 +768,7 @@ void MidiPlayer_Midi::readMt32Patch(const SciSpan<const byte> &data) {
 	}
 
 	// Send after-SysEx text
-	stream.seek(0);
+	stream.seek(afterTextPos);
 	sendMt32SysEx(0x200000, stream, _mt32LCDSize);
 
 	if (_mt32Type != kMt32TypeD110) {
@@ -852,12 +875,12 @@ void MidiPlayer_Midi::readMt32DrvData() {
 		// Send before-SysEx text
 		sendMt32SysEx(0x200000, f, 20);
 
-		if (size != 2271) {
+		if (size != 2771) {
 			// Send after-SysEx text (SSCI sends this before every song).
 			// There aren't any SysEx calls in old drivers, so this can
 			// be sent right after the before-SysEx text.
 			sendMt32SysEx(0x200000, f, 20);
-		} else {
+		} else { // LSL2 early
 			// Skip the after-SysEx text in the newer patch version, we'll send
 			// it after the SysEx messages are sent.
 			f.skip(20);
@@ -1315,7 +1338,7 @@ int MidiPlayer_Midi::open(ResourceManager *resMan) {
 			} else {
 				readMt32Patch(*res);
 			}
-		} else {
+		} else if (_version == SCI_VERSION_0_EARLY) {
 			// Early SCI0 games have the sound bank embedded in the MT-32 driver
 			readMt32DrvData();
 		}
@@ -1393,6 +1416,7 @@ int MidiPlayer_Midi::open(ResourceManager *resMan) {
 					int size = f.size();
 
 					assert(size >= 70);
+					(void)size;
 
 					f.seek(0x29);
 

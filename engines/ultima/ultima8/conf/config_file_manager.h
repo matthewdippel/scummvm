@@ -22,15 +22,13 @@
 #ifndef ULTIMA8_CONF_CONFIGFILEMANAGER_H
 #define ULTIMA8_CONF_CONFIGFILEMANAGER_H
 
-#include "common/ini-file.h"
-#include "ultima/shared/std/string.h"
-#include "ultima/ultima8/misc/istring.h"
-#include "ultima/shared/std/containers.h"
+#include "common/formats/ini-file.h"
+#include "common/str.h"
 
 namespace Ultima {
 namespace Ultima8 {
 
-typedef Std::map<istring, Std::string, Common::IgnoreCase_Hash> KeyMap;
+typedef Common::HashMap<Common::String, Common::String, Common::IgnoreCase_Hash> KeyMap;
 
 class ConfigFileManager {
 public:
@@ -38,7 +36,7 @@ public:
 	~ConfigFileManager();
 
 	struct ConfigFile {
-		istring _category;
+		Common::String _category;
 		Common::INIFile _iniFile;
 	};
 
@@ -50,34 +48,34 @@ public:
 	//! \param fname The file to read
 	//! \param root The name of the root node in the file
 	//! \param readonly If true, don't write to this file's tree (or the file)
-	//! \return true if succesful
-	bool readConfigFile(Std::string fname, const istring &category);
+	//! \return true if successful
+	bool readConfigFile(const Common::Path &fname, const Common::String &category);
 
 	//! clear everything
 	void clear();
 
 	//! clear everything in a root
-	void clearRoot(const istring &category);
+	void clearRoot(const Common::String &category);
 
 	//! get value
-	bool get(const istring &category, const istring &section, const istring &key, Std::string &ret);
+	bool get(const Common::String &category, const Common::String &section, const Common::String &key, Common::String &ret) const;
 	//! get value
-	bool get(const istring &category, const istring &section, const istring &key, int &ret);
+	bool get(const Common::String &category, const Common::String &section, const Common::String &key, int &ret) const;
 	//! get value
-	bool get(const istring &category, const istring &section, const istring &key, bool &ret);
+	bool get(const Common::String &category, const Common::String &section, const Common::String &key, bool &ret) const;
 
 	//! list all sections
 	//! \param category The config category to list all sections in
 	//! \return the sections. They have no guaranteed order.
-	Std::vector<istring> listSections(const istring &category);
+	Common::Array<Common::String> listSections(const Common::String &category) const;
 	//! list all key-value pairs in the given section.
 	//! \param category The config category for the section to list
 	//! \param section The section to list
 	//! \return the key-value pairs. They have no guaranteed order.
-	KeyMap listKeyValues(const istring &category, const istring &section);
+	KeyMap listKeyValues(const Common::String &category, const Common::String &section) const;
 
 private:
-	Std::vector<ConfigFile *> _configFiles;
+	Common::Array<ConfigFile *> _configFiles;
 
 	static ConfigFileManager *_configFileManager;
 };

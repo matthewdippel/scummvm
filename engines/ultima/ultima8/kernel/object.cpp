@@ -20,6 +20,8 @@
  */
 
 #include "ultima/ultima8/kernel/object.h"
+
+#include "common/stream.h"
 #include "ultima/ultima8/kernel/kernel.h"
 #include "ultima/ultima8/kernel/object_manager.h"
 #include "ultima/ultima8/usecode/uc_process.h"
@@ -50,8 +52,8 @@ void Object::clearObjId() {
 	_objId = 0xFFFF;
 }
 
-void Object::dumpInfo() const {
-	g_debugger->debugPrintf("Object %d (class %s)\n", getObjId(), GetClassType()._className);
+Common::String Object::dumpInfo() const {
+	return Common::String::format("Object %d (class %s)", getObjId(), GetClassType()._className);
 }
 
 ProcId Object::callUsecode(uint16 classid, uint16 offset,

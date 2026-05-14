@@ -20,6 +20,12 @@
  */
 
 #define GLAD_GL_IMPLEMENTATION
+// sscanf_s is used by glad on MSVC only
+// we can't know before config.h is loaded that GLAD will be used
+// but at this time it will be too late to allow sscanf_s
+#ifdef _MSC_VER
+#define FORBIDDEN_SYMBOL_EXCEPTION_sscanf_s
+#endif
 
 #include "graphics/opengl/context.h"
 
@@ -58,17 +64,23 @@ void Context::reset() {
 	glslVersion = 0;
 
 	NPOTSupported = false;
+	imagingSupported = false;
 	shadersSupported = false;
 	enginesShadersSupported = false;
 	multitextureSupported = false;
 	framebufferObjectSupported = false;
 	framebufferObjectMultisampleSupported = false;
 	multisampleMaxSamples = -1;
+	bgraSupported = false;
 	packedPixelsSupported = false;
 	packedDepthStencilSupported = false;
 	unpackSubImageSupported = false;
 	OESDepth24 = false;
 	textureEdgeClampSupported = false;
+	textureBorderClampSupported = false;
+	textureMirrorRepeatSupported = false;
+	textureMaxLevelSupported = false;
+	textureLookupPrecision = 0;
 }
 
 void Context::initialize(ContextType contextType) {
@@ -81,28 +93,40 @@ void Context::initialize(ContextType contextType) {
 	type = contextType;
 
 #ifdef USE_GLAD
+	int gladVersion;
 	switch (type) {
 	case kContextGL:
-		gladLoadGL(loadFunc);
+		gladVersion = gladLoadGL(loadFunc);
 		break;
 
 	case kContextGLES:
-		gladLoadGLES1(loadFunc);
+		gladVersion = gladLoadGLES1(loadFunc);
 		break;
 
 	case kContextGLES2:
-		gladLoadGLES2(loadFunc);
+		gladVersion = gladLoadGLES2(loadFunc);
 		break;
 
 	default:
+		gladVersion = 0;
 		break;
 	}
-#endif
 
+	majorVersion = GLAD_VERSION_MAJOR(gladVersion);
+	minorVersion = GLAD_VERSION_MINOR(gladVersion);
+
+	if (!gladVersion) {
+		// If gladVersion is 0 it means that loading failed and glad didn't set up anything
+		error("Couldn't initialize OpenGL");
+	}
+#else
 	const char *verString = (const char *)glGetString(GL_VERSION);
-	debug(5, "OpenGL version: %s", verString);
-
-	if (type == kContextGL) {
+	if (!verString) {
+		majorVersion = minorVersion = 0;
+		int errorCode = glGetError();
+		warning("Could not fetch GL_VERSION: %d", errorCode);
+		return;
+	} else if (type == kContextGL) {
 		// OpenGL version number is either of the form major.minor or major.minor.release,
 		// where the numbers all have one or more digits
 		if (sscanf(verString, "%d.%d", &majorVersion, &minorVersion) != 2) {
@@ -132,19 +156,18 @@ void Context::initialize(ContextType contextType) {
 			}
 		}
 	}
+#endif
 
 	glslVersion = getGLSLVersion();
 
 	// Obtain maximum texture size.
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE, (GLint *)&maxTextureSize);
-	debug(5, "OpenGL maximum texture size: %d", maxTextureSize);
 
 	const char *extString = (const char *)glGetString(GL_EXTENSIONS);
+	if (!extString) {
+		extString = "";
+	}
 
-	bool ARBShaderObjects = false;
-	bool ARBShadingLanguage100 = false;
-	bool ARBVertexShader = false;
-	bool ARBFragmentShader = false;
 	bool EXTFramebufferMultisample = false;
 	bool EXTFramebufferBlit = false;
 
@@ -154,18 +177,14 @@ void Context::initialize(ContextType contextType) {
 
 		if (token == "GL_ARB_texture_non_power_of_two" || token == "GL_OES_texture_npot") {
 			NPOTSupported = true;
-		} else if (token == "GL_ARB_shader_objects") {
-			ARBShaderObjects = true;
-		} else if (token == "GL_ARB_shading_language_100") {
-			ARBShadingLanguage100 = true;
-		} else if (token == "GL_ARB_vertex_shader") {
-			ARBVertexShader = true;
-		} else if (token == "GL_ARB_fragment_shader") {
-			ARBFragmentShader = true;
+		} else if (token == "GL_ARB_imaging") {
+			imagingSupported = true;
 		} else if (token == "GL_ARB_multitexture") {
 			multitextureSupported = true;
 		} else if (token == "GL_ARB_framebuffer_object") {
 			framebufferObjectSupported = true;
+		} else if (token == "GL_EXT_bgra" || token == "GL_EXT_texture_format_BGRA8888") {
+			bgraSupported = true;
 		} else if (token == "GL_EXT_packed_pixels" || token == "GL_APPLE_packed_pixels") {
 			packedPixelsSupported = true;
 		} else if (token == "GL_EXT_packed_depth_stencil" || token == "GL_OES_packed_depth_stencil") {
@@ -180,19 +199,29 @@ void Context::initialize(ContextType contextType) {
 			OESDepth24 = true;
 		} else if (token == "GL_SGIS_texture_edge_clamp") {
 			textureEdgeClampSupported = true;
+		} else if (token == "GL_ARB_texture_border_clamp" || token == "GL_SGIS_texture_border_clamp" || token == "GL_OES_texture_border_clamp" ||
+		           token == "GL_EXT_texture_border_clamp" || token == "GL_NV_texture_border_clamp") {
+			textureBorderClampSupported = true;
+		} else if (token == "GL_ARB_texture_mirrored_repeat" || token == "GL_OES_texture_mirrored_repeat" || token == "GL_IBM_texture_mirrored_repeat") {
+			textureMirrorRepeatSupported = true;
+		} else if (token == "GL_SGIS_texture_lod" || token == "GL_APPLE_texture_max_level") {
+			textureMaxLevelSupported = true;
 		}
 	}
 
 	if (type == kContextGLES2) {
 // OGLES2 on AmigaOS reports GLSL version as 0.9 but we do what is needed to make it work
 // so let's pretend it supports 1.00
-#if defined(AMIGAOS)
+#if defined(__amigaos4__)
 		if (glslVersion < 100) {
 			glslVersion = 100;
 		}
 #endif
 		// GLES2 always has (limited) NPOT support.
 		NPOTSupported = true;
+
+		// GLES2 always has imaging support
+		imagingSupported = true;
 
 		// GLES2 always has shader support.
 		shadersSupported = true;
@@ -205,43 +234,52 @@ void Context::initialize(ContextType contextType) {
 		// GLES2 always has FBO support.
 		framebufferObjectSupported = true;
 
-		// ScummVM does not support multisample FBOs with GLES2 for now
-		framebufferObjectMultisampleSupported = false;
-		multisampleMaxSamples = -1;
-
 		packedPixelsSupported = true;
 		textureEdgeClampSupported = true;
+		textureMirrorRepeatSupported = true;
+
+		// OpenGL ES 3.0 and later adds multisample FBOs, and always has the following extensions
+		if (isGLVersionOrHigher(3, 0)) {
+			framebufferObjectMultisampleSupported = true;
+			packedDepthStencilSupported = true;
+			textureMaxLevelSupported = true;
+			unpackSubImageSupported = true;
+			OESDepth24 = true;
+		}
+		// OpenGL ES 3.2 and later always has texture border clamp support
+		if (isGLVersionOrHigher(3, 2)) {
+			textureBorderClampSupported = true;
+		}
+
+		// In GLES2, texture lookup is done using lowp (and mediump is not always available)
+		GLint range[2];
+		GLint precision = 0;
+		glGetShaderPrecisionFormat(GL_FRAGMENT_SHADER, GL_LOW_FLOAT, range, &precision);
+		textureLookupPrecision = precision;
+
 		debug(5, "OpenGL: GLES2 context initialized");
 	} else if (type == kContextGLES) {
 		// GLES doesn't support shaders natively
-		// We don't do any aliasing in our code and expect standard OpenGL functions but GLAD does it
-		// So if we use GLAD we can check for ARB extensions and expect a GLSL of 1.00
-#ifdef USE_GLAD
-		shadersSupported = ARBShaderObjects && ARBShadingLanguage100 && ARBVertexShader && ARBFragmentShader;
-		glslVersion = 100;
-#endif
-		// We don't expect GLES to support shaders recent enough for engines
 
 		// ScummVM does not support multisample FBOs with GLES for now
 		framebufferObjectMultisampleSupported = false;
-		multisampleMaxSamples = -1;
+
+		// GLES always has imaging support
+		imagingSupported = true;
 
 		packedPixelsSupported = true;
 		textureEdgeClampSupported = true;
+		// No border clamping in GLES
+		// No mirror repeat in GLES
+		// Precision is irrelevant (shaders) in GLES
+
 		debug(5, "OpenGL: GLES context initialized");
 	} else if (type == kContextGL) {
-		shadersSupported = glslVersion >= 100;
+		// Official support of shaders starts with version 110
+		// Older versions didn't support the #version directive and were only available through
+		// ARB extensions which we removed support for
+		shadersSupported = glslVersion >= 110;
 
-		// We don't do any aliasing in our code and expect standard OpenGL functions but GLAD does it
-		// So if we use GLAD we can check for ARB extensions and expect a GLSL of 1.00
-#ifdef USE_GLAD
-		if (!shadersSupported) {
-			shadersSupported = ARBShaderObjects && ARBShadingLanguage100 && ARBVertexShader && ARBFragmentShader;
-			if (shadersSupported) {
-				glslVersion = 100;
-			}
-		}
-#endif
 		// In GL mode engines need GLSL 1.20
 		enginesShadersSupported = glslVersion >= 120;
 
@@ -250,23 +288,39 @@ void Context::initialize(ContextType contextType) {
 
 		framebufferObjectMultisampleSupported = EXTFramebufferMultisample && EXTFramebufferBlit;
 
-		if (framebufferObjectMultisampleSupported) {
-			glGetIntegerv(GL_MAX_SAMPLES, (GLint *)&multisampleMaxSamples);
-		}
-
-		// OpenGL 1.2 and later always has packed pixels and texture edge clamp support
+		// OpenGL 1.2 and later always has packed pixels, texture edge clamp and texture max level support
 		if (isGLVersionOrHigher(1, 2)) {
+			bgraSupported = true;
 			packedPixelsSupported = true;
 			textureEdgeClampSupported = true;
+			textureMaxLevelSupported = true;
 		}
+		// OpenGL 1.3 adds texture border clamp support and mandatory imaging support
+		if (isGLVersionOrHigher(1, 3)) {
+			imagingSupported = true;
+			textureBorderClampSupported = true;
+		}
+		// OpenGL 1.4 adds texture mirror repeat support
+		if (isGLVersionOrHigher(1, 4)) {
+			textureMirrorRepeatSupported = true;
+		}
+
+		// In OpenGL precision is always enough
+		textureLookupPrecision = UINT_MAX;
+
 		debug(5, "OpenGL: GL context initialized");
 	} else {
 		warning("OpenGL: Unknown context initialized");
 	}
 
-	const char *glslVersionString = (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION);
+	if (framebufferObjectMultisampleSupported) {
+		glGetIntegerv(GL_MAX_SAMPLES, (GLint *)&multisampleMaxSamples);
+	}
+
+	const char *glslVersionString = glslVersion ? (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION) : "";
 
 	// Log features supported by GL context.
+	debug(5, "OpenGL version: %s", glGetString(GL_VERSION));
 	debug(5, "OpenGL vendor: %s", glGetString(GL_VENDOR));
 	debug(5, "OpenGL renderer: %s", glGetString(GL_RENDERER));
 	debug(5, "OpenGL: version %d.%d", majorVersion, minorVersion);
@@ -274,16 +328,23 @@ void Context::initialize(ContextType contextType) {
 	debug(5, "OpenGL: GLSL version: %d", glslVersion);
 	debug(5, "OpenGL: Max texture size: %d", maxTextureSize);
 	debug(5, "OpenGL: NPOT texture support: %d", NPOTSupported);
+	debug(5, "OpenGL: Imaging support: %d", imagingSupported);
 	debug(5, "OpenGL: Shader support: %d", shadersSupported);
+	debug(5, "OpenGL: Shader support for engines: %d", enginesShadersSupported);
 	debug(5, "OpenGL: Multitexture support: %d", multitextureSupported);
 	debug(5, "OpenGL: FBO support: %d", framebufferObjectSupported);
 	debug(5, "OpenGL: Multisample FBO support: %d", framebufferObjectMultisampleSupported);
 	debug(5, "OpenGL: Multisample max number: %d", multisampleMaxSamples);
+	debug(5, "OpenGL: BGRA support: %d", bgraSupported);
 	debug(5, "OpenGL: Packed pixels support: %d", packedPixelsSupported);
 	debug(5, "OpenGL: Packed depth stencil support: %d", packedDepthStencilSupported);
 	debug(5, "OpenGL: Unpack subimage support: %d", unpackSubImageSupported);
 	debug(5, "OpenGL: OpenGL ES depth 24 support: %d", OESDepth24);
 	debug(5, "OpenGL: Texture edge clamping support: %d", textureEdgeClampSupported);
+	debug(5, "OpenGL: Texture border clamping support: %d", textureBorderClampSupported);
+	debug(5, "OpenGL: Texture mirror repeat support: %d", textureMirrorRepeatSupported);
+	debug(5, "OpenGL: Texture max level support: %d", textureMaxLevelSupported);
+	debug(5, "OpenGL: Texture lookup precision: %d", textureLookupPrecision);
 }
 
 int Context::getGLSLVersion() const {
@@ -306,16 +367,20 @@ int Context::getGLSLVersion() const {
 		return 0;
 	}
 
-	const char *glslVersionFormat;
-	if (type == kContextGL) {
-		glslVersionFormat = "%d.%d";
-	} else {
-		glslVersionFormat = "OpenGL ES GLSL ES %d.%d";
+	// Search for the first digit in the version string and parse from there
+	const char *glslVersionStringNum;
+	for (glslVersionStringNum = glslVersionString; *glslVersionStringNum != '\0'; glslVersionStringNum++) {
+		if (*glslVersionStringNum >= '0' &&
+		    *glslVersionStringNum <= '9') {
+			break;
+		}
 	}
 
+	// Here *glslVersionStringNum is either a digit or a NUL character
+
 	int glslMajorVersion, glslMinorVersion;
-	if (sscanf(glslVersionString, glslVersionFormat, &glslMajorVersion, &glslMinorVersion) != 2) {
-		warning("Could not parse GLSL version '%s'", glslVersionString);
+	if (sscanf(glslVersionStringNum, "%d.%d", &glslMajorVersion, &glslMinorVersion) != 2) {
+		warning("Could not parse GLSL version '%s' extracted from '%s'", glslVersionStringNum, glslVersionString);
 		return 0;
 	}
 

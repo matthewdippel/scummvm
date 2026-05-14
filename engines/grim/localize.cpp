@@ -40,6 +40,7 @@ Localizer::Localizer() {
 	bool isFrench = g_grim->getGameLanguage() == Common::FR_FRA;
 	bool isItalian = g_grim->getGameLanguage() == Common::IT_ITA;
 	bool isSpanish = g_grim->getGameLanguage() == Common::ES_ESP;
+	bool isKorean = g_grim->getGameLanguage() == Common::KO_KOR;	// Korean Fan Translation
 	bool isTranslatedGrimDemo = (isGerman || isFrench || isItalian || isSpanish) && isGrimDemo;
 	bool isPS2 = g_grim->getGamePlatform() == Common::kPlatformPS2;
 
@@ -54,6 +55,8 @@ Localizer::Localizer() {
 			filename = Common::String("grim.") + g_grim->getLanguagePrefix() + Common::String(".tab"); // TODO: Detect based on language.
 		} else if (isTranslatedGrimDemo) {
 			filename = "language.tab";
+		} else if (isKorean) {
+			filename = "grim.ko.tab";
 		} else {
 			filename = "grim.tab";
 		}
@@ -98,7 +101,19 @@ Localizer::Localizer() {
 			}
 		case MKTAG('D', 'O', 'E', 'L'):
 		case MKTAG('a', 'r', 't', 'p'):
+		case MKTAG('s', 's', 'I', 'N'):
+		case MKTAG('I', 'N', 'T', 'T'):
+		case MKTAG('6', '6', '6', 'I'):
 			break;
+		case 0xfffe4600: {
+			Common::String n = Common::U32String::decodeUTF16LE((const uint16 *) (data + 2), (filesize - 2) / 2).encode();
+			delete[] data;
+			data = new char[n.size() + 1];
+			memcpy(data, n.c_str(), n.size() + 1);
+			filesize = n.size();
+			g_grim->_isUtf8 = true;
+			break;
+		}
 		default:
 			error("Invalid magic reading %s: %08x (%s)", filename.c_str(), READ_BE_UINT32(data), tag2str(READ_BE_UINT32(data)));
 		}
@@ -124,7 +139,7 @@ Localizer::Localizer() {
 			continue;
 		}
 
-		// EMI has an garbage line which should be ignored
+		// EMI has a garbage line which should be ignored
 		if (g_grim->getGameType() == GType_MONKEY4 && *line == '\x1A')
 			continue;
 
@@ -141,6 +156,11 @@ Localizer::Localizer() {
 			_entries[last_entry] += cont;
 		} else {
 			_entries[last_entry = Common::String(line, tab - line)] = Common::String(tab + 1, (nextline - tab - 2));
+		}
+	}
+	if (g_grim->_transcodeChineseToSimplified && g_grim->_isUtf8) {
+		for (Common::StringMap::iterator it = _entries.begin(); it != _entries.end(); it++) {
+			it->_value = it->_value.decode(Common::CodePage::kUtf8).transcodeChineseT2S().encode(Common::CodePage::kUtf8);
 		}
 	}
 	delete[] data;

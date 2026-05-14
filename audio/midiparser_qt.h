@@ -26,7 +26,7 @@
 #include "common/array.h"
 #include "common/hashmap.h"
 #include "common/queue.h"
-#include "common/quicktime.h"
+#include "common/formats/quicktime.h"
 
 /**
  * @defgroup audio_midiparser_qt QT MIDI parser
@@ -58,7 +58,7 @@ public:
 	~MidiParser_QT() {}
 
 	// MidiParser
-	bool loadMusic(byte *data, uint32 size) override;
+	bool loadMusic(const byte *data, uint32 size) override;
 	void unloadMusic() override;
 
 	/**
@@ -74,7 +74,7 @@ public:
 	/**
 	 * Load the MIDI from a QuickTime file
 	 */
-	bool loadFromContainerFile(const Common::String &fileName);
+	bool loadFromContainerFile(const Common::Path &fileName);
 
 protected:
 	// MidiParser
@@ -82,7 +82,7 @@ protected:
 	void resetTracking() override;
 
 	void sendToDriver(uint32 b) override;
-	void sendMetaEventToDriver(byte type, byte *data, uint16 length) override;
+	void sendMetaEventToDriver(byte type, const byte *data, uint16 length) override;
 
 	// QuickTimeParser
 	SampleDesc *readSampleDesc(Track *track, uint32 format, uint32 descSize) override;

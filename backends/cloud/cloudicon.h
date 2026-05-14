@@ -19,8 +19,8 @@
  *
  */
 
-#ifndef BACKENDS_NETWORKING_CURL_CLOUDICON_H
-#define BACKENDS_NETWORKING_CURL_CLOUDICON_H
+#ifndef BACKENDS_CLOUD_CLOUDICON_H
+#define BACKENDS_CLOUD_CLOUDICON_H
 
 #include "graphics/surface.h"
 
@@ -78,7 +78,7 @@ private:
 	uint32 _lastUpdateTime;
 
 	void initIcons();
-	void loadIcon(Graphics::Surface &icon, byte *data, uint32 size);
+	void loadIcon(Graphics::Surface &icon, const byte *data, uint32 size);
 	void makeAlphaIcon(const Graphics::Surface &icon, float alpha);
 
 	void hide();

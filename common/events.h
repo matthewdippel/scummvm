@@ -23,6 +23,7 @@
 #define COMMON_EVENTS_H
 
 #include "common/keyboard.h"
+#include "common/path.h"
 #include "common/queue.h"
 #include "common/rect.h"
 #include "common/noncopyable.h"
@@ -114,7 +115,18 @@ enum EventType {
 
 	/** ScummVM has gained or lost focus. */
 	EVENT_FOCUS_GAINED = 36,
-	EVENT_FOCUS_LOST = 37
+	EVENT_FOCUS_LOST = 37,
+
+	/**
+	 * We reserve some event ids for custom events.
+	 * 
+	 * This is used for example by Asylum and Bagel engines.
+	 * Your custom event ids must be in this range.
+	 * This also prevents compiler from using a too short datatype
+	 *  for storing this enum on some platforms.
+	 */
+	EVENT_USER_FIRST_AVAILABLE = 1000,
+	EVENT_USER_LAST_AVAILABLE = 9999
 };
 
 const int16 JOYAXIS_MIN = -32768;
@@ -158,7 +170,8 @@ enum JoystickButton {
 	JOYSTICK_BUTTON_DPAD_UP,
 	JOYSTICK_BUTTON_DPAD_DOWN,
 	JOYSTICK_BUTTON_DPAD_LEFT,
-	JOYSTICK_BUTTON_DPAD_RIGHT
+	JOYSTICK_BUTTON_DPAD_RIGHT,
+	JOYSTICK_BUTTON_DPAD_CENTER
 };
 
 /**
@@ -170,7 +183,9 @@ enum JoystickAxis {
 	JOYSTICK_AXIS_RIGHT_STICK_X,
 	JOYSTICK_AXIS_RIGHT_STICK_Y,
 	JOYSTICK_AXIS_LEFT_TRIGGER,
-	JOYSTICK_AXIS_RIGHT_TRIGGER
+	JOYSTICK_AXIS_RIGHT_TRIGGER,
+	JOYSTICK_AXIS_HAT_X,
+	JOYSTICK_AXIS_HAT_Y
 };
 
 /**
@@ -222,7 +237,7 @@ struct Event {
 	CustomEventType customType;
 
 	/** The path of the file or directory dragged to the ScummVM window. */
-	Common::String path;
+	Common::Path path;
 
 	/**
 	 * Mouse movement since the last mouse movement event.

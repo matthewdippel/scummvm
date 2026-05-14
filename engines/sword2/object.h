@@ -30,7 +30,7 @@ namespace Sword2 {
 
 // these structures represent the broken up compact components
 // these here declared to the system must be the same as those declared to
-// LINC (or it wont work)
+// LINC (or it won't work)
 
 // mouse structure - defines mouse detection area, detection priority &
 // 'type' flag
@@ -47,7 +47,7 @@ struct ObjectMouse {
 		return 24;
 	}
 
-	void read(byte *addr);
+	void read(const byte *addr);
 	void write(byte *addr);
 };
 
@@ -271,7 +271,7 @@ struct ObjectWalkdata {
 		return 916;
 	}
 
-	void read(byte *addr);
+	void read(const byte *addr);
 	void write(byte *addr);
 };
 

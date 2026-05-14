@@ -29,6 +29,7 @@
 #include "dcutils.h"
 #include "icon.h"
 #include "DCLauncherDialog.h"
+#include "backends/events/default/default-events.h"
 #include "backends/mutex/null/null-mutex.h"
 #include <common/config-manager.h>
 #include <common/memstream.h>
@@ -45,7 +46,7 @@ OSystem_Dreamcast::OSystem_Dreamcast()
   : _devpoll(0), screen(NULL), mouse(NULL), overlay(NULL), _softkbd(this),
 	_ms_buf(NULL), _mixer(NULL),
 	_current_shake_x_pos(0), _current_shake_y_pos(0), _aspect_stretch(false), _softkbd_on(false),
-	_softkbd_motion(0), _enable_cursor_palette(false), _screenFormat(0)
+	_softkbd_motion(0), _enable_cursor_palette(false), _overlay_in_gui(false), _screenFormat(0)
 {
   memset(screen_tx, 0, sizeof(screen_tx));
   memset(mouse_tx, 0, sizeof(mouse_tx));
@@ -56,6 +57,7 @@ OSystem_Dreamcast::OSystem_Dreamcast()
 void OSystem_Dreamcast::initBackend()
 {
   ConfMan.setInt("autosave_period", 0);
+  _eventManager = new DefaultEventManager(this);
   _savefileManager = createSavefileManager();
   _timerManager = new DefaultTimerManager();
 
@@ -65,7 +67,7 @@ void OSystem_Dreamcast::initBackend()
 
   _audiocdManager = new DCCDManager();
 
-  EventsBaseBackend::initBackend();
+  BaseBackend::initBackend();
 }
 
 
@@ -166,6 +168,7 @@ bool OSystem_Dreamcast::hasFeature(Feature f)
   case kFeatureVirtualKeyboard:
   case kFeatureOverlaySupportsAlpha:
   case kFeatureCursorPalette:
+  case kFeatureCursorAlpha:
 	return true;
   default:
 	return false;
@@ -297,7 +300,7 @@ int DCLauncherDialog::runModal()
   ConfMan.set("gameid", gameId, gameId);
 
   if (dir != NULL)
-	ConfMan.set("path", dir, gameId);
+	ConfMan.setPath("path", dir, gameId);
 
   // Set the game language.
   if (language != Common::UNK_LANG)

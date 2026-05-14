@@ -33,28 +33,6 @@ static const PlainGameDescriptor lureGames[] = {
 	{nullptr, nullptr}
 };
 
-
-#ifdef USE_TTS
-#define GAMEOPTION_TTS_NARRATOR 	GUIO_GAMEOPTIONS1
-
-static const ADExtraGuiOptionsMap optionsList[] = {
-	{
-		GAMEOPTION_TTS_NARRATOR,
-		{
-			_s("TTS Narrator"),
-			_s("Use TTS to read the descriptions (if TTS is available)"),
-			"tts_narrator",
-			false,
-			0,
-			0
-		}
-	},
-
-	AD_EXTRA_GUI_OPTIONS_TERMINATOR
-};
-
-#endif
-
 static const DebugChannelDef debugFlagList[] = {
 	{Lure::kLureDebugScripts, "scripts", "Scripts debugging"},
 	{Lure::kLureDebugAnimations, "animations", "Animations debugging"},
@@ -77,9 +55,9 @@ static const LureGameDescription gameDescriptions[] = {
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
 #ifdef USE_TTS
-			GUIO1(GAMEOPTION_TTS_NARRATOR)
+			GUIO2(GAMEOPTION_TTS_NARRATOR, GAMEOPTION_COPY_PROTECTION)
 #else
-			GUIO0()
+			GUIO1(GAMEOPTION_COPY_PROTECTION)
 #endif
 		},
 		GF_FLOPPY
@@ -95,9 +73,9 @@ static const LureGameDescription gameDescriptions[] = {
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
 #ifdef USE_TTS
-			GUIO1(GAMEOPTION_TTS_NARRATOR)
+			GUIO2(GAMEOPTION_TTS_NARRATOR, GAMEOPTION_COPY_PROTECTION)
 #else
-			GUIO0()
+			GUIO1(GAMEOPTION_COPY_PROTECTION)
 #endif
 		},
 		GF_FLOPPY | GF_KONAMI
@@ -112,9 +90,9 @@ static const LureGameDescription gameDescriptions[] = {
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
 #ifdef USE_TTS
-			GUIO1(GAMEOPTION_TTS_NARRATOR)
+			GUIO2(GAMEOPTION_TTS_NARRATOR, GAMEOPTION_COPY_PROTECTION)
 #else
-			GUIO0()
+			GUIO1(GAMEOPTION_COPY_PROTECTION)
 #endif
 		},
 		GF_FLOPPY | GF_KONAMI
@@ -129,9 +107,9 @@ static const LureGameDescription gameDescriptions[] = {
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
 #ifdef USE_TTS
-			GUIO1(GAMEOPTION_TTS_NARRATOR)
+			GUIO2(GAMEOPTION_TTS_NARRATOR, GAMEOPTION_COPY_PROTECTION)
 #else
-			GUIO0()
+			GUIO1(GAMEOPTION_COPY_PROTECTION)
 #endif
 		},
 		GF_FLOPPY | GF_EGA
@@ -145,7 +123,7 @@ static const LureGameDescription gameDescriptions[] = {
 			Common::IT_ITA,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO0()
+			GUIO1(GAMEOPTION_COPY_PROTECTION)
 		},
 		GF_FLOPPY
 	},
@@ -158,7 +136,7 @@ static const LureGameDescription gameDescriptions[] = {
 			Common::IT_ITA,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO0()
+			GUIO1(GAMEOPTION_COPY_PROTECTION)
 		},
 		GF_FLOPPY | GF_EGA
 	},
@@ -171,7 +149,7 @@ static const LureGameDescription gameDescriptions[] = {
 			Common::DE_DEU,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO0()
+			GUIO1(GAMEOPTION_COPY_PROTECTION)
 		},
 		GF_FLOPPY
 	},
@@ -184,7 +162,7 @@ static const LureGameDescription gameDescriptions[] = {
 			Common::DE_DEU,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO0()
+			GUIO1(GAMEOPTION_COPY_PROTECTION)
 		},
 		GF_FLOPPY
 	},
@@ -197,7 +175,7 @@ static const LureGameDescription gameDescriptions[] = {
 			Common::FR_FRA,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO0()
+			GUIO1(GAMEOPTION_COPY_PROTECTION)
 		},
 		GF_FLOPPY
 	},
@@ -210,7 +188,7 @@ static const LureGameDescription gameDescriptions[] = {
 			Common::ES_ESP,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO0()
+			GUIO1(GAMEOPTION_COPY_PROTECTION)
 		},
 		GF_FLOPPY
 	},
@@ -224,7 +202,7 @@ static const LureGameDescription gameDescriptions[] = {
 			Common::RU_RUS,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO0()
+			GUIO1(GAMEOPTION_COPY_PROTECTION)
 		},
 		GF_FLOPPY
 	},
@@ -238,7 +216,7 @@ static const LureGameDescription gameDescriptions[] = {
 			Common::RU_RUS,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO0()
+			GUIO1(GAMEOPTION_COPY_PROTECTION)
 		},
 		GF_FLOPPY
 	},
@@ -248,7 +226,7 @@ static const LureGameDescription gameDescriptions[] = {
 	{
 		{
 			"lure",
-			_s("Missing game code"), // Reason for being unsupported
+			MetaEngineDetection::GAME_NOT_IMPLEMENTED, // Reason for being unsupported
 			AD_ENTRY1s("disk1.vga", "7a6aa0e958450c33b70b664d9f841ad1", 621984),
 			Common::RU_RUS,
 			Common::kPlatformDOS,
@@ -264,13 +242,9 @@ static const LureGameDescription gameDescriptions[] = {
 
 } // End of namespace Lure
 
-class LureMetaEngineDetection : public AdvancedMetaEngineDetection {
+class LureMetaEngineDetection : public AdvancedMetaEngineDetection<Lure::LureGameDescription> {
 public:
-	LureMetaEngineDetection() : AdvancedMetaEngineDetection(Lure::gameDescriptions, sizeof(Lure::LureGameDescription), lureGames
-#ifdef USE_TTS
-			, optionsList
-#endif
-			) {
+	LureMetaEngineDetection() : AdvancedMetaEngineDetection(Lure::gameDescriptions, lureGames) {
 		_md5Bytes = 1024;
 
 		// Use kADFlagUseExtraAsHint to distinguish between EGA and VGA versions
@@ -279,11 +253,11 @@ public:
 		_guiOptions = GUIO1(GUIO_NOSPEECH);
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "lure";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Lure of the Temptress";
 	}
 

@@ -27,9 +27,8 @@ namespace Ultima {
 namespace Shared {
 
 XMLNode::~XMLNode() {
-	for (Common::Array<XMLNode *>::iterator i = _nodeList.begin();
-			i != _nodeList.end(); ++i) {
-		delete *i;
+	for (auto *node : _nodeList) {
+		delete node;
 	}
 }
 
@@ -48,10 +47,9 @@ const Common::String &XMLNode::reference(const Common::String &h, bool &exists) 
 		Common::String k;
 		k = h.substr(h.find('/') + 1);
 		Common::String k2 = k.substr(0, k.find('/'));
-		for (Common::Array<XMLNode *>::iterator it = _nodeList.begin();
-		        it != _nodeList.end(); ++it) {
-			if ((*it)->_id == k2)
-				return (*it)->reference(k, exists);
+		for (auto *node : _nodeList) {
+			if (node->_id == k2)
+				return node->reference(k, exists);
 		}
 	}
 
@@ -73,10 +71,9 @@ const XMLNode *XMLNode::subtree(const Common::String &h) const {
 		Common::String k;
 		k = h.substr(h.find('/') + 1);
 		Common::String k2 = k.substr(0, k.find('/'));
-		for (Common::Array<XMLNode *>::const_iterator it = _nodeList.begin();
-		        it != _nodeList.end(); ++it) {
-			if ((*it)->_id.equalsIgnoreCase(k2)) {
-				return (*it)->subtree(k);
+		for (auto *node : _nodeList) {
+			if (node->_id.equalsIgnoreCase(k2)) {
+				return node->subtree(k);
 			}
 		}
 	}
@@ -96,9 +93,8 @@ Common::String XMLNode::dump(int depth) {
 	if (_id[_id.size() - 1] != '/') {
 		if (_nodeList.empty() == false)
 			s += "\n";
-		for (Common::Array<XMLNode *>::const_iterator it = _nodeList.begin();
-		        it != _nodeList.end(); ++it) {
-			s += (**it).dump(depth + 1);
+		for (auto *node : _nodeList) {
+			s += node->dump(depth + 1);
 		}
 
 		if (!_text.empty()) {
@@ -138,10 +134,9 @@ void XMLNode::xmlAssign(const Common::String &key, const Common::String &value) 
 	Common::String k;
 	k = key.substr(key.find('/') + 1);
 	Common::String k2 = k.substr(0, k.find('/'));
-	for (Common::Array<XMLNode *>::iterator it = _nodeList.begin();
-	        it != _nodeList.end(); ++it) {
-		if ((*it)->_id == k2) {
-			(**it).xmlAssign(k, value);
+	for (auto *node : _nodeList) {
+		if (node->_id == k2) {
+			node->xmlAssign(k, value);
 			return;
 		}
 	}
@@ -160,20 +155,19 @@ void XMLNode::listKeys(const Common::String &key, Common::Array<Common::String> 
 	Common::String s(key);
 	s += "/";
 
-	for (Common::Array<XMLNode *>::const_iterator it = _nodeList.begin();
-	        it != _nodeList.end(); ++it) {
+	for (auto *node : _nodeList) {
 		if (!longformat)
-			vs.push_back((*it)->_id);
+			vs.push_back(node->_id);
 		else
-			vs.push_back(s + (*it)->_id);
+			vs.push_back(s + node->_id);
 	}
 }
 
 Common::String XMLNode::encodeEntity(const Common::String &s) {
 	Common::String  ret;
 
-	for (Common::String::const_iterator it = s.begin(); it != s.end(); ++it) {
-		switch (*it) {
+	for (const auto &c : s) {
+		switch (c) {
 		case '<':
 			ret += "&lt;";
 			break;
@@ -190,7 +184,7 @@ Common::String XMLNode::encodeEntity(const Common::String &s) {
 			ret += "&amp;";
 			break;
 		default:
-			ret += *it;
+			ret += c;
 		}
 	}
 	return ret;
@@ -367,7 +361,7 @@ XMLNode *XMLNode::xmlParse(XMLTree *tree, const Common::String &s, size_t &pos) 
 				// Element is a placeholder for inclusion of a secondary XML file
 				Common::String fname = node->_attributes["href"];
 				delete node;
-				node = xmlParseFile(tree, fname);
+				node = xmlParseFile(tree, Common::Path(fname, '/'));
 			}
 
 			return node;
@@ -436,13 +430,13 @@ void XMLNode::parseNodeText(const Common::String &nodeText) {
 	}
 }
 
-XMLNode *XMLNode::xmlParseFile(XMLTree *tree, const Common::String &fname) {
-	const Common::String rootFile = tree->_filename;
-	Common::String filename = Common::String(rootFile.c_str(), rootFile.findLastOf('/') + 1) + fname;
+XMLNode *XMLNode::xmlParseFile(XMLTree *tree, const Common::Path &fname) {
+	const Common::Path rootFile = tree->_filename;
+	Common::Path filename = rootFile.getParent().join(fname);
 
 	Common::File f;
 	if (!f.open(filename))
-		error("Could not open xml file - %s", filename.c_str());
+		error("Could not open xml file - %s", filename.toString().c_str());
 
 	// Read in the file contents
 	char *buf = new char[f.size() + 1];
@@ -455,13 +449,13 @@ XMLNode *XMLNode::xmlParseFile(XMLTree *tree, const Common::String &fname) {
 	// Parse the sub-xml
 	XMLNode *result = xmlParseDoc(tree, text);
 	if (!result)
-		error("Error passing xml - %s", fname.c_str());
+		error("Error passing xml - %s", fname.toString().c_str());
 
 	return result;
 }
 
 bool XMLNode::searchPairs(KeyTypeList &ktl, const Common::String &basekey,
-						  const Common::String currkey, const unsigned int pos) {
+						  const Common::String &currkey, const unsigned int pos) {
 	/* If our 'current key' is longer then the key we're serching for
 	    we've obviously gone too deep in this branch, and we won't find
 	    it here. */
@@ -469,29 +463,29 @@ bool XMLNode::searchPairs(KeyTypeList &ktl, const Common::String &basekey,
 		/* If we've found it, return every key->value pair under this key,
 		    then return true, since we've found the key we were looking for.*/
 		if (basekey == currkey + _id) {
-			for (Common::Array<XMLNode *>::iterator i = _nodeList.begin();
-			        i != _nodeList.end(); ++i)
-				if ((*i)->_id[0] != '!')
-					(*i)->selectPairs(ktl, "");
+			for (auto *node : _nodeList) {
+				if (node->_id[0] != '!')
+					node->selectPairs(ktl, "");
+			}
 			return true;
 		}
 		/* Else, keep searching for the key under it's subnodes */
-		else
-			for (Common::Array<XMLNode *>::iterator i = _nodeList.begin();
-			        i != _nodeList.end(); ++i)
-				if ((*i)->searchPairs(ktl, basekey, currkey + _id + '/', pos))
+		else {
+			for (auto *node : _nodeList) {
+				if (node->searchPairs(ktl, basekey, currkey + _id + '/', pos))
 					return true;
+			}
+		}
 	}
 	return false;
 }
 
 /* Just adds every key->value pair under the this node to the ktl */
-void XMLNode::selectPairs(KeyTypeList &ktl, const Common::String currkey) {
+void XMLNode::selectPairs(KeyTypeList &ktl, const Common::String &currkey) {
 	ktl.push_back(KeyType(currkey + _id, currkey));
 
-	for (Common::Array<XMLNode *>::iterator i = _nodeList.begin();
-	        i != _nodeList.end(); ++i) {
-		(*i)->selectPairs(ktl, currkey + _id + '/');
+	for (auto *node : _nodeList) {
+		node->selectPairs(ktl, currkey + _id + '/');
 	}
 }
 

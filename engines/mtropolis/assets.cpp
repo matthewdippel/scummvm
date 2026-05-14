@@ -64,6 +64,9 @@ AssetType ColorTableAsset::getAssetType() const {
 	return kAssetTypeColorTable;
 }
 
+const ColorRGB8 *ColorTableAsset::getColors() const {
+	return _colors;
+}
 
 CachedAudio::CachedAudio() {
 }
@@ -116,11 +119,36 @@ size_t CachedAudio::getNumSamples(const AudioMetadata &metadata) const {
 	}
 }
 
-CachedMToon::CachedMToon() : _isRLETemporalCompressed(false) {
+MToonMetadata::FrameDef::FrameDef() : dataOffset(0), compressedSize(0), decompressedSize(0), decompressedBytesPerRow(0), isKeyFrame(false) {
 }
 
-bool CachedMToon::loadFromStream(const Common::SharedPtr<MToonMetadata> &metadata, Common::ReadStream *stream, size_t size) {
+bool MToonMetadata::FrameDef::load(AssetLoaderContext &context, const Data::MToonAsset::FrameDef &data) {
+	compressedSize = data.compressedSize;
+	dataOffset = data.dataOffset;
+	decompressedBytesPerRow = data.decompressedBytesPerRow;
+	decompressedSize = data.decompressedSize;
+	isKeyFrame = (data.keyframeFlag != 0);
+	if (!data.rect1.toScummVMRect(rect))
+		return false;
+
+	return true;
+}
+
+MToonMetadata::FrameRangeDef::FrameRangeDef() : startFrame(0), endFrame(0) {
+}
+
+MToonMetadata::MToonMetadata() : imageFormat(kImageFormatWindows), bitsPerPixel(0), codecID(0), encodingFlags(0) {
+}
+
+CachedMToon::RleFrame::RleFrame() : version(0), width(0), height(0), isKeyframe(0) {
+}
+
+CachedMToon::CachedMToon() : _isRLETemporalCompressed(false), _hackFlags(0) {
+}
+
+bool CachedMToon::loadFromStream(const Common::SharedPtr<MToonMetadata> &metadata, Common::ReadStream *stream, size_t size, uint hackFlags) {
 	_metadata = metadata;
+	_hackFlags = hackFlags;
 
 	Common::Array<uint8> data;
 	data.resize(size);
@@ -180,19 +208,32 @@ void CachedMToon::decompressFrames(const Common::Array<uint8> &data) {
 }
 
 template<class TNumber, uint32 TLiteralMask, uint32 TTransparentRowSkipMask>
-bool CachedMToon::decompressMToonRLE(const RleFrame &frame, const Common::Array<TNumber> &coefsArray, Graphics::Surface &surface, bool isBottomUp) {
+bool CachedMToon::decompressMToonRLE(const RleFrame &frame, const Common::Array<TNumber> &coefsArray, Graphics::ManagedSurface &surface, bool isBottomUp, bool isKeyFrame, uint hackFlags) {
 	assert(sizeof(TNumber) == surface.format.bytesPerPixel);
 
+	size_t w = surface.w;
+	size_t h = surface.h;
+
 	size_t size = coefsArray.size();
-	if (size == 0)
-		return false;
+	if (size == 0) {
+		if (isKeyFrame) {
+			TNumber fillColor = 0;
+			if (surface.format.bytesPerPixel > 1)
+				fillColor = surface.format.RGBToColor(0, 0, 0);
+
+			for (size_t y = 0; y < h; y++) {
+				TNumber *rowData = static_cast<TNumber *>(surface.getBasePtr(0, y));
+				for (size_t x = 0; x < w; x++)
+					rowData[x] = fillColor;
+			}
+		}
+		return true;
+	}
 
 	const TNumber *coefs = &coefsArray[0];
 
 	size_t x = 0;
 	size_t y = 0;
-	size_t w = surface.w;
-	size_t h = surface.h;
 
 	if (w != frame.width || h != frame.height)
 		return false;
@@ -217,7 +258,9 @@ bool CachedMToon::decompressMToonRLE(const RleFrame &frame, const Common::Array<
 
 			if (transparentCountCode & TTransparentRowSkipMask) {
 				// Vertical skip
-				y += (transparentCountCode - TTransparentRowSkipMask);
+				uint32 skipAmount = transparentCountCode - TTransparentRowSkipMask;
+
+				y += skipAmount;
 				x = 0;
 				if (y < h) {
 					rowData = static_cast<TNumber *>(surface.getBasePtr(0, isBottomUp ? (h - 1 - y) : y));
@@ -242,7 +285,7 @@ bool CachedMToon::decompressMToonRLE(const RleFrame &frame, const Common::Array<
 			size -= numLiterals;
 			x += numLiterals;
 		} else {
-			// Literals
+			// Run
 			const size_t numCopies = rleCode;
 			if (numCopies > remainingInRow || size == 0)
 				return false;
@@ -252,6 +295,21 @@ bool CachedMToon::decompressMToonRLE(const RleFrame &frame, const Common::Array<
 			coefs++;
 			size--;
 			x += numCopies;
+
+			if (size >= 2) {
+				// Handle some strange cases in MTI that appear to be caused by some kind of mToon
+				// encoder RLE flush problem: Numerous mToons have a 0-length RLE run after a max-length
+				// run.  In most cases, the repeated value is 0, which has no effect, but in some cases
+				// this causes decode problems because the value is non-zero and gets decoded as a skip.
+				//
+				// In particular, it causes problems with the MPZ-1000 Hispaniola TV, the shoe and pants
+				// pull-outs in the chest in the first area, and the target animations in the Hispaniola
+				// cannon minigame.
+				if (numCopies == (TLiteralMask - 1) && coefs[0] == 0 && coefs[1] == repeatedValue) {
+					coefs += 2;
+					size -= 2;
+				}
+			}
 		}
 
 		if (x == w) {
@@ -269,18 +327,43 @@ bool CachedMToon::decompressMToonRLE(const RleFrame &frame, const Common::Array<
 	return true;
 }
 
-void CachedMToon::decompressRLEFrameToImage(size_t frameIndex, Graphics::Surface &surface) {
+template<class TDest, class TSrc>
+void CachedMToon::checkedMemCpy(Common::Array<TDest> &dest, size_t destIndex, const Common::Array<TSrc> &src, size_t srcIndex, size_t sizeBytes) {
+	if (sizeBytes == 0)
+		return;
+
+	size_t destSize = dest.size() * sizeof(TDest);
+	size_t srcSize = src.size() * sizeof(TSrc);
+
+	if (destIndex > dest.size() || srcIndex > src.size())
+		error("Out-of-range data copy offset while loading mToon");
+
+	size_t srcPos = srcIndex * sizeof(TSrc);
+	size_t destPos = destIndex * sizeof(TDest);
+
+	size_t srcAvail = srcSize - srcPos;
+	size_t destAvail = destSize - destPos;
+
+	if (srcAvail < sizeBytes || destAvail < sizeBytes)
+		error("Out-of-range data copy end while loading mToon");
+
+	memcpy(&dest[destIndex], &src[srcIndex], sizeBytes);
+}
+
+void CachedMToon::decompressRLEFrameToImage(size_t frameIndex, Graphics::ManagedSurface &surface) {
 	assert(surface.format == _rleOptimizedFormat);
 
 	bool isBottomUp = (_metadata->imageFormat == MToonMetadata::kImageFormatWindows);
 
+	bool isKeyFrame = _metadata->frames[frameIndex].isKeyFrame;
+
 	bool decompressedOK = false;
 	if (_rleOptimizedFormat.bytesPerPixel == 4) {
-		decompressedOK = decompressMToonRLE<uint32, 0x80000000u, 0x80000000u>(_rleData[frameIndex], _rleData[frameIndex].data32, surface, isBottomUp);
+		decompressedOK = decompressMToonRLE<uint32, 0x80000000u, 0x80000000u>(_rleData[frameIndex], _rleData[frameIndex].data32, surface, isBottomUp, isKeyFrame, _hackFlags);
 	} else if (_rleOptimizedFormat.bytesPerPixel == 2) {
-		decompressedOK = decompressMToonRLE<uint16, 0x8000u, 0x8000u>(_rleData[frameIndex], _rleData[frameIndex].data16, surface, isBottomUp);
+		decompressedOK = decompressMToonRLE<uint16, 0x8000u, 0x8000u>(_rleData[frameIndex], _rleData[frameIndex].data16, surface, isBottomUp, isKeyFrame, _hackFlags);
 	} else if (_rleOptimizedFormat.bytesPerPixel == 1) {
-		decompressedOK = decompressMToonRLE<uint8, 0x80u, 0u>(_rleData[frameIndex], _rleData[frameIndex].data8, surface, isBottomUp);
+		decompressedOK = decompressMToonRLE<uint8, 0x80u, 0x80u>(_rleData[frameIndex], _rleData[frameIndex].data8, surface, isBottomUp, isKeyFrame, _hackFlags);
 	} else
 		error("Unknown mToon encoding");
 
@@ -300,6 +383,14 @@ void CachedMToon::loadRLEFrames(const Common::Array<uint8> &data) {
 		RleFrame &rleFrame = _rleData[i];
 
 		size_t baseOffset = frameDef.dataOffset;
+
+		if (frameDef.compressedSize == 0) {
+			rleFrame.isKeyframe = (i == 0);	// ???
+			continue;
+		}
+
+		if (frameDef.compressedSize < 20)
+			error("Invalid compressed data size");
 
 		uint32 headerInts[5];
 		for (size_t hi = 0; hi < 5; hi++) {
@@ -326,15 +417,15 @@ void CachedMToon::loadRLEFrames(const Common::Array<uint8> &data) {
 		uint32 frameDataSize = headerInts[4];
 
 		if (frameDataSize > 0) {
+			// frameDataSize is sometimes set to frameDef.compressedSize but sometimes contains garbage,
+			// so we need to ignore it and derive size from the frameDef instead.
 			if (bpp == 8) {
-				rleFrame.data8.resize(frameDataSize);
-				memcpy(&rleFrame.data8[0], &data[baseOffset + 20], frameDataSize);
+				rleFrame.data8.resize(frameDef.compressedSize - 20);
+				checkedMemCpy(rleFrame.data8, 0, data, baseOffset + 20, frameDef.compressedSize - 20);
 			} else if (bpp == 16) {
-				// In RLE16, frameDataSize is sometimes set to frameDef.compressedSize but sometimes contains garbage,
-				// so we need to ignore it and derive size from the frameDef instead.
 				uint32 numDWords = (frameDef.compressedSize - 20) / 2;
 				rleFrame.data16.resize(numDWords);
-				memcpy(&rleFrame.data16[0], &data[baseOffset + 20], numDWords * 2);
+				checkedMemCpy(rleFrame.data16, 0, data, baseOffset + 20, static_cast<size_t>(numDWords) * 2u);
 
 				uint16 *i16 = &rleFrame.data16[0];
 				if (_metadata->imageFormat == MToonMetadata::kImageFormatWindows) {
@@ -360,7 +451,7 @@ void CachedMToon::loadRLEFrames(const Common::Array<uint8> &data) {
 }
 
 void CachedMToon::decompressRLEFrame(size_t frameIndex) {
-	Common::SharedPtr<Graphics::Surface> surface(new Graphics::Surface());
+	Common::SharedPtr<Graphics::ManagedSurface> surface(new Graphics::ManagedSurface());
 
 	RleFrame &frame = _rleData[frameIndex];
 
@@ -377,7 +468,7 @@ void CachedMToon::loadUncompressedFrame(const Common::Array<uint8> &data, size_t
 
 	uint16 bpp = _metadata->bitsPerPixel;
 
-	Common::SharedPtr<Graphics::Surface> surface(new Graphics::Surface());
+	Common::SharedPtr<Graphics::ManagedSurface> surface(new Graphics::ManagedSurface());
 	Graphics::PixelFormat pixFmt;
 
 	if (bpp == 1 || bpp == 2 || bpp == 4 || bpp == 8)
@@ -471,11 +562,13 @@ void CachedMToon::decompressQuickTimeFrame(const Common::Array<uint8> &data, siz
 	}
 
 	// Clone the decompressed frame
-	_decompressedFrames[frameIndex] = Common::SharedPtr<Graphics::Surface>(new Graphics::Surface(*surface));
+	Graphics::ManagedSurface *surfaceCopy = new Graphics::ManagedSurface();
+	surfaceCopy->copyFrom(*surface);
+	_decompressedFrames[frameIndex].reset(surfaceCopy);
 }
 
 template<class TSrcNumber, uint32 TSrcLiteralMask, uint32 TSrcTransparentSkipMask, class TDestNumber, uint32 TDestLiteralMask, uint32 TDestTransparentSkipMask>
-void CachedMToon::rleReformat(RleFrame &frame, const Common::Array<TSrcNumber> &srcData, const Graphics::PixelFormat &srcFormatRef, Common::Array<TDestNumber> &destData, const Graphics::PixelFormat &destFormatRef) {
+void CachedMToon::rleReformat(RleFrame &frame, const Common::Array<TSrcNumber> &srcData, const Graphics::PixelFormat &srcFormatRef, Common::Array<TDestNumber> &destData, const Graphics::PixelFormat &destFormatRef, uint hackFlags) {
 	const Graphics::PixelFormat srcFormat = srcFormatRef;
 	const Graphics::PixelFormat destFormat = destFormatRef;
 
@@ -534,8 +627,8 @@ void CachedMToon::optimizeNonTemporal(const Graphics::PixelFormat &targetFormatR
 	_optimizedFrames.resize(_decompressedFrames.size());
 
 	for (size_t i = 0; i < _decompressedFrames.size(); i++) {
-		Common::SharedPtr<Graphics::Surface> srcSurface = _decompressedFrames[i];
-		Common::SharedPtr<Graphics::Surface> &optimizedSurfRef = _optimizedFrames[i];
+		Common::SharedPtr<Graphics::ManagedSurface> srcSurface = _decompressedFrames[i];
+		Common::SharedPtr<Graphics::ManagedSurface> &optimizedSurfRef = _optimizedFrames[i];
 
 		// FIXME: Aggregate these checks and merge into a single format field
 		if (optimizedSurfRef == nullptr || optimizedSurfRef->format != targetFormat) {
@@ -545,7 +638,10 @@ void CachedMToon::optimizeNonTemporal(const Graphics::PixelFormat &targetFormatR
 					optimizedSurfRef = srcSurface;
 				} else {
 					optimizedSurfRef.reset();
-					optimizedSurfRef.reset(srcSurface->convertTo(targetFormat));
+
+					Graphics::ManagedSurface *newSurface = new Graphics::ManagedSurface();
+					newSurface->convertFrom(*srcSurface, targetFormat);
+					optimizedSurfRef.reset(newSurface);
 				}
 			} else {
 				optimizedSurfRef = srcSurface;
@@ -567,14 +663,14 @@ void CachedMToon::optimizeRLE(const Graphics::PixelFormat &targetFormatRef) {
 	for (size_t i = 0; i < numFrames; i++) {
 		if (_rleInternalFormat.bytesPerPixel == 2) {
 			if (targetFormat.bytesPerPixel == 4)
-				rleReformat<uint16, 0x8000u, 0x8000u, uint32, 0x80000000u, 0x80000000u>(_rleData[i], _rleData[i].data16, _rleInternalFormat, _rleData[i].data32, targetFormat);
+				rleReformat<uint16, 0x8000u, 0x8000u, uint32, 0x80000000u, 0x80000000u>(_rleData[i], _rleData[i].data16, _rleInternalFormat, _rleData[i].data32, targetFormat, _hackFlags);
 			else if (targetFormat.bytesPerPixel == 2)
-				rleReformat<uint16, 0x8000u, 0x8000u, uint16, 0x8000u, 0x8000u>(_rleData[i], _rleData[i].data16, _rleInternalFormat, _rleData[i].data16, targetFormat);
+				rleReformat<uint16, 0x8000u, 0x8000u, uint16, 0x8000u, 0x8000u>(_rleData[i], _rleData[i].data16, _rleInternalFormat, _rleData[i].data16, targetFormat, _hackFlags);
 		} else if (_rleInternalFormat.bytesPerPixel == 4) {
 			if (targetFormat.bytesPerPixel == 4)
-				rleReformat<uint32, 0x80000000u, 0x80000000u, uint32, 0x80000000u, 0x80000000u>(_rleData[i], _rleData[i].data32, _rleInternalFormat, _rleData[i].data32, targetFormat);
+				rleReformat<uint32, 0x80000000u, 0x80000000u, uint32, 0x80000000u, 0x80000000u>(_rleData[i], _rleData[i].data32, _rleInternalFormat, _rleData[i].data32, targetFormat, _hackFlags);
 			else if (targetFormat.bytesPerPixel == 2)
-				rleReformat<uint32, 0x80000000u, 0x80000000u, uint16, 0x8000u, 0x8000u>(_rleData[i], _rleData[i].data32, _rleInternalFormat, _rleData[i].data16, targetFormat);
+				rleReformat<uint32, 0x80000000u, 0x80000000u, uint16, 0x8000u, 0x8000u>(_rleData[i], _rleData[i].data32, _rleInternalFormat, _rleData[i].data16, targetFormat, _hackFlags);
 		}
 	}
 
@@ -584,7 +680,7 @@ void CachedMToon::optimizeRLE(const Graphics::PixelFormat &targetFormatRef) {
 	_rleOptimizedFormat = targetFormat;
 }
 
-void CachedMToon::getOrRenderFrame(uint32 prevFrame, uint32 targetFrame, Common::SharedPtr<Graphics::Surface>& surface) const {
+void CachedMToon::getOrRenderFrame(uint32 prevFrame, uint32 targetFrame, Common::SharedPtr<Graphics::ManagedSurface> &surface) const {
 	if (!_isRLETemporalCompressed) {
 		surface = _optimizedFrames[targetFrame];
 	} else if (_metadata->codecID == kMToonRLECodecID) {
@@ -598,7 +694,7 @@ void CachedMToon::getOrRenderFrame(uint32 prevFrame, uint32 targetFrame, Common:
 			if (prevFrame == targetFrame)
 				return;
 			if (prevFrame < targetFrame)
-				backStopFrame = prevFrame;
+				backStopFrame = prevFrame + 1;
 		}
 
 		firstFrameToRender = targetFrame;
@@ -609,25 +705,31 @@ void CachedMToon::getOrRenderFrame(uint32 prevFrame, uint32 targetFrame, Common:
 		}
 
 		if (!surface || surface->format != _rleOptimizedFormat) {
-			surface.reset(new Graphics::Surface());
+			surface.reset(new Graphics::ManagedSurface());
 			surface->create(_metadata->rect.width(), _metadata->rect.height(), _rleOptimizedFormat);
 		}
 
 		bool isBottomUp = (_metadata->imageFormat == MToonMetadata::kImageFormatWindows);
 
 		for (size_t i = firstFrameToRender; i <= targetFrame; i++) {
+			bool isKeyFrame = _metadata->frames[i].isKeyFrame;
+
 			if (_rleOptimizedFormat.bytesPerPixel == 1)
-				decompressMToonRLE<uint8, 0x80u, 0>(_rleData[i], _rleData[i].data8, *surface, isBottomUp);
+				decompressMToonRLE<uint8, 0x80u, 0x80u>(_rleData[i], _rleData[i].data8, *surface, isBottomUp, isKeyFrame, _hackFlags);
 			else if (_rleOptimizedFormat.bytesPerPixel == 2)
-				decompressMToonRLE<uint16, 0x8000u, 0x8000u>(_rleData[i], _rleData[i].data16, *surface, isBottomUp);
+				decompressMToonRLE<uint16, 0x8000u, 0x8000u>(_rleData[i], _rleData[i].data16, *surface, isBottomUp, isKeyFrame, _hackFlags);
 			else if (_rleOptimizedFormat.bytesPerPixel == 4)
-				decompressMToonRLE<uint32, 0x80000000u, 0x80000000u>(_rleData[i], _rleData[i].data32, *surface, isBottomUp);
+				decompressMToonRLE<uint32, 0x80000000u, 0x80000000u>(_rleData[i], _rleData[i].data32, *surface, isBottomUp, isKeyFrame, _hackFlags);
 		}
 	}
 }
 
 const Common::SharedPtr<MToonMetadata>& CachedMToon::getMetadata() const {
 	return _metadata;
+}
+
+AudioMetadata::AudioMetadata() : encoding(kEncodingUncompressed), durationMSec(0),
+	sampleRate(0), channels(0), bitsPerSample(0), isBigEndian(false) {
 }
 
 bool AudioAsset::load(AssetLoaderContext &context, const Data::AudioAsset &data) {
@@ -749,57 +851,69 @@ void MovieAsset::addDamagedFrame(int frame) {
 	_damagedFrames.push_back(frame);
 }
 
+bool AVIMovieAsset::load(AssetLoaderContext &context, const Data::AVIMovieAsset &data) {
+	_assetID = data.assetID;
+	_extFileName = data.extFileName;
+
+	return true;
+}
+
+AssetType AVIMovieAsset::getAssetType() const {
+	return kAssetTypeAVIMovie;
+}
+
+const Common::String &AVIMovieAsset::getExtFileName() const {
+	return _extFileName;
+}
+
 const Common::Array<int> &MovieAsset::getDamagedFrames() const {
 	return _damagedFrames;
 }
 
 
-CachedImage::CachedImage() : _colorDepth(kColorDepthModeInvalid), _isOptimized(false) {
+CachedImage::CachedImage() : _colorDepth(kColorDepthModeInvalid) {
 }
 
-void CachedImage::resetSurface(ColorDepthMode colorDepth, const Common::SharedPtr<Graphics::Surface> &surface) {
+void CachedImage::resetSurface(ColorDepthMode colorDepth, const Common::SharedPtr<Graphics::ManagedSurface> &surface) {
 	_optimizedSurface.reset();
-	_isOptimized = false;
 
 	_colorDepth = colorDepth;
 	_surface = surface;
 }
 
-const Common::SharedPtr<Graphics::Surface> &CachedImage::optimize(Runtime *runtime) {
+ColorDepthMode CachedImage::getOriginalColorDepth() const {
+	return _colorDepth;
+}
+
+const Common::SharedPtr<Graphics::ManagedSurface> &CachedImage::optimize(Runtime *runtime) {
 	ColorDepthMode renderDepth = runtime->getRealColorDepth();
 	const Graphics::PixelFormat &renderFmt = runtime->getRenderPixelFormat();
 
 	if (renderDepth != _colorDepth) {
-		size_t w = _surface->w;
-		size_t h = _surface->h;
+		if (!_optimizedSurface) {
+			size_t w = _surface->w;
+			size_t h = _surface->h;
 
-		if (renderDepth == kColorDepthMode16Bit && _colorDepth == kColorDepthMode32Bit) {
-			_optimizedSurface.reset(new Graphics::Surface());
-			_optimizedSurface->create(w, h, renderFmt);
-			Render::convert32To16(*_optimizedSurface, *_surface);
-		} else if (renderDepth == kColorDepthMode32Bit && _colorDepth == kColorDepthMode16Bit) {
-			_optimizedSurface.reset(new Graphics::Surface());
-			_optimizedSurface->create(w, h, renderFmt);
-			Render::convert16To32(*_optimizedSurface, *_surface);
-		} else {
-			_optimizedSurface = _surface;	// Can't optimize
+			if (renderDepth == kColorDepthMode16Bit && _colorDepth == kColorDepthMode32Bit) {
+				_optimizedSurface.reset(new Graphics::ManagedSurface());
+				_optimizedSurface->create(w, h, renderFmt);
+				Render::convert32To16(*_optimizedSurface, *_surface);
+			} else if (renderDepth == kColorDepthMode32Bit && _colorDepth == kColorDepthMode16Bit) {
+				_optimizedSurface.reset(new Graphics::ManagedSurface());
+				_optimizedSurface->create(w, h, renderFmt);
+				Render::convert16To32(*_optimizedSurface, *_surface);
+			} else {
+				return _surface; // Can't optimize
+			}
 		}
-	} else {
-		static const byte bwPalette[6] = {255, 255, 255, 0, 0, 0};
 
-		const byte *palette = nullptr;
-
-		if (_colorDepth == kColorDepthMode16Bit || _colorDepth == kColorDepthMode32Bit)
-			palette = bwPalette;
-
-		_surface->convertToInPlace(renderFmt, palette);
-		_optimizedSurface = _surface;
+		return _optimizedSurface;
 	}
 
-	return _optimizedSurface;
+	return _surface;	// Already optimal
 }
 
-ImageAsset::ImageAsset() {
+ImageAsset::ImageAsset() : _colorDepth(kColorDepthMode8Bit), _filePosition(0), _size(0), _streamIndex(0), _imageFormat(kImageFormatWindows) {
 }
 
 ImageAsset::~ImageAsset() {
@@ -878,8 +992,6 @@ const Common::SharedPtr<CachedImage> &ImageAsset::loadAndCacheImage(Runtime *run
 	if (_imageCache)
 		return _imageCache;
 
-	ColorDepthMode renderDepth = runtime->getRealColorDepth();
-
 	size_t streamIndex = getStreamIndex();
 	int segmentIndex = runtime->getProject()->getSegmentForStreamIndex(streamIndex);
 	runtime->getProject()->openSegmentStream(segmentIndex);
@@ -939,8 +1051,8 @@ const Common::SharedPtr<CachedImage> &ImageAsset::loadAndCacheImage(Runtime *run
 	bool bottomUp = (imageFormat == ImageAsset::kImageFormatWindows);
 	bool isBigEndian = (imageFormat == ImageAsset::kImageFormatMac);
 
-	Common::SharedPtr<Graphics::Surface> imageSurface;
-	imageSurface.reset(new Graphics::Surface());
+	Common::SharedPtr<Graphics::ManagedSurface> imageSurface;
+	imageSurface.reset(new Graphics::ManagedSurface());
 	imageSurface->create(width, height, pixelFmt);
 
 	for (int inRow = 0; inRow < height; inRow++) {
@@ -1021,7 +1133,7 @@ const Common::SharedPtr<CachedImage> &ImageAsset::loadAndCacheImage(Runtime *run
 	}
 
 	_imageCache.reset(new CachedImage());
-	_imageCache->resetSurface(renderDepth, imageSurface);
+	_imageCache->resetSurface(getColorDepth(), imageSurface);
 
 	return _imageCache;
 }
@@ -1041,6 +1153,9 @@ bool MToonAsset::load(AssetLoaderContext &context, const Data::MToonAsset &data)
 
 	_frameDataPosition = data.frameDataPosition;
 	_sizeOfFrameData = data.sizeOfFrameData;
+
+	if (!data.registrationPoint.toScummVMPoint(_metadata->registrationPoint))
+		return false;
 
 	if (!data.rect.toScummVMRect(_metadata->rect))
 		return false;
@@ -1066,11 +1181,14 @@ bool MToonAsset::load(AssetLoaderContext &context, const Data::MToonAsset &data)
 	return true;
 }
 
+MToonAsset::MToonAsset() : _frameDataPosition(0), _sizeOfFrameData(0), _streamIndex(0){
+}
+
 AssetType MToonAsset::getAssetType() const {
 	return kAssetTypeMToon;
 }
 
-const Common::SharedPtr<CachedMToon> &MToonAsset::loadAndCacheMToon(Runtime *runtime) {
+const Common::SharedPtr<CachedMToon> &MToonAsset::loadAndCacheMToon(Runtime *runtime, uint hackFlags) {
 	if (_cachedMToon)
 		return _cachedMToon;
 
@@ -1086,7 +1204,7 @@ const Common::SharedPtr<CachedMToon> &MToonAsset::loadAndCacheMToon(Runtime *run
 		return _cachedMToon;
 	}
 
-	if (!cachedMToon->loadFromStream(_metadata, stream, _sizeOfFrameData)) {
+	if (!cachedMToon->loadFromStream(_metadata, stream, _sizeOfFrameData, hackFlags)) {
 		warning("mToon data failed to load");
 		return _cachedMToon;
 	}
@@ -1096,24 +1214,15 @@ const Common::SharedPtr<CachedMToon> &MToonAsset::loadAndCacheMToon(Runtime *run
 	return _cachedMToon;
 }
 
-bool MToonMetadata::FrameDef::load(AssetLoaderContext &context, const Data::MToonAsset::FrameDef &data) {
-	compressedSize = data.compressedSize;
-	dataOffset = data.dataOffset;
-	decompressedBytesPerRow = data.decompressedBytesPerRow;
-	decompressedSize = data.decompressedSize;
-	isKeyFrame = (data.keyframeFlag != 0);
-	if (!data.rect1.toScummVMRect(rect))
-		return false;
-
-	return true;
-}
-
 bool MToonMetadata::FrameRangeDef::load(AssetLoaderContext &context, const Data::MToonAsset::FrameRangeDef &data) {
 	name = data.name;
 	startFrame = data.startFrame;
 	endFrame = data.endFrame;
 
 	return true;
+}
+
+TextAsset::TextAsset() : _alignment(kTextAlignmentLeft), _isBitmap(false) {
 }
 
 bool TextAsset::load(AssetLoaderContext &context, const Data::TextAsset &data) {

@@ -42,7 +42,6 @@
 #include "sword25/kernel/common.h"
 #include "common/rect.h"
 #include "sword25/gfx/graphicengine.h"
-#include "graphics/transparent_surface.h"
 
 namespace Sword25 {
 
@@ -77,7 +76,7 @@ public:
 	                The default value is 0.
 	    @param PosY the position on the Y-axis in the target image in pixels where the image is supposed to be rendered.<br>
 	                The default value is 0.
-	    @param Flipping how the the image should be flipped.<br>
+	    @param Flipping how the image should be flipped.<br>
 	                    The default value is Graphics::FLIP_NONE (no flipping)
 	    @param pSrcPartRect Pointer on Common::Rect which specifies the section to be rendered. If the whole image has to be rendered the Pointer is NULL.<br>
 	                        This referes to the unflipped and unscaled image.<br>
@@ -155,7 +154,7 @@ public:
 
 	/**
 	    @brief Checks, if the BS_Image can be a target image for a Blit call.
-	    @return Returns false, if a Blit() call with this object as an target is not allowed.
+	    @return Returns false, if a Blit() call with this object as a target is not allowed.
 	*/
 	virtual bool isBlitTarget() const = 0;
 

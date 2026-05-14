@@ -128,6 +128,9 @@ bool DLObject::readElfHeader(Elf32_Ehdr *ehdr) {
 #ifdef PPC_TARGET
 			EM_PPC
 #endif
+#ifdef M68K_TARGET
+			EM_68K
+#endif
 			) {
 		warning("elfloader: Wrong ELF file architecture.");
 		return false;
@@ -209,7 +212,7 @@ Elf32_Shdr * DLObject::loadSectionHeaders(Elf32_Ehdr *ehdr) {
 
 	// Allocate memory for section headers
 	if (!(shdr = (Elf32_Shdr *)malloc(ehdr->e_shnum * sizeof(*shdr)))) {
-		warning("elfloader: Could not allocate %ld bytes for the section headers", ehdr->e_shnum * sizeof(*shdr));
+		warning("elfloader: Could not allocate %zu bytes for the section headers", ehdr->e_shnum * sizeof(*shdr));
 		return 0;
 	}
 
@@ -325,12 +328,11 @@ void DLObject::relocateSymbols(ptrdiff_t offset) {
 // Track the size of the plugin through memory manager without loading
 // the plugin into memory.
 //
-void DLObject::trackSize(const char *path) {
-
+void DLObject::trackSize(const Common::Path &path) {
 	_file = Common::FSNode(path).createReadStream();
 
 	if (!_file) {
-		warning("elfloader: File %s not found.", path);
+		warning("elfloader: File %s not found.", path.toString(Common::Path::kNativeSeparator).c_str());
 		return;
 	}
 
@@ -415,19 +417,21 @@ bool DLObject::load() {
 	return true;
 }
 
-bool DLObject::open(const char *path) {
+bool DLObject::open(const Common::Path &path) {
+	Common::String pathS(path.toString(Common::Path::kNativeSeparator));
+
 	void *ctors_start, *ctors_end;
 
-	debug(2, "elfloader: open(\"%s\")", path);
+	debug(2, "elfloader: open(\"%s\")", pathS.c_str());
 
 	_file = Common::FSNode(path).createReadStream();
 
 	if (!_file) {
-		warning("elfloader: File %s not found.", path);
+		warning("elfloader: File %s not found.", pathS.c_str());
 		return false;
 	}
 
-	debug(2, "elfloader: %s found!", path);
+	debug(2, "elfloader: %s found!", pathS.c_str());
 
 	/*Try to load and relocate*/
 	if (!load()) {
@@ -458,7 +462,7 @@ bool DLObject::open(const char *path) {
 	for (void (**f)(void) = (void (**)(void))ctors_start; f != ctors_end; f++)
 		(**f)();
 
-	debug(2, "elfloader: %s opened ok.", path);
+	debug(2, "elfloader: %s opened ok.", pathS.c_str());
 
 	return true;
 }

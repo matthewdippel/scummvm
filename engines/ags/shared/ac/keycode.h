@@ -77,8 +77,8 @@ enum eAGSKeyCode {
 	eAGSKeyCodeCtrlZ = 26,
 
 	eAGSKeyCodeBackspace = 8, // matches Ctrl + H
-	eAGSKeyCodeTab = 9, // matches Ctrl + I
-	eAGSKeyCodeReturn = 13, // matches Ctrl + M
+	eAGSKeyCodeTab = 9,       // matches Ctrl + I
+	eAGSKeyCodeReturn = 13,   // matches Ctrl + M
 	eAGSKeyCodeEscape = 27,
 
 	/* printable chars - from eAGSKeyCodeSpace to eAGSKeyCode_z */
@@ -207,17 +207,22 @@ enum eAGSKeyCode {
 	eAGSKeyCodeInsert = AGS_EXT_KEY_SHIFT + 82,
 	eAGSKeyCodeDelete = AGS_EXT_KEY_SHIFT + 83,
 
-	// not certain if necessary anymore (and not certain what was the origin of this value)
-	eAGSKeyCodeAltTab = AGS_EXT_KEY_SHIFT + 99,
-
 	// [sonneveld] These are only used by debugging and abort keys.
 	// They're based on allegro4 codes ...
 	eAGSKeyCodeAltV = AGS_EXT_KEY_ALPHA(eAGSKeyCodeV),
 	eAGSKeyCodeAltX = AGS_EXT_KEY_ALPHA(eAGSKeyCodeX),
+	eAGSKeyCodeAltY = AGS_EXT_KEY_ALPHA(eAGSKeyCodeY),
+	eAGSKeyCodeAltZ = AGS_EXT_KEY_ALPHA(eAGSKeyCodeZ),
 
-	// These keys are not defined in the script eAGSKey enum but are in the manual
-	// https://adventuregamestudio.github.io/ags-manual/ASCIIcodes.html
-	// *Probably* made-up numbers not derived from allegro scan codes.
+	// The beginning of "service key list": mod keys and other special keys
+	// not normally intended to affect the default game logic
+	eAGSKeyCode_FirstServiceKey = 391,
+
+	// not certain if necessary anymore (and not certain what was the origin of this value)
+	eAGSKeyCodeAltTab = AGS_EXT_KEY_SHIFT + 99,
+
+	// Mod-key codes
+	// *probably* made-up numbers, not derived from allegro scan codes.
 	eAGSKeyCodeLShift = 403,
 	eAGSKeyCodeRShift = 404,
 	eAGSKeyCodeLCtrl = 405,
@@ -249,18 +254,27 @@ enum eAGSKeyCode {
 	case 425: __allegro_KEY_NUMLOCK
 	case 426: __allegro_KEY_CAPSLOCK
 	*/
+
+	// Mask defines the key code position if packed in the int32;
+	// takes only 12 bits, as minimal necessary to accommodate historical codes.
+	eAGSKeyMask = 0x0FFF
 };
 
 // AGS key modifiers
 enum eAGSKeyMod {
-	eAGSModLShift = 0x0001,
-	eAGSModRShift = 0x0002,
-	eAGSModLCtrl = 0x0004,
-	eAGSModRCtrl = 0x0008,
-	eAGSModLAlt = 0x0010,
-	eAGSModRAlt = 0x0020,
-	eAGSModNum = 0x0040,
-	eAGSModCaps = 0x0080
+	eAGSModLShift = 0x00010000,
+	eAGSModRShift = 0x00020000,
+	eAGSModLCtrl  = 0x00040000,
+	eAGSModRCtrl  = 0x00080000,
+	eAGSModLAlt   = 0x00100000,
+	eAGSModRAlt   = 0x00200000,
+	eAGSModNum    = 0x00400000,
+	eAGSModCaps   = 0x00800000,
+
+	// Mask defines the key mod position if packed in the int32;
+	// the upper 8 bits are reserved for "input type" codes;
+	// potentially may take 4 bits below (4th pos), as KeyMask takes only 12.
+	eAGSModMask   = 0x00FF0000
 };
 
 // Combined key code and a textual representation in UTF-8
@@ -276,11 +290,33 @@ struct KeyInput {
 	KeyInput() = default;
 };
 
+// AGS own mouse button codes;
+// These correspond to MouseButton enum in script and plugin API (sans special values)
+enum eAGSMouseButton
+{
+	kMouseNone = 0,
+	kMouseLeft = 1,
+	kMouseRight = 2,
+	kMouseMiddle = 3,
+	kNumMouseButtons
+};
+
+// Tells if the AGS keycode refers to the modifier key (ctrl, alt, etc)
+inline bool IsAGSModKey(eAGSKeyCode keycode) {
+	return (keycode >= eAGSKeyCodeLShift && keycode <= eAGSKeyCodeLAlt) || keycode == eAGSKeyCodeRAlt;
+}
+
+// Tells if the AGS keycode refers to the service key (modifier, PrintScreen and similar);
+// this lets distinct keys that normally should not affect the game
+inline bool IsAGSServiceKey(eAGSKeyCode keycode) {
+	return keycode >= eAGSKeyCode_FirstServiceKey;
+}
+
 // Converts eAGSKeyCode to script API code, for "on_key_press" and similar callbacks
-int AGSKeyToScriptKey(int keycode);
+eAGSKeyCode AGSKeyToScriptKey(eAGSKeyCode keycode);
 // Converts eAGSKeyCode to ASCII text representation with the range check; returns 0 on failure
 // Not unicode compatible.
-char AGSKeyToText(int keycode);
+char AGSKeyToText(eAGSKeyCode keycode);
 
 } // namespace AGS3
 

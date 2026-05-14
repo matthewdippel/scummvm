@@ -78,6 +78,46 @@ class CScriptHandler;
 class TTscriptBase;
 struct TitanicGameDescription;
 
+enum TITANICActions {
+	kActionNone,
+	kActionUp,
+	kActionDown,
+	kActionSelect,
+	kActionCheat,
+	kActionSave,
+	kActionLoad,
+	kActionQuit,
+	kActionShift,
+	kActionPETConversation,
+	kActionPETInventory,
+	kActionPETRemote,
+	kActionPETRooms,
+	kActionPETRealLife,
+	kActionPETTranslation,
+	kActionPETScrollPageUp,
+	kActionPETScrollPageDown,
+	kActionPETScrollTop,
+	kActionPeTScrollBottom,
+	kActionStarMapToggle,
+	kActionStarMapLeft,
+	kActionStarMapRight,
+	kActionStarMapUp,
+	kActionStarMapDown,
+	kActionStarMapForward,
+	kActionStarMapBackward,
+	kActionStarMapStop,
+	kActionStarMapLock,
+	kActionStarMapUnlock,
+	kActionStarMapConstellations,
+	kActionStarMapBoundaries,
+	kActionMovementNone,
+	kActionMovementForwards,
+	kActionMovementBackwards,
+	kActionMovementLeft,
+	kActionMovementRight,
+
+};
+
 class TitanicEngine : public Engine {
 private:
 	/**
@@ -133,12 +173,12 @@ public:
 	/**
 	 * Returns true if a savegame can be loaded
 	 */
-	bool canLoadGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	/**
 	 * Returns true if the game can be saved
 	 */
-	bool canSaveGameStateCurrently() override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	/**
 	 * Called by the GMM to load a savegame

@@ -38,35 +38,30 @@ namespace State {
 class Credits : public State, public Common::Singleton<Credits> {
 public:
 	enum State { kInit, kRun };
-	Credits() : _state(kInit), _background(), _text(_background), _pixelsToScroll(0) {}
+	Credits() : _state(kInit), _background(), _textSurface(1), _currentTextImage(0), _creditsData(nullptr) {}
 
 	// State API
 	void process() override;
-	void onStateExit() override { destroy(); };
+	void onStateEnter(const NancyState::NancyState prevState) override;
+	bool onStateExit(const NancyState::NancyState nextState) override;
 
 protected:
 	void init();
 	void run();
 
-	class CreditsText : public RenderObject {
-		friend class Credits;
-	public:
-		CreditsText(RenderObject &redrawFrom) : RenderObject(redrawFrom, 1) {}
-		virtual ~CreditsText() = default;
-	};
+	void drawTextSurface(uint id);
+
+	const CRED *_creditsData;
 
 	State _state;
 	UI::FullScreenImage _background;
-	CreditsText _text;
+	RenderObject _textSurface;
 	Time _nextUpdateTime;
 	Graphics::ManagedSurface _fullTextSurface;
-
-	Time _updateTime; // 0x54
-	uint16 _pixelsToScroll; // 0x56
-	SoundDescription _sound; // 0x58, kMenu?
+	uint _currentTextImage;
 };
 
-#define NancyCreditsState Nancy::State::Credits::instance()
+#define NancyCreditsState State::Credits::instance()
 
 } // End of namespace State
 } // End of namespace Nancy

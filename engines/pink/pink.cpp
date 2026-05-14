@@ -20,8 +20,9 @@
  */
 
 #include "common/debug-channels.h"
-#include "common/winexe_pe.h"
+#include "common/formats/winexe_pe.h"
 #include "common/config-manager.h"
+#include "common/compression/installshield_cab.h"
 
 #include "engines/advancedDetector.h"
 #include "engines/util.h"
@@ -46,10 +47,13 @@ PinkEngine::PinkEngine(OSystem *system, const ADGameDescription *desc)
 	_desc(desc), _bro(nullptr), _menu(nullptr), _actor(nullptr),
 	_module(nullptr), _screen(nullptr), _pdaMgr(this) {
 
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 	SearchMan.addSubDirectoryMatching(gameDataDir, "install");
 
 	g_paletteLookup = new Graphics::PaletteLookup;
+
+	_isPeril = !strcmp(_desc->gameId, kPeril);
+	_isPerilDemo = _isPeril  && (_desc->flags & ADGF_DEMO);
 }
 
 PinkEngine::~PinkEngine() {
@@ -72,7 +76,18 @@ Common::Error PinkEngine::init() {
 	initGraphics(640, 480);
 
 	_exeResources = new Common::PEResources();
-	Common::String fileName = isPeril() ? "pptp.exe" : "hpp.exe";
+	Common::Path fileName = isPeril() ? "pptp.exe" : "hpp.exe";
+
+	if ((_desc->flags & GF_COMPRESSED) && isPeril()) {
+		fileName = "pptp.ex_";
+
+		Common::Archive *cabinet = Common::makeInstallShieldArchive("data");
+		if (!cabinet)
+			error("Failed to open the InstallShield cabinet");
+
+		SearchMan.add("data1.cab", cabinet);
+	}
+
 	if (!_exeResources->loadFromEXE(fileName)) {
 		return Common::kNoGameDataFoundError;
 	}
@@ -82,8 +97,8 @@ Common::Error PinkEngine::init() {
 
 	initMenu();
 
-	Common::String orbName;
-	Common::String broName;
+	Common::Path orbName;
+	Common::Path broName;
 	if (isPeril()) {
 		orbName = "PPTP.ORB";
 		broName = "PPTP.BRO";
@@ -149,8 +164,8 @@ Common::Error Pink::PinkEngine::run() {
 				if (isPeril())
 					_actor->onRightButtonClick(event.mouse);
 				break;
-			case Common::EVENT_KEYDOWN:
-				_actor->onKeyboardButtonClick(event.kbd.keycode);
+			case Common::EVENT_CUSTOM_ENGINE_ACTION_START:
+				_actor->onActionClick(event.customType);
 				break;
 			default:
 				break;
@@ -175,13 +190,19 @@ void PinkEngine::initModule(const Common::String &moduleName, const Common::Stri
 	if (_module)
 		removeModule();
 
+	if (moduleName == _modules[0]->getName()) {
+		// new game
+		_variables.clear();
+		debugC(6, kPinkDebugGeneral, "Global Game Variables cleared");
+	}
+
 	addModule(moduleName);
 	if (saveFile)
 		_module->loadState(*saveFile);
 
 	debugC(6, kPinkDebugGeneral, "Module added");
 
-	_module->init(saveFile ? kLoadingSave : kLoadingNewGame, pageName);
+	_module->init(saveFile != nullptr, pageName);
 }
 
 void PinkEngine::changeScene() {
@@ -212,7 +233,7 @@ void PinkEngine::removeModule() {
 	for (uint i = 0; i < _modules.size(); ++i) {
 		if (_module == _modules[i]) {
 			_pdaMgr.close();
-			_modules[i] = new ModuleProxy(_module->getName());
+			_modules[i] = new ModuleProxy(Common::String(_module->getName()));
 			delete _module;
 			_module = nullptr;
 			break;
@@ -274,11 +295,11 @@ void PinkEngine::setCursor(uint cursorIndex) {
 	CursorMan.showMouse(true);
 }
 
-bool PinkEngine::canLoadGameStateCurrently() {
+bool PinkEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	return true;
 }
 
-bool PinkEngine::canSaveGameStateCurrently() {
+bool PinkEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	return true;
 }
 
@@ -296,7 +317,11 @@ void PinkEngine::pauseEngineIntern(bool pause) {
 }
 
 bool PinkEngine::isPeril() const {
-	return !strcmp(_desc->gameId, kPeril);
+	return _isPeril;
+}
+
+bool PinkEngine::isPerilDemo() const {
+	return _isPerilDemo;
 }
 
 }

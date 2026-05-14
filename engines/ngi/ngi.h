@@ -30,7 +30,7 @@
 #include "common/random.h"
 #include "common/savefile.h"
 #include "common/system.h"
-#include "graphics/surface.h"
+#include "graphics/managed_surface.h"
 
 #include "engines/engine.h"
 #include "ngi/console.h"
@@ -42,17 +42,31 @@ class SoundHandle;
 namespace NGI {
 
 enum {
-	kDebugPathfinding	= 1 << 0,
-	kDebugDrawing		= 1 << 1,
-	kDebugLoading		= 1 << 2,
-	kDebugAnimation		= 1 << 3,
-	kDebugMemory		= 1 << 4,
-	kDebugEvents		= 1 << 5,
-	kDebugBehavior		= 1 << 6,
-	kDebugInventory		= 1 << 7,
-	kDebugSceneLogic	= 1 << 8,
-	kDebugInteractions	= 1 << 9,
-	kDebugXML			= 1 << 10
+	kDebugPathfinding = 1,
+	kDebugDrawing,
+	kDebugLoading,
+	kDebugAnimation,
+	kDebugMemory,
+	kDebugEvents,
+	kDebugBehavior,
+	kDebugInventory,
+	kDebugSceneLogic,
+	kDebugInteractions,
+	kDebugXML,
+};
+
+enum NGIActions {
+	kActionNone,
+	kActionPause,
+	kActionStopSounds,
+	kActionToggleMute,
+	kActionMapOpen,
+	kActionMapClose,
+	kActionHelp,
+	kActionInventory,
+	kActionSkipIntro,
+	kActionSkipCredits,
+	kActionCloseDialog,
 };
 
 #define MAXGAMEOBJH 10000
@@ -140,8 +154,7 @@ public:
 
 	void updateEvents();
 
-	Graphics::Surface _backgroundSurface;
-	Graphics::PixelFormat _origFormat;
+	Graphics::ManagedSurface _backgroundSurface;
 
 	Common::ScopedPtr<GameLoader> _gameLoader;
 	GameProject *_gameProject;
@@ -188,7 +201,7 @@ public:
 	int _currSoundListCount;
 	bool _soundEnabled;
 	bool _flgSoundList;
-	Common::String _sceneTracks[10];
+	Common::Path _sceneTracks[10];
 	int _numSceneTracks;
 	bool _sceneTrackHasSequence;
 	int _musicMinDelay;
@@ -196,7 +209,7 @@ public:
 	int _musicLocal;
 	Common::String _trackName;
 	int _trackStartDelay;
-	Common::String _sceneTracksCurrentTrack;
+	Common::Path _sceneTracksCurrentTrack;
 	bool _sceneTrackIsPlaying;
 
 	void stopAllSounds();
@@ -206,8 +219,8 @@ public:
 	int getSceneTrack();
 	void updateTrackDelay();
 	void startSceneTrack();
-	void startSoundStream1(const Common::String &trackName);
-	void playOggSound(const Common::String &trackName, Audio::SoundHandle &stream);
+	void startSoundStream1(const Common::Path &trackName);
+	void playOggSound(const Common::Path &trackName, Audio::SoundHandle &stream);
 	void stopSoundStream2();
 	void stopAllSoundStreams();
 	void stopAllSoundInstances(int id);
@@ -372,8 +385,8 @@ public:
 	Common::Error saveGameState(int slot, const Common::String &description, bool isAutosave = false) override;
 	Common::String getSaveStateName(int slot) const override;
 
-	bool canLoadGameStateCurrently() override { return true; }
-	bool canSaveGameStateCurrently() override { return _isSaveAllowed; }
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override { return true; }
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override { return _isSaveAllowed; }
 	bool hasFeature(EngineFeature f) const override;
 
 };

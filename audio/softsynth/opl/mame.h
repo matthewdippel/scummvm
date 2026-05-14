@@ -26,6 +26,8 @@
 #ifndef AUDIO_SOFTSYNTH_OPL_MAME_H
 #define AUDIO_SOFTSYNTH_OPL_MAME_H
 
+#ifndef DISABLE_MAME_OPL
+
 #include "common/scummsys.h"
 #include "common/random.h"
 
@@ -120,8 +122,8 @@ typedef struct fm_opl_f {
 	OPL_CH *P_CH;		/* pointer of CH                     */
 	int	max_ch;			/* maximum channel                   */
 
-	/* Rythm sention */
-	uint8 rythm;		/* Rythm mode , key flag */
+	/* Rhythm sention */
+	uint8 rhythm;		/* Rhythm mode , key flag */
 
 	/* time tables */
 	int AR_TABLE[76];	/* atttack rate tables				*/
@@ -173,7 +175,7 @@ void YM3812UpdateOne(FM_OPL *OPL, int16 *buffer, int length);
 FM_OPL *makeAdLibOPL(int rate);
 
 // OPL API implementation
-class OPL : public ::OPL::EmulatedOPL {
+class OPL : public ::OPL::OPL, public Audio::EmulatedChip {
 private:
 	FM_OPL *_opl;
 public:
@@ -184,7 +186,6 @@ public:
 	void reset();
 
 	void write(int a, int v);
-	byte read(int a);
 
 	void writeReg(int r, int v);
 
@@ -196,5 +197,7 @@ protected:
 
 } // End of namespace MAME
 } // End of namespace OPL
+
+#endif // !DISABLE_MAME_OPL
 
 #endif

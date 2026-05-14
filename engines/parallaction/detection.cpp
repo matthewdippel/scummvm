@@ -30,7 +30,7 @@
 #include "parallaction/parallaction.h"
 
 static const PlainGameDescriptor parallactionGames[] = {
-	{"nippon", "Nippon Safes Inc."},
+	{"nippon", "Nippon Safes, Inc."},
 	{"bra", "The Big Red Adventure"},
 	{nullptr, nullptr}
 };
@@ -70,7 +70,33 @@ static const PARALLACTIONGameDescription gameDescriptions[] = {
 			Common::UNK_LANG,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_NOSPEECH)
+			GUIO2(GUIO_NOSPEECH, GAMEOPTION_TTS)
+		},
+		GType_Nippon,
+		GF_LANG_EN | GF_LANG_FR | GF_LANG_DE | GF_LANG_IT | GF_LANG_MULT,
+	},
+
+	// Alternate version with patched 'FR' file.
+	// Bugreport #13630
+	{
+		{
+			"nippon",
+			"Multi-lingual alt",
+			{
+				{ "disk1",	0, "610363308258e926dbabd5a9e7bb769f", 1060142},
+				{ "disk2",	0, "bfdd7bcfbc226f4acf3f67fa9efa2826", 907205},
+				{ "disk3",	0, "eec08180240888d76e3cfe3e183d5d5d", 1030721},
+				{ "disk4",	0, "5bffddc7db226bdaa7dd3e10e5a15e68", 1151403},
+				{ "en",		0, "65cbfa81eafe308621184796ed116700", 399360},
+				{ "fr",		0, "fd368bab0a8854021870b2199255b7ec", 410624},
+				{ "ge",		0, "50916bfa34aee1380e0e959b37eceb5a", 410624},
+				{ "it",		0, "89964aef04d2c53a615ee8983caf2775", 410624},
+				AD_LISTEND
+			},
+			Common::UNK_LANG,
+			Common::kPlatformDOS,
+			ADGF_NO_FLAGS,
+			GUIO2(GUIO_NOSPEECH, GAMEOPTION_TTS)
 		},
 		GType_Nippon,
 		GF_LANG_EN | GF_LANG_FR | GF_LANG_DE | GF_LANG_IT | GF_LANG_MULT,
@@ -94,7 +120,7 @@ static const PARALLACTIONGameDescription gameDescriptions[] = {
 			Common::UNK_LANG,
 			Common::kPlatformAmiga,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_NOSPEECH)
+			GUIO2(GUIO_NOSPEECH, GAMEOPTION_TTS)
 		},
 		GType_Nippon,
 		GF_LANG_EN | GF_LANG_FR | GF_LANG_DE | GF_LANG_MULT,
@@ -109,7 +135,7 @@ static const PARALLACTIONGameDescription gameDescriptions[] = {
 			Common::EN_ANY,
 			Common::kPlatformAmiga,
 			ADGF_DEMO,
-			GUIO1(GUIO_NOSPEECH)
+			GUIO2(GUIO_NOSPEECH, GAMEOPTION_TTS)
 		},
 		GType_Nippon,
 		GF_LANG_EN | GF_DEMO,
@@ -132,7 +158,7 @@ static const PARALLACTIONGameDescription gameDescriptions[] = {
 			Common::IT_ITA,
 			Common::kPlatformAmiga,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_NOSPEECH)
+			GUIO2(GUIO_NOSPEECH, GAMEOPTION_TTS)
 		},
 		GType_Nippon,
 		GF_LANG_IT,
@@ -147,7 +173,7 @@ static const PARALLACTIONGameDescription gameDescriptions[] = {
 			Common::UNK_LANG,
 			Common::kPlatformDOS,
 			ADGF_UNSTABLE,
-			GUIO1(GUIO_NOSPEECH)
+			GUIO2(GUIO_NOSPEECH, GAMEOPTION_TTS)
 		},
 		GType_BRA,
 		GF_LANG_EN | GF_LANG_FR | GF_LANG_DE | GF_LANG_IT | GF_LANG_MULT,
@@ -161,7 +187,7 @@ static const PARALLACTIONGameDescription gameDescriptions[] = {
 			Common::UNK_LANG,
 			Common::kPlatformDOS,
 			ADGF_DEMO | ADGF_UNSTABLE,
-			GUIO1(GUIO_NOSPEECH)
+			GUIO2(GUIO_NOSPEECH, GAMEOPTION_TTS)
 		},
 		GType_BRA,
 		GF_LANG_EN | GF_DEMO,
@@ -175,7 +201,7 @@ static const PARALLACTIONGameDescription gameDescriptions[] = {
 			Common::UNK_LANG,
 			Common::kPlatformAmiga,
 			ADGF_UNSTABLE,
-			GUIO1(GUIO_NOSPEECH)
+			GUIO2(GUIO_NOSPEECH, GAMEOPTION_TTS)
 		},
 		GType_BRA,
 		GF_LANG_EN | GF_LANG_FR | GF_LANG_DE | GF_LANG_MULT,
@@ -189,7 +215,7 @@ static const PARALLACTIONGameDescription gameDescriptions[] = {
 			Common::UNK_LANG,
 			Common::kPlatformAmiga,
 			ADGF_DEMO | ADGF_UNSTABLE,
-			GUIO1(GUIO_NOSPEECH)
+			GUIO2(GUIO_NOSPEECH, GAMEOPTION_TTS)
 		},
 		GType_BRA,
 		GF_LANG_EN | GF_DEMO,
@@ -200,22 +226,22 @@ static const PARALLACTIONGameDescription gameDescriptions[] = {
 
 }
 
-class ParallactionMetaEngineDetection : public AdvancedMetaEngineDetection {
+class ParallactionMetaEngineDetection : public AdvancedMetaEngineDetection<Parallaction::PARALLACTIONGameDescription> {
 public:
-	ParallactionMetaEngineDetection() : AdvancedMetaEngineDetection(Parallaction::gameDescriptions, sizeof(Parallaction::PARALLACTIONGameDescription), parallactionGames) {
+	ParallactionMetaEngineDetection() : AdvancedMetaEngineDetection(Parallaction::gameDescriptions, parallactionGames) {
 		_guiOptions = GUIO1(GUIO_NOLAUNCHLOAD);
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "parallaction";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Parallaction";
 	}
 
 	const char *getOriginalCopyright() const override {
-		return "Nippon Safes Inc. (C) Dynabyte";
+		return "Nippon Safes, Inc. (C) Dynabyte";
 	}
 
 	const DebugChannelDef *getDebugChannels() const override {

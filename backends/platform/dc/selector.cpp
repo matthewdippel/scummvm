@@ -71,13 +71,13 @@ static bool isIcon(const Common::FSNode &entry)
 static bool loadIcon(Game &game, Dir *dirs, int num_dirs)
 {
   char icofn[520];
-  sprintf(icofn, "%s%s.ICO", game.dir, game.filename_base);
+  Common::sprintf_s(icofn, "%s%s.ICO", game.dir, game.filename_base);
   if (game.icon.load(icofn))
 	return true;
   for (int i=0; i<num_dirs; i++)
 	if (!strcmp(dirs[i].name, game.dir) &&
 	   dirs[i].deficon[0]) {
-	  sprintf(icofn, "%s%s", game.dir, dirs[i].deficon);
+	  Common::sprintf_s(icofn, "%s%s", game.dir, dirs[i].deficon);
 	  if (game.icon.load(icofn))
 	return true;
 	  break;
@@ -127,14 +127,12 @@ static int findGames(Game *games, int max, bool use_ini)
 	Common::ConfigManager::Domain *appDomain =
 	  ConfMan.getDomain(Common::ConfigManager::kApplicationDomain);
 	Common::ConfigManager::Domain savedAppDomain = *appDomain;
-	ConfMan.loadDefaultConfigFile();
+	ConfMan.loadDefaultConfigFile("");
 	*appDomain = savedAppDomain;
 	const Common::ConfigManager::DomainMap &game_domains = ConfMan.getGameDomains();
 	for(Common::ConfigManager::DomainMap::const_iterator i =
 	  game_domains.begin(); curr_game < max && i != game_domains.end(); i++) {
-	  Common::String path = (*i)._value["path"];
-	  if (path.size() && path.lastChar() != '/')
-	path += "/";
+	  Common::Path path(Common::Path::fromConfig((*i)._value["path"]));
 	  int j;
 	  for (j=0; j<num_dirs; j++)
 	if (path.equals(dirs[j].node.getPath()))
@@ -145,14 +143,14 @@ static int findGames(Game *games, int max, bool use_ini)
 	dirs[j = num_dirs++].node = Common::FSNode(path);
 	  }
 	  if (curr_game < max) {
-	strcpy(games[curr_game].filename_base, (*i)._key.c_str());
+	Common::strcpy_s(games[curr_game].filename_base, (*i)._key.c_str());
 	strncpy(games[curr_game].engine_id, (*i)._value["engineid"].c_str(), 256);
 	games[curr_game].engine_id[255] = '\0';
-	strncpy(games[curr_game].dir, dirs[j].node.getPath().c_str(), 256);
+	strncpy(games[curr_game].dir, dirs[j].node.getPath().toString().c_str(), 256);
 	games[curr_game].dir[255] = '\0';
 	games[curr_game].language = Common::UNK_LANG;
 	games[curr_game].platform = Common::kPlatformUnknown;
-	strcpy(games[curr_game].text, (*i)._value["description"].c_str());
+	Common::strcpy_s(games[curr_game].text, (*i)._value["description"].c_str());
 	curr_game++;
 	  }
 	}
@@ -161,11 +159,11 @@ static int findGames(Game *games, int max, bool use_ini)
   }
 
   while ((curr_game < max || use_ini) && curr_dir < num_dirs) {
-	strncpy(dirs[curr_dir].name, dirs[curr_dir].node.getPath().c_str(), 251);
+	strncpy(dirs[curr_dir].name, dirs[curr_dir].node.getPath().toString().c_str(), 251);
 	dirs[curr_dir].name[250] = '\0';
 	if (!dirs[curr_dir].name[0] ||
 	dirs[curr_dir].name[strlen(dirs[curr_dir].name)-1] != '/')
-	  strcat(dirs[curr_dir].name, "/");
+	  Common::strcat_s(dirs[curr_dir].name, "/");
 	dirs[curr_dir].deficon[0] = '\0';
 	Common::FSList files, fslist;
 	dirs[curr_dir++].node.getChildren(fslist, Common::FSNode::kListAll);
@@ -181,7 +179,7 @@ static int findGames(Game *games, int max, bool use_ini)
 	  files.push_back(*entry);
 	  } else
 	if (isIcon(*entry))
-	  strcpy(dirs[curr_dir-1].deficon, entry->getName().c_str());
+	  Common::strcpy_s(dirs[curr_dir-1].deficon, entry->getName().c_str());
 	else if(!use_ini)
 	  files.push_back(*entry);
 	}
@@ -193,9 +191,9 @@ static int findGames(Game *games, int max, bool use_ini)
 	  for (DetectedGames::const_iterator ge = candidates.begin();
 	   ge != candidates.end(); ++ge)
 	if (curr_game < max) {
-	  strcpy(games[curr_game].engine_id, ge->engineId.c_str());
-	  strcpy(games[curr_game].filename_base, ge->gameId.c_str());
-	  strcpy(games[curr_game].dir, dirs[curr_dir-1].name);
+	  Common::strcpy_s(games[curr_game].engine_id, ge->engineId.c_str());
+	  Common::strcpy_s(games[curr_game].filename_base, ge->gameId.c_str());
+	  Common::strcpy_s(games[curr_game].dir, dirs[curr_dir-1].name);
 	  games[curr_game].language = ge->language;
 	  games[curr_game].platform = ge->platform;
 	  if (uniqueGame(games[curr_game].filename_base,
@@ -203,7 +201,7 @@ static int findGames(Game *games, int max, bool use_ini)
 			 games[curr_game].language,
 			 games[curr_game].platform, games, curr_game)) {
 
-	    strcpy(games[curr_game].text, ge->description.c_str());
+	    Common::strcpy_s(games[curr_game].text, ge->description.c_str());
 #if 0
 	    printf("Registered game <%s> (l:%d p:%d) in <%s> <%s> because of <%s> <*>\n",
 		   games[curr_game].text,
@@ -273,6 +271,9 @@ int gameMenu(Game *games, int num_games)
 
   if (!num_games)
 	return -1;
+
+  if (num_games == 1)
+	  return 0;
 
   for (;;) {
 
@@ -421,7 +422,7 @@ static int findPluginDirs(Game *plugin_dirs, int max, const Common::FSNode &base
 	if (entry->isDirectory()) {
 	  if (curr_dir >= max)
 	break;
-	  strncpy(plugin_dirs[curr_dir].dir, (*entry).getPath().c_str(), 256);
+	  strncpy(plugin_dirs[curr_dir].dir, (*entry).getPath().toString().c_str(), 256);
 	  strncpy(plugin_dirs[curr_dir].text, (*entry).getName().c_str(), 256);
 	  plugin_dirs[curr_dir].icon.load(NULL, 0, 0);
 	  curr_dir++;

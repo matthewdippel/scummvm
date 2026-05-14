@@ -389,10 +389,8 @@ void KyraEngine_HoF::loadScenePal() {
 	uint16 sceneId = _mainCharacter.sceneId;
 	_screen->copyPalette(1, 0);
 
-	char filename[14];
-	strcpy(filename, _sceneList[sceneId].filename1);
-	strcat(filename, ".COL");
-	_screen->loadBitmap(filename, 3, 3, nullptr);
+	Common::String filename = Common::String(_sceneList[sceneId].filename1) + ".COL";
+	_screen->loadBitmap(filename.c_str(), 3, 3, nullptr);
 	_screen->getPalette(1).copy(_screen->getCPagePtr(3), 0, 128);
 	_screen->getPalette(1).fill(0, 1, 0);
 	memcpy(_scenePal, _screen->getCPagePtr(3)+336, 432);
@@ -400,22 +398,17 @@ void KyraEngine_HoF::loadScenePal() {
 
 void KyraEngine_HoF::loadSceneMsc() {
 	uint16 sceneId = _mainCharacter.sceneId;
-	char filename[14];
-	strcpy(filename, _sceneList[sceneId].filename1);
-	strcat(filename, ".MSC");
-	_screen->loadBitmap(filename, 3, 5, nullptr);
+	_screen->loadBitmap((Common::String(_sceneList[sceneId].filename1) + ".MSC").c_str(), 3, 5, nullptr);
 }
 
 void KyraEngine_HoF::startSceneScript(int unk1) {
 	uint16 sceneId = _mainCharacter.sceneId;
-	char filename[14];
-
-	strcpy(filename, _sceneList[sceneId].filename1);
+	Common::String filename = _sceneList[sceneId].filename1;
 	if (sceneId == 68 && (queryGameFlag(0x1BC) || queryGameFlag(0x1BD)))
-		strcpy(filename, "DOORX");
-	strcat(filename, ".CPS");
+		filename = "DOORX";
+	filename += ".CPS";
 
-	_screen->loadBitmap(filename, 3, 3, nullptr);
+	_screen->loadBitmap(filename.c_str(), 3, 3, nullptr);
 	resetScaleTable();
 	_useCharPal = false;
 	memset(_charPalTable, 0, sizeof(_charPalTable));
@@ -434,12 +427,19 @@ void KyraEngine_HoF::startSceneScript(int unk1) {
 	_sceneCommentString = "Undefined scene comment string!";
 	_emc->init(&_sceneScriptState, &_sceneScriptData);
 
-	strcpy(filename, _sceneList[sceneId].filename1);
-	strcat(filename, ".");
-	strcat(filename, _scriptLangExt[(_flags.platform == Common::kPlatformDOS && !_flags.isTalkie) ? 0 : _lang]);
-
-	_res->exists(filename, true);
-	_emc->load(filename, &_sceneScriptData, &_opcodes);
+	// Korean fan translation uses .KMC scripts (Korean-patched EMC files).
+	// Fall back to .EMC if .KMC is not available. Other langs clamp to valid range.
+	if (_flags.lang == Common::KO_KOR) {
+		filename = Common::String(_sceneList[sceneId].filename1) + ".KMC";
+		if (!_res->exists(filename.c_str())) {
+			filename = Common::String(_sceneList[sceneId].filename1) + ".EMC";
+		}
+	} else {
+		int scriptLangIdx = (_flags.platform == Common::kPlatformDOS && !_flags.isTalkie) ? 0 : (_lang > 3 ? 0 : _lang);
+		filename = Common::String(_sceneList[sceneId].filename1) + "." + _scriptLangExt[scriptLangIdx];
+	}
+	_res->exists(filename.c_str(), true);
+	_emc->load(filename.c_str(), &_sceneScriptData, &_opcodes);
 	runSceneScript7();
 
 	_emc->start(&_sceneScriptState, 0);
@@ -626,12 +626,7 @@ void KyraEngine_HoF::initSceneAnims(int unk1) {
 			animState->needRefresh = 1;
 			animState->specialRefresh = 1;
 
-			if (animInit) {
-				_animList = addToAnimListSorted(_animList, animState);
-			} else {
-				_animList = initAnimList(_animList, animState);
-				animInit = true;
-			}
+			_animList = addToAnimListSorted(_animList, animState);
 		}
 	}
 
@@ -687,7 +682,7 @@ void KyraEngine_HoF::freeSceneShapePtrs() {
 
 void KyraEngine_HoF::fadeScenePal(int srcIndex, int delayTime) {
 	_screen->getPalette(0).copy(_scenePal, srcIndex << 4, 16, 112);
-	_screen->fadePalette(_screen->getPalette(0), delayTime, &_updateFunctor);
+	_screen->fadePalette(_screen->getPalette(0), delayTime, delayTime ? &_updateFunctor : nullptr);
 }
 
 #pragma mark -

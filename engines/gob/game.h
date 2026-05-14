@@ -17,11 +17,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_GAME_H
 #define GOB_GAME_H
 
+#include "common/stack.h"
 #include "common/str.h"
 
 #include "gob/util.h"
@@ -34,6 +41,26 @@ class Script;
 class Resources;
 class Variables;
 class Hotspots;
+
+enum FuncCallType {
+	kStartGame,
+	kCallSub,
+	kEvaluateHotspots,
+	kTotSub,
+	kSwitchTotSub,
+	kNamedFunctionSub,
+	kHotspotEnter,
+	kHotspotLeave
+};
+
+struct FuncCall {
+	FuncCallType type = kCallSub;
+	Common::String callingTot;
+	int32 callSiteOffset = -1;
+	Common::String calledTot;
+	int32 calleeOffset = -1;
+	bool tailCall = false;
+};
 
 class Environments {
 public:
@@ -93,6 +120,7 @@ public:
 
 	bool call(const Common::String &totFile, const Common::String &function) const;
 	bool call(const Common::String &totFile, uint16 offset) const;
+	Common::String getFunctionName(const Common::String &totFile, uint16 offset) const;
 
 private:
 	static const uint8 kTotCount = 100;
@@ -138,6 +166,10 @@ public:
 	int32 _startTimeKey;
 	MouseButtons _mouseButtons;
 
+	bool _hasForwardedEventsFromVideo;
+	MouseButtons _forwardedMouseButtonsFromVideo;
+	int16 _forwardedKeyFromVideo;
+
 	bool _noScroll;
 	bool _preventScroll;
 
@@ -153,7 +185,7 @@ public:
 
 	void prepareStart();
 
-	void playTot(int16 function);
+	void playTot(int32 function);
 
 	void capturePush(int16 left, int16 top, int16 width, int16 height);
 	void capturePop(char doDraw);
@@ -174,6 +206,17 @@ public:
 
 	bool loadFunctions(const Common::String &tot, uint16 flags);
 	bool callFunction(const Common::String &tot, const Common::String &function, int16 param);
+	Common::String getFunctionName(const Common::String &tot, uint16 offset);
+
+	Common::String getGobStack();
+	void printGobStack();
+
+	void pushOnGlobalCallStack(FuncCallType type,
+							   const Common::String &callingTot, int32 callSiteOffset,
+							   const Common::String &calledTot, int32 calleeOffset);
+	void popGlobalCallStack();
+
+	Common::Stack<FuncCall> _globalFuncCallStack; // for debugging only
 
 protected:
 	GobEngine *_vm;
@@ -192,6 +235,8 @@ protected:
 	TotFunctions _totFunctions;
 
 	void clearUnusedEnvironment();
+
+	Common::String formatSubNameInCallStack(const Common::String &totFile, int32 offset);
 };
 
 } // End of namespace Gob

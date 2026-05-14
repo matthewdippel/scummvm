@@ -25,6 +25,7 @@
 
 #if defined(USE_OPENGL_GAME)
 
+#include "graphics/cursorman.h"
 #include "graphics/surface.h"
 
 #include "math/glmath.h"
@@ -50,6 +51,7 @@ GfxBase *CreateGfxOpenGL() {
 	return new GfxOpenGL();
 }
 
+#ifdef GL_ARB_fragment_program
 // Simple ARB fragment program that writes the value from a texture to the Z-buffer.
 static char fragSrc[] =
 	"!!ARBfp1.0\n\
@@ -74,12 +76,17 @@ static char dimFragSrc[] =
 	MOV result.color.g, sum;\n\
 	MOV result.color.b, sum;\n\
 	END\n";
+#endif
 
 GfxOpenGL::GfxOpenGL() : _smushNumTex(0),
 		_smushTexIds(nullptr), _smushWidth(0), _smushHeight(0),
-		_useDepthShader(false), _fragmentProgram(0), _useDimShader(0),
-		_dimFragProgram(0), _maxLights(0), _storedDisplay(nullptr),
+		_useDepthShader(false), _useDimShader(0),
+		_maxLights(0), _storedDisplay(nullptr),
+#ifdef GL_ARB_fragment_program
+		_fragmentProgram(0), _dimFragProgram(0),
+#endif
 		_emergFont(0), _alpha(1.f) {
+	type = Graphics::RendererType::kRendererTypeOpenGL;
 	// GL_LEQUAL as glDepthFunc ensures that subsequent drawing attempts for
 	// the same triangles are not ignored by the depth test.
 	// That's necessary for EMI where some models have multiple faces which
@@ -119,7 +126,7 @@ void GfxOpenGL::setupScreen(int screenW, int screenH) {
 	_useDepthShader = false;
 	_useDimShader = false;
 
-	g_system->showMouse(false);
+	CursorMan.showMouse(false);
 
 	int screenSize = _screenWidth * _screenHeight * 4;
 	_storedDisplay = new byte[screenSize]();
@@ -253,7 +260,18 @@ void GfxOpenGL::clearDepthBuffer() {
 	glClear(GL_DEPTH_BUFFER_BIT);
 }
 
-void GfxOpenGL::flipBuffer() {
+void GfxOpenGL::flipBuffer(bool opportunistic) {
+	if (opportunistic) {
+		GLint fbo = 0;
+		glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
+		if (fbo == 0) {
+			// Don't flip if we are not rendering on FBO
+			// Flipping without any draw is undefined
+			// When using an FBO, the older texture will be used
+			return;
+		}
+	}
+
 	g_system->updateScreen();
 }
 
@@ -538,11 +556,11 @@ void GfxOpenGL::startActorDraw(const Actor *actor) {
 		glDisable(GL_LIGHTING);
 		glDisable(GL_TEXTURE_2D);
 		if (g_grim->getGameType() == GType_GRIM) {
-			glColor3ub(_shadowColorR, _shadowColorG, _shadowColorB);
+			glColor4ub(_shadowColorR, _shadowColorG, _shadowColorB, 255);
 		} else {
-			glColor3ub(_currentShadowArray->color.getRed(), _currentShadowArray->color.getGreen(), _currentShadowArray->color.getBlue());
+			glColor4ub(_currentShadowArray->color.getRed(), _currentShadowArray->color.getGreen(), _currentShadowArray->color.getBlue(), 255);
 		}
-		//glColor3f(0.0f, 1.0f, 0.0f); // debug draw color
+		//glColor4f(0.0f, 1.0f, 0.0f, 1.0f); // debug draw color
 		shadowProjection(_currentShadowArray->pos, shadowSector->getVertices()[0], shadowSector->getNormal(), _currentShadowArray->dontNegate);
 	}
 
@@ -604,7 +622,7 @@ void GfxOpenGL::finishActorDraw() {
 
 	if (_currentShadowArray) {
 		glEnable(GL_LIGHTING);
-		glColor3f(1.0f, 1.0f, 1.0f);
+		glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 		glDisable(GL_POLYGON_OFFSET_FILL);
 	}
 
@@ -616,7 +634,7 @@ void GfxOpenGL::finishActorDraw() {
 }
 
 void GfxOpenGL::drawShadowPlanes() {
-/*	glColor3f(1.0f, 1.0f, 1.0f);
+/*	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	_currentShadowArray->planeList.begin();
 	for (SectorListType::iterator i = _currentShadowArray->planeList.begin(); i != _currentShadowArray->planeList.end(); i++) {
 		Sector *shadowSector = i->sector;
@@ -738,7 +756,7 @@ void GfxOpenGL::drawEMIModelFace(const EMIModel *model, const EMIMeshFace *face)
 	glEnd();
 
 	if (!_currentShadowArray) {
-		glColor3f(1.0f, 1.0f, 1.0f);
+		glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	}
 
 	glEnable(GL_TEXTURE_2D);
@@ -1025,7 +1043,7 @@ void GfxOpenGL::createBitmap(BitmapData *bitmap) {
 		for (int pic = 0; pic < bitmap->_numImages; pic++) {
 			uint16 *zbufPtr = reinterpret_cast<uint16 *>(const_cast<void  *>(bitmap->getImageData(pic).getPixels()));
 			for (int i = 0; i < (bitmap->_width * bitmap->_height); i++) {
-				uint16 val = READ_LE_UINT16(zbufPtr + i);
+				uint16 val = zbufPtr[i];
 				// fix the value if it is incorrectly set to the bitmap transparency color
 				if (val == 0xf81f) {
 					val = 0;
@@ -1059,24 +1077,28 @@ void GfxOpenGL::createBitmap(BitmapData *bitmap) {
 		byte *texOut = nullptr;
 
 		GLint format = GL_RGBA;
-		GLint type = GL_UNSIGNED_BYTE;
+		GLint btype = GL_UNSIGNED_BYTE;
 		int bytes = 4;
 		if (bitmap->_format != 1) {
 			format = GL_DEPTH_COMPONENT;
-			type = GL_UNSIGNED_SHORT;
+			btype = GL_UNSIGNED_SHORT;
 			bytes = 2;
 		}
 
 		glPixelStorei(GL_UNPACK_ALIGNMENT, bytes);
 		glPixelStorei(GL_UNPACK_ROW_LENGTH, bitmap->_width);
 
+		const Graphics::PixelFormat format_16bpp(2, 5, 6, 5, 0, 11, 5, 0, 0);
+		const Graphics::PixelFormat format_32bpp = Graphics::PixelFormat::createFormatRGBA32();
+
 		for (int pic = 0; pic < bitmap->_numImages; pic++) {
-			if (bitmap->_format == 1 && bitmap->_bpp == 16 && bitmap->_colorFormat != BM_RGB1555) {
+			const Graphics::Surface &imageData = bitmap->getImageData(pic);
+			if (bitmap->_format == 1 && imageData.format == format_16bpp) {
 				if (texData == nullptr)
 					texData = new byte[bytes * bitmap->_width * bitmap->_height];
 				// Convert data to 32-bit RGBA format
 				byte *texDataPtr = texData;
-				uint16 *bitmapData = (uint16 *)const_cast<void *>(bitmap->getImageData(pic).getPixels());
+				uint16 *bitmapData = (uint16 *)const_cast<void *>(imageData.getPixels());
 				for (int i = 0; i < bitmap->_width * bitmap->_height; i++, texDataPtr += bytes, bitmapData++) {
 					uint16 pixel = *bitmapData;
 					int r = pixel >> 11;
@@ -1093,11 +1115,11 @@ void GfxOpenGL::createBitmap(BitmapData *bitmap) {
 					}
 				}
 				texOut = texData;
-			} else if (bitmap->_format == 1 && bitmap->_colorFormat == BM_RGB1555) {
-				bitmap->convertToColorFormat(pic, Graphics::PixelFormat(4, 8, 8, 8, 8, 0, 8, 16, 24));
-				texOut = (byte *)const_cast<void *>(bitmap->getImageData(pic).getPixels());
+			} else if (bitmap->_format == 1 && imageData.format != format_32bpp) {
+				bitmap->convertToColorFormat(pic, format_32bpp);
+				texOut = (byte *)const_cast<void *>(imageData.getPixels());
 			} else {
-				texOut = (byte *)const_cast<void *>(bitmap->getImageData(pic).getPixels());
+				texOut = (byte *)const_cast<void *>(imageData.getPixels());
 			}
 
 			for (int i = 0; i < bitmap->_numTex; i++) {
@@ -1106,7 +1128,7 @@ void GfxOpenGL::createBitmap(BitmapData *bitmap) {
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-				glTexImage2D(GL_TEXTURE_2D, 0, format, BITMAP_TEXTURE_SIZE, BITMAP_TEXTURE_SIZE, 0, format, type, nullptr);
+				glTexImage2D(GL_TEXTURE_2D, 0, format, BITMAP_TEXTURE_SIZE, BITMAP_TEXTURE_SIZE, 0, format, btype, nullptr);
 			}
 
 			int cur_tex_idx = bitmap->_numTex * pic;
@@ -1116,7 +1138,7 @@ void GfxOpenGL::createBitmap(BitmapData *bitmap) {
 					int width  = (x + BITMAP_TEXTURE_SIZE >= bitmap->_width) ? (bitmap->_width - x) : BITMAP_TEXTURE_SIZE;
 					int height = (y + BITMAP_TEXTURE_SIZE >= bitmap->_height) ? (bitmap->_height - y) : BITMAP_TEXTURE_SIZE;
 					glBindTexture(GL_TEXTURE_2D, textures[cur_tex_idx]);
-					glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, format, type,
+					glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, format, btype,
 					                texOut + (y * bytes * bitmap->_width) + (bytes * x));
 					cur_tex_idx++;
 				}
@@ -1151,7 +1173,7 @@ void GfxOpenGL::drawBitmap(const Bitmap *bitmap, int dx, int dy, uint32 layer) {
 		glDisable(GL_DEPTH_TEST);
 		glDepthMask(GL_FALSE);
 
-		glColor3f(1.0f, 1.0f, 1.0f);
+		glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
 		BitmapData *data = bitmap->_data;
 		GLuint *textures = (GLuint *)bitmap->getTexIds();
@@ -1171,7 +1193,7 @@ void GfxOpenGL::drawBitmap(const Bitmap *bitmap, int dx, int dy, uint32 layer) {
 			glEnd();
 		}
 
-		glColor3f(1.0f, 1.0f, 1.0f);
+		glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
 		glDisable(GL_BLEND);
 		glDisable(GL_TEXTURE_2D);
@@ -1286,7 +1308,10 @@ struct FontUserData {
 	GLuint texture;
 };
 
-void GfxOpenGL::createFont(Font *font) {
+void GfxOpenGL::createFont(Font *f) {
+	if (!f->is8Bit())
+		return;
+	BitmapFont *font = static_cast<BitmapFont *>(f);
 	const byte *bitmapData = font->getFontData();
 	uint dataSize = font->getDataSize();
 
@@ -1341,6 +1366,10 @@ void GfxOpenGL::createFont(Font *font) {
 	for (int i = 0, row = 0; i < 256; ++i) {
 		int width = font->getCharBitmapWidth(i), height = font->getCharBitmapHeight(i);
 		int32 d = font->getCharOffset(i);
+		if (d + height * width > (int)dataSize) {
+			debug("Font overflow: %d: d + height * width <= dataSize: %d + %d * %d <= %d", i, d, height, width, dataSize);
+			continue;
+		}
 		for (int x = 0; x < height; ++x) {
 			// a is the offset to get to the correct row.
 			// b is the offset to get to the correct line in the character.
@@ -1372,10 +1401,12 @@ void GfxOpenGL::createFont(Font *font) {
 }
 
 void GfxOpenGL::destroyFont(Font *font) {
-	const FontUserData *data = (const FontUserData *)font->getUserData();
-	if (data) {
-		glDeleteTextures(1, &(data->texture));
-		delete data;
+	if (font->is8Bit()) {
+		const FontUserData *data = static_cast<const FontUserData *>(static_cast<const BitmapFont *>(font)->getUserData());
+		if (data) {
+			glDeleteTextures(1, &(data->texture));
+			delete data;
+		}
 	}
 }
 
@@ -1384,14 +1415,16 @@ struct TextObjectUserData {
 };
 
 void GfxOpenGL::createTextObject(TextObject *text) {
-	if (g_grim->getGameType() != GType_GRIM || !g_grim->isRemastered())
-		return;
-
-#ifdef USE_FREETYPE2
 	//error("Could not get font userdata");
 	const Font *font = text->getFont();
-	const FontTTF *f = static_cast<const FontTTF *>(font);
-	Graphics::Font *gf = f->_font;
+
+	const Graphics::PixelFormat format = Graphics::PixelFormat::createFormatRGBA32();
+	const uint32 blackColor = format.RGBToColor(0, 0, 0);
+	const uint32 whiteColor = format.RGBToColor(0xff, 0xff, 0xff);
+
+	if (font->is8Bit())
+		return;
+
 	int numLines = text->getNumLines();
 	GLuint *texids = new GLuint[numLines];
 	glGenTextures(numLines, texids);
@@ -1399,10 +1432,8 @@ void GfxOpenGL::createTextObject(TextObject *text) {
 	for (int i = 0; i < numLines; i++) {
 		Graphics::Surface surface;
 
-		int width = gf->getStringWidth(text->getLines()[i]);
-		int height = width;
-		surface.create(height, width, Graphics::PixelFormat(4, 8, 8, 8, 8, 0, 8, 16, 24));
-		gf->drawString(&surface, text->getLines()[i], 0, 0, width, 0xFFFFFFFF);
+		font->render(surface, text->getLines()[i], format,
+			     blackColor, whiteColor, 0);
 
 		byte *bitmap = (byte *)surface.getPixels();
 
@@ -1411,7 +1442,7 @@ void GfxOpenGL::createTextObject(TextObject *text) {
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, bitmap);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, surface.w, surface.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, bitmap);
 
 		surface.free();
 	}
@@ -1419,7 +1450,6 @@ void GfxOpenGL::createTextObject(TextObject *text) {
 
 	ud->_texids = texids;
 	text->setUserData(ud);
-#endif
 }
 
 void GfxOpenGL::drawTextObject(const TextObject *text) {
@@ -1442,24 +1472,16 @@ void GfxOpenGL::drawTextObject(const TextObject *text) {
 	glDepthMask(GL_FALSE);
 
 	const Color &color = text->getFGColor();
-	const Font *font = text->getFont();
+	const Font *f = text->getFont();
 
-	glColor3ub(color.getRed(), color.getGreen(), color.getBlue());
-	const FontUserData *userData = (const FontUserData *)font->getUserData();
-	if (!userData) {
-		if (g_grim->getGameType() != GType_GRIM || !g_grim->isRemastered())
-			error("Could not get font userdata");
-#ifdef USE_FREETYPE2
-		const FontTTF *f = static_cast<const FontTTF *>(font);
-		Graphics::Font *gf = f->_font;
-
-
+	glColor4ub(color.getRed(), color.getGreen(), color.getBlue(), 255);
+	if (!f->is8Bit()) {
 		const TextObjectUserData *ud = (const TextObjectUserData *)text->getUserData();
 
 		int numLines = text->getNumLines();
 		for (int i = 0; i < numLines; ++i) {
-			float width = gf->getStringWidth(text->getLines()[i]);
-			float height = width;
+			float width = f->getKernedStringLength(text->getLines()[i]);
+			float height = f->getKernedHeight();
 			float x = text->getLineX(i);
 
 			float y = text->getLineY(i);
@@ -1491,17 +1513,20 @@ void GfxOpenGL::drawTextObject(const TextObject *text) {
 			glEnd();
 		}
 
-		glColor3f(1, 1, 1);
+		glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
 		glDisable(GL_TEXTURE_2D);
 		glDisable(GL_BLEND);
 		glEnable(GL_DEPTH_TEST);
 		glEnable(GL_LIGHTING);
 		glDepthMask(GL_TRUE);
-#endif
 		return;
 	}
 
+	const BitmapFont *font = static_cast<const BitmapFont *>(f);
+	const FontUserData *userData = (const FontUserData *)font->getUserData();
+	if (!userData)
+		error("Could not get font userdata");
 	float sizeW = userData->size * _scaleW;
 	float sizeH = userData->size * _scaleH;
 	GLuint texture = userData->texture;
@@ -1537,7 +1562,7 @@ void GfxOpenGL::drawTextObject(const TextObject *text) {
 		}
 	}
 
-	glColor3f(1, 1, 1);
+	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
 	glDisable(GL_TEXTURE_2D);
 	glDisable(GL_BLEND);
@@ -1547,7 +1572,7 @@ void GfxOpenGL::drawTextObject(const TextObject *text) {
 }
 
 void GfxOpenGL::destroyTextObject(TextObject *text) {
-	if (g_grim->getGameType() != GType_GRIM || !g_grim->isRemastered())
+	if (text->getFont()->is8Bit())
 		return;
 
 	TextObjectUserData *ud = (TextObjectUserData *)const_cast<void *>(text->getUserData());
@@ -1558,30 +1583,6 @@ void GfxOpenGL::destroyTextObject(TextObject *text) {
 void GfxOpenGL::createTexture(Texture *texture, const uint8 *data, const CMap *cmap, bool clamp) {
 	texture->_texture = new GLuint[1];
 	glGenTextures(1, (GLuint *)texture->_texture);
-	uint8 *texdata = new uint8[texture->_width * texture->_height * 4];
-	uint8 *texdatapos = texdata;
-
-	if (cmap != nullptr) { // EMI doesn't have colour-maps
-		int bytes = 4;
-		for (int y = 0; y < texture->_height; y++) {
-			for (int x = 0; x < texture->_width; x++) {
-				uint8 col = *data;
-				if (col == 0) {
-					memset(texdatapos, 0, bytes); // transparent
-					if (!texture->_hasAlpha) {
-						texdatapos[3] = '\xff'; // fully opaque
-					}
-				} else {
-					memcpy(texdatapos, cmap->_colors + 3 * (col), 3);
-					texdatapos[3] = '\xff'; // fully opaque
-				}
-				texdatapos += bytes;
-				data++;
-			}
-		}
-	} else {
-		memcpy(texdata, data, texture->_width * texture->_height * texture->_bpp);
-	}
 
 	GLuint *textures = (GLuint *)texture->_texture;
 	glBindTexture(GL_TEXTURE_2D, textures[0]);
@@ -1597,8 +1598,36 @@ void GfxOpenGL::createTexture(Texture *texture, const uint8 *data, const CMap *c
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->_width, texture->_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, texdata);
-	delete[] texdata;
+
+	if (cmap != nullptr) { // EMI doesn't have colour-maps
+		int bytes = 4;
+
+		uint8 *texdata = new uint8[texture->_width * texture->_height * bytes];
+		uint8 *texdatapos = texdata;
+
+		for (int y = 0; y < texture->_height; y++) {
+			for (int x = 0; x < texture->_width; x++) {
+				uint8 col = *data;
+				if (col == 0) {
+					memset(texdatapos, 0, bytes); // transparent
+					if (!texture->_hasAlpha) {
+						texdatapos[3] = 0xff; // fully opaque
+					}
+				} else {
+					memcpy(texdatapos, cmap->_colors + 3 * (col), 3);
+					texdatapos[3] = 0xff; // fully opaque
+				}
+				texdatapos += bytes;
+				data++;
+			}
+		}
+
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->_width, texture->_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, texdata);
+		delete[] texdata;
+	} else {
+		GLint format = (texture->_bpp == 4) ? GL_RGBA : GL_RGB;
+		glTexImage2D(GL_TEXTURE_2D, 0, format, texture->_width, texture->_height, 0, format, GL_UNSIGNED_BYTE, data);
+	}
 }
 
 void GfxOpenGL::selectTexture(const Texture *texture) {
@@ -1650,6 +1679,10 @@ void GfxOpenGL::drawDepthBitmap(int x, int y, int w, int h, const char *data) {
 	glDepthFunc(_depthFunc);
 }
 
+const Graphics::PixelFormat GfxOpenGL::getMovieFormat() const {
+	return Graphics::PixelFormat::createFormatRGBA32();
+}
+
 void GfxOpenGL::prepareMovieFrame(Graphics::Surface *frame) {
 	int height = frame->h;
 	int width = frame->w;
@@ -1667,29 +1700,11 @@ void GfxOpenGL::prepareMovieFrame(Graphics::Surface *frame) {
 	GLenum dataType;
 	int bytesPerPixel = frame->format.bytesPerPixel;
 
-	// Aspyr Logo format
-	if (frame->format == Graphics::PixelFormat(4, 8, 8, 8, 0, 8, 16, 24, 0)) {
-#if !defined(__amigaos4__)
-		format = GL_BGRA;
-		dataType = GL_UNSIGNED_INT_8_8_8_8;
-#else
-		// MiniGL on AmigaOS4 doesn't understand GL_UNSIGNED_INT_8_8_8_8 yet.
-		format = GL_BGRA;
+	// Used by Bink, QuickTime, MPEG, Theora and paletted SMUSH
+	if (frame->format == getMovieFormat()) {
+		format = GL_RGBA;
 		dataType = GL_UNSIGNED_BYTE;
-#endif
-	// Used by Grim Fandango Remastered
-	} else if (frame->format == Graphics::PixelFormat(4, 8, 8, 8, 8, 8, 16, 24, 0)) {
-#if !defined(__amigaos4__)
-		format = GL_BGRA;
-		dataType = GL_UNSIGNED_INT_8_8_8_8;
-#else
-		// MiniGL on AmigaOS4 doesn't understand GL_UNSIGNED_INT_8_8_8_8 yet.
-		format = GL_BGRA;
-		dataType = GL_UNSIGNED_BYTE;
-#endif
-	} else if (frame->format == Graphics::PixelFormat(4, 8, 8, 8, 0, 16, 8, 0, 0)) {
-		format = GL_BGRA;
-		dataType = GL_UNSIGNED_INT_8_8_8_8_REV;
+	// Used by 16-bit SMUSH
 	} else if (frame->format == Graphics::PixelFormat(2, 5, 6, 5, 0, 11, 5, 0, 0)) {
 		format = GL_RGB;
 		dataType = GL_UNSIGNED_SHORT_5_6_5;
@@ -1821,7 +1836,7 @@ void GfxOpenGL::loadEmergFont() {
 	_emergFont = glGenLists(128);
 	for (int i = 32; i < 128; i++) {
 		glNewList(_emergFont + i, GL_COMPILE);
-		glBitmap(8, 13, 0, 2, 10, 0, Font::emerFont[i - 32]);
+		glBitmap(8, 13, 0, 2, 10, 0, BitmapFont::emerFont[i - 32]);
 		glEndList();
 	}
 }
@@ -1838,7 +1853,7 @@ void GfxOpenGL::drawEmergString(int x, int y, const char *text, const Color &fgC
 	glDisable(GL_LIGHTING);
 
 	glRasterPos2i(x, y);
-	glColor3f(1.0f, 1.0f, 1.0f);
+	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
 	glListBase(_emergFont);
 
@@ -1853,10 +1868,11 @@ void GfxOpenGL::drawEmergString(int x, int y, const char *text, const Color &fgC
 
 Bitmap *GfxOpenGL::getScreenshot(int w, int h, bool useStored) {
 	Graphics::Surface src;
-	src.create(_screenWidth, _screenHeight, Graphics::PixelFormat(4, 8, 8, 8, 8, 0, 8, 16, 24));
+	src.create(_screenWidth, _screenHeight, Graphics::PixelFormat::createFormatRGBA32());
 	if (useStored) {
 		memcpy(src.getPixels(), _storedDisplay, _screenWidth * _screenHeight * 4);
 	} else {
+		g_system->presentBuffer();
 		glReadPixels(0, 0, _screenWidth, _screenHeight, GL_RGBA, GL_UNSIGNED_BYTE, src.getPixels());
 	}
 	Bitmap *bmp = createScreenshotBitmap(&src, w, h, false);
@@ -1865,6 +1881,7 @@ Bitmap *GfxOpenGL::getScreenshot(int w, int h, bool useStored) {
 }
 
 void GfxOpenGL::storeDisplay() {
+	g_system->presentBuffer();
 	glReadPixels(0, 0, _screenWidth, _screenHeight, GL_RGBA, GL_UNSIGNED_BYTE, _storedDisplay);
 }
 
@@ -1920,6 +1937,7 @@ void GfxOpenGL::dimRegion(int x, int yReal, int w, int h, float level) {
 		glViewport(0, 0, _screenWidth, _screenHeight);
 
 		// copy the data over to the texture
+		g_system->presentBuffer();
 		glBindTexture(GL_TEXTURE_2D, texture);
 		glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, x, y, w, h, 0);
 
@@ -1967,6 +1985,7 @@ void GfxOpenGL::dimRegion(int x, int yReal, int w, int h, float level) {
 	y = _screenHeight - yReal;
 
 	// collect the requested area and generate the dimmed version
+	g_system->presentBuffer();
 	glReadPixels(x, y - h, w, h, GL_RGBA, GL_UNSIGNED_BYTE, data);
 	for (int ly = 0; ly < h; ly++) {
 		for (int lx = 0; lx < w; lx++) {
@@ -2013,7 +2032,7 @@ void GfxOpenGL::irisAroundRegion(int x1, int y1, int x2, int y2) {
 	glDisable(GL_LIGHTING);
 	glDepthMask(GL_FALSE);
 
-	glColor3f(0.0f, 0.0f, 0.0f);
+	glColor4f(0.0f, 0.0f, 0.0f, 1.0f);
 
 	// Explicitly cast to avoid problems with C++11
 	float fx1 = x1;
@@ -2041,7 +2060,7 @@ void GfxOpenGL::irisAroundRegion(int x1, int y1, int x2, int y2) {
 	}
 	glEnd();
 
-	glColor3f(1.0f, 1.0f, 1.0f);
+	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_LIGHTING);
 	glDepthMask(GL_TRUE);
@@ -2064,7 +2083,7 @@ void GfxOpenGL::drawRectangle(const PrimitiveObject *primitive) {
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
 
-	glColor3ub(color.getRed(), color.getGreen(), color.getBlue());
+	glColor4ub(color.getRed(), color.getGreen(), color.getBlue(), 255);
 
 	if (primitive->isFilled()) {
 		glBegin(GL_QUADS);
@@ -2083,7 +2102,7 @@ void GfxOpenGL::drawRectangle(const PrimitiveObject *primitive) {
 		glEnd();
 	}
 
-	glColor3f(1.0f, 1.0f, 1.0f);
+	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
 	glDepthMask(GL_TRUE);
 	glEnable(GL_DEPTH_TEST);
@@ -2108,7 +2127,7 @@ void GfxOpenGL::drawLine(const PrimitiveObject *primitive) {
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
 
-	glColor3ub(color.getRed(), color.getGreen(), color.getBlue());
+	glColor4ub(color.getRed(), color.getGreen(), color.getBlue(), 255);
 
 	glLineWidth(_scaleW);
 
@@ -2117,7 +2136,7 @@ void GfxOpenGL::drawLine(const PrimitiveObject *primitive) {
 	glVertex2f(x2, y2);
 	glEnd();
 
-	glColor3f(1.0f, 1.0f, 1.0f);
+	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
 	glDepthMask(GL_TRUE);
 	glEnable(GL_DEPTH_TEST);
@@ -2183,7 +2202,7 @@ void GfxOpenGL::drawPolygon(const PrimitiveObject *primitive) {
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
 
-	glColor3ub(color.getRed(), color.getGreen(), color.getBlue());
+	glColor4ub(color.getRed(), color.getGreen(), color.getBlue(), 255);
 
 	glBegin(GL_LINES);
 	glVertex2f(x1, y1);
@@ -2192,7 +2211,7 @@ void GfxOpenGL::drawPolygon(const PrimitiveObject *primitive) {
 	glVertex2f(x4 + 1, y4);
 	glEnd();
 
-	glColor3f(1.0f, 1.0f, 1.0f);
+	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
 	glDepthMask(GL_TRUE);
 	glEnable(GL_DEPTH_TEST);
@@ -2211,6 +2230,7 @@ void GfxOpenGL::readPixels(int x, int y, int width, int height, uint8 *buffer) {
 }
 
 void GfxOpenGL::createSpecialtyTextureFromScreen(uint id, uint8 *data, int x, int y, int width, int height) {
+	g_system->presentBuffer();
 	readPixels(x, y, width, height, data);
 	createSpecialtyTexture(id, data, width, height);
 }

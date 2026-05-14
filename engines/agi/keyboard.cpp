@@ -116,7 +116,7 @@ void AgiEngine::processScummVMEvents() {
 					if (_mouse.pos.y > _game.mouseFence.bottom)
 						_mouse.pos.y = _game.mouseFence.bottom;
 
-					g_system->warpMouse(_mouse.pos.x, _mouse.pos.y);
+					_system->warpMouse(_mouse.pos.x, _mouse.pos.y);
 				}
 			}
 
@@ -152,6 +152,56 @@ void AgiEngine::processScummVMEvents() {
 						key = key - 0x410 + 0xb0;
 					else
 						key = key - 0x410 + 0x80;
+				}
+			}
+
+			if (_game._vm->getLanguage() == Common::FR_FRA) {
+				// Convert to CP858
+				if (key >= 0x80 && key <= 0xff) {
+					switch (key) {
+					case 0xe9:
+						key = 0x82;
+						break;
+					case 0xe8:
+						key = 0x8a;
+						break;
+					case 0xe7:
+						key = 0x87;
+						break;
+					case 0xe0:
+						key = 0x85;
+						break;
+					case 0xf9:
+						key = 0x97;
+						break;
+					case 0xf4:
+						key = 0x93;
+						break;
+					case 0xee:
+						key = 0x8c;
+						break;
+					case 0xef:
+						key = 0x8b;
+						break;
+					case 0xea:
+						key = 0x88;
+						break;
+					case 0xeb:
+						key = 0x89;
+						break;
+					case 0xe2:
+						key = 0x83;
+						break;
+					case 0xe4:
+						key = 0x84;
+						break;
+					case 0xfb:
+						key = 0x96;
+						break;
+					case 0xfc:
+						key = 0x81;
+						break;
+					}
 				}
 			}
 
@@ -372,7 +422,9 @@ bool AgiEngine::handleMouseClicks(uint16 &key) {
 
 			if (displayLineRect.contains(_mouse.pos)) {
 				// and user clicked within the line of the prompt
-				showPredictiveDialog();
+				if (_game.predictiveDlgOnMouseClick) {
+					showPredictiveDialog();
+				}
 
 				key = 0; // eat event
 				return true;
@@ -394,7 +446,9 @@ bool AgiEngine::handleMouseClicks(uint16 &key) {
 			Common::Rect displayRect = _gfx->getFontRectForDisplayScreen(stringColumn, stringRow, stringMaxLen, 1);
 			if (displayRect.contains(_mouse.pos)) {
 				// user clicked inside the input space
-				showPredictiveDialog();
+				if (_game.predictiveDlgOnMouseClick) {
+					showPredictiveDialog();
+				}
 
 				key = 0; // eat event
 				return true;
@@ -567,7 +621,7 @@ bool AgiEngine::showPredictiveDialog() {
 
 	Common::String predictiveResult(predictiveDialog.getResult());
 	uint16 predictiveResultLen = predictiveResult.size();
-	if (predictiveResult.size()) {
+	if (predictiveResultLen) {
 		// User actually entered something
 		for (int16 resultPos = 0; resultPos < predictiveResultLen; resultPos++) {
 			keyEnqueue(predictiveResult[resultPos]);
@@ -621,6 +675,22 @@ int AgiEngine::waitAnyKey() {
 			break;
 	}
 	return key;
+}
+
+/**
+ * Waits on any key to be pressed or for a finished sound.
+ * This is used on platforms where sound playback would block the
+ * interpreter until the sound finished or was interrupted.
+ */
+void AgiEngine::waitAnyKeyOrFinishedSound() {
+	clearKeyQueue();
+
+	while (!(shouldQuit() || _restartGame || !_sound->isPlaying())) {
+		wait(10);
+		if (doPollKeyboard()) {
+			break;
+		}
+	}
 }
 
 bool AgiEngine::isKeypress() {

@@ -48,6 +48,8 @@ namespace Video {
 /**
  * Decoder for MPEG Program Stream videos.
  * Video decoder used in engines:
+ *  - mtropolis
+ *  - qdengine
  *  - zvision
  */
 class MPEGPSDecoder : public VideoDecoder {
@@ -57,6 +59,10 @@ public:
 
 	bool loadStream(Common::SeekableReadStream *stream);
 	void close();
+
+	// Set the number of prebuffered packets in demuxer
+	// Used only by qdEngine
+	void setPrebufferedPackets(int packets);
 
 protected:
 	void readNextPacket();
@@ -73,6 +79,8 @@ private:
 
 		Common::SeekableReadStream *getFirstVideoPacket(int32 &startCode, uint32 &pts, uint32 &dts);
 		Common::SeekableReadStream *getNextPacket(uint32 currentTime, int32 &startCode, uint32 &pts, uint32 &dts);
+
+		void setPrebufferedPackets(int packets) { _prebufferedPackets = packets; }
 
 	private:
 		class Packet {
@@ -94,6 +102,13 @@ private:
 		Common::SeekableReadStream *_stream;
 		Common::Queue<Packet> _videoQueue;
 		Common::Queue<Packet> _audioQueue;
+		// If we come across a non-packetized elementary stream
+		bool _isESStream;
+
+		uint32 _firstAudioPacketPts = 0xFFFFFFFF;
+		uint32 _firstVideoPacketPts = 0xFFFFFFFF;
+
+		int _prebufferedPackets = 150;
 	};
 
 	// Base class for handling MPEG streams
@@ -113,13 +128,14 @@ private:
 	// An MPEG 1/2 video track
 	class MPEGVideoTrack : public VideoTrack, public MPEGStream {
 	public:
-		MPEGVideoTrack(Common::SeekableReadStream *firstPacket, const Graphics::PixelFormat &format);
+		MPEGVideoTrack(Common::SeekableReadStream *firstPacket);
 		~MPEGVideoTrack();
 
 		bool endOfTrack() const { return _endOfTrack; }
 		uint16 getWidth() const;
 		uint16 getHeight() const;
 		Graphics::PixelFormat getPixelFormat() const;
+		bool setOutputPixelFormat(const Graphics::PixelFormat &format);
 		int getCurFrame() const { return _curFrame; }
 		uint32 getNextFrameStartTime() const { return _nextFrameStartTime.msecs(); }
 		const Graphics::Surface *decodeNextFrame();
@@ -136,7 +152,11 @@ private:
 		Audio::Timestamp _nextFrameStartTime;
 		Graphics::Surface *_surface;
 
-		void findDimensions(Common::SeekableReadStream *firstPacket, const Graphics::PixelFormat &format);
+		uint16 _width;
+		uint16 _height;
+		Graphics::PixelFormat _pixelFormat;
+
+		void findDimensions(Common::SeekableReadStream *firstPacket);
 
 #ifdef USE_MPEG2
 		Image::MPEGDecoder *_mpegDecoder;

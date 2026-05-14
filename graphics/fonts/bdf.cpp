@@ -27,6 +27,8 @@
 
 #include "graphics/surface.h"
 
+#define DRAWDEBUG 0
+
 namespace Graphics {
 
 BdfFont::BdfFont(const BdfFontData &data, DisposeAfterUse::Flag dispose)
@@ -35,7 +37,7 @@ BdfFont::BdfFont(const BdfFontData &data, DisposeAfterUse::Flag dispose)
 
 BdfFont::~BdfFont() {
 	if (_dispose == DisposeAfterUse::YES) {
-		for (int i = 0; i < _data.numCharacters; ++i)
+		for (uint i = 0; i < _data.numCharacters; ++i)
 			delete[] _data.bitmaps[i];
 		delete[] _data.bitmaps;
 		delete[] _data.advances;
@@ -94,7 +96,7 @@ void drawCharIntern(byte *ptr, uint pitch, const byte *src, int h, int width, in
 				data = *src++;
 
 			if (x >= minX && x <= maxX && (data & 0x80))
-				dst[x] = color;
+				dst[x - minX] = color;
 
 			data <<= 1;
 		}
@@ -105,7 +107,7 @@ void drawCharIntern(byte *ptr, uint pitch, const byte *src, int h, int width, in
 
 int BdfFont::mapToIndex(uint32 ch) const {
 	// Check whether the character is included
-	if (_data.firstCharacter <= (int)ch && (int)ch <= _data.firstCharacter + _data.numCharacters) {
+	if (_data.firstCharacter <= ch && ch <= _data.firstCharacter + _data.numCharacters) {
 		if (_data.bitmaps[ch - _data.firstCharacter])
 			return ch - _data.firstCharacter;
 	}
@@ -397,16 +399,16 @@ BdfFont *BdfFont::loadFont(Common::SeekableReadStream &stream) {
 			byte *bitmap = loadCharacter(stream, encoding, advance, box);
 
 			// Ignore all characters above 255.
-			if (encoding < -1 || encoding >= font.numCharacters) {
+			if (encoding < 0 || encoding >= (int)font.numCharacters) {
 				delete[] bitmap;
-				encoding = -1;
+				continue;
 			}
 
 			// Calculate the max advance
-			if (encoding != -1 && advance > font.maxAdvance)
+			if (advance > font.maxAdvance)
 				font.maxAdvance = advance;
 
-			if (!bitmap && encoding != -1) {
+			if (!bitmap) {
 				warning("BdfFont::loadFont: Character %d invalid", encoding);
 				freeBitmaps(bitmaps, font.numCharacters);
 				delete[] bitmaps;
@@ -417,11 +419,9 @@ BdfFont *BdfFont::loadFont(Common::SeekableReadStream &stream) {
 				return 0;
 			}
 
-			if (encoding != -1) {
-				bitmaps[encoding] = bitmap;
-				advances[encoding] = advance;
-				boxes[encoding] = box;
-			}
+			bitmaps[encoding] = bitmap;
+			advances[encoding] = advance;
+			boxes[encoding] = box;
 		} else if (line.hasPrefix("FAMILY_NAME \"")) {
 			if (familyName != nullptr) {
 				warning("BdfFont::loadFont: Duplicated FAMILY_NAME");
@@ -488,19 +488,19 @@ BdfFont *BdfFont::loadFont(Common::SeekableReadStream &stream) {
 	font.familyName = familyName;
 	font.slant = slant;
 
-	int firstCharacter = font.numCharacters;
+	uint firstCharacter = font.numCharacters;
 	int lastCharacter = -1;
 	bool hasFixedBBox = true;
 	bool hasFixedAdvance = true;
 
-	for (int i = 0; i < font.numCharacters; ++i) {
+	for (uint i = 0; i < font.numCharacters; ++i) {
 		if (!font.bitmaps[i])
 			continue;
 
 		if (i < firstCharacter)
 			firstCharacter = i;
 
-		if (i > lastCharacter)
+		if ((int)i > lastCharacter)
 			lastCharacter = i;
 
 		if (font.advances[i] != font.maxAdvance)
@@ -537,7 +537,7 @@ BdfFont *BdfFont::loadFont(Common::SeekableReadStream &stream) {
 	}
 
 	// Adapt for the fact that we never use encoding 0.
-	if (font.defaultCharacter < firstCharacter
+	if (font.defaultCharacter < (int)firstCharacter
 	    || font.defaultCharacter > lastCharacter)
 		font.defaultCharacter = -1;
 
@@ -545,7 +545,7 @@ BdfFont *BdfFont::loadFont(Common::SeekableReadStream &stream) {
 
 	const int charsAvailable = lastCharacter - firstCharacter + 1;
 	// Try to compact the tables
-	if (charsAvailable < font.numCharacters) {
+	if (charsAvailable < (int)font.numCharacters) {
 		byte **newBitmaps = new byte *[charsAvailable];
 		boxes = 0;
 		advances = 0;
@@ -584,10 +584,10 @@ BdfFont *BdfFont::loadFont(Common::SeekableReadStream &stream) {
 #define BDF_FONTCACHE_TAG MKTAG('S', 'V', 'F', 'C')
 #define BDF_FONTCACHE_VERSION 1
 
-bool BdfFont::cacheFontData(const BdfFont &font, const Common::String &filename) {
+bool BdfFont::cacheFontData(const BdfFont &font, const Common::Path &filename) {
 	Common::DumpFile cacheFile;
 	if (!cacheFile.open(filename)) {
-		warning("BdfFont::cacheFontData: Couldn't open file '%s' for writing", filename.c_str());
+		warning("BdfFont::cacheFontData: Couldn't open file '%s' for writing", filename.toString(Common::Path::kNativeSeparator).c_str());
 		return false;
 	}
 
@@ -606,7 +606,7 @@ bool BdfFont::cacheFontData(const BdfFont &font, const Common::String &filename)
 	cacheFile.writeSint16BE(data.defaultCharacter);
 	cacheFile.writeUint16BE(data.numCharacters);
 
-	for (int i = 0; i < data.numCharacters; ++i) {
+	for (uint i = 0; i < data.numCharacters; ++i) {
 		const BdfBoundingBox &box = data.boxes ? data.boxes[i] : data.defaultBox;
 		if (data.bitmaps[i]) {
 			const int bytes = ((box.width + 7) / 8) * box.height;
@@ -627,7 +627,7 @@ bool BdfFont::cacheFontData(const BdfFont &font, const Common::String &filename)
 	if (data.boxes) {
 		cacheFile.writeByte(0xFF);
 
-		for (int i = 0; i < data.numCharacters; ++i) {
+		for (uint i = 0; i < data.numCharacters; ++i) {
 			const BdfBoundingBox &box = data.boxes[i];
 			cacheFile.writeByte(box.width);
 			cacheFile.writeByte(box.height);
@@ -674,12 +674,12 @@ BdfFont *BdfFont::loadFromCache(Common::SeekableReadStream &stream) {
 	byte **bitmaps = new byte *[data.numCharacters];
 	byte *advances = 0;
 	BdfBoundingBox *boxes = 0;
-	for (int i = 0; i < data.numCharacters; ++i) {
+	for (uint i = 0; i < data.numCharacters; ++i) {
 		uint32 size = stream.readUint32BE();
 
 		if (stream.err() || stream.eos()) {
-			for (int j = 0; j < i; ++j)
-				delete[] bitmaps[i];
+			for (uint j = 0; j < i; ++j)
+				delete[] bitmaps[j];
 			delete[] bitmaps;
 			return nullptr;
 		}
@@ -700,7 +700,7 @@ BdfFont *BdfFont::loadFromCache(Common::SeekableReadStream &stream) {
 
 	if (stream.readByte() == 0xFF) {
 		boxes = new BdfBoundingBox[data.numCharacters];
-		for (int i = 0; i < data.numCharacters; ++i) {
+		for (uint i = 0; i < data.numCharacters; ++i) {
 			boxes[i].width = stream.readByte();
 			boxes[i].height = stream.readByte();
 			boxes[i].xOffset = stream.readSByte();
@@ -709,7 +709,7 @@ BdfFont *BdfFont::loadFromCache(Common::SeekableReadStream &stream) {
 	}
 
 	if (stream.eos() || stream.err()) {
-		for (int i = 0; i < data.numCharacters; ++i)
+		for (uint i = 0; i < data.numCharacters; ++i)
 			delete[] bitmaps[i];
 		delete[] bitmaps;
 		delete[] advances;
@@ -726,7 +726,38 @@ BdfFont *BdfFont::loadFromCache(Common::SeekableReadStream &stream) {
 	return new BdfFont(data, DisposeAfterUse::YES);
 }
 
-BdfFont *BdfFont::scaleFont(BdfFont *src, int newSize) {
+static Common::Rect bdfBoxToRect(int ascent, const BdfBoundingBox &bbox) {
+	int top = ascent - bbox.yOffset - bbox.height;
+	int left = bbox.xOffset;
+	int bottom = top + bbox.height;
+	int right = left + bbox.width;
+
+	return Common::Rect(left, top, right, bottom);
+}
+
+static BdfBoundingBox rectToBdfBox(int ascent, const Common::Rect &rect) {
+	BdfBoundingBox bbox;
+
+	bbox.yOffset = ascent - rect.top - rect.height(); 
+	bbox.xOffset = rect.left;
+	bbox.height = rect.height();
+	bbox.width = rect.width();
+
+	return bbox;
+}
+
+static BdfBoundingBox scaleBdfBoundingBox(int srcAscent, float srcReferencePointX, float srcReferencePointY, int destAscent, float destReferencePointX, float destReferencePointY, const BdfBoundingBox &srcBBox, float scale) {
+	Common::Rect srcRect = bdfBoxToRect(srcAscent, srcBBox);
+
+	int destLeft = static_cast<int>(floorf((static_cast<float>(srcRect.left) - srcReferencePointX) * scale + destReferencePointX));
+	int destRight = static_cast<int>(ceilf((static_cast<float>(srcRect.right) - srcReferencePointX) * scale + destReferencePointX));
+	int destTop = static_cast<int>(floorf((static_cast<float>(srcRect.top) - srcReferencePointY) * scale + destReferencePointY));
+	int destBottom = static_cast<int>(ceilf((static_cast<float>(srcRect.bottom) - srcReferencePointY) * scale + destReferencePointY));
+
+	return rectToBdfBox(destAscent, Common::Rect(destLeft, destTop, destRight, destBottom));
+}
+
+BdfFont *BdfFont::scaleFont(const BdfFont *src, int newSize) {
 	if (!src) {
 		warning("BdfFont::scaleFont(): Empty font reference in scale font");
 		return nullptr;
@@ -742,91 +773,183 @@ BdfFont *BdfFont::scaleFont(BdfFont *src, int newSize) {
 		return nullptr;
 	}
 
+	Graphics::Surface srcSurf;
+	srcSurf.create(MAX(src->getFontSize() * 2, newSize * 2), MAX(src->getFontSize() * 2, newSize * 2), PixelFormat::createFormatCLUT8());
+	int dstGraySize = newSize * 20 * newSize;
+	int *dstGray = (int *)malloc(dstGraySize * sizeof(int));
+
 	float scale = (float)newSize / (float)src->getFontSize();
+
+	int scaledAscent = (int)(roundf((float)src->_data.ascent * scale));
+
+	// The reference point is the center point of scaling in the old and new glyph.
+	// The coordinate values are relative to the top-left corner of the draw coordinate pixel.
+	// Since the baseline is located at the top edge of the pixel that is +ascent from the draw
+	// coordinate, we use the intersection of that edge and the left edge of the draw coordinate
+	// as the reference point.  This seems to produce good results.
+	float srcReferencePointX = 0.0f;
+	float srcReferencePointY = static_cast<float>(src->_data.ascent);
+
+	float destReferencePointX = 0.0f;
+	float destReferencePointY = static_cast<float>(scaledAscent);
 
 	BdfFontData data;
 
-	data.maxAdvance = (int)((float)src->_data.maxAdvance * scale);
-	data.height = (int)((float)src->_data.height * scale);
-	data.size = (int)((float)src->_data.size * scale);
-	data.defaultBox.width = (int)((float)src->_data.defaultBox.width * scale);
-	data.defaultBox.height = (int)((float)src->_data.defaultBox.height * scale);
-	data.defaultBox.xOffset = (int)((float)src->_data.defaultBox.xOffset * scale);
-	data.defaultBox.yOffset = (int)((float)src->_data.defaultBox.yOffset * scale);
-	data.ascent = (int)((float)src->_data.ascent * scale);
+	data.maxAdvance = (int)(roundf((float)src->_data.maxAdvance * scale));
+	data.height = (int)(roundf((float)src->_data.height * scale));
+	data.size = (int)(roundf((float)src->_data.size * scale));
+	data.ascent = scaledAscent;
+	data.defaultBox = scaleBdfBoundingBox(src->_data.ascent, srcReferencePointX, srcReferencePointY, data.ascent, destReferencePointX, destReferencePointY, src->_data.defaultBox, scale);
+
+	data.defaultBox.width = (int)(roundf((float)src->_data.defaultBox.width * scale));
+	data.defaultBox.height = (int)(roundf((float)src->_data.defaultBox.height * scale));
+	data.defaultBox.xOffset = (int)(roundf((float)src->_data.defaultBox.xOffset * scale));
+	data.defaultBox.yOffset = (int)(roundf((float)src->_data.defaultBox.yOffset * scale));
 	data.firstCharacter = src->_data.firstCharacter;
 	data.defaultCharacter = src->_data.defaultCharacter;
 	data.numCharacters = src->_data.numCharacters;
-	char *familyName = new char[1 + strlen(src->_data.familyName)];
-	strcpy(familyName, src->_data.familyName);
+	uint sz = 1 + strlen(src->_data.familyName);
+	char *familyName = new char[sz];
+	Common::strcpy_s(familyName, sz, src->_data.familyName);
 	data.familyName = familyName;
-	char *slant = new char[1 + strlen(src->_data.slant)];
-	strcpy(slant, src->_data.slant);
+	sz = 1 + strlen(src->_data.slant);
+	char *slant = new char[sz];
+	Common::strcpy_s(slant, sz, src->_data.slant);
 	data.slant = slant;
 
-	BdfBoundingBox *boxes = new BdfBoundingBox[data.numCharacters];
-	for (int i = 0; i < data.numCharacters; ++i) {
-		boxes[i].width = (int)((float)src->_data.boxes[i].width * scale);
-		boxes[i].height = (int)((float)src->_data.boxes[i].height * scale);
-		boxes[i].xOffset = (int)((float)src->_data.boxes[i].xOffset * scale);
-		boxes[i].yOffset = (int)((float)src->_data.boxes[i].yOffset * scale);
-	}
-	data.boxes = boxes;
+	Common::Array<Common::Rect> srcRects;
 
-	byte *advances = new byte[data.numCharacters];
-	for (int i = 0; i < data.numCharacters; ++i) {
-		advances[i] = (int)((float)src->_data.advances[i] * scale);
+	if (src->_data.boxes) {
+		srcRects.resize(data.numCharacters);
+
+		BdfBoundingBox *boxes = new BdfBoundingBox[data.numCharacters];
+		for (uint i = 0; i < data.numCharacters; ++i)
+			boxes[i] = scaleBdfBoundingBox(src->_data.ascent, srcReferencePointX, srcReferencePointY, data.ascent, destReferencePointX, destReferencePointY, src->_data.boxes[i], scale);
+		data.boxes = boxes;
+	} else {
+		// if the sources have null boxes
+		data.boxes = nullptr;
 	}
-	data.advances = advances;
+
+	if (src->_data.advances) {
+		byte *advances = new byte[data.numCharacters];
+		for (uint i = 0; i < data.numCharacters; ++i) {
+			advances[i] = (int)(roundf((float)src->_data.advances[i] * scale));
+		}
+		data.advances = advances;
+	} else {
+		// if the sources have null advances
+		data.advances = nullptr;
+	}
 
 	byte **bitmaps = new byte *[data.numCharacters];
-
-	for (int i = 0; i < data.numCharacters; i++) {
+	for (uint i = 0; i < data.numCharacters; i++) {
 		const BdfBoundingBox &box = data.boxes ? data.boxes[i] : data.defaultBox;
 		const BdfBoundingBox &srcBox = data.boxes ? src->_data.boxes[i] : src->_data.defaultBox;
 
+#if DRAWDEBUG
+		int ccc = 'L';
+#endif
 		if (src->_data.bitmaps[i]) {
-			const int bytes = ((box.width + 7) / 8) * box.height; // Dimensions have been already corrected
-			bitmaps[i] = new byte[bytes];
+			int dstPitch = (box.width + 7) / 8 ;
+			const int bytes = dstPitch * box.height;
+			bitmaps[i] = new byte[bytes + 1];
 
-			int srcPitch = (srcBox.width + 7) / 8;
-			int dstPitch = (box.width + 7) / 8;
+#if DRAWDEBUG
+			if (i == ccc) {
+				Common::Rect srcRect = bdfBoxToRect(src->_data.ascent, srcBox);
+				debugN("Ascent: %i\n", static_cast<int>(src->_data.ascent));
+				debugN("Source box: (%i,%i) - (%i,%i)\n", static_cast<int>(srcRect.left), static_cast<int>(srcRect.top), static_cast<int>(srcRect.right), static_cast<int>(srcRect.bottom));
+				debugN("Source bitmap:\n");
+
+				int srcPitch = (srcBox.width + 7) / 8;
+				for (int y = 0; y < srcBox.height; y++) {
+					for (int x = 0; x < srcBox.width; x++) {
+						byte b = src->_data.bitmaps[i][y * srcPitch + x / 8];
+						b >>= 7 - (x % 8);
+						b &= 1;
+
+						debugN("%c", b ? '@' : '_');
+					}
+					debugN(" %i\n", static_cast<int>(y + srcRect.top));
+				}
+			}
+#endif
+
+			Common::Rect rect = bdfBoxToRect(data.ascent, box);
+			Common::Rect srcRect = bdfBoxToRect(src->_data.ascent, srcBox);
 
 			byte *ptr = bitmaps[i];
+			const byte *srcPtr = src->_data.bitmaps[i];
+			int destPitch = (rect.width() + 7) / 8;
+			int srcPitch = (srcRect.width() + 7) / 8;
 
-			for (int y = 0; y < box.height; y++) {
-				const byte *srcd = (const byte *)&src->_data.bitmaps[i][((int)((float)y / scale)) * srcPitch];
-				byte *dst = ptr;
-				byte b = 0;
+			memset(ptr, 0, destPitch * rect.height());
 
-				for (int x = 0; x < box.width; x++) {
-					b <<= 1;
+			float rcpScale = 1.0f / scale;
 
-					int sx = (int)((float)x / scale);
+#if DRAWDEBUG
+			if (i == ccc) {
+				debugN("New ascent: %i\n", static_cast<int>(data.ascent));
+				debugN("Dest box: (%i,%i) - (%i,%i)\n", static_cast<int>(rect.left), static_cast<int>(rect.top), static_cast<int>(rect.right), static_cast<int>(rect.bottom));
+			}
+#endif
 
-					if (srcd[sx / 8] & (0x80 >> (sx % 8)))
-						b |= 1;
+			for (int destRelY = 0; destRelY < rect.height(); destRelY++) {
 
-					if (x % 8 == 7) {
-						*dst++ = b;
-						b = 0;
-					}
+				int destY = destRelY + rect.top;
+				float destPixelCenterY = destY + 0.5f;
+
+				float srcPixelCenterY = (destPixelCenterY - destReferencePointY) * rcpScale + srcReferencePointY;
+
+				int srcY = static_cast<int>(floorf(srcPixelCenterY));
+
+				if (srcY < srcRect.top || srcY >= srcRect.bottom)
+					continue;
+
+				int srcRelY = srcY - srcRect.top;
+
+				byte *rowPtr = ptr + destPitch * destRelY;
+				const byte *srcRowPtr = srcPtr + srcPitch * srcRelY;
+
+				for (int destRelX = 0; destRelX < rect.width(); destRelX++) {
+
+					int destX = destRelX + rect.left;
+					float destPixelCenterX = destX + 0.5f;
+
+					float srcPixelCenterX = (destPixelCenterX - destReferencePointX) * rcpScale + srcReferencePointX;
+
+					int srcX = static_cast<int>(floorf(srcPixelCenterX));
+
+					if (srcX < srcRect.left || srcX >= srcRect.right)
+						continue;
+
+					int srcRelX = srcX - srcRect.left;
+
+					if ((srcRowPtr[srcRelX / 8] << (srcRelX % 8)) & 0x80)
+						rowPtr[destRelX / 8] |= (0x80 >> (destRelX % 8));
 				}
-
-				if (((box.width - 1) % 8)) {
-					b <<= 7 - ((box.width - 1) % 8);
-					*dst = b;
-				}
-
-				ptr += dstPitch;
 			}
 
+#if DRAWDEBUG
+			if (i == ccc) {
+				for (int y = 0; y < box.height; y++) {
+					const byte *srcRow = (const byte *)&bitmaps[i][y * dstPitch];
+					for (int x = 0; x < box.width; x++) {
+						int sx = x;
+						debugN("%c", (srcRow[sx / 8] & (0x80 >> (sx % 8))) ? '#' : '_');
+					}
+					debugN(" %i\n", static_cast<int>(y + rect.top));
+				}
+			}
+#endif
 		} else {
-			bitmaps[i] = 0;
+			bitmaps[i] = nullptr;
 		}
 	}
-
 	data.bitmaps = bitmaps;
+	free(dstGray);
+	srcSurf.free();
 
 	return new BdfFont(data, DisposeAfterUse::YES);
 }

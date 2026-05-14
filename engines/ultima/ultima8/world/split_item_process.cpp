@@ -20,8 +20,11 @@
  */
 
 #include "ultima/ultima8/world/split_item_process.h"
-#include "ultima/ultima8/world/item.h"
+
+#include "common/debug.h"
+#include "ultima/ultima.h"
 #include "ultima/ultima8/world/get_object.h"
+#include "ultima/ultima8/world/item.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -61,8 +64,8 @@ void SplitItemProcess::run() {
 	uint16 origcount = original->getQuality() - movecount;
 	uint16 targetcount = targetitem->getQuality() + movecount;
 
-	pout << "SplitItemProcess splitting: " << movecount << ": "
-	     << origcount << "-" << targetcount << Std::endl;
+	debugC(kDebugObject, "SplitItemProcess splitting: %u: %u-%u",
+		movecount, origcount, targetcount);
 
 	if (targetcount > 0) {
 		targetitem->setQuality(targetcount);

@@ -48,7 +48,7 @@ UCProcess::~UCProcess() {
 void UCProcess::load(uint16 classid, uint16 offset, uint32 this_ptr,
 					 int thissize, const uint8 *args, int argsize) {
 	if (_usecode->get_class_size(classid) == 0)
-		perr << "Class is empty..." << Std::endl;
+		warning("Class is empty.");
 
 	_classId = 0xFFFF;
 	_ip = 0xFFFF;
@@ -108,7 +108,7 @@ bool UCProcess::ret() {
 void UCProcess::freeOnTerminate(uint16 index, int type) {
 	assert(type >= 1 && type <= 3);
 
-	Std::pair<uint16, int> p;
+	Common::Pair<uint16, int> p;
 	p.first = index;
 	p.second = type;
 
@@ -116,11 +116,9 @@ void UCProcess::freeOnTerminate(uint16 index, int type) {
 }
 
 void UCProcess::terminate() {
-	Std::list<Std::pair<uint16, int> >::iterator i;
-
-	for (i = _freeOnTerminate.begin(); i != _freeOnTerminate.end(); ++i) {
-		uint16 index = (*i).first;
-		int typeNum = (*i).second;
+	for (auto &i : _freeOnTerminate) {
+		uint16 index = i.first;
+		int typeNum = i.second;
 
 		switch (typeNum) {
 		case 1: // string
@@ -140,16 +138,17 @@ void UCProcess::terminate() {
 	Process::terminate();
 }
 
-void UCProcess::dumpInfo() const {
-	Process::dumpInfo();
+Common::String UCProcess::dumpInfo() const {
+	Common::String info = Process::dumpInfo();
 
 	if (_classId == 0xFFFF) {
-		pout.Print("IP undefined\n");
+		info += ", IP undefined";
 	} else {
 		const char *classname = GameData::get_instance()->getMainUsecode()->
 		                        get_class_name(_classId);
-		pout.Print("classname: %s, IP: %04X:%04X\n", classname, _classId, _ip);
+		info += Common::String::format(", classname: %s, IP: %04X:%04X", classname, _classId, _ip);
 	}
+	return info;
 }
 
 void UCProcess::saveData(Common::WriteStream *ws) {
@@ -160,10 +159,9 @@ void UCProcess::saveData(Common::WriteStream *ws) {
 	ws->writeUint16LE(_ip);
 	ws->writeUint32LE(_temp32);
 	ws->writeUint32LE(static_cast<uint32>(_freeOnTerminate.size()));
-	Std::list<Std::pair<uint16, int> >::iterator iter;
-	for (iter = _freeOnTerminate.begin(); iter != _freeOnTerminate.end(); ++iter) {
-		ws->writeUint16LE(iter->first);
-		ws->writeUint32LE(static_cast<uint32>(iter->second));
+	for (const auto &i : _freeOnTerminate) {
+		ws->writeUint16LE(i.first);
+		ws->writeUint32LE(static_cast<uint32>(i.second));
 	}
 	_stack.save(ws);
 }
@@ -177,7 +175,7 @@ bool UCProcess::loadData(Common::ReadStream *rs, uint32 version) {
 	_temp32 = rs->readUint32LE();
 	uint32 freecount = rs->readUint32LE();
 	for (unsigned int i = 0; i < freecount; ++i) {
-		Std::pair<uint16, int> p;
+		Common::Pair<uint16, int> p;
 		p.first = rs->readUint16LE();
 		p.second = static_cast<int>(rs->readUint32LE());
 		_freeOnTerminate.push_back(p);

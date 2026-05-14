@@ -22,10 +22,9 @@
 #ifndef ULTIMA8_FILESYS_SAVEGAME_H
 #define ULTIMA8_FILESYS_SAVEGAME_H
 
-#include "ultima/shared/std/string.h"
-#include "common/hashmap.h"
-#include "common/stream.h"
 #include "common/memstream.h"
+#include "common/str.h"
+#include "common/stream.h"
 #include "engines/metaengine.h"
 
 namespace Ultima {
@@ -35,15 +34,9 @@ class ZipFile;
 class IDataSource;
 
 class SavegameReader {
-	struct FileEntry {
-		uint _offset;
-		uint _size;
-		FileEntry() : _offset(0), _size(0) {}
-	};
 private:
 	ExtendedSavegameHeader _header;
-	Common::HashMap<Common::String, FileEntry> _index;
-	Common::SeekableReadStream *_file;
+	Common::Archive *_archive;
 	uint32 _version;
 public:
 	explicit SavegameReader(Common::SeekableReadStream *rs, bool metadataOnly = false);
@@ -54,18 +47,18 @@ public:
 
 	uint32 getVersion() const { return _version; }
 
-	Std::string getDescription() const { return _header.description; }
+	Common::String getDescription() const { return _header.description; }
 
 	/**
 	 * Get an entry/section within the save
 	 */
-	Common::SeekableReadStream *getDataSource(const Std::string &name);
+	Common::SeekableReadStream *getDataSource(const Common::Path &name);
 };
 
 class SavegameWriter {
 	class FileEntry : public Common::Array<byte> {
 	public:
-		Std::string _name;
+		Common::String _name;
 		FileEntry() : Common::Array<byte>() {}
 	};
 private:
@@ -79,12 +72,12 @@ public:
 	//! \param name name of the file
 	//! \param data the data
 	//! \param size (in bytes) of data
-	bool writeFile(const Std::string &name, const uint8 *data, uint32 size);
+	bool writeFile(const Common::String &name, const uint8 *data, uint32 size);
 
-	//! write a file to the savegame from an memory stream
+	//! write a file to the savegame from a memory stream
 	//! \param name name of the file
 	//! \param buf the MemoryWriteStreamDynamic to save
-	bool writeFile(const Std::string &name, Common::MemoryWriteStreamDynamic *buf);
+	bool writeFile(const Common::String &name, Common::MemoryWriteStreamDynamic *buf);
 
 	//! finish savegame
 	bool finish();

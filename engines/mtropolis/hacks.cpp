@@ -37,8 +37,15 @@ namespace MTropolis {
 
 Hacks::Hacks() {
 	ignoreMismatchedProjectNameInObjectLookups = false;
+	removeQuickTimeEdits = false;
 	midiVolumeScale = 256;
 	minTransitionDuration = 0;
+	ignoreMToonMaintainRateFlag = false;
+	allowAssetsFromOtherScenes = false;
+	mtiVariableReferencesHack = false;
+	mtiSceneReturnHack = false;
+	mtiHispaniolaDamagedStringHack = false;
+	ignoreSceneUnloads = false;
 }
 
 Hacks::~Hacks() {
@@ -83,10 +90,10 @@ void ObsidianCorruptedAirTowerTransitionFix::onLoaded(Asset *asset, const Common
 
 class ObsidianInventoryWindscreenHooks : public StructuralHooks {
 public:
-	void onSetPosition(Structural *structural, Common::Point &pt) override;
+	void onSetPosition(Runtime *runtime, Structural *structural, const Common::Point &oldPt, Common::Point &pt) override;
 };
 
-void ObsidianInventoryWindscreenHooks::onSetPosition(Structural *structural, Common::Point &pt) {
+void ObsidianInventoryWindscreenHooks::onSetPosition(Runtime *runtime, Structural *structural, const Common::Point &oldPt, Common::Point &pt) {
 	if (pt.y < 480) {
 		// Set direct to screen so it draws over cinematics
 		static_cast<VisualElement *>(structural)->setDirectToScreen(true);
@@ -98,13 +105,13 @@ void ObsidianInventoryWindscreenHooks::onSetPosition(Structural *structural, Com
 
 class ObsidianSecurityFormWidescreenHooks : public StructuralHooks {
 public:
-	void onSetPosition(Structural *structural, Common::Point &pt) override;
+	void onSetPosition(Runtime *runtime, Structural *structural, const Common::Point &oldPt, Common::Point &pt) override;
 
 private:
 	Common::Array<uint32> _hiddenCards;
 };
 
-void ObsidianSecurityFormWidescreenHooks::onSetPosition(Structural *structural, Common::Point &pt) {
+void ObsidianSecurityFormWidescreenHooks::onSetPosition(Runtime *runtime, Structural *structural, const Common::Point &oldPt, Common::Point &pt) {
 	bool cardVisibility = (pt.y > 480);
 
 	// Originally tried manipulating layer order but that's actually not a good solution because
@@ -137,11 +144,11 @@ void ObsidianSecurityFormWidescreenHooks::onSetPosition(Structural *structural, 
 
 			if (cardVisibility) {
 				if (Common::find(_hiddenCards.begin(), _hiddenCards.end(), card->getStaticGUID()) != _hiddenCards.end())
-					card->setVisible(true);
+					card->setVisible(runtime, true);
 			} else {
 				if (card->isVisible()) {
 					_hiddenCards.push_back(card->getStaticGUID());
-					card->setVisible(false);
+					card->setVisible(runtime, false);
 				}
 			}
 		}
@@ -155,20 +162,20 @@ class ObsidianRSGLogoAnamorphicFilter : public MovieResizeFilter {
 public:
 	ObsidianRSGLogoAnamorphicFilter();
 
-	Common::SharedPtr<Graphics::Surface> scaleFrame(const Graphics::Surface &surface, uint32 timestamp) const override;
+	Common::SharedPtr<Graphics::ManagedSurface> scaleFrame(const Graphics::Surface &surface, uint32 timestamp) const override;
 
 private:
 	template<class TPixel>
-	void anamorphicScaleFrameTyped(const Graphics::Surface &src, Graphics::Surface &dest) const;
+	void anamorphicScaleFrameTyped(const Graphics::Surface &src, Graphics::ManagedSurface &dest) const;
 
 	static double anamorphicCurve(double d);
 	static double inverseAnamorphicCurve(double d);
 
 	template<class TPixel>
-	void halveWidthTyped(const Graphics::Surface &src, Graphics::Surface &dest) const;
+	void halveWidthTyped(const Graphics::ManagedSurface &src, Graphics::ManagedSurface &dest) const;
 
 	template<class TPixel>
-	void halveHeightTyped(const Graphics::Surface &src, Graphics::Surface &dest) const;
+	void halveHeightTyped(const Graphics::ManagedSurface &src, Graphics::ManagedSurface &dest) const;
 
 	Common::Array<uint> _xCoordinates;
 	Common::Array<uint> _yCoordinates;
@@ -243,7 +250,7 @@ ObsidianRSGLogoAnamorphicFilter::ObsidianRSGLogoAnamorphicFilter() {
 }
 
 template<class TPixel>
-void ObsidianRSGLogoAnamorphicFilter::anamorphicScaleFrameTyped(const Graphics::Surface &src, Graphics::Surface &dest) const {
+void ObsidianRSGLogoAnamorphicFilter::anamorphicScaleFrameTyped(const Graphics::Surface &src, Graphics::ManagedSurface &dest) const {
 	const uint width = _xCoordinates.size();
 	const uint height = _yCoordinates.size();
 
@@ -271,7 +278,7 @@ double ObsidianRSGLogoAnamorphicFilter::inverseAnamorphicCurve(double d) {
 }
 
 template<class TPixel>
-void ObsidianRSGLogoAnamorphicFilter::halveWidthTyped(const Graphics::Surface &src, Graphics::Surface &dest) const {
+void ObsidianRSGLogoAnamorphicFilter::halveWidthTyped(const Graphics::ManagedSurface &src, Graphics::ManagedSurface &dest) const {
 	const uint widthHigh = src.w;
 	const uint widthLow = dest.w;
 	const uint height = src.h;
@@ -301,7 +308,7 @@ void ObsidianRSGLogoAnamorphicFilter::halveWidthTyped(const Graphics::Surface &s
 }
 
 template<class TPixel>
-void ObsidianRSGLogoAnamorphicFilter::halveHeightTyped(const Graphics::Surface &src, Graphics::Surface &dest) const {
+void ObsidianRSGLogoAnamorphicFilter::halveHeightTyped(const Graphics::ManagedSurface &src, Graphics::ManagedSurface &dest) const {
 	const uint heightHigh = src.h;
 	const uint heightLow = dest.h;
 	const uint width = src.w;
@@ -331,12 +338,12 @@ void ObsidianRSGLogoAnamorphicFilter::halveHeightTyped(const Graphics::Surface &
 	}
 }
 
-Common::SharedPtr<Graphics::Surface> ObsidianRSGLogoAnamorphicFilter::scaleFrame(const Graphics::Surface &surface, uint32 timestamp) const {
-	Common::SharedPtr<Graphics::Surface> result(new Graphics::Surface());
+Common::SharedPtr<Graphics::ManagedSurface> ObsidianRSGLogoAnamorphicFilter::scaleFrame(const Graphics::Surface &surface, uint32 timestamp) const {
+	Common::SharedPtr<Graphics::ManagedSurface> result(new Graphics::ManagedSurface());
 	result->create(_xCoordinates.size() / 2, _yCoordinates.size() / 2, surface.format);
 
-	Common::SharedPtr<Graphics::Surface> temp1(new Graphics::Surface());
-	Common::SharedPtr<Graphics::Surface> temp2(new Graphics::Surface());
+	Common::SharedPtr<Graphics::ManagedSurface> temp1(new Graphics::ManagedSurface());
+	Common::SharedPtr<Graphics::ManagedSurface> temp2(new Graphics::ManagedSurface());
 
 	temp1->create(_xCoordinates.size(), _yCoordinates.size(), surface.format);
 	temp2->create(_xCoordinates.size() / 2, _yCoordinates.size(), surface.format);
@@ -384,18 +391,26 @@ void ObsidianSaveScreenshotHooks::onSceneTransitionSetup(Runtime *runtime, const
 		Window *mainWindow = runtime->getMainWindow().lock().get();
 		if (mainWindow) {
 			Common::SharedPtr<Graphics::ManagedSurface> mainWindowSurface = mainWindow->getSurface();
-			Common::SharedPtr<Graphics::Surface> screenshot(new Graphics::Surface());
+			Common::SharedPtr<Graphics::ManagedSurface> screenshot(new Graphics::ManagedSurface());
 			screenshot->copyFrom(*mainWindowSurface);
 
 			runtime->setSaveScreenshotOverride(screenshot);
 		}
 	} else {
-		runtime->setSaveScreenshotOverride(Common::SharedPtr<Graphics::Surface>());
+		runtime->setSaveScreenshotOverride(Common::SharedPtr<Graphics::ManagedSurface>());
 	}
 }
 
 void addObsidianQuirks(const MTropolisGameDescription &desc, Hacks &hacks) {
+	// Add screenshot hook to store savegame screenshot prior to going to the menu
 	hacks.addSceneTransitionHooks(Common::SharedPtr<SceneTransitionHooks>(new ObsidianSaveScreenshotHooks()));
+
+	// Strip edit lists from QuickTime movies to work around audio popping problem.
+	// For some reason, some vidbots (like the cube maze entry bot) have edit lists
+	// in the audio track full of half-second edits, but the edit offsets are spaced
+	// 22080 samples apart instead of 22050, which causes it to skip 30 audio samples
+	// every half-second.
+	hacks.removeQuickTimeEdits = true;
 }
 
 void addObsidianBugFixes(const MTropolisGameDescription &desc, Hacks &hacks) {
@@ -416,145 +431,38 @@ void addObsidianBugFixes(const MTropolisGameDescription &desc, Hacks &hacks) {
 }
 
 void addObsidianImprovedWidescreen(const MTropolisGameDescription &desc, Hacks &hacks) {
-	if ((desc.desc.flags & ADGF_DEMO) == 0 && desc.desc.language == Common::EN_ANY && desc.desc.platform == Common::kPlatformWindows) {
+	if ((desc.desc.flags & ADGF_DEMO) == 0) {
 		const uint32 inventoryItemGUIDs[] = {
-			// Bureau documents
-			// 100 area (booths)
-			0x4e2d9e,
-			0x4de654,
-
-			// 199 area (booths hint room)
-			0x4e2555,
-			0x4de654,
-
-			// 200 area (library)
-			0x4c83d2,
-			0x4c5802,
-
-			// 299 area (Cloud Ring)
-			0x178d5c,
-			0x177754,
-
-			// 300 area (light+phone)
-			0x4e0f86,
-			0x4e5107,
-
-			// 400 area (maze)
-			0x4e5528,
-			0x4e55cc,
-
-			// 500 area (Immediate Action)
-			0x4e2e7b,
-			0x4e0710,
-
-			// 800 area (bookshelves)
-			0x9914fb,
-			0x990f1f,
-
-			// 600 (sky face), 699 (mountain), and 700 (finale) have no document elements (player loses the documents)
-
-			// Bureau maze keycards
-			0x6035f,
-			0x62e24,
-			0x58d7f,
-			0x58212,
-
-			// Spider metal puzzle beaker
-			0x12fa7,
-
-			// Inspiration chip
-			// 100 area (Junkyard)
-			0x5f02e6,
-
-			// 200 area (Plane)
-			0x9bd5fc,
-
-			// 300 area (Piazza)
-			0x5ef979,
-			
-			// 400 area (Church)
-			0xed9a8f,
-
-			// 500 area (Statue)
-			0x5ecdee,
+			0x4dfa22, // Obsidian Data > Labyrinth1 > 100 > Untitled Shared Scene > L200.0L.63Fxx.mtn (Limitation Document, Atlas Face)
+			0x4e2d9e, // Obsidian Data > Labyrinth1 > 100 > Untitled Shared Scene > L200.0L.64Fxx.mtn (Tradesman Document, Atlas Face)
+			0x4e2555, // Obsidian Data > Labyrinth1 > 199 > > L200.0L.63Fxx.mtn (Limitation Document, Glyph Chamber)
+			0x4de654, // Obsidian Data > Labyrinth1 > 199 > > L200.0L.64Fxx.mtn (Tradesman Document, Glyph Chamber)
+			0x4c83d2, // Obsidian Data > Labyrinth1 > 200 > Untitled Shared Scene > L200.0L.63Fxx.mtn (Limitation Document, Records Face)
+			0x4c5802, // Obsidian Data > Labyrinth1 > 200 > Untitled Shared Scene > L200.0L.64Fxx.mtn (Tradesman Document, Records Face)
+			0x178d5c, // Obsidian Data > Labyrinth1 > 299 > Untitled Shared Scene > L200.0L.63Fxx.mtn (Limitation Document, Cloud Ring)
+			0x177754, // Obsidian Data > Labyrinth1 > 299 > Untitled Shared Scene > L200.0L.64Fxx.mtn (Tradesman Document, Cloud Ring)
+			0x9914fb, // Obsidian Data > Labyrinth1 > 800 > > L200.0L.63Fxx.mtn (Limitation Document, Sunken Library)
+			0x990f1f, // Obsidian Data > Labyrinth1 > 800 > > L200.0L.64Fxx.mtn (Tradesman Document, Sunken Library)
+			0x4e0f86, // Obsidian Data > Labyrinth2 > 300 > Untitled Shared Scene > L200.0L.63Fxx.mtn (Limitation Document, Nexus Face)
+			0x4e5107, // Obsidian Data > Labyrinth2 > 300 > Untitled Shared Scene > L200.0L.64Fxx.mtn (Tradesman Document, Nexus Face)
+			0x4e5528, // Obsidian Data > Labyrinth2 > 400 > Untitled Shared Scene > L200.0L.63Fxx.mtn (Limitation Document, Security Face)
+			0x4e55cc, // Obsidian Data > Labyrinth2 > 400 > Untitled Shared Scene > L200.0L.64Fxx.mtn (Tradesman Document, Security Face)
+			0x6035f, // Obsidian Data > Labyrinth2 > 400 > Untitled Shared Scene > Inventory Cards > L400.0L.04Fxx.mtn - Black (Cards, Security Face)
+			0x62e24, // Obsidian Data > Labyrinth2 > 400 > Untitled Shared Scene > Inventory Cards > L400.0L.04Fxx.mtn - Blue (Cards, Security Face)
+			0x58d7f, // Obsidian Data > Labyrinth2 > 400 > Untitled Shared Scene > Inventory Cards > L400.0L.04Fxx.mtn - Yellow (Cards, Security Face)
+			0x58212, // Obsidian Data > Labyrinth2 > 400 > Untitled Shared Scene > Inventory Cards > L400.0L.04Fxx.mtn - Red (Cards, Security Face)
+			0x4e2e7b, // Obsidian Data > Labyrinth2 > 500 > Untitled Shared Scene > L200.0L.63Fxx.mtn (Limitation Document, Time Face)
+			0x4e0710, // Obsidian Data > Labyrinth2 > 500 > Untitled Shared Scene > L200.0L.64Fxx.mtn (Tradesman Document, Time Face)
+			0x12fa7,  // Obsidian Data > Abraxas1 > 400 > Untitled Shared Scene > Inventory Beaker (Inventory Beaker, Metal Balcony)
+			0x5f02e6, // Obsidian Data > Bismuth1 > 100 > Untitled Shared Scene > B201.2L.02Fxx.spr (Inspiration Chip, Junkyard)
+			0x9bd5fc, // Obsidian Data > Bismuth1 > 200 > Untitled Shared Scene > B201.2L.02Fxx.spr (Inspiration Chip, Plane)
+			0x5ef979, // Obsidian Data > Bismuth1 > 300 > Untitled Shared Scene > B201.2L.02Fxx.spr (Inspiration Chip, Piazza)
+			0x5ecdee, // Obsidian Data > Bismuth1 > 500 > Untitled Shared Scene > B201.2L.02Fxx.spr (Inspiration Chip, Statue)
+			0xed9a8f, // Obsidian Data > Bismuth2 > 400 > Untitled Shared Scene > B201.2L.02Fxx.spr (Inspiration Chip, Church of the Machine)
 		};
 
-		const uint32 cubeMazeSecurityFormGUID = 0x9602ec;
-		const uint32 rsgIntroMovieGUID = 0x2fc101;
-
-		Common::SharedPtr<StructuralHooks> invItemHooks(new ObsidianInventoryWindscreenHooks());
-
-		for (uint32 guid : inventoryItemGUIDs)
-			hacks.addStructuralHooks(guid, invItemHooks);
-
-		hacks.addStructuralHooks(cubeMazeSecurityFormGUID, Common::SharedPtr<StructuralHooks>(new ObsidianSecurityFormWidescreenHooks()));
-		hacks.addStructuralHooks(rsgIntroMovieGUID, Common::SharedPtr<StructuralHooks>(new ObsidianRSGLogoWidescreenHooks()));
-	}
-	if ((desc.desc.flags & ADGF_DEMO) == 0 && desc.desc.language == Common::EN_ANY && desc.desc.platform == Common::kPlatformMacintosh) {
-		const uint32 inventoryItemGUIDs[] = {
-			// Bureau documents
-			// 100 area (booths)
-			0x4dfa22,
-			0x4e2d9e,
-
-			// 199 area (booths hint room)
-			0x4e2555,
-			0x4de654,
-
-			// 200 area (library)
-			0x4c83d2,
-			0x4c5802,
-
-			// 299 area (Cloud Ring)
-			0x178d5c,
-			0x177754,
-
-			// 300 area (light+phone)
-			0x4e0f86,
-			0x4e5107,
-
-			// 400 area (maze)
-			0x4e5528,
-			0x4e55cc,
-
-			// 500 area (Immediate Action)
-			0x4a2e7b,
-			0x4e0710,
-
-			// 800 area (bookshelves)
-			0x9914fb,
-			0x990f1f,
-
-			// 600 (sky face), 699 (mountain), and 700 (finale) have no document elements (player loses the documents)
-
-			// Bureau maze keycards
-			0x6035f,
-			0x62e24,
-			0x58d7f,
-			0x58212,
-
-			// Spider metal puzzle beaker
-			0x12fa7,
-
-			// Inspiration chip
-			// 100 area (Junkyard)
-			0x5f02e6,
-
-			// 200 area (Plane)
-			0x9bd5fc,
-
-			// 300 area (Piazza)
-			0x5ef979,
-
-			// 400 area (Church)
-			0xed9a8f,
-
-			// 500 area (Statue)
-			0x5ecdee,
-		};
-
-		const uint32 cubeMazeSecurityFormGUID = 0x9602ec;
-		const uint32 rsgIntroMovieGUID = 0x2fc101;
+		const uint32 cubeMazeSecurityFormGUID = 0x9602ec; // Obsidian Data > Labyrinth2 > 400 > L437.2L.02Fxx.spr (Security Form, Securty Booth)
+		const uint32 rsgIntroMovieGUID = 0x2fc101; // Obsidian Data > Start Obsidian > SplashScreen > RSG Splash > rssplash.F11.cut (Rocket Science Games Logo)
 
 		Common::SharedPtr<StructuralHooks> invItemHooks(new ObsidianInventoryWindscreenHooks());
 
@@ -781,7 +689,7 @@ void ObsidianAutoSaveVarsState::resyncAllVars(Runtime *runtime) {
 		const VariableModifier *var = findVar(runtime, it->_key);
 		if (var) {
 			DynamicValue varValue;
-			var->varGetValue(nullptr, varValue);
+			var->varGetValue(varValue);
 			assert(varValue.getType() == DynamicValueTypes::kBoolean);
 
 			it->_value = varValue.getBool();
@@ -843,7 +751,7 @@ void ObsidianAutoSaveSceneTransitionHooks::onSceneTransitionEnded(Runtime *runti
 			const VariableModifier *var = _varsState->findVar(runtime, varName);
 			if (var) {
 				DynamicValue varValue;
-				var->varGetValue(nullptr, varValue);
+				var->varGetValue(varValue);
 				assert(varValue.getType() == DynamicValueTypes::kBoolean);
 
 				passedLatchTest = varValue.getBool();
@@ -869,10 +777,10 @@ void ObsidianAutoSaveSceneTransitionHooks::onSceneTransitionEnded(Runtime *runti
 
 		if (saveVar && saveVar->isModifier()) {
 			Modifier *modifier = static_cast<Modifier *>(saveVar.get());
-			Common::SharedPtr<ModifierSaveLoad> saveLoad = modifier->getSaveLoad();
+			Common::SharedPtr<ModifierSaveLoad> saveLoad = modifier->getSaveLoad(runtime);
 
 			if (saveLoad) {
-				CompoundVarSaver saver(saveVar.get());
+				CompoundVarSaver saver(runtime, saveVar.get());
 				_autoSaveProvider->autoSave(&saver);
 
 				_varsState->resyncAllVars(runtime);
@@ -974,7 +882,7 @@ bool ObsidianSaveLoadMechanism::canSaveNow(Runtime *runtime) {
 		return false;
 
 	DynamicValue bEscValue;
-	static_cast<VariableModifier *>(bEscVar)->varGetValue(nullptr, bEscValue);
+	static_cast<VariableModifier *>(bEscVar)->varGetValue(bEscValue);
 
 	if (bEscValue.getType() != DynamicValueTypes::kBoolean || !bEscValue.getBool())
 		return false;
@@ -998,8 +906,8 @@ Common::SharedPtr<ISaveWriter> ObsidianSaveLoadMechanism::createSaveWriter(Runti
 	if (!cgstCompoundVar)
 		return nullptr;
 
-	if (cgstCompoundVar->getSaveLoad())
-		return Common::SharedPtr<CompoundVarSaver>(new CompoundVarSaver(cgstCompoundVar));
+	if (cgstCompoundVar->getSaveLoad(runtime))
+		return Common::SharedPtr<CompoundVarSaver>(new CompoundVarSaver(runtime, cgstCompoundVar));
 
 	return nullptr;
 }
@@ -1007,6 +915,227 @@ Common::SharedPtr<ISaveWriter> ObsidianSaveLoadMechanism::createSaveWriter(Runti
 void addObsidianSaveMechanism(const MTropolisGameDescription &desc, Hacks &hacks) {
 	Common::SharedPtr<ObsidianSaveLoadMechanism> mechanism(new ObsidianSaveLoadMechanism());
 	hacks.addSaveLoadMechanismHooks(mechanism);
+}
+
+class MTIMolassesHandler : public IPostEffect {
+public:
+	void setFullScreenSurface(const Graphics::ManagedSurface &srcSurf);
+	void wipeRect(const Common::Rect &rect);
+	void setInitialRect(const Common::Rect &rect);
+
+	void release();
+
+	void renderPostEffect(Graphics::ManagedSurface &surface) const override;
+
+private:
+	Graphics::ManagedSurface _surf;
+	Graphics::ManagedSurface _mask;
+	Common::Rect _initialRect;
+};
+
+void MTIMolassesHandler::setFullScreenSurface(const Graphics::ManagedSurface &srcSurf) {
+	_surf.copyFrom(srcSurf);
+	_mask.create(srcSurf.w, srcSurf.h, Graphics::PixelFormat::createFormatCLUT8());
+	_mask.fillRect(Common::Rect(0, 0, srcSurf.w, srcSurf.h), 0xff);
+
+	wipeRect(_initialRect);
+}
+
+void MTIMolassesHandler::wipeRect(const Common::Rect &rect) {
+	_mask.fillRect(rect, 0);
+}
+
+void MTIMolassesHandler::setInitialRect(const Common::Rect &rect) {
+	_initialRect = rect;
+}
+
+void MTIMolassesHandler::release() {
+	_surf.free();
+	_mask.free();
+}
+
+void MTIMolassesHandler::renderPostEffect(Graphics::ManagedSurface &surface) const {
+	surface.maskBlitFrom(_surf, _mask);
+}
+
+class MTIMolassesFullscreenHooks : public StructuralHooks {
+public:
+	explicit MTIMolassesFullscreenHooks(const Common::SharedPtr<MTIMolassesHandler> &molassesHandler);
+
+	void onStopPlayingMToon(Structural *structural, bool &hide, bool &stopped, Graphics::ManagedSurface *lastSurf) override;
+
+private:
+	Common::SharedPtr<MTIMolassesHandler> _molassesHandler;
+};
+
+MTIMolassesFullscreenHooks::MTIMolassesFullscreenHooks(const Common::SharedPtr<MTIMolassesHandler> &molassesHandler) : _molassesHandler(molassesHandler) {
+}
+
+void MTIMolassesFullscreenHooks::onStopPlayingMToon(Structural *structural, bool &hide, bool &stopped, Graphics::ManagedSurface *lastSurf) {
+	_molassesHandler->setFullScreenSurface(*lastSurf);
+}
+
+class MTIMolassesSpongeHooks : public StructuralHooks {
+public:
+	explicit MTIMolassesSpongeHooks(const Common::SharedPtr<MTIMolassesHandler> &molassesHandler);
+
+	void onPostActivate(Structural *structural) override;
+	void onSetPosition(Runtime *runtime, Structural *structural, const Common::Point &oldPt, Common::Point &pt) override;
+
+private:
+	Common::SharedPtr<MTIMolassesHandler> _molassesHandler;
+};
+
+MTIMolassesSpongeHooks::MTIMolassesSpongeHooks(const Common::SharedPtr<MTIMolassesHandler> &molassesHandler) : _molassesHandler(molassesHandler) {
+}
+
+void MTIMolassesSpongeHooks::onPostActivate(Structural *structural) {
+	VisualElement *visual = static_cast<VisualElement *>(structural);
+
+	_molassesHandler->setInitialRect(visual->getRelativeRect());
+}
+
+void MTIMolassesSpongeHooks::onSetPosition(Runtime *runtime, Structural *structural, const Common::Point &oldPt, Common::Point &pt) {
+	const Common::Rect relRect = static_cast<VisualElement *>(structural)->getRelativeRect();
+
+	int16 w = relRect.width();
+	int16 h = relRect.height();
+
+	Common::Rect wipeRect = Common::Rect(pt.x, pt.y, pt.x + w, pt.y + h);
+
+	_molassesHandler->wipeRect(wipeRect);
+}
+
+class MTIMolassesSceneTransitionHooks : public SceneTransitionHooks {
+public:
+	explicit MTIMolassesSceneTransitionHooks(const Common::SharedPtr<MTIMolassesHandler> &molassesHandler);
+
+	void onSceneTransitionSetup(Runtime *runtime, const Common::WeakPtr<Structural> &oldScene, const Common::WeakPtr<Structural> &newScene) override;
+
+private:
+	Common::SharedPtr<MTIMolassesHandler> _molassesHandler;
+};
+
+MTIMolassesSceneTransitionHooks::MTIMolassesSceneTransitionHooks(const Common::SharedPtr<MTIMolassesHandler> &molassesHandler) : _molassesHandler(molassesHandler) {
+}
+
+void MTIMolassesSceneTransitionHooks::onSceneTransitionSetup(Runtime *runtime, const Common::WeakPtr<Structural> &oldScene, const Common::WeakPtr<Structural> &newScene) {
+	Structural *oldScenePtr = oldScene.lock().get();
+	Structural *newScenePtr = newScene.lock().get();
+
+	const char *molassesSceneName = "B01c: Molasses";
+
+	if (oldScenePtr && oldScenePtr->getName() == molassesSceneName)
+		runtime->removePostEffect(_molassesHandler.get());
+	else if (newScenePtr && newScenePtr->getName() == molassesSceneName)
+		runtime->addPostEffect(_molassesHandler.get());
+}
+
+class MTIBuggyAnimationHooks : public StructuralHooks {
+public:
+	void onSetPosition(Runtime *runtime, Structural *structural, const Common::Point &oldPt, Common::Point &pt) override;
+	void onStopPlayingMToon(Structural *structural, bool &hide, bool &stopped, Graphics::ManagedSurface *lastSurf) override;
+	void onHidden(Structural *structural, bool &visible) override;
+};
+
+void MTIBuggyAnimationHooks::onSetPosition(Runtime *runtime, Structural *structural, const Common::Point &oldPt, Common::Point &pt) {
+	// Cancel out off-screen translation
+	if (pt.x < 0)
+		pt = oldPt;
+}
+
+void MTIBuggyAnimationHooks::onStopPlayingMToon(Structural *structural, bool &visible, bool &stopped, Graphics::ManagedSurface *lastSurf) {
+	// Un-stop
+	visible = true;
+	stopped = false;
+}
+
+void MTIBuggyAnimationHooks::onHidden(Structural *structural, bool &visible) {
+	// Un-hide
+	visible = true;
+}
+
+class MTIStructuralHooks : public StructuralHooks {
+public:
+	explicit MTIStructuralHooks(const Common::SharedPtr<MTIMolassesHandler> &molassesHandler);
+
+	void onPostActivate(Structural *structural) override;
+
+private:
+	Common::SharedPtr<MTIMolassesHandler> _molassesHandler;
+};
+
+MTIStructuralHooks::MTIStructuralHooks(const Common::SharedPtr<MTIMolassesHandler> &molassesHandler) : _molassesHandler(molassesHandler) {
+}
+
+void MTIStructuralHooks::onPostActivate(Structural *structural) {
+	const Common::String &name = structural->getName();
+
+	if (name == "D15_0003.tun") {
+		// Fix for intro not playing in Piggy's secret room.  D15_0003.tun is on layer 7 but treasure layers are on top of it.
+		if (structural->isElement() && static_cast<Element *>(structural)->isVisual())
+			static_cast<VisualElement *>(structural)->setLayer(20);
+	} else if (name == "C01c0005.tun" || name == "C01c0005a.tun" || name == "A06_Xspot.tun" || name == "A08agp01.tun") {
+		// Several animations stop (which hides) and are moved off-screen when they stop, yet for some reason are supposed to
+		// continue to draw.
+		//
+		// Known cases:
+		// - Treasure map in Benbow (A06_Xspot.tun)
+		// - Molasses when leaving Benbow (A08agp01.tun)
+		// - Long John Silver in the life boat when disembarking the Hispaniola (C01c0005.tun and C01c0005a.tun)
+		structural->setHooks(Common::SharedPtr<StructuralHooks>(new MTIBuggyAnimationHooks()));
+	} else if (name == "B01cgp01.tun") {
+		structural->setHooks(Common::SharedPtr<StructuralHooks>(new MTIMolassesFullscreenHooks(_molassesHandler)));
+	} else if (name == "B01c_newsponge.tun") {
+		structural->setHooks(Common::SharedPtr<StructuralHooks>(new MTIMolassesSpongeHooks(_molassesHandler)));
+		structural->getHooks()->onPostActivate(structural);
+	} else if (name == "E01_Beakerfly.tun") {
+		// Beaker flyby in the intro is on layer 4, but the door is on layer 11
+		static_cast<VisualElement *>(structural)->setLayer(12);
+	}
+}
+
+void addMTIQuirks(const MTropolisGameDescription &desc, Hacks &hacks) {
+	// MTI uses a lot of "maintain rate" mToons at 10Hz.  This means their frame timer resets on every frame advance, and
+	// is supposed to ensure that the mToon plays back at a smooth rate regardless of clock jitter.  Unfortunately, it
+	// does this with mToons that are synchronized to sounds, which is bad!  Presumably the reason this wasn't a problem
+	// is because MacOS runs with a 60Hz tick clock so it always divides evenly into the frame rate, and Windows... not sure.
+	//
+	// Anyway, there are two possible solutions to this: Lock the clock to 60Hz, or ignore the flag.
+	// Given that the flag should not be set, we ignore the flag.
+	hacks.ignoreMToonMaintainRateFlag = true;
+
+	// Needed for piano, the sound assets are in B10 : Notes but the piano is in B10 : Piano
+	hacks.allowAssetsFromOtherScenes = true;
+
+	// MTI initializes variables in a way that doesn't seem to match mTropolis behavior in any explicable way:
+	//
+	// For example, 0010cb0e "Scene Started => init Benbow" looks like this internally, decompiled:
+	// set local:a.billystate to 0
+	//
+	// In this case "a" is a compound variable and "billyState" is a NON-ALIASED integer variable contained in
+	// the compound.  Later, 0009fc9a "Scene Started => play intro" checks local 00007f83 00 'billyState'
+	// to determine if the Benbow intro needs to be played.  Since the GUID doesn't match (?) we check by name,
+	// which resolves to the GUID-less (?) alias in the Benbow subsection, which references 00097cf4, a different
+	// variable also named "billyState"
+	//
+	// Haven't figured out anything that would explain why it would reference the variables in the compound
+	// modifier.  Probably some quirk of early-version mTropolis.
+	hacks.mtiVariableReferencesHack = true;
+
+	// MTI returns from the menu by transitioning to a "return" scene that sends a return message to the target
+	// scene, which is supposed to activate a scene transition modifier in the scene that transitions to itself.
+	// This doesn't work because the modifier is gone when the scene is unloaded.
+	hacks.mtiSceneReturnHack = true;
+
+	// Modifier "Scene Started => helmSteered? => Play Character, else Play Char" has a non-null-terminated name,
+	// which causes an integrity check failure when disembarking the Hispaniola.
+	hacks.mtiHispaniolaDamagedStringHack = true;
+
+	Common::SharedPtr<MTIMolassesHandler> molassesHandler(new MTIMolassesHandler());
+
+	hacks.defaultStructuralHooks.reset(new MTIStructuralHooks(molassesHandler));
+	hacks.addSceneTransitionHooks(Common::SharedPtr<SceneTransitionHooks>(new MTIMolassesSceneTransitionHooks(molassesHandler)));
 }
 
 } // End of namespace HackSuites

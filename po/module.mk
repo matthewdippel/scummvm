@@ -28,7 +28,7 @@ updatepot:
 	fi;
 
 %.po: $(POTFILE)
-	msgmerge $@ $(POTFILE) -o $@.new
+	msgmerge $@ $(POTFILE) --previous -o $@.new
 	if cmp $@ $@.new >/dev/null 2>&1; then \
 		rm -f $@.new; \
 	else \
@@ -45,4 +45,7 @@ update-translations: updatepot $(POFILES)
 	@$(foreach file, $(POFILES), echo -n $(notdir $(basename $(file)))": ";msgfmt --statistic $(file);)
 	@rm -f messages.mo
 
-.PHONY: updatepot translations-dat update-translations
+android-translations: devtools/generate-android-i18n-strings.py
+	devtools/generate-android-i18n-strings.py
+
+.PHONY: updatepot translations-dat update-translations android-translations

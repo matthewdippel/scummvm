@@ -29,7 +29,7 @@
 #include "common/config-manager.h"
 #include "common/debug-channels.h"
 #include "common/timer.h"
-#include "common/winexe_pe.h"
+#include "common/formats/winexe_pe.h"
 
 #include "graphics/wincursor.h"
 
@@ -194,12 +194,8 @@ GnapEngine::~GnapEngine() {
 }
 
 Common::Error GnapEngine::run() {
-	// Initialize the graphics mode to RGBA8888
-#if defined(SCUMM_BIG_ENDIAN)
-	Graphics::PixelFormat format = Graphics::PixelFormat(4, 8, 8, 8, 8, 0, 8, 16, 24);
-#else
-	Graphics::PixelFormat format = Graphics::PixelFormat(4, 8, 8, 8, 8, 24, 16, 8, 0);
-#endif
+	// Initialize the graphics mode to ABGR32
+	Graphics::PixelFormat format = Graphics::PixelFormat::createFormatABGR32();
 	initGraphics(800, 600, &format);
 
 	// We do not support color conversion yet
@@ -234,10 +230,9 @@ Common::Error GnapEngine::run() {
 
 #ifdef USE_FREETYPE2
 	Common::SeekableReadStream *stream = _exe->getResource(Common::kWinFont, 2000);
-	_font = Graphics::loadTTFFont(*stream, 24);
+	_font = Graphics::loadTTFFont(stream, DisposeAfterUse::YES, 24);
 	if (!_font)
 		warning("Unable to load font");
-	delete stream;
 #else
 	_font = nullptr;
 #endif
@@ -451,7 +446,7 @@ void GnapEngine::updateCursorByHotspot() {
 		if (_debugger->_showHotspotNumber) {
 			// NOTE This causes some display glitches
 			char t[256];
-			sprintf(t, "hotspot = %2d", hotspotIndex);
+			Common::sprintf_s(t, "hotspot = %2d", hotspotIndex);
 			if (!_font)
 				_gameSys->fillSurface(nullptr, 10, 10, 80, 16, 0, 0, 0);
 			else

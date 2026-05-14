@@ -23,14 +23,11 @@
 #define NUVIE_FILES_U6LIB_N_H
 
 #include "ultima/shared/std/containers.h"
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 #include "common/stream.h"
 
 namespace Ultima {
 namespace Nuvie {
-
-using Std::string;
-//using Std::vector;
 
 class NuvieIO;
 
@@ -39,7 +36,7 @@ struct U6LibItem {
 	uint8 flag;
 	uint32 uncomp_size;
 	uint32 size;
-	string *name;
+	Common::String *name;
 	unsigned char *data; // for writing or cache
 };
 
@@ -56,15 +53,15 @@ public:
 	U6Lib_n();
 	~U6Lib_n();
 
-	bool open(Std::string &filename, uint8 size, uint8 type = NUVIE_GAME_U6);
+	bool open(const Common::Path &filename, uint8 size, uint8 type = NUVIE_GAME_U6);
 	bool open(NuvieIO *new_data, uint8 size, uint8 type = NUVIE_GAME_U6);
 	void close();
-	bool create(Std::string &filename, uint8 size, uint8 type = NUVIE_GAME_U6);
+	bool create(const Common::Path &filename, uint8 size, uint8 type = NUVIE_GAME_U6);
 	uint8 get_game_type() {
 		return game_type;
 	}
 
-	unsigned char *get_item(uint32 item_number, unsigned char *buf = NULL); // read
+	unsigned char *get_item(uint32 item_number, unsigned char *buf = nullptr); // read
 	void set_item_data(uint32 item_number, unsigned char *src, uint32 src_len);
 
 	uint32 get_num_items();
@@ -73,7 +70,7 @@ public:
 	const char *get_item_name(uint32 item_number);
 	bool is_compressed(uint32 item_number);
 
-	void add_item(uint32 offset32, const char *name = NULL);
+	void add_item(uint32 offset32, const char *name = nullptr);
 	void write_item(uint32 item_number);
 	void write_items();
 
@@ -94,7 +91,7 @@ protected:
 class U6ConverseLib: U6Lib_n {
 private:
 	uint32 zero_offset_count;
-	string *conversefile;
+	Common::String *conversefile;
 };
 #endif
 } // End of namespace Nuvie

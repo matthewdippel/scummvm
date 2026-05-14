@@ -50,8 +50,8 @@ public:
 	void clearScreen() override;
 	void flipBuffer() override;
 
-	Texture *createTexture(const Graphics::Surface *surface = nullptr, const byte *palette = nullptr) override;
-	Texture *createBitmap(const Graphics::Surface *surface = nullptr, const byte *palette = nullptr) override;
+	Texture *createTexture() override;
+	Bitmap *createBitmap(const Graphics::Surface *surface = nullptr, const byte *palette = nullptr) override;
 	VisualActor *createActorRenderer() override;
 	VisualProp *createPropRenderer() override;
 	SurfaceRenderer *createSurfaceRenderer() override;
@@ -59,6 +59,7 @@ public:
 
 	OpenGL::Shader *createActorShaderInstance();
 	OpenGL::Shader *createSurfaceShaderInstance();
+	OpenGL::Shader *createSurfaceFillShaderInstance();
 	OpenGL::Shader *createFadeShaderInstance();
 	OpenGL::Shader *createShadowShaderInstance();
 
@@ -77,6 +78,7 @@ private:
 	Common::Rect _unscaledViewport;
 
 	OpenGL::Shader *_surfaceShader;
+	OpenGL::Shader *_surfaceFillShader;
 	OpenGL::Shader *_actorShader;
 	OpenGL::Shader *_fadeShader;
 	OpenGL::Shader *_shadowShader;

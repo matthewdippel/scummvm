@@ -48,14 +48,14 @@ public:
 	void get_lastcpos(int &lastcx, int &lastcy) override {
 		AGS::Engine::RouteFinder::get_lastcpos(lastcx, lastcy);
 	}
-	void set_route_move_speed(int speed_x, int speed_y) override {
-		AGS::Engine::RouteFinder::set_route_move_speed(speed_x, speed_y);
+	int find_route(short srcx, short srcy, short xx, short yy, int move_speed_x, int move_speed_y, Bitmap *onscreen, int movlst, int nocross = 0, int ignore_walls = 0) override {
+		return AGS::Engine::RouteFinder::find_route(srcx, srcy, xx, yy, move_speed_x, move_speed_y, onscreen, movlst, nocross, ignore_walls);
 	}
-	int find_route(short srcx, short srcy, short xx, short yy, Bitmap *onscreen, int movlst, int nocross = 0, int ignore_walls = 0) override {
-		return AGS::Engine::RouteFinder::find_route(srcx, srcy, xx, yy, onscreen, movlst, nocross, ignore_walls);
+	void recalculate_move_speeds(MoveList *mlsp, int old_speed_x, int old_speed_y, int new_speed_x, int new_speed_y) override {
+		AGS::Engine::RouteFinder::recalculate_move_speeds(mlsp, old_speed_x, old_speed_y, new_speed_x, new_speed_y);
 	}
-	void calculate_move_stage(MoveList *mlsp, int aaa) override {
-		AGS::Engine::RouteFinder::calculate_move_stage(mlsp, aaa);
+	bool add_waypoint_direct(MoveList *mlsp, short x, short y, int move_speed_x, int move_speed_y) override {
+		return AGS::Engine::RouteFinder::add_waypoint_direct(mlsp, x, y, move_speed_x, move_speed_y);
 	}
 };
 
@@ -78,14 +78,14 @@ public:
 	void get_lastcpos(int &lastcx, int &lastcy) override {
 		AGS::Engine::RouteFinderLegacy::get_lastcpos(lastcx, lastcy);
 	}
-	void set_route_move_speed(int speed_x, int speed_y) override {
-		AGS::Engine::RouteFinderLegacy::set_route_move_speed(speed_x, speed_y);
+	int find_route(short srcx, short srcy, short xx, short yy, int move_speed_x, int move_speed_y, Bitmap *onscreen, int movlst, int nocross = 0, int ignore_walls = 0) override {
+		return AGS::Engine::RouteFinderLegacy::find_route(srcx, srcy, xx, yy, move_speed_x, move_speed_y, onscreen, movlst, nocross, ignore_walls);
 	}
-	int find_route(short srcx, short srcy, short xx, short yy, Bitmap *onscreen, int movlst, int nocross = 0, int ignore_walls = 0) override {
-		return AGS::Engine::RouteFinderLegacy::find_route(srcx, srcy, xx, yy, onscreen, movlst, nocross, ignore_walls);
+	void recalculate_move_speeds(MoveList *mlsp, int old_speed_x, int old_speed_y, int new_speed_x, int new_speed_y) override {
+		assert(false); // not supported
 	}
-	void calculate_move_stage(MoveList *mlsp, int aaa) override {
-		AGS::Engine::RouteFinderLegacy::calculate_move_stage(mlsp, aaa);
+	bool add_waypoint_direct(MoveList *mlsp, short x, short y, int move_speed_x, int move_speed_y) override {
+		return AGS::Engine::RouteFinder::add_waypoint_direct(mlsp, x, y, move_speed_x, move_speed_y);
 	}
 };
 
@@ -118,16 +118,16 @@ void get_lastcpos(int &lastcx, int &lastcy) {
 	_GP(route_finder_impl)->get_lastcpos(lastcx, lastcy);
 }
 
-void set_route_move_speed(int speed_x, int speed_y) {
-	_GP(route_finder_impl)->set_route_move_speed(speed_x, speed_y);
+int find_route(short srcx, short srcy, short xx, short yy, int move_speed_x, int move_speed_y, Bitmap *onscreen, int movlst, int nocross, int ignore_walls) {
+	return _GP(route_finder_impl)->find_route(srcx, srcy, xx, yy, move_speed_x, move_speed_y, onscreen, movlst, nocross, ignore_walls);
 }
 
-int find_route(short srcx, short srcy, short xx, short yy, Bitmap *onscreen, int movlst, int nocross, int ignore_walls) {
-	return _GP(route_finder_impl)->find_route(srcx, srcy, xx, yy, onscreen, movlst, nocross, ignore_walls);
+void recalculate_move_speeds(MoveList *mlsp, int old_speed_x, int old_speed_y, int new_speed_x, int new_speed_y) {
+	_GP(route_finder_impl)->recalculate_move_speeds(mlsp, old_speed_x, old_speed_y, new_speed_x, new_speed_y);
 }
 
-void calculate_move_stage(MoveList *mlsp, int aaa) {
-	_GP(route_finder_impl)->calculate_move_stage(mlsp, aaa);
+bool add_waypoint_direct(MoveList *mlsp, short x, short y, int move_speed_x, int move_speed_y) {
+	return _GP(route_finder_impl)->add_waypoint_direct(mlsp, x, y, move_speed_x, move_speed_y);
 }
 
 } // namespace AGS3

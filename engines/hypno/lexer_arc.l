@@ -1,3 +1,4 @@
+%top{
 /* ScummVM - Graphic Adventure Engine
  *
  * ScummVM is the legal property of its developers, whose names
@@ -19,6 +20,24 @@
  *
  */
 
+#define YY_NO_UNISTD_H
+#define FORBIDDEN_SYMBOL_EXCEPTION_FILE
+#define FORBIDDEN_SYMBOL_EXCEPTION_fprintf
+#define FORBIDDEN_SYMBOL_EXCEPTION_fwrite
+#define FORBIDDEN_SYMBOL_EXCEPTION_fread
+#define FORBIDDEN_SYMBOL_EXCEPTION_stdin
+#define FORBIDDEN_SYMBOL_EXCEPTION_stdout
+#define FORBIDDEN_SYMBOL_EXCEPTION_stderr
+#define FORBIDDEN_SYMBOL_EXCEPTION_exit
+#define FORBIDDEN_SYMBOL_EXCEPTION_getc
+#define YYERROR_VERBOSE
+
+#include "hypno/hypno.h"
+#include "hypno/grammar.h"
+#include "hypno/tokens_arc.h"
+
+}
+
 %option noyywrap
 %option noinput
 %option nounput
@@ -27,17 +46,6 @@
 
 %option outfile="engines/hypno/lexer_arc.cpp"
 %option prefix="HYPNO_ARC_"
-
-%{
-#define YY_NO_UNISTD_H
-#define FORBIDDEN_SYMBOL_ALLOW_ALL
-#define YYERROR_VERBOSE
-
-#include "hypno/hypno.h"
-#include "hypno/grammar.h"
-#include "hypno/tokens_arc.h"
-
-%}
 
 %%
 NONE						return NONETOK;
@@ -103,6 +111,8 @@ Y[A-Z0-9]					HYPNO_ARC_lval.s = scumm_strdup(HYPNO_ARC_text); return YXTOK;
 
 namespace Hypno {
 
+extern Shoot *shoot;
+
 int parse_arc(const char *code) {
 	YY_BUFFER_STATE bp;
 	yy_delete_buffer(YY_CURRENT_BUFFER);
@@ -110,6 +120,8 @@ int parse_arc(const char *code) {
 	yy_switch_to_buffer(bp);
 	HYPNO_ARC_parse();
 	yy_delete_buffer(bp);
+	delete shoot;
+	shoot = nullptr;
 	return 0;
 }
 

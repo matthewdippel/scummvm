@@ -19,6 +19,7 @@
  *
  */
 
+#include "graphics/palette.h"
 #include "video/avi_decoder.h"
 #include "video/flic_decoder.h"
 #include "video/mpegps_decoder.h"
@@ -68,37 +69,43 @@ static bool play_video(Video::VideoDecoder *decoder, const char *name, int flags
 		return false;
 	}
 
-	update_polled_stuff_if_runtime();
+	update_polled_stuff();  // TODO: probably unneeded
 
 	Graphics::Screen scr;
 	bool stretchVideo = (flags & kVideo_Stretch) != 0;
 	bool enableVideo = (flags & kVideo_EnableVideo) != 0;
 	bool enableAudio = (flags & kVideo_EnableAudio) != 0;
+	bool clut8Screen = scr.format.isCLUT8();
 
-	// TODO: This seems back to front
-	if (enableAudio) {
-		stop_all_sound_and_music();
-	}
+	if (!enableAudio)
+		decoder->setVolume(0);
 
-	update_polled_stuff_if_runtime();
-	 
+	update_polled_stuff();
+
 	decoder->start();
 	while (!SHOULD_QUIT && !decoder->endOfVideo()) {
 		if (decoder->needsUpdate()) {
 			// Get the next video frame and draw onto the screen
 			const Graphics::Surface *frame = decoder->decodeNextFrame();
+			if (clut8Screen && decoder->hasDirtyPalette())
+				scr.setPalette(decoder->getPalette(), 0, 256);
 
 			if (frame && enableVideo) {
-				if (stretchVideo && frame->w == scr.w && frame->h == scr.h)
+				Rect dstRect = PlaceInRect(RectWH(0, 0, scr.w, scr.h), RectWH(0, 0, frame->w, frame->h),
+					(stretchVideo ? kPlaceStretchProportional : kPlaceCenter));
+
+				if (stretchVideo && frame->w == dstRect.GetWidth() && frame->h == dstRect.GetHeight())
 					// Don't need to stretch video after all
 					stretchVideo = false;
 
+				Graphics::Palette p(decoder->getPalette(), 256);
 				if (stretchVideo) {
+					scr.fillRect(Common::Rect(dstRect.Left, dstRect.Top, dstRect.Right + 1, dstRect.Bottom + 1), 0);
 					scr.transBlitFrom(*frame, Common::Rect(0, 0, frame->w, frame->h),
-					                  Common::Rect(0, 0, scr.w, scr.h));
+									  Common::Rect(dstRect.Left, dstRect.Top, dstRect.Right + 1, dstRect.Bottom + 1),
+									  &p);
 				} else {
-					scr.blitFrom(*frame, Common::Point((scr.w - frame->w) / 2,
-					                                   (scr.h - frame->h) / 2));
+					scr.blitFrom(*frame, Common::Point(dstRect.Left, dstRect.Top), &p);
 				}
 			}
 
@@ -110,20 +117,30 @@ static bool play_video(Video::VideoDecoder *decoder, const char *name, int flags
 
 		if (skip != VideoSkipNone) {
 			// Check for whether user aborted video
-			KeyInput key;
-			int mbut, mwheelz;
-			if (run_service_key_controls(key)) {
-				if (key.Key == 27 && skip >= VideoSkipEscape)
-					return true;
-				if (skip >= VideoSkipAnyKey)
-					return true;  // skip on any key
+			KeyInput ki;
+			eAGSMouseButton mbut;
+			int mwheelz;
+			// Handle all the buffered key events
+			bool do_break = false;
+			while (ags_keyevent_ready()) {
+				if (run_service_key_controls(ki) && !IsAGSServiceKey(ki.Key)) {
+					if ((ki.Key == eAGSKeyCodeEscape) && (skip == VideoSkipEscape))
+						do_break = true;
+					if (skip >= VideoSkipAnyKey)
+						do_break = true;  // skip on any key
+				}
 			}
-
-			if (run_service_mb_controls(mbut, mwheelz) && mbut >= 0 && skip == VideoSkipKeyOrMouse) {
+			if (do_break)
+				return true; // skip on key press
+			if (run_service_mb_controls(mbut, mwheelz) && mbut >= kMouseNone && skip == VideoSkipKeyOrMouse)
 				return true; // skip on mouse click
-			}
 		}
 	}
+
+	// Clear the screen after playback
+	if (_G(gfxDriver)->UsesMemoryBackBuffer())
+		_G(gfxDriver)->GetMemoryBackBuffer()->Clear();
+	render_to_screen();
 
 	invalidate_screen();
 

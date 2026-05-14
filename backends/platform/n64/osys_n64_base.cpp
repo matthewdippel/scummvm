@@ -28,11 +28,12 @@
 #include "osys_n64.h"
 #include "pakfs_save_manager.h"
 #include "framfs_save_manager.h"
+#include "backends/events/default/default-events.h"
 #include "backends/fs/n64/n64-fs-factory.h"
 #include "backends/mutex/null/null-mutex.h"
 #include "backends/saves/default/default-saves.h"
 #include "backends/timer/default/default-timer.h"
-#include "graphics/conversion.h"
+#include "graphics/blit.h"
 
 typedef unsigned long long uint64;
 
@@ -90,6 +91,7 @@ OSystem_N64::OSystem_N64() {
 	_disableFpsLimit = false;
 
 	_overlayVisible = false;
+	_overlayInGUI = false;
 
 	_shakeXOffset = 0;
 	_shakeYOffset = 0;
@@ -187,13 +189,14 @@ void OSystem_N64::initBackend() {
 		_savefileManager = new PAKSaveManager();
 	}
 
+	_eventManager = new DefaultEventManager(this);
 	_timerManager = new DefaultTimerManager();
 
 	setTimerCallback(&timer_handler, 10);
 
 	setupMixer();
 
-	EventsBaseBackend::initBackend();
+	BaseBackend::initBackend();
 }
 
 bool OSystem_N64::hasFeature(Feature f) {
@@ -613,27 +616,34 @@ void OSystem_N64::setShakePos(int shakeXOffset, int shakeYOffset) {
 	return;
 }
 
-void OSystem_N64::showOverlay() {
-	// Change min/max mouse coords
-	_mouseMaxX = _overlayWidth;
-	_mouseMaxY = _overlayHeight;
+void OSystem_N64::showOverlay(bool inGUI) {
+	_overlayInGUI = inGUI;
 
-	// Relocate the mouse cursor given the new limitations
-	warpMouse(_mouseX, _mouseY);
+	if (inGUI) {
+		// Change min/max mouse coords
+		_mouseMaxX = _overlayWidth;
+		_mouseMaxY = _overlayHeight;
+
+		// Relocate the mouse cursor given the new limitations
+		warpMouse(_mouseX, _mouseY);
+	}
 
 	_overlayVisible = true;
 	_dirtyOffscreen = true;
 }
 
 void OSystem_N64::hideOverlay() {
-	// Change min/max mouse coords
-	_mouseMaxX = _gameWidth;
-	_mouseMaxY = _gameHeight;
+	if (_overlayInGUI) {
+		// Change min/max mouse coords
+		_mouseMaxX = _gameWidth;
+		_mouseMaxY = _gameHeight;
 
-	// Relocate the mouse cursor given the new limitations
-	warpMouse(_mouseX, _mouseY);
+		// Relocate the mouse cursor given the new limitations
+		warpMouse(_mouseX, _mouseY);
+	}
 
 	_overlayVisible = false;
+	_overlayInGUI = false;
 
 	// Clear double buffered display
 	clearAllVideoBuffers();
@@ -721,11 +731,11 @@ void OSystem_N64::copyRectToOverlay(const void *buf, int pitch, int x, int y, in
 	return;
 }
 
-int16 OSystem_N64::getOverlayHeight() {
+int16 OSystem_N64::getOverlayHeight() const {
 	return _overlayHeight;
 }
 
-int16 OSystem_N64::getOverlayWidth() {
+int16 OSystem_N64::getOverlayWidth() const {
 	return _overlayWidth;
 }
 
@@ -758,8 +768,11 @@ void OSystem_N64::warpMouse(int x, int y) {
 	_dirtyOffscreen = true;
 }
 
-void OSystem_N64::setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format) {
+void OSystem_N64::setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format, const byte *mask) {
 	if (!w || !h) return;
+
+	if (mask)
+		warning("OSystem_N64::setMouseCursor: Masks are not supported");
 
 	_mouseHotspotX = hotspotX;
 	_mouseHotspotY = hotspotY;

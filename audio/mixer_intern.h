@@ -64,7 +64,8 @@ private:
 	Common::Mutex _mutex;
 
 	const uint _sampleRate;
-	const uint _outBufSize;
+	const bool _stereo;
+	uint _outBufSize;
 	bool _mixerReady;
 	uint32 _handleSeed;
 
@@ -81,60 +82,73 @@ private:
 
 public:
 
-	MixerImpl(uint sampleRate, uint outBufSize = 0);
+	MixerImpl(uint sampleRate, bool stereo = true, uint outBufSize = 0);
 	~MixerImpl();
 
-	virtual bool isReady() const { Common::StackLock lock(_mutex); return _mixerReady; }
+	bool isReady() const override { Common::StackLock lock(_mutex); return _mixerReady; }
 
-	virtual Common::Mutex &mutex() { return _mutex; }
+	Common::Mutex &mutex() override { return _mutex; }
 
-	virtual void playStream(
+	void playStream(
 		SoundType type,
 		SoundHandle *handle,
 		AudioStream *input,
 		int id, byte volume, int8 balance,
 		DisposeAfterUse::Flag autofreeStream,
 		bool permanent,
-		bool reverseStereo);
+		bool reverseStereo) override;
 
-	virtual void stopAll();
-	virtual void stopID(int id);
-	virtual void stopHandle(SoundHandle handle);
+	void stopAll() override;
+	void stopID(int id) override;
+	void stopHandle(SoundHandle handle) override;
 
-	virtual void pauseAll(bool paused);
-	virtual void pauseID(int id, bool paused);
-	virtual void pauseHandle(SoundHandle handle, bool paused);
+	void pauseAll(bool paused) override;
+	void pauseID(int id, bool paused) override;
+	void pauseHandle(SoundHandle handle, bool paused) override;
 
-	virtual bool isSoundIDActive(int id);
-	virtual int getSoundID(SoundHandle handle);
+	bool isSoundIDActive(int id) override;
+	int getSoundID(SoundHandle handle) override;
 
-	virtual bool isSoundHandleActive(SoundHandle handle);
+	bool isSoundHandleActive(SoundHandle handle) override;
 
-	virtual void muteSoundType(SoundType type, bool mute);
-	virtual bool isSoundTypeMuted(SoundType type) const;
+	void muteSoundType(SoundType type, bool mute) override;
+	bool isSoundTypeMuted(SoundType type) const override;
 
-	virtual void setChannelVolume(SoundHandle handle, byte volume);
-	virtual byte getChannelVolume(SoundHandle handle);
-	virtual void setChannelBalance(SoundHandle handle, int8 balance);
-	virtual int8 getChannelBalance(SoundHandle handle);
+	void setChannelVolume(SoundHandle handle, byte volume) override;
+	byte getChannelVolume(SoundHandle handle) override;
+	void setChannelBalance(SoundHandle handle, int8 balance) override;
+	int8 getChannelBalance(SoundHandle handle) override;
+	void setChannelFaderL(SoundHandle handle, uint8 scaleL) override;
+	uint8 getChannelFaderL(SoundHandle handle) override;
+	void setChannelFaderR(SoundHandle handle, uint8 scaleR) override;
+	uint8 getChannelFaderR(SoundHandle handle) override;
+	void setChannelRate(SoundHandle handle, uint32 rate) override;
+	uint32 getChannelRate(SoundHandle handle) override;
+	void resetChannelRate(SoundHandle handle) override;
 
-	virtual uint32 getSoundElapsedTime(SoundHandle handle);
-	virtual Timestamp getElapsedTime(SoundHandle handle);
+	uint32 getSoundElapsedTime(SoundHandle handle) override;
+	Timestamp getElapsedTime(SoundHandle handle) override;
 
-	virtual void loopChannel(SoundHandle handle);
+	void loopChannel(SoundHandle handle) override;
 
-	virtual bool hasActiveChannelOfType(SoundType type);
+	bool hasActiveChannelOfType(SoundType type) override;
 
-	virtual void setVolumeForSoundType(SoundType type, int volume);
-	virtual int getVolumeForSoundType(SoundType type) const;
+	void setVolumeForSoundType(SoundType type, int volume) override;
+	int getVolumeForSoundType(SoundType type) const override;
 
-	virtual uint getOutputRate() const;
-	virtual uint getOutputBufSize() const;
+	uint getOutputRate() const override;
+	bool getOutputStereo() const override;
+	uint getOutputBufSize() const override;
 
 protected:
 	void insertChannel(SoundHandle *handle, Channel *chan);
 
 public:
+	/**
+	 * Adjust the output buffer size
+	 */
+	void setOutputBufSize(uint outBufSize) { _outBufSize = outBufSize; }
+
 	/**
 	 * The mixer callback function, to be called at regular intervals by
 	 * the backend (e.g. from an audio mixing thread). All the actual mixing

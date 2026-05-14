@@ -25,8 +25,8 @@
  * It also has modifications by the ResidualVM-team, which are covered under the GPLv2 (or later).
  */
 
-#ifndef _tgl_zgl_h_
-#define _tgl_zgl_h_
+#ifndef TGL_ZGL_H
+#define TGL_ZGL_H
 
 #include "common/util.h"
 #include "common/textconsole.h"
@@ -79,6 +79,25 @@ enum {
 #define TGL_OFFSET_FILL    0x1
 #define TGL_OFFSET_LINE    0x2
 #define TGL_OFFSET_POINT   0x4
+
+enum eDataType {
+	kIntType,
+	kInt4Type,
+	kUintType,
+	kFloatType,
+	kFloat2Type,
+	kFloat4Type,
+	kFloat16Type
+};
+
+union uglValue {
+	TGLint _int;
+	TGLint _int4[4];
+	TGLfloat _float;
+	TGLfloat _float2[2];
+	TGLfloat _float4[4];
+	TGLfloat _float16[16];
+};
 
 struct GLSpecBuf {
 	int shininess_i;
@@ -140,7 +159,7 @@ struct GLParamBuffer {
 
 struct GLList {
 	GLParamBuffer *first_op_buffer;
-	// TODO: extensions for an hash table or a better allocating scheme
+	// TODO: extensions for a hash table or a better allocating scheme
 };
 
 struct GLVertex {
@@ -266,6 +285,10 @@ struct GLContext {
 	FrameBuffer *fb;
 	Common::Rect renderRect;
 
+	// scissor
+	bool scissor_test_enabled;
+	int scissor[4];
+
 	// blending
 	bool blending_enabled;
 	int source_blending_factor;
@@ -284,23 +307,24 @@ struct GLContext {
 	GLLight *first_light;
 	Vector4 ambient_light_model;
 	int local_light_model;
-	int lighting_enabled;
+	bool lighting_enabled;
 	int light_model_two_side;
 
 	// materials
 	GLMaterial materials[2];
-	int color_material_enabled;
+	bool color_material_enabled;
 	int current_color_material_mode;
 	int current_color_material_type;
 
 	// textures
-	GLTexture *current_texture;
+	GLTexture *current_texture, *default_texture;
 	uint maxTextureName;
 	bool texture_2d_enabled;
 	int texture_mag_filter;
 	int texture_min_filter;
 	uint texture_wrap_s;
 	uint texture_wrap_t;
+	GLTextureEnv _texEnv;
 	Common::Array<struct tglColorAssociation> colorAssociationList;
 
 	// shared state
@@ -333,8 +357,8 @@ struct GLContext {
 	int current_front_face;
 	int current_shade_model;
 	int current_cull_face;
-	int cull_face_enabled;
-	int normalize_enabled;
+	bool cull_face_enabled;
+	bool normalize_enabled;
 	gl_draw_triangle_func draw_triangle_front, draw_triangle_back;
 
 	// selection
@@ -407,11 +431,12 @@ struct GLContext {
 	bool depth_write_mask;
 
 	// stencil
+	bool stencil_buffer_supported;
 	bool stencil_test_enabled;
 	int stencil_test_func;
-	int stencil_ref_val;
-	uint stencil_mask;
-	uint stencil_write_mask;
+	byte stencil_ref_val;
+	byte stencil_mask;
+	byte stencil_write_mask;
 	int stencil_sfail;
 	int stencil_dpfail;
 	int stencil_dppass;
@@ -428,9 +453,13 @@ struct GLContext {
 	float fog_start;
 	float fog_end;
 
-	Common::Rect _scissorRect;
-
 	bool _enableDirtyRectangles;
+
+	// stipple
+	bool polygon_stipple_enabled;
+	byte polygon_stipple_pattern[128];
+	uint32 stippleColor;
+	bool two_color_stipple_enabled;
 
 	// blit test
 	Common::List<BlitImage *> _blitImages;
@@ -446,8 +475,10 @@ struct GLContext {
 	void gl_vertex_transform(GLVertex *v);
 	void gl_calc_fog_factor(GLVertex *v);
 
+	void gl_get_pname(TGLenum pname, union uglValue *data, eDataType &dataType);
+
 public:
-	// The glob* functions exposed to public, however they are only for internal use.
+	// The glop* functions exposed to public, however they are only for internal use.
 	// Calling them from outside of TinyGL is forbidden
 	#define ADD_OP(a, b, d) void glop ## a (GLParam *p);
 	#include "graphics/tinygl/opinfo.h"
@@ -474,17 +505,22 @@ public:
 
 	void gl_GetIntegerv(TGLenum pname, TGLint *data);
 	void gl_GetFloatv(TGLenum pname, TGLfloat *data);
+	void gl_GetDoublev(TGLenum pname, TGLdouble *data);
+	void gl_GetBooleanv(TGLenum pname, TGLboolean *data);
+
+	void gl_EnableClientState(GLParam *p);
+	void gl_DisableClientState(GLParam *p);
+	void gl_VertexPointer(GLParam *p);
+	void gl_ColorPointer(GLParam *p);
+	void gl_NormalPointer(GLParam *p);
+	void gl_TexCoordPointer(GLParam *p);
 
 	GLTexture *alloc_texture(uint h);
 	GLTexture *find_texture(uint h);
-	void free_texture(uint h);
 	void free_texture(GLTexture *t);
 	void gl_GenTextures(TGLsizei n, TGLuint *textures);
 	void gl_DeleteTextures(TGLsizei n, const TGLuint *textures);
-
-	void gl_resizeImage(Graphics::PixelBuffer &dest, int xsize_dest, int ysize_dest,
-	                    const Graphics::PixelBuffer &src, int xsize_src, int ysize_src);
-	void gl_resizeImageNoInterpolate(Graphics::PixelBuffer &dest, int xsize_dest, int ysize_dest, const Graphics::PixelBuffer &src, int xsize_src, int ysize_src);
+	void gl_PixelStore(TGLenum pname, TGLint param);
 
 	void issueDrawCall(DrawCall *drawCall);
 	void disposeResources();
@@ -512,7 +548,8 @@ public:
 	void initSharedState();
 	void endSharedState();
 
-	void init(int screenW, int screenH, Graphics::PixelFormat pixelFormat, int textureSize, bool enableStencilBuffer, bool dirtyRectsEnable = true);
+	void init(int screenW, int screenH, Graphics::PixelFormat pixelFormat, int textureSize,
+	          bool enableStencilBuffer, bool dirtyRectsEnable, uint32 drawCallMemorySize);
 	void deinit();
 
 	void gl_print_matrix(const float *m);

@@ -22,7 +22,7 @@
 #ifndef AGS_SHARED_FONT_FONTS_H
 #define AGS_SHARED_FONT_FONTS_H
 
-#include "ags/lib/std/vector.h"
+#include "common/std/vector.h"
 #include "ags/shared/ac/game_struct_defines.h"
 #include "ags/shared/util/string.h"
 #include "ags/shared/ac/game_struct_defines.h"
@@ -33,6 +33,7 @@ namespace AGS3 {
 
 class IAGSFontRenderer;
 class IAGSFontRenderer2;
+class IAGSFontRendererInternal;
 struct FontInfo;
 struct FontRenderParams;
 
@@ -40,8 +41,12 @@ namespace AGS {
 namespace Shared {
 
 struct Font {
+	// Classic font renderer interface
 	IAGSFontRenderer *Renderer = nullptr;
+	// Extended font renderer interface (optional)
 	IAGSFontRenderer2 *Renderer2 = nullptr;
+	// Internal interface (only for built-in renderers)
+	IAGSFontRendererInternal *RendererInt = nullptr;
 	FontInfo            Info;
 	// Values received from the renderer and saved for the reference
 	FontMetrics       Metrics;
@@ -60,15 +65,12 @@ struct Font {
 
 using namespace AGS;
 
-class IAGSFontRenderer;
-class IAGSFontRenderer2;
-struct FontInfo;
-struct FontRenderParams;
-
 void init_font_renderer();
 void shutdown_font_renderer();
 void adjust_y_coordinate_for_text(int *ypos, size_t fontnum);
 IAGSFontRenderer *font_replace_renderer(size_t fontNumber, IAGSFontRenderer *renderer);
+IAGSFontRenderer *font_replace_renderer(size_t fontNumber, IAGSFontRenderer2 *renderer);
+ void font_recalc_metrics(size_t fontNumber);
 bool font_first_renderer_loaded();
 bool is_font_loaded(size_t fontNumber);
 bool is_bitmap_font(size_t fontNumber);
@@ -88,17 +90,24 @@ void ensure_text_valid_for_font(char *text, size_t fontnum);
 int get_font_scaling_mul(size_t fontNumber);
 // Calculate actual width of a line of text
 int get_text_width(const char *texx, size_t fontNumber);
-// Get the maximal width of the given font, with corresponding outlining
+// Get the maximal width of the line of text, with corresponding outlining
 int get_text_width_outlined(const char *text, size_t font_number);
+// Get the maximal height of the line of text;
+// note that this won't be a nominal font's height, but the max of each met glyph's graphical height.
+int get_text_height(const char *text, size_t font_number);
 // Get font's height; this value is used for logical arrangement of UI elements;
 // note that this is a "formal" font height, that may have different value
 // depending on compatibility mode (used when running old games);
 int get_font_height(size_t fontNumber);
 // Get the maximal height of the given font, with corresponding outlining
 int get_font_height_outlined(size_t fontNumber);
-// Get font's surface height: this always returns the height enough to accomodate
+// Get font's surface height: this always returns the height enough to accommodate
 // font letters on a bitmap or a texture; the distinction is needed for compatibility reasons
 int get_font_surface_height(size_t fontNumber);
+// Get font's maximal graphical extent: this means the farthest vertical positions of glyphs,
+// relative to the "pen" position. Besides letting to calculate the surface height,
+// this information also lets to detect if some of the glyphs may appear above y0.
+std::pair<int, int> get_font_surface_extent(size_t fontNumber);
 // Get font's line spacing
 int get_font_linespacing(size_t fontNumber);
 // Set font's line spacing
@@ -110,7 +119,7 @@ int  get_font_outline_thickness(size_t font_number);
 // Gets the total maximal height of the given number of lines printed with the given font;
 // note that this uses formal font height, for compatibility purposes
 int get_text_lines_height(size_t fontNumber, size_t numlines);
-// Gets the height of a graphic surface enough to accomodate this number of text lines;
+// Gets the height of a graphic surface enough to accommodate this number of text lines;
 // note this accounts for the real pixel font height
 int get_text_lines_surf_height(size_t fontNumber, size_t numlines);
 // Set font's outline type

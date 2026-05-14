@@ -19,7 +19,25 @@
  *
  */
 
-#define FORBIDDEN_SYMBOL_ALLOW_ALL
+#define FORBIDDEN_SYMBOL_EXCEPTION_setjmp
+#define FORBIDDEN_SYMBOL_EXCEPTION_longjmp
+#define FORBIDDEN_SYMBOL_EXCEPTION_strcpy
+#define FORBIDDEN_SYMBOL_EXCEPTION_strcat
+
+// Following are pulled in for wchar.h header on XCode iOS-7
+#define FORBIDDEN_SYMBOL_EXCEPTION_FILE
+#define FORBIDDEN_SYMBOL_EXCEPTION_fgetwc
+#define FORBIDDEN_SYMBOL_EXCEPTION_fgetws
+#define FORBIDDEN_SYMBOL_EXCEPTION_asctime
+#define FORBIDDEN_SYMBOL_EXCEPTION_clock
+#define FORBIDDEN_SYMBOL_EXCEPTION_ctime
+#define FORBIDDEN_SYMBOL_EXCEPTION_difftime
+#define FORBIDDEN_SYMBOL_EXCEPTION_getdate
+#define FORBIDDEN_SYMBOL_EXCEPTION_gmtime
+#define FORBIDDEN_SYMBOL_EXCEPTION_localtime
+#define FORBIDDEN_SYMBOL_EXCEPTION_mktime
+#define FORBIDDEN_SYMBOL_EXCEPTION_time
+
 #include "common/scummsys.h"
 
 #ifdef USE_FREETYPE2
@@ -32,10 +50,16 @@
 #include "ags/lib/allegro/unicode.h"
 #include "graphics/fonts/freetype.h"
 
+#ifndef NO_FT213_AUTOHINT
+#include "ags/lib/freetype-2.1.3/autohint/ahhint.h"
+#endif
+
 namespace AGS3 {
 
 using Graphics::FreeType::Init_FreeType;
+using Graphics::FreeType::Init_FreeType_With_Mem;
 using Graphics::FreeType::Done_FreeType;
+using Graphics::FreeType::Done_FreeType_With_Mem;
 using Graphics::FreeType::Load_Glyph;
 using Graphics::FreeType::Get_Glyph;
 using Graphics::FreeType::Glyph_Copy;
@@ -70,6 +94,8 @@ struct ALFONT_FONT {
 	int face_h;             /* face height */
 	int real_face_h;        /* real face height */
 	int face_ascender;      /* face ascender */
+	int real_face_extent_asc;  /* calculated max extent of glyphs (ascender) */
+	int real_face_extent_desc; /* calculated max extent of glyphs (descender) */
 	char *data;             /* if loaded from memory, the data chunk */
 	int data_size;          /* and its size */
 	int ch_spacing;         /* extra spacing */
@@ -101,6 +127,10 @@ BITMAP *default_bmp; //Draw Font on default BITMAP;
 static FT_Library ft_library;
 static int alfont_textmode = 0;
 static int alfont_inited = 0;
+static FT_Memory ft_memory;
+#ifndef NO_FT213_AUTOHINT
+static FreeType213::AH_Hinter ft_hinter;
+#endif
 
 const char *alfont_get_name(ALFONT_FONT *f) {
 	if (!f)
@@ -118,8 +148,8 @@ const char *alfont_get_name(ALFONT_FONT *f) {
 */
 
 /* original: _blender_trans15 in colblend.c */
-unsigned long __skiptranspixels_blender_trans15(unsigned long x, unsigned long y, unsigned long n) {
-	unsigned long result;
+uint32_t __skiptranspixels_blender_trans15(uint32_t x, uint32_t y, uint32_t n) {
+	uint32_t result;
 
 	if ((y & 0xFFFF) == 0x7C1F)
 		return x;
@@ -136,8 +166,8 @@ unsigned long __skiptranspixels_blender_trans15(unsigned long x, unsigned long y
 }
 
 /* original: _blender_trans16 in colblend.c */
-unsigned long __skiptranspixels_blender_trans16(unsigned long x, unsigned long y, unsigned long n) {
-	unsigned long result;
+uint32_t __skiptranspixels_blender_trans16(uint32_t x, uint32_t y, uint32_t n) {
+	uint32_t result;
 
 	if ((y & 0xFFFF) == 0xF81F)
 		return x;
@@ -154,8 +184,8 @@ unsigned long __skiptranspixels_blender_trans16(unsigned long x, unsigned long y
 }
 
 /* original: _blender_trans24 in colblend.c */
-unsigned long __preservedalpha_blender_trans24(unsigned long x, unsigned long y, unsigned long n) {
-	unsigned long res, g, alpha;
+uint32_t __preservedalpha_blender_trans24(uint32_t x, uint32_t y, uint32_t n) {
+	uint32_t res, g, alpha;
 
 	alpha = (y & 0xFF000000);
 
@@ -178,10 +208,30 @@ unsigned long __preservedalpha_blender_trans24(unsigned long x, unsigned long y,
 
 /* replaces set_trans_blender() */
 void set_preservedalpha_trans_blender(int r, int g, int b, int a) {
+	// TODO: The current putpixel() implementation does not support blending in DRAW_MODE_TRANS mode (which is not implemented),
+	// so we can't just call set_blender_mode() here.
+	// The actual blending is done by the apply_trans_blender() function, just before the putpixel() calls
+
 	//set_blender_mode(__skiptranspixels_blender_trans15, __skiptranspixels_blender_trans16, __preservedalpha_blender_trans24, r, g, b, a);
-	set_blender_mode(kAlphaPreservedBlenderMode, r, g, b, a);
+	//set_blender_mode(kAlphaPreservedBlenderMode, r, g, b, a);
 }
 
+/* blends a pixel using the alternative blenders, this is a replacement
+ * for the previous function using set_blender_mode
+ */
+int apply_trans_blender(BITMAP *bmp, int color1, int color2, int alpha) {
+	switch (bitmap_color_depth(bmp)) {
+	case 15:
+		return __skiptranspixels_blender_trans15(color1, color2, alpha);
+	case 16:
+		return __skiptranspixels_blender_trans16(color1, color2, alpha);
+	case 24:
+	case 32:
+		return __preservedalpha_blender_trans24(color1, color2, alpha);
+	default:
+		return color1;
+	}
+}
 
 /* helpers */
 
@@ -222,6 +272,8 @@ static void _alfont_uncache_glyphs(ALFONT_FONT *f) {
 
 
 static void _alfont_uncache_glyph_number(ALFONT_FONT *f, int glyph_number) {
+	if ((glyph_number < 0) || (glyph_number >= f->face->num_glyphs))
+		return;
 	if (f->cached_glyphs) {
 		if (f->cached_glyphs[glyph_number].is_cached) {
 			f->cached_glyphs[glyph_number].is_cached = 0;
@@ -248,11 +300,42 @@ static void _alfont_delete_glyphs(ALFONT_FONT *f) {
 
 
 static void _alfont_cache_glyph(ALFONT_FONT *f, int glyph_number) {
+	if ((glyph_number < 0) || (glyph_number >= f->face->num_glyphs))
+		return;
+
 	/* if glyph not cached yet */
 	if (!f->cached_glyphs[glyph_number].is_cached) {
 		FT_Glyph new_glyph;
+
 		/* load the font glyph */
+
+#ifdef NO_FT213_AUTOHINT
 		Load_Glyph(f->face, glyph_number, FT_LOAD_DEFAULT);
+#else
+		FT_Int32 load_flags = FT_LOAD_DEFAULT;
+		FT_GlyphSlot slot = f->face->glyph;
+
+		FreeType213::ah_hinter_load_glyph(ft_hinter, slot, f->face->size, glyph_number, FT_LOAD_DEFAULT);
+
+		/* compute the advance */
+		if (load_flags & FT_LOAD_VERTICAL_LAYOUT) {
+			slot->advance.x = 0;
+			slot->advance.y = slot->metrics.vertAdvance;
+		} else {
+			slot->advance.x = slot->metrics.horiAdvance;
+			slot->advance.y = 0;
+		}
+
+		/* compute the linear advance in 16.16 pixels */
+		if ((load_flags & FT_LOAD_LINEAR_DESIGN) == 0) {
+			FT_UInt EM = f->face->units_per_EM;
+			FT_Size_Metrics *metrics = &f->face->size->metrics;
+
+			slot->linearHoriAdvance = FT_MulDiv(slot->linearHoriAdvance, (FT_Long)metrics->x_ppem << 16, EM);
+			slot->linearVertAdvance = FT_MulDiv(slot->linearVertAdvance, (FT_Long)metrics->y_ppem << 16, EM);
+		}
+#endif
+
 		Get_Glyph(f->face->glyph, &new_glyph);
 
 		/* ok, this glyph is now cached */
@@ -417,6 +500,15 @@ static void _alfont_new_cache_glyph(ALFONT_FONT *f) {
 	}
 }
 
+static void _alfont_calculate_max_cbox(ALFONT_FONT *f, int max_glyphs) {
+	(void) max_glyphs; // kept just in case, but this was used to load N glyphs
+
+	FT_Long bbox_ymin = FT_MulFix(FT_DivFix(f->face->bbox.yMin, f->face->units_per_EM), f->face->size->metrics.y_ppem);
+	FT_Long bbox_ymax = FT_MulFix(FT_DivFix(f->face->bbox.yMax, f->face->units_per_EM), f->face->size->metrics.y_ppem);
+
+	f->real_face_extent_asc = (int)bbox_ymax;
+	f->real_face_extent_desc = -(int)bbox_ymin;
+}
 
 /* API */
 
@@ -491,7 +583,11 @@ int alfont_set_font_size_ex(ALFONT_FONT *f, int h, int flags) {
 		f->real_face_h = real_height;
 		f->face_ascender = f->face->size->metrics.ascender >> 6;
 
-		// AGS COMPAT HACK: set ascender to the formal font height
+		/* Precalculate actual glyphs vertical extent */
+		if ((flags & ALFONT_FLG_PRECALC_MAX_CBOX) != 0) {
+			_alfont_calculate_max_cbox(f, 256);
+		}
+		/* AGS COMPAT HACK: set ascender to the formal font height */
 		if ((flags & ALFONT_FLG_ASCENDER_EQ_HEIGHT) != 0) {
 			f->face_ascender = test_h;
 			f->real_face_h = test_h + abs(f->face->size->metrics.descender >> 6);
@@ -514,10 +610,18 @@ int alfont_get_font_real_height(ALFONT_FONT *f) {
 	return f->real_face_h;
 }
 
+ALFONT_DLL_DECLSPEC void alfont_get_font_real_vextent(ALFONT_FONT *f, int *top, int *bottom) {
+	*top = f->face_ascender - f->real_face_extent_asc; // may be negative
+	*bottom = f->face_ascender + f->real_face_extent_desc;
+}
+
 void alfont_exit(void) {
 	if (alfont_inited) {
 		alfont_inited = 0;
-		Done_FreeType(ft_library);
+#ifndef NO_FT213_AUTOHINT
+		FreeType213::ah_hinter_done(ft_hinter);
+#endif
+		Done_FreeType_With_Mem(ft_library, ft_memory);
 		memset(&ft_library, 0, sizeof(ft_library));
 	}
 }
@@ -529,10 +633,20 @@ int alfont_init(void) {
 	else {
 		int error;
 		memset(&ft_library, 0, sizeof(ft_library));
-		error = Init_FreeType(&ft_library);
+		error = Init_FreeType_With_Mem(&ft_library, &ft_memory);
 
-		if (!error)
-			alfont_inited = 1;
+		if (!error) {
+#ifndef NO_FT213_AUTOHINT
+			error = FreeType213::ah_hinter_new(ft_memory, &ft_hinter);
+			if (error) {
+				Done_FreeType_With_Mem(ft_library, ft_memory);
+			}
+#endif
+
+			if (!error) {
+				alfont_inited = 1;
+			}
+		}
 
 		return error;
 	}
@@ -836,7 +950,7 @@ void alfont_textout_aa_ex(BITMAP *bmp, ALFONT_FONT *f, const char *s, int x, int
 				memset(s_pointer, 0, nLen);
 				precedingchar_pointer = (char *)malloc(2 * sizeof(char));
 				memset(precedingchar_pointer, 0, 2);
-				sprintf(precedingchar_pointer, "%c", f->precedingchar);
+				snprintf(precedingchar_pointer, 2 * sizeof(char), "%c", f->precedingchar);
 				strcpy(s_pointer, precedingchar_pointer);
 				if (precedingchar_pointer) {
 					free(precedingchar_pointer);
@@ -955,8 +1069,11 @@ void alfont_textout_aa_ex(BITMAP *bmp, ALFONT_FONT *f, const char *s, int x, int
 
 	/* is it under or over or too far to the right of the clipping rect then
 	   we can assume the string is clipped */
-	if ((y + f->face_h < bmp->ct) || (y > bmp->cb) || (x > bmp->cr))
+	if ((y + f->face_h < bmp->ct) || (y > bmp->cb) || (x > bmp->cr)) {
+		if(s_pointer) free(s_pointer);
+		s_pointer = NULL;
 		return;
+	}
 
 	//build transparency
 	if (f->transparency != 255) {
@@ -1037,6 +1154,10 @@ void alfont_textout_aa_ex(BITMAP *bmp, ALFONT_FONT *f, const char *s, int x, int
 			else
 				glyph_index_tmp = character;
 
+			/* if out of existing glyph range -- skip it */
+			if ((glyph_index_tmp < 0) || (glyph_index_tmp >= f->face->num_glyphs))
+				continue;
+
 			/* cache the glyph */
 			_alfont_cache_glyph(f, glyph_index_tmp);
 			cglyph_tmp = f->cached_glyphs[glyph_index_tmp];
@@ -1074,6 +1195,10 @@ void alfont_textout_aa_ex(BITMAP *bmp, ALFONT_FONT *f, const char *s, int x, int
 			glyph_index = Get_Char_Index(f->face, character);
 		else
 			glyph_index = character;
+
+		/* if out of existing glyph range -- skip it */
+		if ((glyph_index < 0) || (glyph_index >= f->face->num_glyphs))
+			continue;
 
 		/* cache the glyph */
 		_alfont_cache_glyph(f, glyph_index);
@@ -1529,13 +1654,15 @@ void alfont_textout_aa_ex(BITMAP *bmp, ALFONT_FONT *f, const char *s, int x, int
 					for (bmp_y = real_y; bmp_y < max_bmp_y; bmp_y++) {
 						for (bmp_x = real_x; bmp_x < max_bmp_x; bmp_x++) {
 							const int alpha = *bmp_p++;
-
+							const int orig_color = color;
 							if (alpha) {
 								if (alpha >= 255)
 									solid_mode();
 								else {
 									drawing_mode(DRAW_MODE_TRANS, NULL, 0, 0);
 									set_preservedalpha_trans_blender(0, 0, 0, alpha);
+									// apply blending
+									color = apply_trans_blender(bmp, color, getpixel(bmp, bmp_x, bmp_y), alpha);
 								}
 								if (first_x > bmp_x) first_x = bmp_x;
 								if (final_x < bmp_x) final_x = bmp_x;
@@ -1574,6 +1701,8 @@ void alfont_textout_aa_ex(BITMAP *bmp, ALFONT_FONT *f, const char *s, int x, int
 									putpixel(bmp, bmp_x, bmp_y, color);
 								}
 							}
+							if (color != orig_color) // restore original color
+								color = orig_color;
 						}
 					}
 				} else { //restore original pic
@@ -1932,7 +2061,7 @@ void alfont_textout_ex(BITMAP * bmp, ALFONT_FONT * f, const char *s, int x, int 
 				memset(s_pointer, 0, nLen);
 				precedingchar_pointer = (char *)malloc(2 * sizeof(char));
 				memset(precedingchar_pointer, 0, 2);
-				sprintf(precedingchar_pointer, "%c", f->precedingchar);
+				snprintf(precedingchar_pointer, 2 * sizeof(char), "%c", f->precedingchar);
 				strcpy(s_pointer, precedingchar_pointer);
 				if (precedingchar_pointer) {
 					free(precedingchar_pointer);
@@ -2052,8 +2181,11 @@ void alfont_textout_ex(BITMAP * bmp, ALFONT_FONT * f, const char *s, int x, int 
 
 	/* is it under or over or too far to the right of the clipping rect then
 	   we can assume the string is clipped */
-	if ((y + f->face_h < bmp->ct) || (y > bmp->cb) || (x > bmp->cr))
+	if ((y + f->face_h < bmp->ct) || (y > bmp->cb) || (x > bmp->cr)) {
+		if(s_pointer) free(s_pointer);
+		s_pointer = NULL;
 		return;
+	}
 
 	//build transparency
 	if (f->transparency != 255) {
@@ -2108,6 +2240,10 @@ void alfont_textout_ex(BITMAP * bmp, ALFONT_FONT * f, const char *s, int x, int 
 			else
 				glyph_index_tmp = character;
 
+			/* if out of existing glyph range -- skip it */
+			if ((glyph_index_tmp < 0) || (glyph_index_tmp >= f->face->num_glyphs))
+				continue;
+
 			/* cache the glyph */
 			_alfont_cache_glyph(f, glyph_index_tmp);
 			cglyph_tmp = f->cached_glyphs[glyph_index_tmp];
@@ -2144,6 +2280,10 @@ void alfont_textout_ex(BITMAP * bmp, ALFONT_FONT * f, const char *s, int x, int 
 			glyph_index = Get_Char_Index(f->face, character);
 		else
 			glyph_index = character;
+
+		/* if out of existing glyph range -- skip it */
+		if ((glyph_index < 0) || (glyph_index >= f->face->num_glyphs))
+			continue;
 
 		/* cache the glyph */
 		_alfont_cache_glyph(f, glyph_index);
@@ -2743,7 +2883,7 @@ int alfont_text_length(ALFONT_FONT * f, const char *str) {
 				memset(str_pointer, 0, nLen);
 				precedingchar_pointer = (char *)malloc(2 * sizeof(char));
 				memset(precedingchar_pointer, 0, 2);
-				sprintf(precedingchar_pointer, "%c", f->precedingchar);
+				snprintf(precedingchar_pointer, 2 * sizeof(char), "%c", f->precedingchar);
 				strcpy(str_pointer, precedingchar_pointer);
 				if (precedingchar_pointer) {
 					free(precedingchar_pointer);
@@ -2890,6 +3030,10 @@ int alfont_text_length(ALFONT_FONT * f, const char *str) {
 			else
 				glyph_index_tmp = character;
 
+			/* if out of existing glyph range -- skip it */
+			if ((glyph_index_tmp < 0) || (glyph_index_tmp >= f->face->num_glyphs))
+				continue;
+
 			/* cache the glyph */
 			_alfont_cache_glyph(f, glyph_index_tmp);
 			if (max_advancex < f->cached_glyphs[glyph_index_tmp].advancex)
@@ -2922,6 +3066,10 @@ int alfont_text_length(ALFONT_FONT * f, const char *str) {
 			total_length += v.x >> 6;
 		}*/
 		last_glyph_index = glyph_index;
+
+		/* if out of existing glyph range -- skip it */
+		if ((glyph_index < 0) || (glyph_index >= f->face->num_glyphs))
+			continue;
 
 		/* cache */
 		_alfont_cache_glyph(f, glyph_index);
@@ -3001,6 +3149,10 @@ int alfont_char_length(ALFONT_FONT * f, int character) {
 	  total_length += v.x >> 6;
 	}*/
 	last_glyph_index = glyph_index;
+
+	/* if out of existing glyph range -- imagine empty char */
+	if ((glyph_index < 0) || (glyph_index >= f->face->num_glyphs))
+		return 0;
 
 	if (f->fixed_width == TRUE) {
 		_alfont_uncache_glyph_number(f, glyph_index);
@@ -3131,7 +3283,7 @@ int alfont_text_count(ALFONT_FONT * f, const char *str) {
 				memset(str_pointer, 0, nLen);
 				precedingchar_pointer = (char *)malloc(2 * sizeof(char));
 				memset(precedingchar_pointer, 0, 2);
-				sprintf(precedingchar_pointer, "%c", f->precedingchar);
+				snprintf(precedingchar_pointer, 2 * sizeof(char), "%c", f->precedingchar);
 				strcpy(str_pointer, precedingchar_pointer);
 				if (precedingchar_pointer) {
 					free(precedingchar_pointer);
@@ -3380,7 +3532,7 @@ int alfont_ugetc(ALFONT_FONT * f, const char *s) {
 				memset(s_pointer, 0, nLen);
 				precedingchar_pointer = (char *)malloc(2 * sizeof(char));
 				memset(precedingchar_pointer, 0, 2);
-				sprintf(precedingchar_pointer, "%c", f->precedingchar);
+				snprintf(precedingchar_pointer, 2 * sizeof(char), "%c", f->precedingchar);
 				strcpy(s_pointer, precedingchar_pointer);
 				if (precedingchar_pointer) {
 					free(precedingchar_pointer);
@@ -3628,7 +3780,7 @@ int alfont_ugetx(ALFONT_FONT * f, char **s) {
 				memset(s_pointer, 0, nLen);
 				precedingchar_pointer = (char *)malloc(2 * sizeof(char));
 				memset(precedingchar_pointer, 0, 2);
-				sprintf(precedingchar_pointer, "%c", f->precedingchar);
+				snprintf(precedingchar_pointer, 2 * sizeof(char), "%c", f->precedingchar);
 				strcpy(s_pointer, precedingchar_pointer);
 				if (precedingchar_pointer) {
 					free(precedingchar_pointer);
@@ -3935,7 +4087,7 @@ int alfont_ugetxc(ALFONT_FONT * f, const char **s) {
 				memset(s_pointer, 0, nLen);
 				precedingchar_pointer = (char *)malloc(2 * sizeof(char));
 				memset(precedingchar_pointer, 0, 2);
-				sprintf(precedingchar_pointer, "%c", f->precedingchar);
+				snprintf(precedingchar_pointer, 2 * sizeof(char), "%c", f->precedingchar);
 				strcpy(s_pointer, precedingchar_pointer);
 				if (precedingchar_pointer) {
 					free(precedingchar_pointer);
@@ -4131,7 +4283,7 @@ int alfont_ugetxc(ALFONT_FONT * f, const char **s) {
 	return character;
 }
 
-// Following function alfont_get_string is removed from compilation because it 
+// Following function alfont_get_string is removed from compilation because it
 // is implemented with the use of non-standart malloc_usable_size function
 // (defined as _msize). This may cause linking errors on some Linux systems or
 // if using particular compilers.
@@ -4482,7 +4634,7 @@ int alfont_need_uconvert(ALFONT_FONT * f, const char *str) {
 				memset(str_pointer, 0, nLen);
 				precedingchar_pointer = (char *)malloc(2 * sizeof(char));
 				memset(precedingchar_pointer, 0, 2);
-				sprintf(precedingchar_pointer, "%c", f->precedingchar);
+				snprintf(precedingchar_pointer, 2 * sizeof(char), "%c", f->precedingchar);
 				strcpy(str_pointer, precedingchar_pointer);
 				if (precedingchar_pointer) {
 					free(precedingchar_pointer);
@@ -5040,6 +5192,7 @@ int alfont_set_font_size(ALFONT_FONT *f, int h) { return 0; }
 int alfont_set_font_size_ex(ALFONT_FONT *f, int h, int flags) { return 0; }
 int alfont_get_font_height(ALFONT_FONT *f) { return 0; }
 int alfont_get_font_real_height(ALFONT_FONT *f) { return 0; }
+void alfont_get_font_real_vextent(ALFONT_FONT *f, int *top, int *bottom) { *top = 0; *bottom = 0; }
 int alfont_text_mode(int mode) { return 0; }
 void alfont_textout_aa(BITMAP *bmp, ALFONT_FONT *f, const char *s, int x, int y, int color) {}
 void alfont_textout(BITMAP *bmp, ALFONT_FONT *f, const char *s, int x, int y, int color) {}

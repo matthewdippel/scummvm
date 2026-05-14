@@ -19,10 +19,11 @@
  *
  */
 
-#include "common/achievements.h"
 #include "common/config-manager.h"
 #include "common/events.h"
 #include "common/stream.h"
+
+#include "engines/achievements.h"
 
 #include "graphics/fontman.h"
 #include "graphics/surface.h"
@@ -120,27 +121,29 @@ void Testsuite::displayMessage(const Common::String &textToDisplay, const char *
 	prompt.runModal();
 }
 
-Common::Rect Testsuite::writeOnScreen(const Common::String &textToDisplay, const Common::Point &pt, bool flag) {
-	const Graphics::Font &font(*FontMan.getFontByUsage(Graphics::FontManager::kConsoleFont));
+Common::Rect Testsuite::writeOnScreen(const Common::String &textToDisplay, const Common::Point &pt, WriteFlags flags) {
 	uint fillColor = kColorBlack;
 	uint textColor = kColorWhite;
-
-	Graphics::Surface *screen = g_system->lockScreen();
-
-	int height = font.getFontHeight();
-	int width = screen->w;
-
-	Common::Rect rect(pt.x, pt.y, pt.x + width, pt.y + height);
-
-	if (flag) {
+	if (flags & kWriteRGBColors) {
 		Graphics::PixelFormat pf = g_system->getScreenFormat();
 		fillColor = pf.RGBToColor(0, 0, 0);
 		textColor = pf.RGBToColor(255, 255, 255);
 	}
 
-	screen->fillRect(rect, fillColor);
-	font.drawString(screen, textToDisplay, rect.left, rect.top, screen->w, textColor, Graphics::kTextAlignCenter);
+	const Graphics::Font &font(*FontMan.getFontByUsage(Graphics::FontManager::kConsoleFont));
 
+	int height = font.getFontHeight();
+	int width = g_system->getWidth();
+
+	Common::Rect rect(pt.x, pt.y, pt.x + width, pt.y + height);
+
+	g_system->fillScreen(rect, fillColor);
+
+	Graphics::Surface *screen = g_system->lockScreen();
+	if (flags & kWriteDrawFrame) {
+		screen->frameRect(Common::Rect(width, g_system->getHeight()), textColor);
+	}
+	font.drawString(screen, textToDisplay, rect.left, rect.top, screen->w, textColor, Graphics::kTextAlignCenter);
 	g_system->unlockScreen();
 	g_system->updateScreen();
 
@@ -148,11 +151,7 @@ Common::Rect Testsuite::writeOnScreen(const Common::String &textToDisplay, const
 }
 
 void Testsuite::clearScreen(const Common::Rect &rect) {
-	Graphics::Surface *screen = g_system->lockScreen();
-
-	screen->fillRect(rect, kColorBlack);
-
-	g_system->unlockScreen();
+	g_system->fillScreen(rect, kColorBlack);
 	g_system->updateScreen();
 }
 
@@ -169,16 +168,13 @@ void Testsuite::clearScreen() {
 }
 
 void Testsuite::clearScreen(bool flag) {
-	Graphics::Surface *screen = g_system->lockScreen();
 	uint fillColor = kColorBlack;
 
 	if (flag) {
 		fillColor = g_system->getScreenFormat().RGBToColor(0, 0, 0);
 	}
 
-	screen->fillRect(Common::Rect(0, 0, g_system->getWidth(), g_system->getHeight()), fillColor);
-
-	g_system->unlockScreen();
+	g_system->fillScreen(fillColor);
 	g_system->updateScreen();
 }
 

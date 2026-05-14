@@ -28,12 +28,26 @@ namespace Data {
 
 namespace Standard {
 
+CursorModifier::CursorModifier() : haveRemoveWhen(false) {
+}
+
 DataReadErrorCode CursorModifier::load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) {
-	if (prefix.plugInRevision != 1)
+	if (prefix.plugInRevision != 0 && prefix.plugInRevision != 1 && prefix.plugInRevision != 2)
 		return kDataReadErrorUnsupportedRevision;
 
-	if (!reader.readU16(unknown1) || !applyWhen.load(reader) || !reader.readU16(unknown2)
-		|| !removeWhen.load(reader) || !reader.readU16(unknown3) || !reader.readU32(cursorID) || !reader.readBytes(unknown4))
+	if (!applyWhen.load(reader))
+		return kDataReadErrorReadFailed;
+
+	if (prefix.plugInRevision >= 1) {
+		if (!removeWhen.load(reader))
+			return kDataReadErrorReadFailed;
+		haveRemoveWhen = true;
+	} else {
+		removeWhen.type = PlugInTypeTaggedValue::kNull;
+		haveRemoveWhen = false;
+	}
+
+	if (!cursorIDAsLabel.load(reader))
 		return kDataReadErrorReadFailed;
 
 	return kDataReadErrorNone;
@@ -51,6 +65,10 @@ DataReadErrorCode STransCtModifier::load(PlugIn &plugIn, const PlugInModifier &p
 	return kDataReadErrorNone;
 }
 
+MediaCueMessengerModifier::MediaCueMessengerModifier()
+	: unknown1(0), destination(0), unknown2(0) {
+}
+
 DataReadErrorCode MediaCueMessengerModifier::load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) {
 	if (prefix.plugInRevision != 1)
 		return kDataReadErrorUnsupportedRevision;
@@ -65,59 +83,32 @@ DataReadErrorCode MediaCueMessengerModifier::load(PlugIn &plugIn, const PlugInMo
 }
 
 DataReadErrorCode ObjectReferenceVariableModifier::load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) {
-	if (prefix.plugInRevision != 2)
+	if (prefix.plugInRevision != 0 && prefix.plugInRevision != 2)
 		return kDataReadErrorUnsupportedRevision;
 
-	if (!setToSourceParentWhen.load(reader) || !unknown1.load(reader))
+	if (!setToSourceParentWhen.load(reader))
 		return kDataReadErrorReadFailed;
 
-	bool hasNoPath = (unknown1.type == Data::PlugInTypeTaggedValue::kInteger && unknown1.value.asInt == 0);
-	if (hasNoPath)
-		objectPath.type = Data::PlugInTypeTaggedValue::kNull;
-	else if (!objectPath.load(reader))
-		return kDataReadErrorReadFailed;
-
-	return kDataReadErrorNone;
-}
-
-DataReadErrorCode MidiModifier::load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) {
-	if (prefix.plugInRevision != 1 && prefix.plugInRevision != 2)
-		return kDataReadErrorUnsupportedRevision;
-
-	if (!executeWhen.load(reader) || !terminateWhen.load(reader) || !reader.readU8(embeddedFlag))
-		return kDataReadErrorReadFailed;
-
-	if (embeddedFlag) {
-		if (!reader.readU8(modeSpecific.embedded.hasFile))
-			return kDataReadErrorReadFailed;
-		if (modeSpecific.embedded.hasFile) {
-			embeddedFile = Common::SharedPtr<EmbeddedFile>(new EmbeddedFile());
-
-			uint8 bigEndianLength[4];
-			if (!reader.readBytes(bigEndianLength))
-				return kDataReadErrorReadFailed;
-
-			uint32 length = (bigEndianLength[0] << 24) + (bigEndianLength[1] << 16) + (bigEndianLength[2] << 8) + bigEndianLength[3];
-
-			embeddedFile->contents.resize(length);
-			if (length > 0 && !reader.read(&embeddedFile->contents[0], length))
-				return kDataReadErrorReadFailed;
-		}
-
-		if (!reader.readU8(modeSpecific.embedded.loop) || !reader.readU8(modeSpecific.embedded.overrideTempo)
-			|| !reader.readU8(modeSpecific.embedded.volume) || !embeddedTempo.load(reader)
-			|| !embeddedFadeIn.load(reader) || !embeddedFadeOut.load(reader))
+	if (prefix.plugInRevision == 0) {
+		unknown1.type = Data::PlugInTypeTaggedValue::kNull;
+		if (!objectPath.load(reader))
 			return kDataReadErrorReadFailed;
 	} else {
-		if (!reader.readU8(modeSpecific.singleNote.channel) || !reader.readU8(modeSpecific.singleNote.note) || !reader.readU8(modeSpecific.singleNote.velocity)
-			|| !reader.readU8(modeSpecific.singleNote.program) || !singleNoteDuration.load(reader))
+		if (!unknown1.load(reader))
+			return kDataReadErrorReadFailed;
+
+		bool hasNoPath = (unknown1.type == Data::PlugInTypeTaggedValue::kInteger && unknown1.value.asInt == 0);
+		if (hasNoPath)
+			objectPath.type = Data::PlugInTypeTaggedValue::kNull;
+		else if (!objectPath.load(reader))
 			return kDataReadErrorReadFailed;
 	}
 
 	return kDataReadErrorNone;
 }
 
-ListVariableModifier::ListVariableModifier() : values(nullptr) {
+ListVariableModifier::ListVariableModifier() : unknown1(0), contentsType(0), unknown2{0, 0, 0, 0},
+	havePersistentData(false), numValues(0), values(nullptr), persistentValuesGarbled(false) {
 }
 
 ListVariableModifier::~ListVariableModifier() {
@@ -126,7 +117,7 @@ ListVariableModifier::~ListVariableModifier() {
 }
 
 DataReadErrorCode ListVariableModifier::load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) {
-	if (prefix.plugInRevision != 2 && prefix.plugInRevision != 3)
+	if (prefix.plugInRevision < 1 || prefix.plugInRevision > 3)
 		return kDataReadErrorUnsupportedRevision;
 
 	int64 privateDataPos = reader.tell();
@@ -136,12 +127,17 @@ DataReadErrorCode ListVariableModifier::load(PlugIn &plugIn, const PlugInModifie
 
 	persistentValuesGarbled = false;
 
-	if (prefix.plugInRevision == 3) {
-		PlugInTypeTaggedValue persistentFlag;
-		if (!persistentFlag.load(reader) || persistentFlag.type != PlugInTypeTaggedValue::kBoolean)
-			return kDataReadErrorReadFailed;
+	if (prefix.plugInRevision == 1 || prefix.plugInRevision == 3) {
+		if (prefix.plugInRevision == 1) {
+			havePersistentData = true;
+		} else if (prefix.plugInRevision == 3) {
+			PlugInTypeTaggedValue persistentFlag;
+			if (!persistentFlag.load(reader) || persistentFlag.type != PlugInTypeTaggedValue::kBoolean)
+				return kDataReadErrorReadFailed;
 
-		havePersistentData = (persistentFlag.value.asBoolean != 0);
+			havePersistentData = (persistentFlag.value.asBoolean != 0);
+		}
+
 		if (havePersistentData) {
 			PlugInTypeTaggedValue numValuesVar;
 			if (!numValuesVar.load(reader) || numValuesVar.type != PlugInTypeTaggedValue::kInteger || numValuesVar.value.asInt < 0)
@@ -175,9 +171,72 @@ DataReadErrorCode ListVariableModifier::load(PlugIn &plugIn, const PlugInModifie
 	return kDataReadErrorNone;
 }
 
+DataReadErrorCode PanningModifier::load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) {
+	if (prefix.plugInRevision != 3)
+		return kDataReadErrorUnsupportedRevision;
+
+	if (!unknown1Event.load(reader) || !unknown2Event.load(reader) || !unknown3Int.load(reader) || !unknown4Int.load(reader) || !unknown5Int.load(reader))
+		return kDataReadErrorReadFailed;
+
+	return kDataReadErrorNone;
+}
+
 DataReadErrorCode SysInfoModifier::load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) {
 	if (prefix.plugInRevision != 0)
 		return kDataReadErrorUnsupportedRevision;
+
+	return kDataReadErrorNone;
+}
+
+DataReadErrorCode FadeModifier::load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) {
+	if (prefix.plugInRevision != 1)
+		return kDataReadErrorUnsupportedRevision;
+
+	if (!unknown1Event.load(reader) || !unknown2Event.load(reader) || !unknown3Int.load(reader) || !unknown4Int.load(reader) || !unknown5Int.load(reader))
+		return kDataReadErrorReadFailed;
+
+	return kDataReadErrorNone;
+}
+
+DataReadErrorCode PrintModifier::load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) {
+	if (prefix.plugInRevision != 0)
+		return kDataReadErrorUnsupportedRevision;
+
+	if (!executeWhen.load(reader) || !unknown1Bool.load(reader) || !unknown2Bool.load(reader) ||
+		!unknown3Bool.load(reader) || !filePath.load(reader) || !unknown4Bool.load(reader))
+		return kDataReadErrorReadFailed;
+
+	return kDataReadErrorNone;
+}
+
+DataReadErrorCode NavigateModifier::load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) {
+	if (prefix.plugInRevision != 0)
+		return kDataReadErrorUnsupportedRevision;
+
+	error("Data structure loading for the Navigate modifier is not implemented.");
+
+	return kDataReadErrorNone;
+}
+
+DataReadErrorCode OpenTitleModifier::load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) {
+	if (prefix.plugInRevision != 0)
+		return kDataReadErrorUnsupportedRevision;
+
+	if (!executeWhen.load(reader) || !pathOrUrl.load(reader) || !addToReturnList.load(reader))
+		return kDataReadErrorReadFailed;
+
+	return kDataReadErrorNone;
+}
+
+DataReadErrorCode OpenAppModifier::load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) {
+	if (prefix.plugInRevision != 0)
+		return kDataReadErrorUnsupportedRevision;
+
+	if (!unknown1Null.load(reader) || !unknown2Null.load(reader) || !unknown3Event.load(reader) || !unknown4String.load(reader))
+		return kDataReadErrorReadFailed;
+
+	if (!unknown5Integer.load(reader) || !unknown6Integer.load(reader) || !unknown7Bool.load(reader))
+		return kDataReadErrorReadFailed;
 
 	return kDataReadErrorNone;
 }

@@ -87,9 +87,11 @@ void ESPER::open(Graphics::Surface *surface) {
 
 	_vm->_time->pause();
 
-	_ambientVolume = _vm->_ambientSounds->getVolume();
-	_vm->_ambientSounds->setVolume(_ambientVolume / 2);
-
+	// NOTE It's probably intentional that music level is not adjusted when entering ESPER mode,
+	// since it is possible to use ESPER in McCoy's apartment while the moody Blade Runner Blues is playing,
+	// and it would not be desirable to have that one's volume lowered further.
+	_ambientVolumeFactorOutsideEsper = _vm->_ambientSounds->getVolume();
+	_vm->_ambientSounds->setVolume(_ambientVolumeFactorOutsideEsper / 2);
 	reset();
 
 	if (!_vm->openArchive("MODE.MIX")) {
@@ -148,7 +150,7 @@ void ESPER::close() {
 
 	_vm->_time->resume();
 
-	_vm->_ambientSounds->setVolume(_ambientVolume);
+	_vm->_ambientSounds->setVolume(_ambientVolumeFactorOutsideEsper);
 	_vm->_scene->resume();
 
 	reset();
@@ -514,6 +516,7 @@ void ESPER::wait(uint32 timeout) {
 	}
 }
 
+// volume should be in [0, 100]
 void ESPER::playSound(int soundId, int volume) {
 	if (_soundId1 == -1) {
 		_soundId1 = soundId;
@@ -1102,7 +1105,7 @@ void ESPER::drawMouse(Graphics::Surface &surface) {
 					_mouseOverScroll = 4;
 				} else if (_mouseOverScroll == 1 && this->_viewport.right == kPhotoWidth - 1) {
 					_mouseOverScroll = 4;
-				} else if (_mouseOverScroll == 2 && this->_viewport.bottom ==  kPhotoHeight - 1) {
+				} else if (_mouseOverScroll == 2 && this->_viewport.bottom == kPhotoHeight - 1) {
 					_mouseOverScroll = 4;
 				} else if (_mouseOverScroll == 3 && this->_viewport.left == 0) {
 					_mouseOverScroll = 4;

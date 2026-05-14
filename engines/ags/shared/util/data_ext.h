@@ -21,13 +21,13 @@
 
  //=============================================================================
  //
- // A simple data extension format which may be useful as an ammendment to
+ // A simple data extension format which may be useful as an amendment to
  // any data file in the game.
  //
  // Format consists of a list of "blocks", each preceded with an integer and an
  // optional string identifier, and a size in bytes which lets a reader to skip
  // the block completely if necessary.
- // Because the serialization algorithm was accomodated to be shared among
+ // Because the serialization algorithm was accommodated to be shared among
  // several existing data files, few things in the meta info may be read
  // slightly differently depending on flags passed into the function.
  //
@@ -69,6 +69,8 @@ enum DataExtFlags {
 	kDataExt_NumID8 = 0x0000, // default
 	kDataExt_NumID32 = 0x0001,
 	// 32-bit or 64-bit file offset support
+	// NOTE: for historical reasons this refers to blocks with numeric ID ONLY;
+	// new-style blocks with a 16-char ID always write 64-bit offset
 	kDataExt_File32 = 0x0000, // default
 	kDataExt_File64 = 0x0002
 };

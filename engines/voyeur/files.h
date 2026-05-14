@@ -102,7 +102,7 @@ private:
 public:
 	Common::File _file;
 
-	BoltFile(const Common::String &filename, BoltFilesState &state);
+	BoltFile(const char *filename, BoltFilesState &state);
 	virtual ~BoltFile();
 
 	BoltGroup *getBoltGroup(uint16 id);
@@ -209,8 +209,8 @@ public:
 	FilesManager(VoyeurEngine *vm);
 	~FilesManager();
 
-	bool openBoltLib(const Common::String &filename, BoltFile *&boltFile);
-	byte *fload(const Common::String &filename, int *size);
+	bool openBoltLib(const char *filename, BoltFile *&boltFile);
+	byte *fload(const char *filename, int *size);
 };
 
 class RectEntry: public Common::Rect {
@@ -247,7 +247,7 @@ enum DisplayFlag {
 	DISPFLAG_NONE = 0};
 
 class DisplayResource {
-private:
+protected:
 	VoyeurEngine *_vm;
 public:
 	uint32 _flags;
@@ -349,7 +349,7 @@ public:
 	virtual ~ViewPortResource();
 
 	void setupViewPort();
-	void setupViewPort(PictureResource *pic, Common::Rect *clippingRect = NULL);
+	void setupViewPort(PictureResource *pic, Common::Rect *clippingRect = nullptr);
 	void addSaveRect(int pageIndex, const Common::Rect &r);
 	void fillPic(byte onOff);
 	void drawIfaceTime();

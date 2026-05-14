@@ -31,7 +31,7 @@ XMLTree::XMLTree() : _tree(nullptr), _isFile(false),
 		_readOnly(false) {
 }
 
-XMLTree::XMLTree(const Common::String &fname) : _tree(nullptr), _isFile(true),
+XMLTree::XMLTree(const Common::Path &fname) : _tree(nullptr), _isFile(true),
 	  _readOnly(false) {
 	readConfigFile(fname);
 }
@@ -52,7 +52,7 @@ void XMLTree::clear() {
 	_readOnly = false;
 }
 
-bool XMLTree::readConfigFile(const Common::String &fname) {
+bool XMLTree::readConfigFile(const Common::Path &fname) {
 	Common::File f;
 	_filename = fname;
 
@@ -130,8 +130,12 @@ bool XMLTree::checkRoot(const Common::String &key) const {
 void XMLTree::value(const Common::String &key, Common::String &ret,
 					const char *defaultvalue) const {
 	const XMLNode *sub = _tree->subtree(key);
-	if (sub)
+	if (sub) { 
 		ret = sub->text();
+		if (ret.empty())
+			if (sub->firstChild())
+				ret = sub->firstChild()->text();
+	}	
 	else
 		ret = defaultvalue;
 }

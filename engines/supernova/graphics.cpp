@@ -25,7 +25,7 @@
 #include "common/system.h"
 #include "common/config-manager.h"
 #include "common/memstream.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/surface.h"
 
 #include "supernova/graphics.h"
@@ -36,8 +36,7 @@
 namespace Supernova {
 
 MSNImage::MSNImage(SupernovaEngine *vm)
-	: _vm(vm) {
-	_palette = nullptr;
+	: _palette(0), _vm(vm) {
 	_encodedImage = nullptr;
 	_filenumber = -1;
 	_pitch = 0;
@@ -71,7 +70,7 @@ bool MSNImage::init(int filenumber) {
 	Common::File file;
 	_filenumber = filenumber;
 	if (_vm->_MSPart == 1) {
-		if (!file.open(Common::String::format("msn_data.%03d", filenumber))) {
+		if (!file.open(Common::Path(Common::String::format("msn_data.%03d", filenumber)))) {
 			warning("Image data file msn_data.%03d could not be read!", filenumber);
 			return false;
 		}
@@ -79,7 +78,7 @@ bool MSNImage::init(int filenumber) {
 	}
 	else if (_vm->_MSPart == 2) {
 		if (!loadFromEngineDataFile()) {
-			if (!file.open(Common::String::format("ms2_data.%03d", filenumber))) {
+			if (!file.open(Common::Path(Common::String::format("ms2_data.%03d", filenumber)))) {
 				warning("Image data file ms2_data.%03d could not be read!", filenumber);
 				return false;
 			}
@@ -144,20 +143,23 @@ bool MSNImage::loadStream(Common::SeekableReadStream &stream) {
 	size *= 16;      // a paragraph is 16 bytes
 	_encodedImage = new byte[size];
 
-	_palette = new byte[717];
-	g_system->getPaletteManager()->grabPalette(_palette, 16, 239);
+	byte palette[717];
+	g_system->getPaletteManager()->grabPalette(palette, 16, 239);
+	_palette.resize(239, false);
+	_palette.set(palette, 0, 239);
 
 	byte pal_diff;
 	byte flag = stream.readByte();
 	if (flag == 0) {
 		pal_diff = 0;
-		_palette[141] = 0xE0;
-		_palette[142] = 0xE0;
-		_palette[143] = 0xE0;
+		_palette.set(47, 0xE0, 0xE0, 0xE0);
 	} else {
 		pal_diff = 1;
-		for (int i = flag * 3; i != 0; --i) {
-			_palette[717 - i] = stream.readByte() << 2;
+		for (int i = flag; i != 0; --i) {
+			byte r = stream.readByte() << 2;
+			byte g = stream.readByte() << 2;
+			byte b = stream.readByte() << 2;
+			_palette.set(239 - i, r, g, b);
 		}
 	}
 
@@ -273,10 +275,8 @@ bool MSNImage::loadSections() {
 }
 
 void MSNImage::destroy() {
-	if (_palette) {
-		delete[] _palette;
-		_palette = nullptr;
-	}
+	_palette.clear();
+
 	if (_encodedImage) {
 		delete[] _encodedImage;
 		_encodedImage = nullptr;

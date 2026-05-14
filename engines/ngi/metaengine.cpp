@@ -22,6 +22,7 @@
 #include "base/plugins.h"
 
 #include "engines/advancedDetector.h"
+#include "engines/metaengine.h"
 #include "common/file.h"
 
 #include "graphics/surface.h"
@@ -29,6 +30,12 @@
 #include "ngi/ngi.h"
 #include "ngi/detection.h"
 #include "ngi/gameloader.h"
+
+#include "common/translation.h"
+
+#include "backends/keymapper/action.h"
+#include "backends/keymapper/keymapper.h"
+#include "backends/keymapper/standard-actions.h"
 
 namespace NGI {
 
@@ -54,7 +61,7 @@ int NGIEngine::getGameGID() const {
 
 } // End of namspace Fullpipe
 
-class NGIMetaEngine : public AdvancedMetaEngine {
+class NGIMetaEngine : public AdvancedMetaEngine<NGI::NGIGameDescription> {
 public:
 	const char *getName() const override {
 		return "ngi";
@@ -63,29 +70,26 @@ public:
 	bool hasFeature(MetaEngineFeature f) const override;
 
 	int getMaximumSaveSlot() const override { return 99; }
-	SaveStateList listSaves(const char *target) const override;
-	void removeSaveState(const char *target, int slot) const override;
-	SaveStateDescriptor querySaveMetaInfos(const char *target, int slot) const override;
 
-	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override;
-	Common::String getSavegameFile(int saveGameIdx, const char *target) const override {
-		const Common::String prefix("fullpipe");
-		if (saveGameIdx == kSavegameFilePattern)
-			return prefix + ".s##";
-		else
-			return prefix + Common::String::format(".s%02d", saveGameIdx);
+	Common::Error createInstance(OSystem *syst, Engine **engine, const NGI::NGIGameDescription *desc) const override;
+
+	Common::KeymapArray initKeymaps(const char *target) const override;
+
+    Common::String getSavegameFile(int saveGameIdx, const char *target) const override {
+	    if (saveGameIdx == kSavegameFilePattern) {
+	    	// Pattern requested
+	    	const char *pattern = "%s.s##";
+	    	return Common::String::format(pattern, "fullpipe");
+	    } else {
+	    	// Specific filename requested
+	    	const char *pattern = "%s.s%02d";
+	    	return Common::String::format(pattern, "fullpipe", saveGameIdx);
+	    }
 	}
 };
 
 bool NGIMetaEngine::hasFeature(MetaEngineFeature f) const {
-	return
-		(f == kSupportsListSaves) ||
-		(f == kSupportsDeleteSave) ||
-		(f == kSavesSupportMetaInfo) ||
-		(f == kSavesSupportThumbnail) ||
-		(f == kSavesSupportCreationDate) ||
-		(f == kSavesSupportPlayTime) ||
-		(f == kSupportsLoadingDuringStartup);
+	return checkExtendedSaves(f) || (f == kSupportsLoadingDuringStartup);
 }
 
 bool NGI::NGIEngine::hasFeature(EngineFeature f) const {
@@ -95,69 +99,117 @@ bool NGI::NGIEngine::hasFeature(EngineFeature f) const {
 		(f == kSupportsSavingDuringRuntime);
 }
 
-SaveStateList NGIMetaEngine::listSaves(const char *target) const {
-	Common::SaveFileManager *saveFileMan = g_system->getSavefileManager();
-	Common::StringArray filenames;
 
-	filenames = saveFileMan->listSavefiles(getSavegameFilePattern(target));
-
-	SaveStateList saveList;
-	for (Common::StringArray::const_iterator file = filenames.begin(); file != filenames.end(); ++file) {
-		// Obtain the last 2 digits of the filename, since they correspond to the save slot
-		int slotNum = atoi(file->c_str() + file->size() - 2);
-
-		if (slotNum >= 0 && slotNum <= getMaximumSaveSlot()) {
-			Common::ScopedPtr<Common::InSaveFile> in(saveFileMan->openForLoading(*file));
-			if (in) {
-				NGI::FullpipeSavegameHeader header;
-				if (!NGI::readSavegameHeader(in.get(), header)) {
-					continue;
-				}
-
-				SaveStateDescriptor desc(this, slotNum, header.description);
-
-				NGI::parseSavegameHeader(header, desc);
-
-				saveList.push_back(desc);
-			}
-		}
-	}
-
-	// Sort saves based on slot number.
-	Common::sort(saveList.begin(), saveList.end(), SaveStateDescriptorSlotComparator());
-	return saveList;
-}
-
-void NGIMetaEngine::removeSaveState(const char *target, int slot) const {
-	g_system->getSavefileManager()->removeSavefile(NGI::getSavegameFile(slot));
-}
-
-SaveStateDescriptor NGIMetaEngine::querySaveMetaInfos(const char *target, int slot) const {
-	Common::ScopedPtr<Common::InSaveFile> f(g_system->getSavefileManager()->openForLoading(
-		NGI::getSavegameFile(slot)));
-
-	if (f) {
-		NGI::FullpipeSavegameHeader header;
-		if (!NGI::readSavegameHeader(f.get(), header, false)) {
-			return SaveStateDescriptor();
-		}
-
-		// Create the return descriptor
-		SaveStateDescriptor desc(this, slot, header.description);
-
-		NGI::parseSavegameHeader(header, desc);
-
-		desc.setThumbnail(header.thumbnail);
-
-		return desc;
-	}
-
-	return SaveStateDescriptor();
-}
-
-Common::Error NGIMetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const {
-	*engine = new NGI::NGIEngine(syst, (const NGI::NGIGameDescription *)desc);
+Common::Error NGIMetaEngine::createInstance(OSystem *syst, Engine **engine, const NGI::NGIGameDescription *desc) const {
+	*engine = new NGI::NGIEngine(syst,desc);
 	return Common::kNoError;
+}
+
+Common::KeymapArray NGIMetaEngine::initKeymaps(const char *target) const {
+	using namespace Common;
+	using namespace NGI;
+
+	String extra = ConfMan.get("extra", target);
+	const bool isDemo = extra.contains("Demo");
+
+	Keymap *engineKeymap = new Keymap(Keymap::kKeymapTypeGame, "ngi-default", _("Default keymappings"));
+	Keymap *mapKeymap = new Keymap(Keymap::kKeymapTypeGame, "map", _("Map keymappings"));
+	Keymap *introKeymap = new Keymap(Keymap::kKeymapTypeGame, "intro", _("Intro keymappings"));
+	Keymap *creditsKeymap = new Keymap(Keymap::kKeymapTypeGame, "credits", _("Credits keymappings"));
+	// I18N: Keymap for various dialogs such as save game dialog.
+	Keymap *dialogKeymap = new Keymap(Keymap::kKeymapTypeGame, "dialog", _("Dialog keymappings"));
+
+	Common::Action *act;
+
+	act = new Action(kStandardActionLeftClick, _("Move / Interact"));
+	act->setLeftClickEvent();
+	act->addDefaultInputMapping("MOUSE_LEFT");
+	act->addDefaultInputMapping("JOY_A");
+	engineKeymap->addAction(act);
+
+	act = new Action(kStandardActionRightClick, _("Deselect item"));
+	act->setRightClickEvent();
+	act->addDefaultInputMapping("MOUSE_RIGHT");
+	act->addDefaultInputMapping("JOY_B");
+	engineKeymap->addAction(act);
+
+	act = new Action("PAUSE", _("Pause"));
+	act->setCustomEngineActionEvent(kActionPause);
+	act->addDefaultInputMapping("ESCAPE");
+	act->addDefaultInputMapping("JOY_Y");
+	engineKeymap->addAction(act);
+
+	// I18N: Stops all currently playing sounds.
+	act = new Action("STOPSOUNDS", _("Stop sounds"));
+	act->setCustomEngineActionEvent(kActionStopSounds);
+	act->addDefaultInputMapping("t");
+	act->addDefaultInputMapping("JOY_LEFT");
+	engineKeymap->addAction(act);
+
+	act = new Action("TOGGLEMUTE", _("Toggle mute"));
+	act->setCustomEngineActionEvent(kActionToggleMute);
+	act->addDefaultInputMapping("u");
+	act->addDefaultInputMapping("JOY_DOWN");
+	engineKeymap->addAction(act);
+
+	act = new Action("TOGGLEINV", _("Toggle inventory"));
+	act->setCustomEngineActionEvent(kActionInventory);
+	act->addDefaultInputMapping("SPACE");
+	act->addDefaultInputMapping("JOY_X");
+	engineKeymap->addAction(act);
+
+	// I18N: Opens the help screen.
+	act = new Action("TOGGLEHELP", _("Help"));
+	act->setCustomEngineActionEvent(kActionHelp);
+	act->addDefaultInputMapping("F1");
+	act->addDefaultInputMapping("JOY_LEFT_SHOULDER");
+	engineKeymap->addAction(act);
+
+	act = new Action("SKIP", _("Skip intro"));
+	act->setCustomEngineActionEvent(kActionSkipIntro);
+	act->addDefaultInputMapping("ESCAPE");
+	act->addDefaultInputMapping("RETURN");
+	act->addDefaultInputMapping("SPACE");
+	act->addDefaultInputMapping("JOY_X");
+	introKeymap->addAction(act);
+
+	act = new Action("SKIPCREDITS", _("Skip credits"));
+	act->setCustomEngineActionEvent(kActionSkipCredits);
+	act->addDefaultInputMapping("ESCAPE");
+	act->addDefaultInputMapping("JOY_X");
+	creditsKeymap->addAction(act);
+
+	// I18N: Closes any open dialogs, such as save game dialog.
+	act = new Action("CLOSEDLG", _("Close dialog"));
+	act->setCustomEngineActionEvent(kActionCloseDialog);
+	act->addDefaultInputMapping("ESCAPE");
+	act->addDefaultInputMapping("JOY_B");
+	dialogKeymap->addAction(act);
+
+	// Demo has no map
+	if (!(isDemo && parseLanguage(ConfMan.get("language", target)) == RU_RUS)) {
+		act = new Action("OPENMAP", _("Open map"));
+		act->setCustomEngineActionEvent(kActionMapOpen);
+		act->addDefaultInputMapping("TAB");
+		act->addDefaultInputMapping("JOY_RIGHT");
+		engineKeymap->addAction(act);
+
+		act = new Action("CLOSEMAP", _("Close map"));
+		act->setCustomEngineActionEvent(kActionMapClose);
+		act->addDefaultInputMapping("TAB");
+		act->addDefaultInputMapping("ESCAPE");
+		act->addDefaultInputMapping("JOY_RIGHT");
+		mapKeymap->addAction(act);
+	}
+
+	KeymapArray keymaps(5);
+	keymaps[0] = engineKeymap;
+	keymaps[1] = mapKeymap;
+	keymaps[2] = introKeymap;
+	keymaps[3] = creditsKeymap;
+	keymaps[4] = dialogKeymap;
+
+	return keymaps;
 }
 
 #if PLUGIN_ENABLED_DYNAMIC(NGI)

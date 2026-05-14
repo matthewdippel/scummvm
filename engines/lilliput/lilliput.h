@@ -33,7 +33,6 @@
 #include "common/events.h"
 
 #include "engines/engine.h"
-#include "graphics/palette.h"
 #include "graphics/surface.h"
 
 namespace Common {
@@ -55,11 +54,11 @@ namespace Lilliput {
 static const int kSavegameVersion = 1;
 
 enum LilliputDebugChannels {
-	kDebugEngine    = 1 << 0,
-	kDebugScript    = 1 << 1,
-	kDebugSound     = 1 << 2,
-	kDebugEngineTBC = 1 << 3,
-	kDebugScriptTBC = 1 << 4
+	kDebugEngine = 1,
+	kDebugScript,
+	kDebugSound,
+	kDebugEngineTBC,
+	kDebugScriptTBC,
 };
 
 enum InterfaceHotspotStatus {
@@ -304,11 +303,11 @@ public:
 	void homeInChooseDirection(int index);
 
 	void initGame(const LilliputGameDescription *gd);
-	byte *loadVGA(Common::String filename, int fileSize, bool loadPal);
-	byte *loadRaw(Common::String filename, int filesize);
+	byte *loadVGA(const Common::Path &filename, int fileSize, bool loadPal);
+	byte *loadRaw(const Common::Path &filename, int filesize);
 	void loadRules();
 
-	void displayVGAFile(Common::String fileName);
+	void displayVGAFile(const Common::Path &fileName);
 	void initPalette();
 	void fixPaletteEntries(uint8 *palette, int num);
 

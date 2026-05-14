@@ -19,21 +19,18 @@
  *
  */
 
-#define FORBIDDEN_SYMBOL_ALLOW_ALL
-
-#include <curl/curl.h>
 #include "backends/cloud/onedrive/onedrivestorage.h"
 #include "backends/cloud/cloudmanager.h"
 #include "backends/cloud/onedrive/onedrivecreatedirectoryrequest.h"
 #include "backends/cloud/onedrive/onedrivetokenrefresher.h"
 #include "backends/cloud/onedrive/onedrivelistdirectoryrequest.h"
 #include "backends/cloud/onedrive/onedriveuploadrequest.h"
-#include "backends/networking/curl/connectionmanager.h"
-#include "backends/networking/curl/curljsonrequest.h"
-#include "backends/networking/curl/networkreadstream.h"
+#include "backends/networking/http/connectionmanager.h"
+#include "backends/networking/http/httpjsonrequest.h"
+#include "backends/networking/http/networkreadstream.h"
 #include "common/config-manager.h"
 #include "common/debug.h"
-#include "common/json.h"
+#include "common/formats/json.h"
 
 namespace Cloud {
 namespace OneDrive {
@@ -41,11 +38,15 @@ namespace OneDrive {
 #define ONEDRIVE_API_SPECIAL_APPROOT_ID "https://graph.microsoft.com/v1.0/drive/special/approot:/"
 #define ONEDRIVE_API_SPECIAL_APPROOT "https://graph.microsoft.com/v1.0/drive/special/approot"
 
-OneDriveStorage::OneDriveStorage(Common::String token, Common::String refreshToken, bool enabled):
+OneDriveStorage::OneDriveStorage(const Common::String &token, const Common::String &refreshToken, bool enabled):
 	BaseStorage(token, refreshToken, enabled) {}
 
-OneDriveStorage::OneDriveStorage(Common::String code, Networking::ErrorCallback cb) {
+OneDriveStorage::OneDriveStorage(const Common::String &code, Networking::ErrorCallback cb) {
 	getAccessToken(code, cb);
+}
+
+OneDriveStorage::OneDriveStorage(const Networking::JsonResponse &codeFlowJson, Networking::ErrorCallback cb) {
+	codeFlowComplete(cb, codeFlowJson);
 }
 
 OneDriveStorage::~OneDriveStorage() {}
@@ -58,7 +59,7 @@ bool OneDriveStorage::needsRefreshToken() { return true; }
 
 bool OneDriveStorage::canReuseRefreshToken() { return false; }
 
-void OneDriveStorage::saveConfig(Common::String keyPrefix) {
+void OneDriveStorage::saveConfig(const Common::String &keyPrefix) {
 	ConfMan.set(keyPrefix + "access_token", _token, ConfMan.kCloudDomain);
 	ConfMan.set(keyPrefix + "refresh_token", _refreshToken, ConfMan.kCloudDomain);
 	saveIsEnabledFlag(keyPrefix);
@@ -68,15 +69,15 @@ Common::String OneDriveStorage::name() const {
 	return "OneDrive";
 }
 
-void OneDriveStorage::infoInnerCallback(StorageInfoCallback outerCallback, Networking::JsonResponse response) {
-	Common::JSONValue *json = response.value;
+void OneDriveStorage::infoInnerCallback(StorageInfoCallback outerCallback, const Networking::JsonResponse &response) {
+	const Common::JSONValue *json = response.value;
 	if (!json) {
 		warning("OneDriveStorage::infoInnerCallback: NULL passed instead of JSON");
 		delete outerCallback;
 		return;
 	}
 
-	if (!Networking::CurlJsonRequest::jsonIsObject(json, "OneDriveStorage::infoInnerCallback")) {
+	if (!Networking::HttpJsonRequest::jsonIsObject(json, "OneDriveStorage::infoInnerCallback")) {
 		delete json;
 		delete outerCallback;
 		return;
@@ -87,18 +88,18 @@ void OneDriveStorage::infoInnerCallback(StorageInfoCallback outerCallback, Netwo
 	Common::String uid, displayName, email;
 	uint64 quotaUsed = 0, quotaAllocated = 26843545600LL; // 25 GB, because I actually don't know any way to find out the real one
 
-	if (Networking::CurlJsonRequest::jsonContainsObject(jsonInfo, "createdBy", "OneDriveStorage::infoInnerCallback")) {
+	if (Networking::HttpJsonRequest::jsonContainsObject(jsonInfo, "createdBy", "OneDriveStorage::infoInnerCallback")) {
 		Common::JSONObject createdBy = jsonInfo.getVal("createdBy")->asObject();
-		if (Networking::CurlJsonRequest::jsonContainsObject(createdBy, "user", "OneDriveStorage::infoInnerCallback")) {
+		if (Networking::HttpJsonRequest::jsonContainsObject(createdBy, "user", "OneDriveStorage::infoInnerCallback")) {
 			Common::JSONObject user = createdBy.getVal("user")->asObject();
-			if (Networking::CurlJsonRequest::jsonContainsString(user, "id", "OneDriveStorage::infoInnerCallback"))
+			if (Networking::HttpJsonRequest::jsonContainsString(user, "id", "OneDriveStorage::infoInnerCallback"))
 				uid = user.getVal("id")->asString();
-			if (Networking::CurlJsonRequest::jsonContainsString(user, "displayName", "OneDriveStorage::infoInnerCallback"))
+			if (Networking::HttpJsonRequest::jsonContainsString(user, "displayName", "OneDriveStorage::infoInnerCallback"))
 				displayName = user.getVal("displayName")->asString();
 		}
 	}
 
-	if (Networking::CurlJsonRequest::jsonContainsIntegerNumber(jsonInfo, "size", "OneDriveStorage::infoInnerCallback")) {
+	if (Networking::HttpJsonRequest::jsonContainsIntegerNumber(jsonInfo, "size", "OneDriveStorage::infoInnerCallback")) {
 		quotaUsed = jsonInfo.getVal("size")->asIntegerNumber();
 	}
 
@@ -117,8 +118,8 @@ void OneDriveStorage::infoInnerCallback(StorageInfoCallback outerCallback, Netwo
 	delete json;
 }
 
-void OneDriveStorage::fileInfoCallback(Networking::NetworkReadStreamCallback outerCallback, Networking::JsonResponse response) {
-	Common::JSONValue *json = response.value;
+void OneDriveStorage::fileInfoCallback(Networking::NetworkReadStreamCallback outerCallback, const Networking::JsonResponse &response) {
+	const Common::JSONValue *json = response.value;
 	if (!json) {
 		warning("OneDriveStorage::fileInfoCallback: NULL passed instead of JSON");
 		if (outerCallback)
@@ -127,7 +128,7 @@ void OneDriveStorage::fileInfoCallback(Networking::NetworkReadStreamCallback out
 		return;
 	}
 
-	if (!Networking::CurlJsonRequest::jsonIsObject(json, "OneDriveStorage::fileInfoCallback")) {
+	if (!Networking::HttpJsonRequest::jsonIsObject(json, "OneDriveStorage::fileInfoCallback")) {
 		if (outerCallback)
 			(*outerCallback)(Networking::NetworkReadStreamResponse(response.request, nullptr));
 		delete json;
@@ -136,7 +137,7 @@ void OneDriveStorage::fileInfoCallback(Networking::NetworkReadStreamCallback out
 	}
 
 	Common::JSONObject result = response.value->asObject();
-	if (!Networking::CurlJsonRequest::jsonContainsString(result, "@microsoft.graph.downloadUrl", "OneDriveStorage::fileInfoCallback")) {
+	if (!Networking::HttpJsonRequest::jsonContainsString(result, "@microsoft.graph.downloadUrl", "OneDriveStorage::fileInfoCallback")) {
 		warning("OneDriveStorage: downloadUrl not found in passed JSON");
 		debug(9, "%s", response.value->stringify().c_str());
 		if (outerCallback)
@@ -150,33 +151,33 @@ void OneDriveStorage::fileInfoCallback(Networking::NetworkReadStreamCallback out
 	if (outerCallback)
 		(*outerCallback)(Networking::NetworkReadStreamResponse(
 			response.request,
-			new Networking::NetworkReadStream(url, nullptr, "")
+			Networking::NetworkReadStream::make(url, nullptr, "")
 		));
 
 	delete json;
 	delete outerCallback;
 }
 
-Networking::Request *OneDriveStorage::listDirectory(Common::String path, ListDirectoryCallback callback, Networking::ErrorCallback errorCallback, bool recursive) {
+Networking::Request *OneDriveStorage::listDirectory(const Common::String &path, ListDirectoryCallback callback, Networking::ErrorCallback errorCallback, bool recursive) {
 	debug(9, "OneDrive: `ls \"%s\"`", path.c_str());
 	return addRequest(new OneDriveListDirectoryRequest(this, path, callback, errorCallback, recursive));
 }
 
-Networking::Request *OneDriveStorage::upload(Common::String path, Common::SeekableReadStream *contents, UploadCallback callback, Networking::ErrorCallback errorCallback) {
+Networking::Request *OneDriveStorage::upload(const Common::String &path, Common::SeekableReadStream *contents, UploadCallback callback, Networking::ErrorCallback errorCallback) {
 	debug(9, "OneDrive: `upload \"%s\"`", path.c_str());
 	return addRequest(new OneDriveUploadRequest(this, path, contents, callback, errorCallback));
 }
 
-Networking::Request *OneDriveStorage::streamFileById(Common::String path, Networking::NetworkReadStreamCallback outerCallback, Networking::ErrorCallback errorCallback) {
+Networking::Request *OneDriveStorage::streamFileById(const Common::String &path, Networking::NetworkReadStreamCallback outerCallback, Networking::ErrorCallback errorCallback) {
 	debug(9, "OneDrive: `download \"%s\"`", path.c_str());
-	Common::String url = ONEDRIVE_API_SPECIAL_APPROOT_ID + ConnMan.urlEncode(path);
-	Networking::JsonCallback innerCallback = new Common::CallbackBridge<OneDriveStorage, Networking::NetworkReadStreamResponse, Networking::JsonResponse>(this, &OneDriveStorage::fileInfoCallback, outerCallback);
-	Networking::CurlJsonRequest *request = new OneDriveTokenRefresher(this, innerCallback, errorCallback, url.c_str());
+	Common::String url = ONEDRIVE_API_SPECIAL_APPROOT_ID + Common::percentEncodeString(path);
+	Networking::JsonCallback innerCallback = new Common::CallbackBridge<OneDriveStorage, const Networking::NetworkReadStreamResponse &, const Networking::JsonResponse &>(this, &OneDriveStorage::fileInfoCallback, outerCallback);
+	Networking::HttpJsonRequest *request = new OneDriveTokenRefresher(this, innerCallback, errorCallback, url.c_str());
 	request->addHeader("Authorization: bearer " + _token);
 	return addRequest(request);
 }
 
-Networking::Request *OneDriveStorage::createDirectory(Common::String path, BoolCallback callback, Networking::ErrorCallback errorCallback) {
+Networking::Request *OneDriveStorage::createDirectory(const Common::String &path, BoolCallback callback, Networking::ErrorCallback errorCallback) {
 	debug(9, "OneDrive: `mkdir \"%s\"`", path.c_str());
 	if (!errorCallback)
 		errorCallback = getErrorPrintingCallback();
@@ -185,15 +186,15 @@ Networking::Request *OneDriveStorage::createDirectory(Common::String path, BoolC
 
 Networking::Request *OneDriveStorage::info(StorageInfoCallback callback, Networking::ErrorCallback errorCallback) {
 	debug(9, "OneDrive: `info`");
-	Networking::JsonCallback innerCallback = new Common::CallbackBridge<OneDriveStorage, StorageInfoResponse, Networking::JsonResponse>(this, &OneDriveStorage::infoInnerCallback, callback);
-	Networking::CurlJsonRequest *request = new OneDriveTokenRefresher(this, innerCallback, errorCallback, ONEDRIVE_API_SPECIAL_APPROOT);
+	Networking::JsonCallback innerCallback = new Common::CallbackBridge<OneDriveStorage, const StorageInfoResponse &, const Networking::JsonResponse &>(this, &OneDriveStorage::infoInnerCallback, callback);
+	Networking::HttpJsonRequest *request = new OneDriveTokenRefresher(this, innerCallback, errorCallback, ONEDRIVE_API_SPECIAL_APPROOT);
 	request->addHeader("Authorization: bearer " + _token);
 	return addRequest(request);
 }
 
 Common::String OneDriveStorage::savesDirectoryPath() { return "saves/"; }
 
-OneDriveStorage *OneDriveStorage::loadFromConfig(Common::String keyPrefix) {
+OneDriveStorage *OneDriveStorage::loadFromConfig(const Common::String &keyPrefix) {
 	if (!ConfMan.hasKey(keyPrefix + "access_token", ConfMan.kCloudDomain)) {
 		warning("OneDriveStorage: no access_token found");
 		return nullptr;
@@ -209,7 +210,7 @@ OneDriveStorage *OneDriveStorage::loadFromConfig(Common::String keyPrefix) {
 	return new OneDriveStorage(accessToken, refreshToken, loadIsEnabledFlag(keyPrefix));
 }
 
-void OneDriveStorage::removeFromConfig(Common::String keyPrefix) {
+void OneDriveStorage::removeFromConfig(const Common::String &keyPrefix) {
 	ConfMan.removeKey(keyPrefix + "access_token", ConfMan.kCloudDomain);
 	ConfMan.removeKey(keyPrefix + "refresh_token", ConfMan.kCloudDomain);
 	removeIsEnabledFlag(keyPrefix);

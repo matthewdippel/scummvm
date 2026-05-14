@@ -71,6 +71,10 @@ protected:
 		Wave() : name(), phase1Start(0), phase1End(0), phase2Start(0), phase2End(0),
 				 nativeNote(0), freqTable(nullptr), samples(nullptr), size(0) {}
 
+		~Wave() {
+			delete[] samples;
+		}
+
 		char name[9];
 		uint16 phase1Start, phase1End;
 		uint16 phase2Start, phase2End;
@@ -388,8 +392,12 @@ bool MidiPlayer_AmigaMac1::loadInstruments(Common::SeekableReadStream &patch, bo
 
 			noteRange.startNote = patch.readUint16BE();
 
-			if (patch.err() || patch.eos())
+			if (patch.err() || patch.eos()) {
+				if (_instruments[patchIdx] != instrument) {
+					delete instrument;
+				}
 				return false;
+			}
 
 			if (noteRange.startNote == -1)
 				break;

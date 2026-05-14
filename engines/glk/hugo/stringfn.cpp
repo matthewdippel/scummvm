@@ -43,7 +43,7 @@ char *StringFunctions::Ltrim(char a[]) {
 	int len = strlen(a);
 
 	temp = GetTempString();
-	strcpy(temp, a);
+	Common::strcpy_s(temp, sizeof(_tempString[0]), a);
 	while (temp[0]==' ' || temp[0]=='\t')
 		memmove(temp, temp+1, len + 1);
 	return temp;
@@ -81,9 +81,9 @@ char *StringFunctions::Rtrim(char a[]) {
 	int len;
 
 	temp = GetTempString();
-	strcpy(temp, a);
+	Common::strcpy_s(temp, sizeof(_tempString[0]), a);
 	while (((len = strlen(temp))) && (temp[len-1]==' ' || temp[len-1]=='\t'))
-		strcpy(temp, Left(temp, len-1));
+		Common::strcpy_s(temp, sizeof(_tempString[0]), Left(temp, len-1));
 	return temp;
 }
 
@@ -103,13 +103,13 @@ char *StringFunctions::GetTempString() {
 	return r;
 }
 
-char *StringFunctions::strlwr(char *s) {
+char *StringFunctions::hugo_strlwr(char *s) {
 	for (char *sp = s; *sp; ++sp)
 		*sp = tolower(*sp);
 	return s;
 }
 
-char *StringFunctions::strupr(char *s) {
+char *StringFunctions::hugo_strupr(char *s) {
 	for (char *sp = s; *sp; ++sp)
 		*sp = toupper(*sp);
 	return s;

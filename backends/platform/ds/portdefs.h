@@ -22,24 +22,44 @@
 #ifndef _PORTDEFS_H_
 #define _PORTDEFS_H_
 
-// Include ndstypes.h for uint16 etc. typedefs
+/**
+ * Include ndstypes.h for uint16 etc. typedefs
+ * These are deprecated so they clash with our typedefs
+ * Mask them by renaming them when including the header
+ */
+#define uint8  __nds_uint8
+#define uint16 __nds_uint16
+#define uint32 __nds_uint32
+#define uint64 __nds_uint64
+#define int8  __nds_int8
+#define int16 __nds_int16
+#define int32 __nds_int32
+#define int64 __nds_int64
+
 #include "nds/ndstypes.h"
 
-typedef unsigned int uint;
-
-// Define SCUMMVM_DONT_DEFINE_TYPES to prevent scummsys.h from trying to
-// re-define those data types.
-#define SCUMMVM_DONT_DEFINE_TYPES
+#undef uint8
+#undef uint16
+#undef uint32
+#undef uint64
+#undef int8
+#undef int16
+#undef int32
+#undef int64
 
 // Include required headers
-#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stddef.h>
+#include <assert.h>
 #include <ctype.h>
+#include <inttypes.h>
+#include <limits.h>
 #include <math.h>
 #include <new>
+#include <limits>
 
 #include <nds/arm9/sassert.h>
 #undef assert
@@ -52,10 +72,5 @@ typedef unsigned int uint;
 #ifndef STREAM_AUDIO_FROM_DISK
 #define STREAM_AUDIO_FROM_DISK
 #endif
-
-// FIXME: Since I can't change the engine at the moment (post lockdown) this define can go here.
-// This define changes the mouse-relative motion which doesn't make sense on a touch screen to
-// a more conventional form of input where the menus can be clicked on.
-#define LURE_CLICKABLE_MENUS
 
 #endif

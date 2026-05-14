@@ -23,10 +23,6 @@
 
 #if defined(DYNAMIC_MODULES) && defined(USE_ELF_LOADER)
 
-#ifdef ELF_LOADER_CXA_ATEXIT
-#include <cxxabi.h>
-#endif
-
 #include "backends/plugins/elf/elf-provider.h"
 #include "backends/plugins/dynamic-plugin.h"
 #include "backends/plugins/elf/memory-manager.h"
@@ -57,10 +53,13 @@
  * __cxa_finalize(&__dso_handle) to call all destructors of only that DSO.
  *
  * Prerequisites:
- * - The used libc needs to support __cxa_atexit
+ * - The used libc needs to support __cxa_atexit (or the target must supply it;
+ *   see backends/plugins/elf/cxa-atexit.cpp)
  * - -fuse-cxa-atexit in CXXFLAGS
- * - Every plugin needs its own hidden __dso_handle symbol
- *   This is automatically done via REGISTER_PLUGIN_DYNAMIC, see base/plugins.h
+ * - Every plugin needs its own hidden __dso_handle symbol, and an exported
+ *   PLUGIN_finalize() helper that calls __cxa_finalize(&__dso_handle) from
+ *   inside the plugin. This is automatically done via REGISTER_PLUGIN_DYNAMIC,
+ *   see base/plugins.h.
  *
  * When __cxa_atexit can not be used, each plugin needs to link against
  * libstdc++ to embed its own set of C++ ABI symbols. When not doing so,
@@ -78,15 +77,15 @@ DynamicPlugin::VoidFunc ELFPlugin::findSymbol(const char *symbol) {
 
 	if (!func) {
 		if (!_dlHandle)
-			warning("elfloader: Failed loading symbol '%s' from plugin '%s' (Handle is NULL)", symbol, _filename.c_str());
+			warning("elfloader: Failed loading symbol '%s' from plugin '%s' (Handle is NULL)", symbol, _filename.toString(Common::Path::kNativeSeparator).c_str());
 		else
-			warning("elfloader: Failed loading symbol '%s' from plugin '%s'", symbol, _filename.c_str());
+			warning("elfloader: Failed loading symbol '%s' from plugin '%s'", symbol, _filename.toString(Common::Path::kNativeSeparator).c_str());
 	}
 
 	// FIXME HACK: This is a HACK to circumvent a clash between the ISO C++
 	// standard and POSIX: ISO C++ disallows casting between function pointers
 	// and data pointers, but dlsym always returns a void pointer. For details,
-	// see e.g. <http://www.trilithium.com/johan/2004/12/problem-with-dlsym/>.
+	// see e.g. <https://web.archive.org/web/20061205092618/http://www.trilithium.com/johan/2004/12/problem-with-dlsym/>.
 	assert(sizeof(VoidFunc) == sizeof(func));
 	VoidFunc tmp;
 	memcpy(&tmp, &func, sizeof(VoidFunc));
@@ -100,7 +99,7 @@ void ELFPlugin::trackSize() {
 	// All we need to do is create our object, track its size, then delete it
 	DLObject *obj = makeDLObject();
 
-	obj->trackSize(_filename.c_str());
+	obj->trackSize(_filename);
 	delete obj;
 }
 
@@ -108,7 +107,7 @@ bool ELFPlugin::loadPlugin() {
 	assert(!_dlHandle);
 
 	DLObject *obj = makeDLObject();
-	if (obj->open(_filename.c_str())) {
+	if (obj->open(_filename)) {
 		_dlHandle = obj;
 	} else {
 		delete obj;
@@ -116,20 +115,20 @@ bool ELFPlugin::loadPlugin() {
 	}
 
 	if (!_dlHandle) {
-		warning("elfloader: Failed loading plugin '%s'", _filename.c_str());
+		warning("elfloader: Failed loading plugin '%s'", _filename.toString(Common::Path::kNativeSeparator).c_str());
 		return false;
 	}
 
 	CharFunc buildDateFunc = (CharFunc)findSymbol("PLUGIN_getBuildDate");
 	if (!buildDateFunc) {
 		unloadPlugin();
-		warning("elfloader: plugin '%s' is missing symbols", _filename.c_str());
+		warning("elfloader: plugin '%s' is missing symbols", _filename.toString(Common::Path::kNativeSeparator).c_str());
 		return false;
 	}
 
 	if (strncmp(gScummVMPluginBuildDate, buildDateFunc(), strlen(gScummVMPluginBuildDate))) {
 		unloadPlugin();
-		warning("elfloader: plugin '%s' has a different build date", _filename.c_str());
+		warning("elfloader: plugin '%s' has a different build date", _filename.toString(Common::Path::kNativeSeparator).c_str());
 		return false;
 	}
 
@@ -137,11 +136,9 @@ bool ELFPlugin::loadPlugin() {
 
 #ifdef ELF_LOADER_CXA_ATEXIT
 	if (ret) {
-		// FIXME HACK: Reverse HACK of findSymbol() :P
-		VoidFunc tmp;
-		tmp = findSymbol("__dso_handle");
-		memcpy(&_dso_handle, &tmp, sizeof(VoidFunc));
-		debug(2, "elfloader: __dso_handle is %p", _dso_handle);
+		_finalizeFunc = findSymbol("PLUGIN_finalize");
+		if (!_finalizeFunc)
+			warning("elfloader: plugin '%s' is missing PLUGIN_finalize", _filename.toString(Common::Path::kNativeSeparator).c_str());
 	}
 #endif
 
@@ -155,15 +152,15 @@ void ELFPlugin::unloadPlugin() {
 
 	if (_dlHandle) {
 #ifdef ELF_LOADER_CXA_ATEXIT
-		if (_dso_handle) {
-			debug(2, "elfloader: calling __cxa_finalize");
-			__cxxabiv1::__cxa_finalize(_dso_handle);
-			_dso_handle = 0;
+		if (_finalizeFunc) {
+			debug(2, "elfloader: calling PLUGIN_finalize");
+			_finalizeFunc();
+			_finalizeFunc = 0;
 		}
 #endif
 
 		if (!_dlHandle->close())
-			warning("elfloader: Failed unloading plugin '%s'", _filename.c_str());
+			warning("elfloader: Failed unloading plugin '%s'", _filename.toString(Common::Path::kNativeSeparator).c_str());
 
 		delete _dlHandle;
 		_dlHandle = 0;
@@ -198,7 +195,7 @@ PluginList ELFPluginProvider::getPlugins() {
 
 bool ELFPluginProvider::isPluginFilename(const Common::FSNode &node) const {
 	// Check the plugin suffix
-	Common::String filename = node.getName();
+	Common::String filename = node.getFileName();
 
 	if (!filename.hasSuffix(".PLG") && !filename.hasSuffix(".plg") &&
 			!filename.hasSuffix(".PLUGIN") && !filename.hasSuffix(".plugin"))

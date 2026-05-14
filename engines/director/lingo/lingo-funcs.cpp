@@ -20,7 +20,6 @@
  */
 
 #include "audio/audiostream.h"
-#include "audio/decoders/wave.h"
 #include "common/file.h"
 #include "common/macresman.h"
 #include "common/system.h"
@@ -28,160 +27,19 @@
 #include "graphics/macgui/macwindowmanager.h"
 
 #include "director/director.h"
-#include "director/castmember.h"
+#include "director/archive.h"
 #include "director/cursor.h"
 #include "director/movie.h"
 #include "director/score.h"
 #include "director/sound.h"
 #include "director/window.h"
-#include "director/util.h"
 
-#include "director/lingo/lingo.h"
 #include "director/lingo/lingo-builtins.h"
 
 
 namespace Director {
 
-enum MCITokenType {
-	kMCITokenNone,
-
-	kMCITokenOpen,
-	kMCITokenWait,
-	kMCITokenPlay,
-
-	kMCITokenType,
-	kMCITokenAlias,
-	kMCITokenBuffer,
-	kMCITokenFrom,
-	kMCITokenTo,
-	kMCITokenRepeat
-};
-
-struct MCIToken {
-	MCITokenType command; // Command this flag belongs to
-	MCITokenType flag;
-	const char *token;
-	int pos;  // Position of parameter to store. 0 is always filename. Negative parameters mean boolean
-} MCITokens[] = {
-	{ kMCITokenNone, kMCITokenOpen,   "open", 0 },
-	{ kMCITokenOpen, kMCITokenType,   "type", 1 },
-	{ kMCITokenOpen, kMCITokenAlias,  "alias", 2 },
-	{ kMCITokenOpen, kMCITokenBuffer, "buffer", 3 },
-
-	{ kMCITokenNone, kMCITokenPlay,   "play", 0 },
-	{ kMCITokenPlay, kMCITokenFrom,   "from", 1 },
-	{ kMCITokenPlay, kMCITokenTo,     "to", 2 },
-	{ kMCITokenPlay, kMCITokenRepeat, "repeat", -3 }, // This is boolean parameter
-
-	{ kMCITokenNone, kMCITokenWait,   "wait", 0 },
-
-	{ kMCITokenNone, kMCITokenNone,   nullptr, 0 }
-};
-
-void Lingo::func_mci(const Common::String &name) {
-	Common::String params[5];
-	MCITokenType command = kMCITokenNone;
-
-	Common::String s = name;
-	s.trim();
-	s.toLowercase();
-
-	MCITokenType state = kMCITokenNone;
-	Common::String token;
-	const char *ptr = s.c_str();
-	int respos = -1;
-
-	while (*ptr) {
-		while (*ptr && *ptr == ' ')
-			ptr++;
-
-		token.clear();
-
-		while (*ptr && *ptr != ' ')
-			token += *ptr++;
-
-		switch (state) {
-		case kMCITokenNone:
-			{
-				MCIToken *f = MCITokens;
-
-				while (f->token) {
-					if (command == f->command && token == f->token)
-						break;
-
-					f++;
-				}
-
-				if (command == kMCITokenNone) { // We caught command
-					command = f->flag; // Switching to processing this command parameters
-				} else if (f->flag == kMCITokenNone) { // Unmatched token, storing as filename
-					if (!params[0].empty())
-						warning("Duplicate filename in MCI command: %s -> %s", params[0].c_str(), token.c_str());
-					params[0] = token;
-				} else { // This is normal parameter, storing next token to designated position
-					if (f->pos > 0) { // This is normal parameter
-						state = f->flag;
-						respos = f->pos;
-					} else { // This is boolean
-						params[-f->pos] = "true";
-						state = kMCITokenNone;
-					}
-				}
-				break;
-			}
-		default:
-			params[respos] = token;
-			state = kMCITokenNone;
-			break;
-		}
-	}
-
-	switch (command) {
-	case kMCITokenOpen:
-		{
-			warning("MCI open file: %s, type: %s, alias: %s buffer: %s", params[0].c_str(), params[1].c_str(), params[2].c_str(), params[3].c_str());
-
-			Common::File *file = new Common::File();
-
-			if (!file->open(params[0])) {
-				warning("Failed to open %s", params[0].c_str());
-				delete file;
-				return;
-			}
-
-			if (params[1] == "waveaudio") {
-				Audio::AudioStream *sound = Audio::makeWAVStream(file, DisposeAfterUse::YES);
-				_audioAliases[params[2]] = sound;
-			} else {
-				warning("Unhandled audio type %s", params[2].c_str());
-			}
-		}
-		break;
-	case kMCITokenPlay:
-		{
-			warning("MCI play file: %s, from: %s, to: %s, repeat: %s", params[0].c_str(), params[1].c_str(), params[2].c_str(), params[3].c_str());
-
-			if (!_audioAliases.contains(params[0])) {
-				warning("Unknown alias %s", params[0].c_str());
-				return;
-			}
-
-			uint32 from = strtol(params[1].c_str(), nullptr, 10);
-			uint32 to = strtol(params[2].c_str(), nullptr, 10);
-
-			_vm->getCurrentWindow()->getSoundManager()->playMCI(*_audioAliases[params[0]], from, to);
-		}
-		break;
-	default:
-		warning("Unhandled MCI command: %s", s.c_str());
-	}
-}
-
-void Lingo::func_mciwait(const Common::String &name) {
-	warning("STUB: MCI wait file: %s", name.c_str());
-}
-
-void Lingo::func_goto(Datum &frame, Datum &movie) {
+void Lingo::func_goto(Datum &frame, Datum &movie, bool calledfromgo) {
 	_vm->_playbackPaused = false;
 
 	if (!_vm->getCurrentMovie())
@@ -191,21 +49,32 @@ void Lingo::func_goto(Datum &frame, Datum &movie) {
 		return;
 
 	Window *stage = _vm->getCurrentWindow();
-	Score *score = _vm->getCurrentMovie()->getScore();
+	Score *score = stage->getCurrentMovie()->getScore();
 
-	_vm->_skipFrameAdvance = true;
+	if (score->_disableGoPlayUpdateStage) {
+		warning("Lingo::func_goto(): ignoring goto due to disableGoPlayUpdateStage flag");
+		return;
+	}
+
+	stage->_skipFrameAdvance = true;
 
 	// If there isn't already frozen Lingo (e.g. from a previous func_goto we haven't yet unfrozen),
 	// freeze this script context. We'll return to it after entering the next frame.
-	if (!g_lingo->hasFrozenContext()) {
-		g_lingo->_freezeContext = true;
-	}
+
+	// Returning from a script with "play done" does not freeze the state. Instead it obliterates it.
+	if (!g_lingo->_playDone)
+		g_lingo->_freezeState = true;
 
 	if (movie.type != VOID) {
 		Common::String movieFilenameRaw = movie.asString();
 
 		if (!stage->setNextMovie(movieFilenameRaw))
 			return;
+
+		// If we reached here from b_go, and the movie is getting swapped out,
+		// reset all of the custom event handlers.
+		if (calledfromgo)
+			g_lingo->resetLingoGo();
 
 		if (g_lingo->_updateMovieEnabled) {
 			// Save the movie when branching to another movie.
@@ -218,9 +87,13 @@ void Lingo::func_goto(Datum &frame, Datum &movie) {
 		stage->_nextMovie.frameI = -1;
 
 		if (frame.type == STRING) {
+			debugC(3, kDebugLingoExec, "Lingo::func_goto(): going to movie \"%s\", frame \"%s\"", movieFilenameRaw.c_str(), frame.u.s->c_str());
 			stage->_nextMovie.frameS = *frame.u.s;
 		} else if (frame.type != VOID) {
+			debugC(3, kDebugLingoExec, "Lingo::func_goto(): going to movie \"%s\", frame %d", movieFilenameRaw.c_str(), frame.asInt());
 			stage->_nextMovie.frameI = frame.asInt();
+		} else {
+			debugC(3, kDebugLingoExec, "Lingo::func_goto(): going to start of movie \"%s\"", movieFilenameRaw.c_str());
 		}
 
 		// Set cursor to watch.
@@ -231,43 +104,62 @@ void Lingo::func_goto(Datum &frame, Datum &movie) {
 	}
 
 	if (frame.type == STRING) {
+		debugC(3, kDebugLingoExec, "Lingo::func_goto(): going to frame \"%s\"", frame.u.s->c_str());
 		score->setStartToLabel(*frame.u.s);
 	} else {
+		debugC(3, kDebugLingoExec, "Lingo::func_goto(): going to frame %d", frame.asInt());
 		score->setCurrentFrame(frame.asInt());
 	}
+
+	// Since the frames are not going to be consecutive, we might run into
+	// an endge case, so better kill behaviors proactively.
+	score->killScriptInstances(score->getNextFrame());
 }
 
 void Lingo::func_gotoloop() {
 	if (!_vm->getCurrentMovie())
 		return;
+	Window *stage = _vm->getCurrentWindow();
+	Score *score = stage->getCurrentMovie()->getScore();
+	debugC(3, kDebugLingoExec, "Lingo::func_gotoloop(): looping frame %d", score->getCurrentFrameNum());
 
-	_vm->getCurrentMovie()->getScore()->gotoLoop();
+	score->gotoLoop();
 
-	_vm->_skipFrameAdvance = true;
+	stage->_skipFrameAdvance = true;
 }
 
 void Lingo::func_gotonext() {
 	if (!_vm->getCurrentMovie())
 		return;
 
-	_vm->getCurrentMovie()->getScore()->gotoNext();
+	Window *stage = _vm->getCurrentWindow();
+	Score *score = stage->getCurrentMovie()->getScore();
+	score->gotoNext();
+	debugC(3, kDebugLingoExec, "Lingo::func_gotonext(): going to next frame %d", score->getNextFrame());
 
-	_vm->_skipFrameAdvance = true;
+	stage->_skipFrameAdvance = true;
 }
 
 void Lingo::func_gotoprevious() {
 	if (!_vm->getCurrentMovie())
 		return;
 
-	_vm->getCurrentMovie()->getScore()->gotoPrevious();
+	Window *stage = _vm->getCurrentWindow();
+	Score *score = stage->getCurrentMovie()->getScore();
+	score->gotoPrevious();
+	debugC(3, kDebugLingoExec, "Lingo::func_gotoprevious(): going to previous frame %d", score->getNextFrame());
 
-	_vm->_skipFrameAdvance = true;
+	stage->_skipFrameAdvance = true;
 }
 
 void Lingo::func_play(Datum &frame, Datum &movie) {
 	MovieReference ref;
 	Window *stage = _vm->getCurrentWindow();
 
+	if (stage->getCurrentMovie()->getScore()->_disableGoPlayUpdateStage) {
+		warning("Lingo::func_play(): ignoring play due to disableGoPlayUpdateStage flag");
+		return;
+	}
 
 	// play #done
 	if (frame.type == SYMBOL) {
@@ -275,7 +167,9 @@ void Lingo::func_play(Datum &frame, Datum &movie) {
 			warning("Lingo::func_play: unknown symbol: #%s", frame.u.s->c_str());
 			return;
 		}
+		_playDone = true;
 		if (stage->_movieStack.empty()) {	// No op if no nested movies
+
 			return;
 		}
 		ref = stage->_movieStack.back();
@@ -305,9 +199,9 @@ void Lingo::func_play(Datum &frame, Datum &movie) {
 	}
 
 	if (movie.type != VOID) {
-		ref.movie = _vm->getCurrentMovie()->_movieArchive->getPathName();
+		ref.movie = _vm->getCurrentMovie()->_movieArchive->getPathName().toString(g_director->_dirSeparator);
 	}
-	ref.frameI = _vm->getCurrentMovie()->getScore()->getCurrentFrame();
+	ref.frameI = _vm->getCurrentMovie()->getScore()->getCurrentFrameNum();
 
 	// if we are issuing play command from script channel script. then play done should return to next frame
 	if (g_lingo->_currentChannelId == 0)
@@ -316,10 +210,12 @@ void Lingo::func_play(Datum &frame, Datum &movie) {
 	stage->_movieStack.push_back(ref);
 
 	func_goto(frame, movie);
+	_freezePlay = true;
 }
 
 void Lingo::func_cursor(Datum cursorDatum) {
-	Score *score = _vm->getCurrentMovie()->getScore();
+	Window *stage = _vm->getCurrentWindow();
+	Score *score = stage->getCurrentMovie()->getScore();
 	if (cursorDatum.type == ARRAY){
 		score->_defaultCursor.readFromCast(cursorDatum);
 	} else {
@@ -332,7 +228,7 @@ void Lingo::func_beep(int repeats) {
 	for (int r = 1; r <= repeats; r++) {
 		_vm->getCurrentWindow()->getSoundManager()->systemBeep();
 		if (r < repeats)
-			g_system->delayMillis(400);
+			g_director->delayMillis(400);
 	}
 }
 
@@ -340,14 +236,16 @@ int Lingo::func_marker(int m) 	{
 	if (!_vm->getCurrentMovie())
 		return 0;
 
-	int labelNumber = _vm->getCurrentMovie()->getScore()->getCurrentLabelNumber();
+	Window *stage = _vm->getCurrentWindow();
+	Score *score = stage->getCurrentMovie()->getScore();
+	int labelNumber = score->getCurrentLabelNumber();
 	if (m != 0) {
 		if (m < 0) {
 			for (int marker = 0; marker > m; marker--)
-				labelNumber = _vm->getCurrentMovie()->getScore()->getPreviousLabelNumber(labelNumber);
+				labelNumber = score->getPreviousLabelNumber(labelNumber);
 		} else {
 			for (int marker = 0; marker < m; marker++)
-				labelNumber = _vm->getCurrentMovie()->getScore()->getNextLabelNumber(labelNumber);
+				labelNumber = score->getNextLabelNumber(labelNumber);
 		}
 	}
 
@@ -355,7 +253,8 @@ int Lingo::func_marker(int m) 	{
 }
 
 uint16 Lingo::func_label(Datum &label) {
-	Score *score = _vm->getCurrentMovie()->getScore();
+	Window *stage = _vm->getCurrentWindow();
+	Score *score = stage->getCurrentMovie()->getScore();
 
 	if (!score->_labels)
 		return 0;

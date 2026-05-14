@@ -70,7 +70,7 @@ protected:
 	Widget		*_firstWidget;
 
 public:
-	GuiObject(int x, int y, int w, int h);
+	GuiObject(int x, int y, int w, int h, bool scale = false);
 	GuiObject(const Common::String &name);
 	~GuiObject() override;
 
@@ -104,6 +104,7 @@ public:
 	virtual Common::Rect getClipRect() const;
 
 	virtual void handleMouseWheel(int x, int y, int direction) {};
+	virtual void handleTooltipUpdate(int x, int y) {};
 protected:
 	virtual void	releaseFocus() = 0;
 };

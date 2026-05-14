@@ -29,6 +29,7 @@
 #include "scumm/object.h"
 #include "scumm/resource.h"
 #include "scumm/scumm_v3.h"
+#include "scumm/scumm_v7.h"
 #include "scumm/sound.h"
 #include "scumm/util.h"
 
@@ -43,14 +44,19 @@ void ScummEngine::startScene(int room, Actor *a, int objectNr) {
 
 	debugC(DEBUG_GENERAL, "Loading room %d", room);
 
+#ifdef ENABLE_SCUMM_7_8
+	if (_game.version >= 7) {
+		((ScummEngine_v7 *)this)->removeBlastTexts();
+	}
+#endif
+
 	stopTalk();
 
 	fadeOut(_switchRoomEffect2);
 	_newEffect = _switchRoomEffect;
 
-	ScriptSlot *ss = &vm.slot[_currentScript];
-
 	if (_currentScript != 0xFF) {
+		ScriptSlot *ss = &vm.slot[_currentScript];
 		if (ss->where == WIO_ROOM || ss->where == WIO_FLOBJECT) {
 			if (ss->cutsceneOverride && _game.version >= 5)
 				error("Object %d stopped with active cutscene/override in exit", ss->number);
@@ -74,6 +80,9 @@ void ScummEngine::startScene(int room, Actor *a, int objectNr) {
 	killScriptsAndResources();
 	if (_game.version >= 4 && _game.heversion <= 62)
 		stopCycle(0);
+
+	if (_game.heversion > 0 && _game.heversion <= 70)
+		_palManipCounter = 0;
 
 	if (_game.id == GID_SAMNMAX) {
 		// WORKAROUND bug #1132 SAM: Overlapping music at Bigfoot convention
@@ -118,6 +127,25 @@ void ScummEngine::startScene(int room, Actor *a, int objectNr) {
 			setDirtyColors(0, 255);
 	}
 
+	// WORKAROUND: In the CD version of MI1 a certain palette slot (47)
+	// points to a dark blue color in room 36 (the Marley Mansion outside view).
+	// The same palette slot points to white in the Floppy VGA version.
+	//
+	// This is believed to be an oversight in the scripts/datafiles, as it affects:
+	// - The "Important Notice" sign about how the dogs are only sleeping.
+	// - The color of some of the stars in the sky.
+	//
+	// It has been noted that the Mac version apparently fixes that on the fly
+	// within the interpreter, so we do that as well even if kEnhVisualChanges
+	// is not active.
+	//
+	// The SEGA CD version points to the correct color, and the FM Towns
+	// version makes the text more readable by giving it a black outline.
+	// The Ultimate Talkie version already takes care of that within the data files.
+
+	if (haveToApplyMonkey1PaletteFix() && room == 36)
+		_roomPalette[47] = 15;
+
 	VAR(VAR_ROOM) = room;
 	_fullRedraw = true;
 
@@ -125,6 +153,15 @@ void ScummEngine::startScene(int room, Actor *a, int objectNr) {
 
 	_currentRoom = room;
 	VAR(VAR_ROOM) = room;
+
+#ifdef USE_TTS
+	if (_game.id == GID_PASS && _roomResource == 2 && room != _roomResource) {
+		for (uint index = 0; index < ARRAYSIZE(_passHelpButtons); ++index) {
+			_passHelpButtons[index].clear();
+		}
+		_voicePassHelpButtons = false;
+	}
+#endif
 
 	if (room >= 0x80 && _game.version < 7 && _game.heversion <= 71)
 		_roomResource = _resourceMapper[room & 0x7F];
@@ -143,6 +180,11 @@ void ScummEngine::startScene(int room, Actor *a, int objectNr) {
 		_ENCD_offs = _EXCD_offs = 0;
 		_numObjectsInRoom = 0;
 		return;
+	} else if (_game.id == GID_LOOM && _game.version == 4) {
+		// This is specific for LOOM VGA Talkie. It forces a
+		// redraw of the verbs screen. The original interpreter
+		// does this here...
+		VAR(66) = 1;
 	}
 
 	setupRoomSubBlocks();
@@ -194,6 +236,14 @@ void ScummEngine::startScene(int room, Actor *a, int objectNr) {
 		}
 	}
 
+	// WORKAROUND for bug #16111
+	// Due to a faulty box flag, ZAK FM-TOWNS will freeze when trying to load a game saved in
+	// room 138, but also when pressing F5 while in that room and then clicking the PLAY button
+	// in the save menu. The latter case is the reason why I put the workaround in here, and
+	// not just in ScummEngine_v3::scummLoop_handleSaveLoad() where it would be less visible.
+	if (_game.id == GID_ZAK && _game.platform == Common::kPlatformFMTowns && a == nullptr && room == 138)
+		setBoxFlags(4, 0);
+
 	showActors();
 
 	_egoPositioned = false;
@@ -201,7 +251,6 @@ void ScummEngine::startScene(int room, Actor *a, int objectNr) {
 #ifndef DISABLE_TOWNS_DUAL_LAYER_MODE
 	towns_resetPalCycleFields();
 #endif
-
 	runEntryScript();
 	if (_game.version >= 1 && _game.version <= 2) {
 		runScript(5, 0, 0, nullptr);
@@ -231,7 +280,7 @@ void ScummEngine::startScene(int room, Actor *a, int objectNr) {
 			hasCopyProtectionScreen = false;
 
 		// The unofficial talkie never shows any copy protection screen.
-		if (strcmp(_game.variant, "SE Talkie") == 0)
+		if (_game.features & GF_ULTIMATE_TALKIE)
 			hasCopyProtectionScreen = false;
 
 		if (hasCopyProtectionScreen) {
@@ -349,7 +398,7 @@ void ScummEngine::setupRoomSubBlocks() {
 
 			if (_dumpScripts) {
 				char buf[32];
-				sprintf(buf, "room-%d-", _roomResource);
+				Common::sprintf_s(buf, "room-%d-", _roomResource);
 				dumpResource(buf, id, ptr - _resourceHeaderSize);
 			}
 
@@ -369,7 +418,7 @@ void ScummEngine::setupRoomSubBlocks() {
 
 			if (_dumpScripts) {
 				char buf[32];
-				sprintf(buf, "room-%d-", _roomResource);
+				Common::sprintf_s(buf, "room-%d-", _roomResource);
 				dumpResource(buf, id, ptr - _resourceHeaderSize);
 			}
 		}
@@ -385,7 +434,7 @@ void ScummEngine::setupRoomSubBlocks() {
 
 			if (_dumpScripts) {
 				char buf[32];
-				sprintf(buf, "room-%d-", _roomResource);
+				Common::sprintf_s(buf, "room-%d-", _roomResource);
 				dumpResource(buf, id, ptr - _resourceHeaderSize);
 			}
 		}
@@ -412,7 +461,7 @@ void ScummEngine::setupRoomSubBlocks() {
 
 			if (_dumpScripts) {
 				char buf[32];
-				sprintf(buf, "room-%d-", _roomResource);
+				Common::sprintf_s(buf, "room-%d-", _roomResource);
 				dumpResource(buf, id, ptr - _resourceHeaderSize);
 			}
 		}
@@ -463,13 +512,20 @@ void ScummEngine::setupRoomSubBlocks() {
 
 	// WORKAROUND bug #1831: The dreaded DOTT "Can't get teeth" bug
 	// makes it impossible to go on playing w/o cheating in some way.
-	// It's not quite clear what causes it, but the effect is that object
-	// 182, the teeth, are still in class 32 (kObjectClassUntouchable),
-	// when they shouldn't be. Luckily, bitvar69 is set to 1 if and only if
-	// the teeth are trapped and have not yet been taken by the player. So
-	// we can make use of that fact to fix the object class of obj 182.
-	if (_game.id == GID_TENTACLE && _roomResource == 26 && readVar(0x8000 + 69)
-			&& getClass(182, kObjectClassUntouchable)) {
+	// Before the GDC17 conference where Oliver Franzke gave more
+	// background about this, it wasn't quite clear what caused this issue,
+	// but the effect is that object 182, the teeth, are still in class 32
+	// (kObjectClassUntouchable), when they shouldn't be. Luckily, bitvar69
+	// (teeth-caught) is set to 1 if and only if the teeth are trapped and
+	// have not yet been taken by the player. So we can make use of that
+	// fact to fix the object class of obj 182. This should match what the
+	// 2016 remaster did.
+	//
+	// Using `kEnhGameBreakingBugFixes`, since leaving the room too quickly
+	// would just make this puzzle impossible to complete.
+	if (_game.id == GID_TENTACLE && _roomResource == 26 && readVar(ROOM_VAL(69))
+			&& getClass(182, kObjectClassUntouchable)
+			&& enhancementEnabled(kEnhGameBreakingBugFixes)) {
 		putClass(182, kObjectClassUntouchable, 0);
 	}
 
@@ -722,7 +778,7 @@ void ScummEngine_v3old::setupRoomSubBlocks() {
 
 			if (_dumpScripts) {
 				char buf[32];
-				sprintf(buf, "room-%d-", _roomResource);
+				Common::sprintf_s(buf, "room-%d-", _roomResource);
 
 				// HACK: to determine the sizes of the local scripts, we assume that
 				// a) their order in the data file is the same as in the index

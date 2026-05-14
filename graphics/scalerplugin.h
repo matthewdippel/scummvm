@@ -158,8 +158,8 @@ public:
 
 	bool hasFactor(uint factor) const {
 		const Common::Array<uint> &factors = getFactors();
-		for (Common::Array<uint>::const_iterator it = factors.begin(); it != factors.end(); it++) {
-			if ((*it) == factor)
+		for (const auto &curFactor : factors) {
+			if (curFactor == factor)
 				return true;
 		}
 
@@ -234,6 +234,11 @@ public:
 	 * Update scaler settings from older versions of ScummVM.
 	 */
 	void updateOldSettings();
+
+	/**
+	 * Returns whether the supplied mode is one of the old gfx-modes.
+	 */
+	bool isOldGraphicsSetting(const Common::String &gfxMode);
 };
 
 /** Convenience shortcut for accessing singleton */

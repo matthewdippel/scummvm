@@ -24,6 +24,8 @@
 
 #include "common/events.h"
 
+#include "backends/keymapper/keymapper.h"
+
 namespace Hypno {
 
 void BoyzEngine::runBeforeArcade(ArcadeShooting *arc) {
@@ -155,6 +157,7 @@ void BoyzEngine::showArcadeStats(int territory, const ArcadeStats &data) {
 	drawImage(*stats, 0, 0, true);
 	stats->free();
 	delete stats;
+	free(palette);
 	uint32 enemiesAvailable = data.targetsDestroyed + data.targetsMissed;
 	drawString("scifi08.fgx", Common::String::format("%d", enemiesAvailable), 278, 41, 0, kHypnoColorWhiteOrBlue);
 	uint32 killRatio = enemiesAvailable > 0 ? 100 * data.targetsDestroyed / enemiesAvailable : 0;
@@ -186,14 +189,12 @@ void BoyzEngine::showArcadeStats(int territory, const ArcadeStats &data) {
 }
 
 void BoyzEngine::pressedKey(const int keycode) {
-	if (keycode == Common::KEYCODE_c) {
-		if (_cheatsEnabled) {
-			_skipLevel = true;
-			return;
-		}
-	} else if (keycode == Common::KEYCODE_k) { // Added for testing
+	if (keycode == kActionSkipLevel) {
+		_skipLevel = true;
+		return;
+	} else if (keycode == kActionKillPlayer) { // Added for testing
 		_health = 0;
-	} else if (keycode == Common::KEYCODE_ESCAPE) {
+	} else if (keycode == kActionPause) {
 		openMainMenuDialog();
 	}
 }
@@ -389,8 +390,6 @@ bool BoyzEngine::checkTransition(ArcadeTransitions &transitions, ArcadeShooting 
 
 			_background->decoder->pauseVideo(false);
 			_masks->decoder->pauseVideo(false);
-			if (!_music.empty())
-				playSound(_music, 0, _musicRate, _musicStereo); // restore music
 			drawPlayer();
 			updateScreen(*_background);
 			drawScreen();
@@ -638,8 +637,6 @@ bool BoyzEngine::shoot(const Common::Point &mousePos, ArcadeShooting *arc, bool 
 					_shootsDestroyed[_shoots[i].name] = true;
 					updateScreen(*_background);
 					drawScreen();
-					if (!_music.empty())
-						playSound(_music, 0, _musicRate, _musicStereo); // restore music
 				}
 			} else if (_shoots[i].interactionFrame > 0) {
 				incFriendliesEncountered();
@@ -684,9 +681,6 @@ bool BoyzEngine::shoot(const Common::Point &mousePos, ArcadeShooting *arc, bool 
 				_background->decoder->pauseVideo(false);
 				updateScreen(*_background);
 				drawScreen();
-				if (!_music.empty())
-					playSound(_music, 0, _musicRate, _musicStereo); // restore music
-
 				hitPlayer();
 			}
 			if (_shoots[i].explosionFrames.size() == 0)

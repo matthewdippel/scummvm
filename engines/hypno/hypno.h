@@ -23,7 +23,7 @@
 #define HYPNO_H
 
 #include "common/array.h"
-#include "common/installshieldv3_archive.h"
+#include "common/compression/installshieldv3_archive.h"
 #include "common/random.h"
 #include "common/serializer.h"
 #include "common/str-array.h"
@@ -32,10 +32,14 @@
 #include "graphics/font.h"
 #include "graphics/fontman.h"
 #include "graphics/surface.h"
-#include "graphics/palette.h"
+#include "video/subtitles.h"
 
 #include "hypno/grammar.h"
 #include "hypno/libfile.h"
+
+namespace Audio {
+class SeekableAudioStream;
+}
 
 namespace Image {
 class ImageDecoder;
@@ -47,10 +51,10 @@ namespace Hypno {
 
 // debug channels
 enum {
-	kHypnoDebugMedia = 1 << 0,
-	kHypnoDebugParser = 1 << 1,
-	kHypnoDebugArcade = 1 << 2,
-	kHypnoDebugScene = 1 << 3
+	kHypnoDebugMedia = 1,
+	kHypnoDebugParser,
+	kHypnoDebugArcade,
+	kHypnoDebugScene,
 };
 
 // Player positions
@@ -79,6 +83,55 @@ enum SpiderColors {
 	kSpiderColorBlue = 252,
 };
 
+enum HYPNOActions {
+	kActionNone,
+	kActionSkipIntro,
+	kActionSkipCutscene,
+	kActionPrimaryShoot,
+	kActionSkipLevel,
+	kActionKillPlayer,
+	kActionPause,
+	kActionLeft,
+	kActionDown,
+	kActionRight,
+	kActionUp,
+	kActionYes,
+	kActionNo,
+	kActionDifficultyChump,
+	kActionDifficultyPunk,
+	kActionDifficultyBadass,
+	kActionDifficultExit,
+	kActionRetry,
+	kActionRestart,
+	kActionNewMission,
+	kActionQuit,
+	kActionCredits,
+	kActionSelect,
+};
+
+class HypnoEngine;
+
+class CursorCache {
+private:
+	HypnoEngine *_vm;
+	Common::String _filename;
+	uint32 _frame;
+	byte *_palette;
+	Graphics::Surface *_surface;
+
+public:
+	CursorCache(HypnoEngine *vm) : _vm(vm), _filename(""), _frame(0), _palette(nullptr), _surface(nullptr) {}
+
+	~CursorCache() {
+		if (_surface) {
+			_surface->free();
+			delete _surface;
+		}
+		free(_palette);
+	}
+
+	Graphics::Surface *getCursor(const Common::String &cursor, uint32 n, byte **palette);
+};
 
 class HypnoEngine : public Engine {
 private:
@@ -99,7 +152,7 @@ public:
 	bool _unlockAllLevels;
 	bool _restoredContentEnabled;
 
-	Audio::SoundHandle _soundHandle;
+	Audio::SoundHandle _soundHandle, _musicHandle;
 	Common::InstallShieldV3 _installerArchive;
 	Common::List<LibFile*> _archive;
 
@@ -132,7 +185,7 @@ public:
 	void loadSceneLevel(const Common::String &current, const Common::String &next, const Common::String &prefix);
 	void loadSceneLevel(const char *buf, const Common::String &name, const Common::String &next, const Common::String &prefix);
 
-	LibFile *loadLib(const Filename &prefix, const Filename &filename, bool encrypted);
+	LibFile *loadLib(const Common::Path &prefix, const Common::Path &filename, bool encrypted);
 
 	// User input
 	void clickedHotspot(Common::Point);
@@ -144,13 +197,18 @@ public:
 	bool cursorMask(Common::Point);
 
 	virtual void loadGame(const Common::String &nextLevel, int score, int puzzleDifficulty, int combatDifficulty);
-	bool canLoadGameStateCurrently() override { return (isDemo() ? false : true); }
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override { return (isDemo() ? false : true); }
 	bool canSaveAutosaveCurrently() override { return false; }
-	bool canSaveGameStateCurrently() override { return (isDemo() ? false : true); }
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override { return (isDemo() ? false : true); }
 	Common::String _checkpoint;
 
-	Common::String _prefixDir;
-	Common::String convertPath(const Common::String &);
+	bool _useSubtitles;
+	Video::Subtitles *_subtitles;
+	void adjustSubtitleSize();
+	void loadSubtitles(const Common::Path &path);
+
+	Common::Path _prefixDir;
+	Common::Path convertPath(const Common::String &);
 	void playVideo(MVideo &video);
 	void skipVideo(MVideo &video);
 
@@ -165,11 +223,12 @@ public:
 	// Cursors
 	Common::String _defaultCursor;
 	uint32 _defaultCursorIdx;
+	CursorCache *_cursorCache;
 	void disableCursor();
 	void defaultCursor();
-	void changeCursor(const Common::String &cursor, uint32 n, bool centerCursor = false);
-	void changeCursor(const Common::String &cursor);
-	void changeCursor(const Graphics::Surface &entry, byte *palette, bool centerCursor = false);
+	virtual void changeCursor(const Common::String &cursor, uint32 n, bool centerCursor = false);
+	virtual void changeCursor(const Common::String &cursor);
+	virtual void changeCursor(const Graphics::Surface &entry, byte *palette, bool centerCursor = false);
 
 	// Actions
 	virtual void runMenu(Hotspots *hs, bool only_menu = false);
@@ -209,6 +268,7 @@ public:
 	// intros
 	void runIntro(MVideo &video);
 	void runIntros(Videos &videos);
+	void runIntrosWithSubtitles(Videos &videos);
 	Common::HashMap<Filename, bool> _intros;
 
 	// levels
@@ -235,12 +295,12 @@ public:
 
 	// Sounds
 	Filename _soundPath;
-	Filename _music;
-	int _musicRate;
-	bool _musicStereo;
-	bool _doNotStopSounds;
+	Audio::SeekableAudioStream *loadAudioStream(const Filename &filename, uint32 sampleRate = 22050, bool stereo = false);
 	void playSound(const Filename &filename, uint32 loops, uint32 sampleRate = 22050, bool stereo = false);
+	void playMusic(const Filename &filename, uint32 sampleRate = 22050, bool stereo = false);
 	void stopSound();
+	void stopMusic();
+	bool isMusicActive();
 
 	// Arcade
 	Common::String _arcadeMode;
@@ -262,6 +322,10 @@ public:
 	virtual void missedTarget(Shoot *s, ArcadeShooting *arc);
 	virtual void missNoTarget(ArcadeShooting *arc);
 	virtual byte *getTargetColor(Common::String name, int levelId);
+	virtual bool checkRButtonUp();
+	virtual void setRButtonUp(const bool val);
+	virtual void disableGameKeymaps();
+	virtual void enableGameKeymaps();
 
 	// Segments
 	Segments _segments;
@@ -338,7 +402,9 @@ public:
 	uint32 _objMissesAllowed[2];
 
 	// Fonts
-	virtual void loadFonts();
+	Common::BitArray _font05;
+	Common::BitArray _font08;
+	virtual void loadFonts(const Common::String &prefix = "");
 	virtual void drawString(const Filename &name, const Common::String &str, int x, int y, int w, uint32 c);
 
 	// Conversation
@@ -377,6 +443,7 @@ struct chapterEntry {
 class WetEngine : public HypnoEngine {
 public:
 	WetEngine(OSystem *syst, const ADGameDescription *gd);
+	~WetEngine();
 	Common::HashMap<int, const struct chapterEntry*> _chapterTable;
 	Common::Array<int> _ids;
 	int _lastLevel;
@@ -384,14 +451,16 @@ public:
 
 	void loadAssets() override;
 	void loadAssetsDemoDisc();
+	void loadAssetsEarlyDemo();
 	void loadAssetsGen4();
 	void loadAssetsPCW();
 	void loadAssetsPCG();
 	void loadAssetsFullGame();
 	void loadAssetsNI();
 
-	void loadFonts() override;
+	void loadFonts(const Common::String &prefix = "") override;
 	void drawString(const Filename &name, const Common::String &str, int x, int y, int w, uint32 c) override;
+	void changeCursor(const Common::String &cursor) override;
 
 	void showCredits() override;
 	bool clickedSecondaryShoot(const Common::Point &mousePos) override;
@@ -424,9 +493,21 @@ public:
 	void findNextSegment(ArcadeShooting *arc) override;
 	void initSegment(ArcadeShooting *arc) override;
 	byte *getTargetColor(Common::String name, int levelId) override;
+	bool checkRButtonUp() override;
+	void setRButtonUp(const bool val) override;
+	void disableGameKeymaps() override;
+	void enableGameKeymaps() override;
+
+
+	bool hasFeature(EngineFeature f) const override {
+		return (f == kSupportsReturnToLauncher);
+	}
 
 private:
-	Common::String getLocalizedString(const Common::String name);
+	Common::String getLocalizedString(const Common::String &name);
+	uint16 getNextChar(const Common::String &str, uint32 &c);
+	void drawGlyph(const Common::BitArray &font, int x, int y, int bitoffset, int width, int height, int pitch, uint32 color, bool invert);
+	void drawKoreanChar(uint16 chr, int &curx, int y, uint32 color);
 	void runMainMenu(Code *code);
 	void runLevelMenu(Code *code);
 	void runCheckLives(Code *code);
@@ -445,19 +526,21 @@ private:
 	bool _c33UseMouse;
 	void generateStaticEffect();
 
-	Common::BitArray _font05;
-	Common::BitArray _font08;
+	Common::BitArray _fontg9a;
 	Common::Array<uint32> _c40SegmentPath;
 	Common::Array<uint32> _c40SegmentNext;
 	int _c40SegmentIdx;
 	int _c40lastTurn;
 	int _c50LeftTurns;
 	int _c50RigthTurns;
+
+	bool _rButtonUp;
 };
 
 class SpiderEngine : public HypnoEngine {
 public:
 	SpiderEngine(OSystem *syst, const ADGameDescription *gd);
+	~SpiderEngine();
 	void loadAssets() override;
 	void loadAssetsDemo();
 	void loadAssetsFullGame();
@@ -483,7 +566,7 @@ public:
 	Common::String findNextLevel(const Common::String &level) override;
 	Common::String findNextLevel(const Transition *trans) override;
 
-	void loadFonts() override;
+	void loadFonts(const Common::String &prefix = "") override;
 	void drawString(const Filename &name, const Common::String &str, int x, int y, int w, uint32 c) override;
 
 	void showConversation() override;
@@ -500,7 +583,7 @@ public:
 	}
 
 	bool hasFeature(EngineFeature f) const override {
-		return (f == kSupportsSavingDuringRuntime || f == kSupportsLoadingDuringRuntime);
+		return (f == kSupportsSavingDuringRuntime || f == kSupportsLoadingDuringRuntime || f == kSupportsReturnToLauncher);
 	}
 
 private:
@@ -515,7 +598,7 @@ private:
 	void runLock(Code *code);
 	void runFuseBox(Code *code);
 	void runGiveUp();
-	void showScore(const Common::String prefix);
+	void showScore(const Common::String &prefix);
 
 	uint32 _currentPlayerPosition;
 	uint32 _lastPlayerPosition;
@@ -529,14 +612,13 @@ private:
 	Common::Rect _h2Area;
 	Common::Rect _h3Area;
 
-	Common::BitArray _font05;
-	Common::BitArray _font08;
 	const Graphics::Font *_font;
 };
 
 class BoyzEngine : public HypnoEngine {
 public:
 	BoyzEngine(OSystem *syst, const ADGameDescription *gd);
+	~BoyzEngine();
 	Common::String _name;
 	Common::Array<int> _ids;
 	int _lastLevel;
@@ -575,7 +657,6 @@ public:
 	void initSegment(ArcadeShooting *arc) override;
 	bool checkTransition(ArcadeTransitions &transitions, ArcadeShooting *arc) override;
 
-	void loadFonts() override;
 	void drawString(const Filename &name, const Common::String &str, int x, int y, int w, uint32 c) override;
 
 	// Saves
@@ -644,11 +725,11 @@ public:
 	Common::Array<Filename> _deathVideo;
 	Common::HashMap<Common::String, bool> _shootsDestroyed;
 
-	Common::BitArray _font05;
-	Common::BitArray _font08;
+	bool hasFeature(EngineFeature f) const override {
+		return (f == kSupportsReturnToLauncher);
+	}
 };
 
 } // End of namespace Hypno
 
 #endif
-

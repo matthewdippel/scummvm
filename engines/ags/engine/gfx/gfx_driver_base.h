@@ -28,9 +28,9 @@
 #ifndef AGS_ENGINE_GFX_GFX_DRIVER_BASE_H
 #define AGS_ENGINE_GFX_GFX_DRIVER_BASE_H
 
-#include "ags/lib/std/memory.h"
-#include "engines/ags/lib/std/map.h"
-#include "ags/lib/std/vector.h"
+#include "common/std/memory.h"
+#include "common/std/map.h"
+#include "common/std/vector.h"
 #include "ags/engine/gfx/ddb.h"
 #include "ags/shared/gfx/gfx_def.h"
 #include "ags/engine/gfx/graphics_driver.h"
@@ -45,28 +45,29 @@ using Shared::PlaneScaling;
 
 // Sprite batch, defines viewport and an optional model transformation for the list of sprites
 struct SpriteBatchDesc {
-	uint32_t                 Parent = 0;
+	uint32_t                 Parent = UINT32_MAX;
 	// View rectangle for positioning and clipping, in resolution coordinates
 	// (this may be screen or game frame resolution, depending on circumstances)
 	Rect                     Viewport;
 	// Optional model transformation, to be applied to each sprite
 	SpriteTransform          Transform;
-	// Global node offset applied to the whole batch as the last transform
-	Point                    Offset;
-	// Global node flip applied to the whole batch as the last transform
+	// Optional flip, applied to the whole batch as the last transform
 	Shared::GraphicFlip      Flip = Shared::kFlip_None;
 	// Optional bitmap to draw sprites upon. Used exclusively by the software rendering mode.
 	PBitmap                  Surface;
+	// Optional filter flags; this lets to filter certain batches out during some operations,
+	// such as fading effects or making screenshots.
+	uint32_t				 FilterFlags = 0u;
 
 	SpriteBatchDesc() = default;
-	SpriteBatchDesc(uint32_t parent, const Rect viewport, const SpriteTransform & transform, const Point offset = Point(),
-		Shared::GraphicFlip flip = Shared::kFlip_None, PBitmap surface = nullptr)
+	SpriteBatchDesc(uint32_t parent, const Rect viewport, const SpriteTransform & transform,
+		Shared::GraphicFlip flip = Shared::kFlip_None, PBitmap surface = nullptr, uint32_t filter_flags = 0)
 		: Parent(parent)
 		, Viewport(viewport)
 		, Transform(transform)
-		, Offset(offset)
 		, Flip(flip)
-		, Surface(surface) {
+		, Surface(surface)
+		, FilterFlags(filter_flags) {
 	}
 };
 
@@ -104,8 +105,12 @@ public:
 	Size        GetNativeSize() const override;
 	Rect        GetRenderDestination() const override;
 
-	void        BeginSpriteBatch(const Rect &viewport, const SpriteTransform &transform,
-	                             const Point offset = Point(), Shared::GraphicFlip flip = Shared::kFlip_None, PBitmap surface = nullptr) override;
+	bool		SetVsync(bool enabled) override;
+	bool		GetVsync() const override;
+
+	void 		BeginSpriteBatch(const Rect &viewport, const SpriteTransform &transform,
+						 		 Shared::GraphicFlip flip = Shared::kFlip_None, PBitmap surface = nullptr,
+								 uint32_t filter_flags = 0) override;
 	void        EndSpriteBatch() override;
 	void        ClearDrawLists() override;
 
@@ -119,15 +124,15 @@ public:
 	void        SetCallbackOnInit(GFXDRV_CLIENTCALLBACKINITGFX callback) override {
 		_initGfxCallback = callback;
 	}
-	void        SetCallbackForNullSprite(GFXDRV_CLIENTCALLBACKXY callback) override {
-		_nullSpriteCallback = callback;
+	void        SetCallbackOnSpriteEvt(GFXDRV_CLIENTCALLBACKEVT callback) override {
+		_spriteEvtCallback = callback;
 	}
 
 protected:
 	// Special internal values, applied to DrawListEntry
-	static const intptr_t DRAWENTRY_STAGECALLBACK = 0x0;
-	static const intptr_t DRAWENTRY_FADE = 0x1;
-	static const intptr_t DRAWENTRY_TINT = 0x2;
+	static const uintptr_t DRAWENTRY_STAGECALLBACK = 0x0;
+	static const uintptr_t DRAWENTRY_FADE = 0x1;
+	static const uintptr_t DRAWENTRY_TINT = 0x2;
 
 	// Called after graphics driver was initialized for use for the first time
 	virtual void OnInit();
@@ -144,8 +149,15 @@ protected:
 	virtual void OnSetRenderFrame(const Rect &dst_rect);
 	// Called when the new filter is set
 	virtual void OnSetFilter();
+
+	// Try changing vsync setting; fills new current mode in vsync_res,
+	// returns whether the new setting was set successfully.
+	virtual bool SetVsyncImpl(bool vsync, bool &vsync_res) { return false; }
+
 	// Initialize sprite batch and allocate necessary resources
 	virtual void InitSpriteBatch(size_t index, const SpriteBatchDesc &desc) = 0;
+	// Gets the index of a last draw entry (sprite)
+	virtual size_t GetLastDrawEntryIndex() = 0;
 	// Clears sprite lists
 	virtual void ResetAllBatches() = 0;
 
@@ -158,16 +170,26 @@ protected:
 	Rect                _filterRect;    // filter scaling destination rect (before final scaling)
 	PlaneScaling        _scaling;       // native -> render dest coordinate transformation
 
+	// Capability flags
+	bool				_capsVsync = false; // is vsync available
+
 	// Callbacks
 	GFXDRV_CLIENTCALLBACK _pollingCallback;
 	GFXDRV_CLIENTCALLBACK _drawScreenCallback;
 	GFXDRV_CLIENTCALLBACK _drawPostScreenCallback;
-	GFXDRV_CLIENTCALLBACKXY _nullSpriteCallback;
+	GFXDRV_CLIENTCALLBACKEVT _spriteEvtCallback;
 	GFXDRV_CLIENTCALLBACKINITGFX _initGfxCallback;
 
 	// Sprite batch parameters
-	SpriteBatchDescs _spriteBatchDesc; // sprite batches list
-	size_t _actSpriteBatch; // active batch index
+	SpriteBatchDescs _spriteBatchDesc;
+	// The range of sprites in this sprite batch (counting nested sprites):
+	// the index of a first of the current batch, and the next index past the last one.
+	std::vector<std::pair<size_t, size_t>> _spriteBatchRange;
+	// The index of a currently filled sprite batch
+	size_t _actSpriteBatch;
+	// The index of a currently rendered sprite batch
+	// (or -1 / UINT32_MAX if we are outside of the render pass)
+	uint32_t _rendSpriteBatch;
 };
 
 
@@ -185,6 +207,9 @@ public:
 	int GetColorDepth() const override {
 		return _colDepth;
 	}
+	bool MatchesFormat(AGS::Shared::Bitmap *other) const override {
+		return _width == other->GetWidth() && _height == other->GetHeight() && _colDepth == other->GetColorDepth();
+	}
 
 	int _width = 0, _height = 0;
 	int _colDepth = 0;
@@ -201,6 +226,7 @@ protected:
 // properties. It may be shared between multiple sprites if necessary.
 struct TextureData {
 	uint32_t ID = UINT32_MAX;
+	bool RenderTarget = false; // replace with flags later
 	virtual ~TextureData() = default;
 protected:
 	TextureData() = default;
@@ -210,6 +236,8 @@ protected:
 struct TextureTile {
 	int x = 0, y = 0;
 	int width = 0, height = 0;
+	// allocWidth and allocHeight tell the actual allocated texture size
+	int allocWidth = 0, allocHeight = 0;
 };
 
 
@@ -221,26 +249,38 @@ public:
 	VideoMemoryGraphicsDriver();
 	~VideoMemoryGraphicsDriver() override;
 
-	bool UsesMemoryBackBuffer() override;
+	bool RequiresFullRedrawEachFrame() override { return true; }
+	bool HasAcceleratedTransform() override { return true; }
+	// NOTE: although we do use ours, we do not let engine draw upon it;
+	// only plugin handling are allowed to request our mem buffer
+	// for compatibility reasons.
+	bool UsesMemoryBackBuffer() override { return false; }
+
 	Bitmap *GetMemoryBackBuffer() override;
 	void SetMemoryBackBuffer(Bitmap *backBuffer) override;
 	Bitmap *GetStageBackBuffer(bool mark_dirty) override;
+	void SetStageBackBuffer(Bitmap *backBuffer) override;
 	bool GetStageMatrixes(RenderMatrixes &rm) override;
+	// Creates new texture using given parameters
 	IDriverDependantBitmap *CreateDDB(int width, int height, int color_depth, bool opaque) override = 0;
-	IDriverDependantBitmap *CreateDDBFromBitmap(Bitmap *bitmap, bool hasAlpha, bool opaque = false) override;
+	// Creates new texture and copy bitmap contents over
+	IDriverDependantBitmap *CreateDDBFromBitmap(Bitmap *bitmap, bool has_alpha, bool opaque = false) override;
 	// Get shared texture from cache, or create from bitmap and assign ID
-	IDriverDependantBitmap *GetSharedDDB(uint32_t sprite_id, Bitmap *bitmap, bool hasAlpha, bool opaque) override;
+	IDriverDependantBitmap *GetSharedDDB(uint32_t sprite_id, Bitmap *bitmap, bool has_alpha, bool opaque) override;
 	// Removes the shared texture reference, will force the texture to recreate next time
-	 void ClearSharedDDB(uint32_t sprite_id) override;
-	 // Updates shared texture data, but only if it is present in the cache
-	 void UpdateSharedDDB(uint32_t sprite_id, Bitmap *bitmap, bool hasAlpha, bool opaque) override;
+	void ClearSharedDDB(uint32_t sprite_id) override;
+	// Updates shared texture data, but only if it is present in the cache
+	void UpdateSharedDDB(uint32_t sprite_id, Bitmap *bitmap, bool has_alpha, bool opaque) override;
 	void DestroyDDB(IDriverDependantBitmap* ddb) override;
+
+	// Sets stage screen parameters for the current batch.
+	void SetStageScreen(const Size &sz, int x = 0, int y = 0) override;
 
 protected:
 	// Create texture data with the given parameters
-	virtual TextureData *CreateTextureData(int width, int height, bool opaque) = 0;
+	virtual TextureData *CreateTextureData(int width, int height, bool opaque, bool as_render_target = false) = 0;
 	// Update texture data from the given bitmap
-	virtual void UpdateTextureData(TextureData *txdata, Bitmap *bmp, bool opaque, bool hasAlpha) = 0;
+	virtual void UpdateTextureData(TextureData *txdata, Bitmap *bmp, bool has_alpha, bool opaque) = 0;
 	// Create DDB using preexisting texture data
 	virtual IDriverDependantBitmap *CreateDDB(std::shared_ptr<TextureData> txdata,
 		  int width, int height, int color_depth, bool opaque) = 0;
@@ -251,13 +291,20 @@ protected:
 	// Stage screens are raw bitmap buffers meant to be sent to plugins on demand
 	// at certain drawing stages. If used at least once these buffers are then
 	// rendered as additional sprites in their respected order.
-	PBitmap CreateStageScreen(size_t index, const Size &sz);
-	PBitmap GetStageScreen(size_t index);
+	// Presets a stage screen with the given position (size is obligatory, offsets not).
+	void SetStageScreen(size_t index, const Size &sz, int x = 0, int y = 0);
+	// Returns a raw bitmap for the given stage screen.
+	Bitmap *GetStageScreenRaw(size_t index);
+	// Updates and returns a DDB for the given stage screen, and optional x,y position;
+	// clears the raw bitmap after copying to the texture.
+	IDriverDependantBitmap *UpdateStageScreenDDB(size_t index, int &x, int &y);
+	// Disposes all the stage screen raw bitmaps and DDBs.
 	void DestroyAllStageScreens();
-	// Use engine callback to acquire replacement for the null sprite;
-	// returns true if the sprite was provided onto the virtual screen,
-	// and false if this entry should be skipped.
-	bool DoNullSpriteCallback(int x, int y);
+	// Use engine callback to pass a render event;
+	// returns a DDB if anything was drawn onto the current stage screen
+	// (in which case it also fills optional x,y position),
+	// or nullptr if this entry should be skipped.
+	IDriverDependantBitmap *DoSpriteEvtCallback(int evt, int data, int &x, int &y);
 
 	// Prepare and get fx item from the pool
 	IDriverDependantBitmap *MakeFx(int r, int g, int b);
@@ -268,10 +315,10 @@ protected:
 
 	// Prepares bitmap to be applied to the texture, copies pixels to the provided buffer
 	void BitmapToVideoMem(const Bitmap *bitmap, const bool has_alpha, const TextureTile *tile,
-		char *dst_ptr, const int dst_pitch, const bool usingLinearFiltering);
+						  uint8_t *dst_ptr, const int dst_pitch, const bool usingLinearFiltering);
 	// Same but optimized for opaque source bitmaps which ignore transparent "mask color"
-	void BitmapToVideoMemOpaque(const Bitmap *bitmap, const bool has_alpha, const TextureTile *tile,
-		char *dst_ptr, const int dst_pitch);
+	void BitmapToVideoMemOpaque(const Bitmap *bitmap, const TextureTile *tile,
+								uint8_t *dst_ptr, const int dst_pitch);
 
 	// Stage virtual screen is used to let plugins draw custom graphics
 	// in between render stages (between room and GUI, after GUI, and so on)
@@ -288,8 +335,16 @@ protected:
 	int _vmem_b_shift_32;
 
 private:
-	// Virtual screens for rendering stages (sprite batches)
-	std::vector<PBitmap> _stageScreens;
+	// Stage virtual screens are used to let plugins draw custom graphics
+	// in between render stages (between room and GUI, after GUI, and so on).
+	// TODO: possibly may be optimized further by having only 1 bitmap/ddb
+	// pair, and subbitmaps for raw drawing on separate stages.
+	struct StageScreen {
+		Rect Position; // bitmap size and pos preset (bitmap may be created later)
+		std::unique_ptr<Bitmap> Raw;
+		IDriverDependantBitmap *DDB = nullptr;
+	};
+	std::vector<StageScreen> _stageScreens;
 	// Flag which indicates whether stage screen was drawn upon during engine
 	// callback and has to be inserted into sprite stack.
 	bool _stageScreenDirty;
@@ -305,11 +360,23 @@ private:
 	std::vector<ScreenFx> _fxPool;
 	size_t _fxIndex; // next free pool item
 
+	// specialized method to convert bitmap to video memory depending on bit depth
+	template<typename T, bool HasAlpha>
+	void BitmapToVideoMemImpl(const Bitmap *bitmap, const TextureTile *tile, uint8_t *dst_ptr, const int dst_pitch);
+
+	template<typename T>
+	void BitmapToVideoMemOpaqueImpl(const Bitmap *bitmap, const TextureTile *tile, uint8_t *dst_ptr, const int dst_pitch);
+
+	template<typename T, bool HasAlpha>
+	void BitmapToVideoMemLinearImpl(const Bitmap *bitmap, const TextureTile *tile, uint8_t *dst_ptr, const int dst_pitch);
+
 	// Texture short-term cache:
 	// - caches textures while they are in the immediate use;
 	// - this lets to share same texture data among multiple sprites on screen.
 	// TextureCacheItem stores weak references to the existing texture tiles,
 	// identified by an arbitrary uint32 number.
+	// TODO: a curious topic to consider: reuse released TextureData for
+	// textures of the same size (research potential performance impact).
 	struct TextureCacheItem {
 		GraphicResolution Res;
 		std::weak_ptr<TextureData> Data;

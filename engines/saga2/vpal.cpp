@@ -25,7 +25,7 @@
 
 #include "common/debug.h"
 #include "common/savefile.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 
 #include "saga2/saga2.h"
 #include "saga2/fta.h"
@@ -218,8 +218,9 @@ bool PaletteManager::updatePalette() {
 			assertCurrentPalette();
 
 			g_system->updateScreen();
-			g_system->delayMillis(10);
 		}
+		g_system->delayMillis(10);
+
 		return true;
 	}
 }

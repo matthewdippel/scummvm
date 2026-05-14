@@ -98,17 +98,19 @@ static int decodePartialZBuffer(const uint8 *src, uint16 *curZBUF, uint32 srcLen
 	uint32 dstRemain = dstSize;
 
 	uint16 *curzp = curZBUF;
-	const uint16 *inp = (const uint16 *)src;
+	const uint8 *inp8 = src;
 
-	while (dstRemain && (inp - (const uint16 *)src) < (ptrdiff_t)srcLen) {
-		uint32 count = FROM_LE_16(*inp++);
+	while (dstRemain && (inp8 - src) < (ptrdiff_t)srcLen) {
+		uint32 count = READ_LE_UINT16(inp8);
+		inp8+=2;
 
 		if (count & 0x8000) {
 			count = MIN(count & 0x7fff, dstRemain);
 			dstRemain -= count;
 
 			while (count--) {
-				uint16 value = FROM_LE_16(*inp++);
+				uint16 value = READ_LE_UINT16(inp8);
+				inp8+=2;
 				if (value)
 					*curzp = value;
 				++curzp;
@@ -116,7 +118,8 @@ static int decodePartialZBuffer(const uint8 *src, uint16 *curZBUF, uint32 srcLen
 		} else {
 			count = MIN(count, dstRemain);
 			dstRemain -= count;
-			uint16 value = FROM_LE_16(*inp++);
+			uint16 value = READ_LE_UINT16(inp8);
+			inp8+=2;
 
 			if (!value) {
 				curzp += count;
@@ -163,8 +166,9 @@ bool ZBuffer::decodeData(const uint8 *data, int size) {
 		memcpy(_zbuf2, _zbuf1, 2 * _width * _height);
 	} else {
 		clean();
-		decodePartialZBuffer(data, _zbuf1, size);
-		decodePartialZBuffer(data, _zbuf2, size);
+		int sizeDecodedUint16 = decodePartialZBuffer(data, _zbuf1, size);
+//		decodePartialZBuffer(data, _zbuf2, size);
+		memcpy(_zbuf2, _zbuf1, sizeDecodedUint16 * sizeof(uint16));
 	}
 
 	return true;
@@ -173,6 +177,15 @@ bool ZBuffer::decodeData(const uint8 *data, int size) {
 uint16 *ZBuffer::getData() const {
 	return _zbuf2;
 }
+
+#if !BLADERUNNER_ORIGINAL_BUGS
+void ZBuffer::setDataZbufExplicit(int x, int y, uint16 overidingVal) {
+	assert(x >= 0 && x < _width);
+	assert(y >= 0 && y < _height);
+	_zbuf1[y * _width + x] = overidingVal;
+	_zbuf2[y * _width + x] = overidingVal;
+}
+#endif // BLADERUNNER_ORIGINAL_BUGS
 
 uint16 ZBuffer::getZValue(int x, int y) const {
 	assert(x >= 0 && x < _width);

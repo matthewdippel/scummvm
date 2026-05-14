@@ -24,9 +24,10 @@
 #include "common/debug-channels.h"
 #include "common/error.h"
 #include "common/events.h"
-#include "common/ini-file.h"
+#include "common/formats/ini-file.h"
 #include "common/system.h"
 #include "common/file.h"
+#include "common/compression/installshield_cab.h"
 
 #include "engines/advancedDetector.h"
 #include "engines/util.h"
@@ -75,6 +76,12 @@ Common::Error PetkaEngine::run() {
 	initGraphics(640, 480, &format);
 	syncSoundSettings();
 
+	if (_desc->flags & GF_COMPRESSED) {
+		Common::Archive *cabinet = Common::makeInstallShieldArchive("data");
+		if (cabinet)
+			SearchMan.add("data1.cab", cabinet);
+	}
+
 	const char *const videos[] = {"buka.avi", "skif.avi", "adv.avi"};
 	for (uint i = 0; i < sizeof(videos) / sizeof(char *); ++i) {
 		Common::ScopedPtr<Common::File> file(new Common::File);
@@ -91,8 +98,9 @@ Common::Error PetkaEngine::run() {
 	_vsys.reset(new VideoSystem(*this));
 	_resMgr.reset(new QManager(*this));
 
-	_textFont.reset(Graphics::loadTTFFontFromArchive("FreeSansBold.ttf", 20, Graphics::kTTFSizeModeCell));
-	_descriptionFont.reset(Graphics::loadTTFFontFromArchive("FreeSansBold.ttf", 16, Graphics::kTTFSizeModeCell));
+	// TODO: Which fonts did the original game use?
+	_textFont.reset(Graphics::loadTTFFontFromArchive("LiberationSans-Bold.ttf", 18, Graphics::kTTFSizeModeCell));
+	_descriptionFont.reset(Graphics::loadTTFFontFromArchive("LiberationSans-Bold.ttf", 14, Graphics::kTTFSizeModeCell));
 
 	loadPart(isDemo() ? 1 : 0);
 
@@ -241,6 +249,7 @@ void PetkaEngine::playVideo(Common::SeekableReadStream *stream) {
 			case Common::EVENT_LBUTTONDOWN:
 			case Common::EVENT_RBUTTONDOWN:
 			case Common::EVENT_KEYDOWN:
+			case Common::EVENT_CUSTOM_ENGINE_ACTION_START:
 				goto end;
 			default:
 				break;

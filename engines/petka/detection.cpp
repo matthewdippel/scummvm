@@ -26,7 +26,6 @@
 #include "petka/petka.h"
 
 static const PlainGameDescriptor petkaGames[] = {
-	{"petka_demo", "Red Comrades Demo"},
 	{"petka1", "Red Comrades 1: Save the Galaxy"},
 	{"petka2", "Red Comrades 2: For the Great Justice"},
 	{nullptr, nullptr}
@@ -42,18 +41,18 @@ static const DebugChannelDef debugFlagList[] = {
 
 #include "petka/detection_tables.h"
 
-class PetkaMetaEngineDetection : public AdvancedMetaEngineDetection {
+class PetkaMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	PetkaMetaEngineDetection() : AdvancedMetaEngineDetection(Petka::gameDescriptions, sizeof(ADGameDescription), petkaGames) {
+	PetkaMetaEngineDetection() : AdvancedMetaEngineDetection(Petka::gameDescriptions, petkaGames) {
 		_gameIds = petkaGames;
 		_maxScanDepth = 2;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "petka";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Red Comrades";
 	}
 

@@ -27,6 +27,7 @@
 
 namespace GUI {
 
+const int ScrollContainerWidget::kDragThreshold = 5;
 ScrollContainerWidget::ScrollContainerWidget(GuiObject *boss, int x, int y, int w, int h, uint32 reflowCmd)
 	: Widget(boss, x, y, w, h), CommandSender(nullptr), _reflowCmd(reflowCmd) {
 	init();
@@ -38,27 +39,104 @@ ScrollContainerWidget::ScrollContainerWidget(GuiObject *boss, const Common::Stri
 }
 
 void ScrollContainerWidget::init() {
-	setFlags(WIDGET_ENABLED);
+	setFlags(WIDGET_ENABLED | WIDGET_TRACK_MOUSE | WIDGET_WANT_TICKLE | WIDGET_RETAIN_FOCUS);
 	_type = kScrollContainerWidget;
 	_backgroundType = ThemeEngine::kWidgetBackgroundPlain;
-	_verticalScroll = new ScrollBarWidget(this, _w-16, 0, 16, _h);
+	_verticalScroll = new ScrollBarWidget(this, _w, 0, 16, _h);
 	_verticalScroll->setTarget(this);
 	_scrolledX = 0;
 	_scrolledY = 0;
+	_scrollPos = 0.0f;
 	_limitH = 140;
+	_fluidScroller = new FluidScroller();
 	recalc();
 }
 
 void ScrollContainerWidget::handleMouseWheel(int x, int y, int direction) {
-	_verticalScroll->handleMouseWheel(x, y, direction);
+	if (!isEnabled())
+		return;
+
+	_fluidScroller->handleMouseWheel(direction);
+}
+
+void ScrollContainerWidget::handleMouseDown(int x, int y, int button, int clickCount) {
+	_mouseDownY = _mouseDownStartY = y;
+	_isMouseDown = true;
+	_fluidScroller->stopAnimation();
+	Widget *child = _childUnderMouse;
+	if (child) {
+		int childX = x - (child->getAbsX() - getAbsX());
+		int childY = y - (child->getAbsY() - getAbsY());
+		child->handleMouseDown(childX, childY, button, clickCount);
+
+		if (child->getFlags() & WIDGET_IGNORE_DRAG) {
+			_isMouseDown = false;
+			_isDragging = false;
+		}
+	}
+}
+
+void ScrollContainerWidget::handleMouseMoved(int x, int y, int button) {
+	if (!_isMouseDown || _mouseDownY == y)
+		return;
+
+	if (!_isDragging && ABS(y - _mouseDownStartY) > kDragThreshold)
+		_isDragging = true;
+
+	if (_isDragging) {
+		int deltaY = _mouseDownY - y;
+		_mouseDownY = y;
+		_childUnderMouse = nullptr;
+
+		if (deltaY != 0) {
+			_fluidScroller->feedDrag(g_system->getMillis(), deltaY);
+			_scrollPos = _fluidScroller->getVisualPosition();
+			applyScrollPos();
+		}
+	}
+}
+
+void ScrollContainerWidget::handleTickle() {
+	if (_fluidScroller->update(g_system->getMillis(), _scrollPos))
+		applyScrollPos();
+}
+
+void ScrollContainerWidget::applyScrollPos() {
+	_scrolledY = (int16)_scrollPos;
+	int h = _verticalScroll->_numEntries;
+	int maxScroll = MAX(0, h - _limitH);
+	_verticalScroll->_currentPos = CLIP<int16>(_scrolledY, 0, maxScroll);
+	_verticalScroll->setPos(_w, _scrolledY);
+	_verticalScroll->recalc();
+	markAsDirty();
+	g_gui.scheduleTopDialogRedraw();
+}
+
+void ScrollContainerWidget::handleMouseUp(int x, int y, int button, int clickCount) {
+	Widget *child = _childUnderMouse;
+	bool isDragging = _isDragging;
+
+	if (_isMouseDown && _isDragging)
+		_fluidScroller->startFling();
+
+	_mouseDownY = _mouseDownStartY = 0;
+	_isMouseDown = false;
+	_isDragging = false;
+	_childUnderMouse = nullptr;
+
+	if (!isDragging && child) {
+		int childX = x - (child->getAbsX() - getAbsX());
+		int childY = y - (child->getAbsY() - getAbsY());
+		child->handleMouseUp(childX, childY, button, clickCount);
+	}
 }
 
 void ScrollContainerWidget::recalc() {
-	int scrollbarWidth = g_gui.xmlEval()->getVar("Globals.Scrollbar.Width", 0);
+	_scrollbarWidth = g_gui.xmlEval()->getVar("Globals.Scrollbar.Width", 0);
 	_limitH = _h;
 
 	//calculate virtual height
-	const int spacing = g_gui.xmlEval()->getVar("Global.Font.Height", 16); //on the bottom
+	const int spacing = g_gui.xmlEval()->getVar("Globals.Font.Height", 16); //on the bottom
 	int min = spacing, max = 0;
 	Widget *ptr = _firstWidget;
 	while (ptr) {
@@ -72,18 +150,24 @@ void ScrollContainerWidget::recalc() {
 	int h = max - min;
 
 	if (h <= _limitH) _scrolledY = 0;
-	if (_scrolledY > h - _limitH) _scrolledY = 0;
+	else if (!_fluidScroller->isAnimating() && !_isMouseDown)
+		_scrolledY = CLIP<int16>(_scrolledY, 0, h - _limitH);
 
 	_verticalScroll->_numEntries = h;
-	_verticalScroll->_currentPos = _scrolledY;
+	int maxScroll = MAX(0, h - _limitH);
+	_verticalScroll->_currentPos = CLIP<int16>(_scrolledY, 0, maxScroll);
 	_verticalScroll->_entriesPerPage = _limitH;
 	_verticalScroll->_singleStep = kLineHeight;
-	_verticalScroll->setPos(_w - scrollbarWidth, _scrolledY);
-	_verticalScroll->setSize(scrollbarWidth, _limitH-1);
+	_verticalScroll->setPos(_w, _scrolledY);
+	_verticalScroll->setSize(_scrollbarWidth, _limitH-1);
+	_verticalScroll->recalc();
+	_fluidScroller->setBounds((float)maxScroll, _limitH, (float)_verticalScroll->_singleStep);
 }
 
 
-ScrollContainerWidget::~ScrollContainerWidget() {}
+ScrollContainerWidget::~ScrollContainerWidget() {
+	delete _fluidScroller;
+}
 
 int16 ScrollContainerWidget::getChildX() const {
 	return getAbsX() - _scrolledX;
@@ -94,7 +178,11 @@ int16 ScrollContainerWidget::getChildY() const {
 }
 
 uint16 ScrollContainerWidget::getWidth() const {
-	return _w - (_verticalScroll->isVisible() ? _verticalScroll->getWidth() : 0);
+	// NOTE: if you change that, make sure to do the same
+	// changes in the ThemeLayoutScrollContainerWidget (gui/ThemeLayout.cpp)
+	// NOTE: this width is used for clipping, so it *includes*
+	// scrollbars, because it starts from getAbsX(), not getChildX()
+	return _w + _scrollbarWidth;
 }
 
 uint16 ScrollContainerWidget::getHeight() const {
@@ -106,6 +194,7 @@ void ScrollContainerWidget::handleCommand(CommandSender *sender, uint32 cmd, uin
 	switch (cmd) {
 	case kSetPositionCmd:
 		_scrolledY = _verticalScroll->_currentPos;
+		_scrollPos = _fluidScroller->setPosition((float)_scrolledY, false);
 		reflowLayout();
 		g_gui.scheduleTopDialogRedraw();
 		break;
@@ -115,6 +204,7 @@ void ScrollContainerWidget::handleCommand(CommandSender *sender, uint32 cmd, uin
 }
 
 void ScrollContainerWidget::reflowLayout() {
+	_childUnderMouse = nullptr;
 	Widget::reflowLayout();
 
 	if (!_dialogName.empty()) {
@@ -142,6 +232,22 @@ void ScrollContainerWidget::drawWidget() {
 	g_gui.theme()->drawWidgetBackground(Common::Rect(_x, _y, _x + _w, _y + getHeight()), _backgroundType);
 }
 
+void ScrollContainerWidget::draw() {
+	Widget::draw();
+
+	if (_verticalScroll->isVisible()) {
+		_verticalScroll->draw();
+	}
+}
+
+void ScrollContainerWidget::markAsDirty() {
+	Widget::markAsDirty();
+
+	if (_verticalScroll->isVisible()) {
+		_verticalScroll->markAsDirty();
+	}
+}
+
 bool ScrollContainerWidget::containsWidget(Widget *w) const {
 	if (w == _verticalScroll || _verticalScroll->containsWidget(w))
 		return true;
@@ -149,17 +255,18 @@ bool ScrollContainerWidget::containsWidget(Widget *w) const {
 }
 
 Widget *ScrollContainerWidget::findWidget(int x, int y) {
-	if (_verticalScroll->isVisible() && x >= _w - _verticalScroll->getWidth())
+	if (_verticalScroll->isVisible() && x >= _w) {
+		_childUnderMouse = nullptr;
 		return _verticalScroll;
-	Widget *w = Widget::findWidgetInChain(_firstWidget, x + _scrolledX, y + _scrolledY);
-	if (w)
-		return w;
-	return this;
-}
+	}
+	_childUnderMouse = Widget::findWidgetInChain(_firstWidget, x + _scrolledX, y + _scrolledY);
+	if (_childUnderMouse == _verticalScroll) 
+		_childUnderMouse = nullptr;
 
-Common::Rect ScrollContainerWidget::getClipRect() const {
-	// Make sure the clipping rect contains the scrollbar so it is properly redrawn
-	return Common::Rect(getAbsX(), getAbsY(), getAbsX() + _w, getAbsY() + getHeight() - 1); // this -1 is because of container border, which might not be present actually
+	if (_childUnderMouse && _childUnderMouse->wantsFocus())
+		return _childUnderMouse;
+
+	return this;
 }
 
 void ScrollContainerWidget::setBackgroundType(ThemeEngine::WidgetBackground backgroundType) {

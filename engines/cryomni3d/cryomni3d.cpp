@@ -31,12 +31,13 @@
 #include "engines/util.h"
 
 #include "audio/mixer.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 
 #include "cryomni3d/cryomni3d.h"
 #include "cryomni3d/datstream.h"
 
 #include "cryomni3d/image/hlz.h"
+#include "cryomni3d/image/hnm.h"
 #include "video/hnm_decoder.h"
 
 namespace CryOmni3D {
@@ -95,54 +96,21 @@ DATSeekableStream *CryOmni3DEngine::getStaticData(uint32 gameId, uint16 version)
 	return gameStream;
 }
 
-Common::String CryOmni3DEngine::prepareFileName(const Common::String &baseName,
-		const char *const *extensions) const {
-	Common::String fname(baseName);
-
-	int lastDotPos = fname.size() - 1;
-	for (; lastDotPos >= 0; --lastDotPos) {
-		if (fname[lastDotPos] == '.') {
-			break;
-		}
-	}
-
-	int extBegin;
-	if (lastDotPos > -1) {
-		extBegin = lastDotPos + 1;
-		fname.erase(extBegin);
-	} else {
-		fname += ".";
-		extBegin = fname.size();
-	}
-
-	while (*extensions != nullptr) {
-		fname += *extensions;
-		debug("Trying file %s", fname.c_str());
-		if (Common::File::exists(fname)) {
-			return fname;
-		}
-		fname.erase(extBegin);
-		extensions++;
-	}
-	fname.deleteLastChar();
-	warning("Failed to find file %s/%s", baseName.c_str(), fname.c_str());
-	return baseName;
-}
-
-void CryOmni3DEngine::playHNM(const Common::String &filename, Audio::Mixer::SoundType soundType,
+void CryOmni3DEngine::playHNM(const Common::Path &filepath, Audio::Mixer::SoundType soundType,
 							  HNMCallback beforeDraw, HNMCallback afterDraw) {
-	const char *const extensions[] = { "hns", "hnm", "ubb", nullptr };
-	Common::String fname(prepareFileName(filename, extensions));
-
-	byte *currentPalette = new byte[256 * 3];
-	g_system->getPaletteManager()->grabPalette(currentPalette, 0, 256);
+	Graphics::PixelFormat screenFormat = g_system->getScreenFormat();
+	byte *currentPalette = nullptr;
+	if (screenFormat.bytesPerPixel == 1) {
+		currentPalette = new byte[256 * 3];
+		g_system->getPaletteManager()->grabPalette(currentPalette, 0, 256);
+	}
 
 	// Pass the ownership of currentPalette to HNMDecoder
-	Video::VideoDecoder *videoDecoder = new Video::HNMDecoder(false, currentPalette);
+	Video::VideoDecoder *videoDecoder = new Video::HNMDecoder(screenFormat, false, currentPalette);
 	videoDecoder->setSoundType(soundType);
 
-	if (!videoDecoder->loadFile(fname)) {
-		warning("Failed to open movie file %s/%s", filename.c_str(), fname.c_str());
+	if (!videoDecoder->loadFile(filepath)) {
+		warning("Failed to open movie file %s", filepath.toString(Common::Path::kNativeSeparator).c_str());
 		delete videoDecoder;
 		return;
 	}
@@ -195,20 +163,18 @@ void CryOmni3DEngine::playHNM(const Common::String &filename, Audio::Mixer::Soun
 	delete videoDecoder;
 }
 
-Image::ImageDecoder *CryOmni3DEngine::loadHLZ(const Common::String &filename) {
-	Common::String fname(prepareFileName(filename, "hlz"));
-
+Image::ImageDecoder *CryOmni3DEngine::loadHLZ(const Common::Path &filepath) {
 	Common::File file;
 
-	if (!file.open(fname)) {
-		warning("Failed to open hlz file %s/%s", filename.c_str(), fname.c_str());
+	if (!file.open(filepath)) {
+		warning("Failed to open hlz file %s", filepath.toString(Common::Path::kNativeSeparator).c_str());
 		return nullptr;
 	}
 
 	Image::ImageDecoder *imageDecoder = new Image::HLZFileDecoder();
 
 	if (!imageDecoder->loadStream(file)) {
-		warning("Failed to open hlz file %s", fname.c_str());
+		warning("Failed to load hlz file %s", filepath.toString(Common::Path::kNativeSeparator).c_str());
 		delete imageDecoder;
 		imageDecoder = nullptr;
 		return nullptr;
@@ -217,16 +183,15 @@ Image::ImageDecoder *CryOmni3DEngine::loadHLZ(const Common::String &filename) {
 	return imageDecoder;
 }
 
-bool CryOmni3DEngine::displayHLZ(const Common::String &filename, uint32 timeout) {
-	Image::ImageDecoder *imageDecoder = loadHLZ(filename);
+bool CryOmni3DEngine::displayHLZ(const Common::Path &filepath, uint32 timeout) {
+	Image::ImageDecoder *imageDecoder = loadHLZ(filepath);
 
 	if (!imageDecoder) {
 		return false;
 	}
 
 	if (imageDecoder->hasPalette()) {
-		const byte *palette = imageDecoder->getPalette();
-		setPalette(palette, imageDecoder->getPaletteStartIndex(), imageDecoder->getPaletteColorCount());
+		setPalette(imageDecoder->getPalette().data(), 0, imageDecoder->getPalette().size());
 	}
 
 	const Graphics::Surface *frame = imageDecoder->getSurface();

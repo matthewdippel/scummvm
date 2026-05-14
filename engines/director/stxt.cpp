@@ -19,7 +19,8 @@
  *
  */
 
-#include "common/substream.h"
+#include "common/macresman.h"
+#include "common/stream.h"
 
 #include "director/director.h"
 #include "director/cast.h"
@@ -32,7 +33,7 @@ Stxt::Stxt(Cast *cast, Common::SeekableReadStreamEndian &textStream) : _cast(cas
 
 	_textType = kTextTypeFixed;
 	_textAlign = kTextAlignLeft;
-	_textShadow = kSizeNone;
+	_textShadow = 0;
 	_unk1f = _unk2f = 0;
 	_unk3f = 0;
 	_size = textStream.size();
@@ -43,13 +44,26 @@ Stxt::Stxt(Cast *cast, Common::SeekableReadStreamEndian &textStream) : _cast(cas
 
 	uint32 offset = textStream.readUint32();
 	if (offset != 12) {
-		error("Stxt init: unhandlef offset");
+		textStream.hexdump(textStream.size());
+		error("Stxt init: unhandled offset, %d", offset);
 		return;
 	}
 	uint32 strLen = textStream.readUint32();
 	uint32 dataLen = textStream.readUint32();
 	Common::String text = textStream.readString(0, strLen);
 	debugC(3, kDebugText, "Stxt init: offset: %d strLen: %d dataLen: %d textlen: %u", offset, strLen, dataLen, text.size());
+
+	// TODO: Before applying formatting and decoding the text to a U32String,
+	// check if the following hold true:
+	// - The engine platform doesn't match the file platform
+	// - The movie has a valid font table (FXmp)
+	// - The font table has a mapping between the two platforms
+	// - The text has sections written in a font without a Map None qualifier
+	// If yes, then just those sections should be preprocessed by churning the
+	// bytes through the appropriate mapping (e.g. if running a Mac file on
+	// Windows, use the "Mac: => Win:" rules).
+	// Confirmed in real Director 4 that these sections are preprocessed in
+	// the cast member on startup and not faked at text render time.
 
 	uint16 formattingCount = textStream.readUint16();
 	uint32 prevPos = 0;
@@ -75,6 +89,7 @@ Stxt::Stxt(Cast *cast, Common::SeekableReadStreamEndian &textStream) : _cast(cas
 
 			prevPos++;
 		}
+		_rtext += textPart;
 		Common::CodePage encoding = detectFontEncoding(cast->_platform, currentFont);
 		Common::U32String u32TextPart(textPart, encoding);
 		_ptext += u32TextPart;
@@ -88,6 +103,7 @@ Stxt::Stxt(Cast *cast, Common::SeekableReadStreamEndian &textStream) : _cast(cas
 		formattingCount--;
 	}
 
+	_rtext += text;
 	Common::CodePage encoding = detectFontEncoding(cast->_platform, _style.fontId);
 	Common::U32String u32Text(text, encoding);
 	_ptext += u32Text;
@@ -134,6 +150,24 @@ void FontStyle::read(Common::ReadStreamEndian &stream, Cast *cast) {
 
 	debugC(3, kDebugLoading, "FontStyle::read(): formatStartOffset: %d, height: %d -> %d ascent: %d, fontId: %d -> %d, textSlant: %d, fontSize: %d, r: %x g: %x b: %x",
 			formatStartOffset, originalHeight, height, ascent, originalFontId, fontId, textSlant, fontSize, r, g, b);
+}
+
+void FontStyle::write(Common::SeekableWriteStream *writeStream) {
+	debugC(3, kDebugSaving, "FontStyle::write(): formatStartOffset: %d, height: %d ascent: %d, fontId: %d, textSlant: %d, fontSize: %d, r: %x g: %x b: %x",
+			formatStartOffset, height, ascent, fontId, textSlant, fontSize, r, g, b);
+
+	writeStream->writeUint32BE(formatStartOffset);
+	writeStream->writeUint16BE(height);
+	writeStream->writeUint16BE(ascent);
+	writeStream->writeUint16BE(fontId);
+
+	writeStream->writeByte(textSlant);
+	writeStream->writeByte(0);	// padding
+	writeStream->writeUint16BE(fontSize);
+
+	writeStream->writeUint16BE(r);
+	writeStream->writeUint16BE(g);
+	writeStream->writeUint16BE(b);
 }
 
 } // End of namespace Director

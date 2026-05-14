@@ -26,12 +26,16 @@
 
 #include "common/array.h"
 #include "common/error.h"
+#include "common/hashmap.h"
 #include "common/keyboard.h"
 #include "common/random.h"
 #include "common/rect.h"
 #include "common/stack.h"
 #include "common/util.h"
 #include "audio/mixer.h"
+
+#include "backends/keymapper/action.h"
+#include "backends/keymapper/keymapper.h"
 
 #include "agos/vga.h"
 #include "agos/detection.h"
@@ -58,16 +62,51 @@ class SeekableReadStream;
 namespace Graphics {
 struct Surface;
 class FontSJIS;
+class AmigaFont;
+}
+
+namespace Audio {
+class SeekableAudioStream;
 }
 
 namespace AGOS {
 
+class ElviraAtariSTPlayer;
+
 enum {
-	kDebugOpcode = 1 << 0,
-	kDebugVGAOpcode = 1 << 1,
-	kDebugSubroutine = 1 << 2,
-	kDebugVGAScript = 1 << 3,
-	kDebugImageDump = 1 << 4
+	kDebugOpcode = 1,
+	kDebugVGAOpcode,
+	kDebugSubroutine,
+	kDebugVGAScript,
+	kDebugImageDump,
+};
+
+enum AGOSAction {
+	kActionNone,
+	kActionWalkForward,
+	kActionTurnBack,
+	kActionTurnLeft,
+	kActionTurnRight,
+	kActionMusicDown,
+	kActionMusicUp,
+	kActionExitCutscene,
+	kActionToggleMusic,
+	kActionToggleFastMode,
+	kActionToggleSwitchCharacter,
+	kActionToggleSubtitle,
+	kActionToggleSpeech,
+	kActionToggleHitboxName,
+	kActionToggleSoundEffects,
+	kActionToggleBackgroundSound,
+	kActionToggleFightMode,
+	kActionShowObjects,
+	kActionTextSpeedFast,
+	kActionTextSpeedMedium,
+	kActionTextSpeedSlow,
+	kActionSpeed_GTYPEPP,
+	kActionKeyYes,
+	kActionKeyNo,
+	kActionPause
 };
 
 uint fileReadItemID(Common::SeekableReadStream *in);
@@ -181,7 +220,8 @@ enum EventType {
 	ANIMATE_EVENT = 1 << 2,
 	SCROLL_EVENT  = 1 << 3,
 	PLAYER_DAMAGE_EVENT = 1 << 4,
-	MONSTER_DAMAGE_EVENT = 1 << 5
+	MONSTER_DAMAGE_EVENT = 1 << 5,
+	PN_FADE_EVENT = 1 << 6
 };
 
 struct GameSpecificSettings;
@@ -248,6 +288,7 @@ public:
 	int getGameType() const;
 	uint32 getFeatures() const;
 	const char *getExtra() const;
+	bool isSimon2MacAmiga() const;
 	Common::Language getLanguage() const;
 	Common::Platform getPlatform() const;
 	const char *getFileName(int type) const;
@@ -279,6 +320,8 @@ protected:
 
 	const GameSpecificSettings *gss;
 
+	AGOSAction _action;
+	Common::JoystickState _joyaction;
 	Common::KeyState _keyPressed;
 
 	Common::File *_gameFile;
@@ -346,6 +389,9 @@ protected:
 	bool _backFlag;
 
 	Common::Language _language;
+	Common::Language _simon2OverlayLanguage;
+	bool _useSimon2LanguageOverlay;
+	Common::HashMap<Common::String, Common::String> _simon2LanguageOverlay;
 	bool _copyProtection;
 	bool _pause;
 	bool _speech;
@@ -497,6 +543,20 @@ protected:
 
 	VgaTimerEntry *_nextVgaTimerToProcess;
 
+	struct PnAmigaTextPlane {
+		byte *pixels;
+		uint16 width, height;
+		PnAmigaTextPlane() : pixels(nullptr), width(0), height(0) {}
+	};
+
+	enum {
+		kPnAmigaTextStartX = 2,
+		kPnAmigaLowresWidth = 320,
+		kPnAmigaMainTextTop = 136,
+		kPnAmigaInputTop = 224,
+		kPnAmigaTextPlaneWidth = 552
+	};
+
 	uint8 _opcode177Var1, _opcode177Var2;
 	uint8 _opcode178Var1, _opcode178Var2;
 
@@ -518,6 +578,10 @@ protected:
 
 	WindowBlock *_dummyWindow;
 	WindowBlock *_windowArray[80];
+	Graphics::AmigaFont *_pnAmigaFont;
+	bool _pnAmigaUiVisible;
+	PnAmigaTextPlane _pnAmigaMainTextPlane;
+	PnAmigaTextPlane _pnAmigaInputTextPlane;
 
 	byte _fcsData1[8];
 	bool _fcsData2[8];
@@ -560,7 +624,16 @@ protected:
 
 	uint8 _currentPalette[768];
 	uint8 _displayPalette[768];
+	uint8 _simon2LanguageFlagTimer;
+	bool _simon2LanguageFlagClearPending;
 
+	uint16 _pnPaletteBanks[2][16];
+	uint16 _pnFadeCurrent[16];
+	uint16 _pnDayNightControllerSelectorMask;
+	uint8 _pnDayNightControllerLastStage;
+	int16 _pnLastClockMinutes;
+	bool _pnHavePaletteBank[2];
+	uint16 _pnDayNightControllerTickCounter;
 	byte *_planarBuf;
 	byte _videoBuf1[32000];
 	uint16 _videoWindows[128];
@@ -586,6 +659,9 @@ protected:
 	int _vgaTickCounter;
 
 	Audio::SoundHandle _modHandle;
+	Audio::SoundHandle _digitalMusicHandle;
+	Audio::SeekableAudioStream *_digitalMusicStream = nullptr;
+	ElviraAtariSTPlayer *_elviraAtariSTPlayer = nullptr;
 
 	Sound *_sound;
 
@@ -599,6 +675,8 @@ protected:
 	// and/or ambient sounds are currently muted.
 	uint16 _effectsVolume;
 	bool _useDigitalSfx;
+	bool _pendingWaitCommandDelay;
+	bool _pendingPNWaitScreenDelay;
 
 	uint8 _saveGameNameLen;
 	uint16 _saveLoadRowCurPos;
@@ -651,9 +729,31 @@ protected:
 	void readGamePcFile(Common::SeekableReadStream *in);
 	void decompressData(const char *srcName, byte *dst, uint32 offset, uint32 srcSize, uint32 dstSize);
 	void decompressPN(Common::Stack<uint32> &dataList, uint8 *&dataOut, int &dataOutSize);
+	void drawPnSqueezedChar(WindowBlock *window, uint x, uint y, byte chr);
+	bool isPnAmiga() const;
+	bool isPnAmigaMainTextWindow(const WindowBlock *window) const;
+	bool isPnAmigaInputWindow(const WindowBlock *window) const;
+	bool isPnAmigaTextWindow(const WindowBlock *window) const;
+	const Graphics::AmigaFont *getPnAmigaFont() const;
+	uint16 getPnAmigaWindowInteriorHeight(const WindowBlock *window) const;
+	uint16 getPnAmigaTextPlaneWidth(const WindowBlock *window) const;
+	uint16 getPnAmigaTextLineStep() const;
+	uint16 getPnAmigaGlyphAdvance(byte chr) const;
+	uint16 getPnAmigaGlyphRenderWidth(byte chr) const;
+	uint16 getPnAmigaGlyphHeight() const;
+	bool usePnAmigaDoubleHeightTopaz() const;
+	void ensurePnAmigaTextPlanes();
+	PnAmigaTextPlane *getPnAmigaTextPlane(const WindowBlock *window);
+	const PnAmigaTextPlane *getPnAmigaTextPlane(const WindowBlock *window) const;
+	void clearPnAmigaTextPlane(WindowBlock *window);
+	void compositePnAmigaTextPlane(WindowBlock *window);
+	void scrollPnAmigaTextPlane(WindowBlock *window);
+	void drawPnAmigaTopazChar(WindowBlock *window, byte chr);
+	void drawPnAmigaTextWindowBorders();
+
 	void loadOffsets(const char *filename, int number, uint32 &file, uint32 &offset, uint32 &compressedSize, uint32 &size);
 	void loadSound(uint16 sound, int16 pan, int16 vol, uint16 type);
-	void playSfx(uint16 sound, uint16 freq, uint16 flags, bool canUseMidiSfx);
+	void playSfx(uint16 sound, uint16 freq, uint16 flags, bool digitalOnly = false, bool midiOnly = false);
 	void loadSound(uint16 sound, uint16 freq, uint16 flags);
 	void loadMidiSfx();
 	virtual void playMidiSfx(uint16 sound);
@@ -728,12 +828,17 @@ protected:
 	void uncompressText(byte *ptr);
 	byte *uncompressToken(byte a, byte *ptr);
 
-	void showMessageFormat(const char *s, ...) GCC_PRINTF(2, 3);
+	void showMessageFormat(MSVC_PRINTF const char *s, ...) GCC_PRINTF(2, 3);
 	const byte *getStringPtrByID(uint16 stringId, bool upperCase = false);
+	void loadSimon2LanguageOverlay();
+	bool hasSimon2LanguageFiles() const;
+	Common::Language getNextSimon2OverlayLanguage() const;
+	void cycleSimon2LanguageOverlay();
+	Common::String translateLanguageOverlay(const Common::String &english) const;
 	const byte *getLocalStringByID(uint16 stringId);
 	uint getNextStringID();
 
-	void addTimeEvent(uint16 timeout, uint16 subroutineId);
+	void addTimeEvent(int32 timeout, uint16 subroutineId);
 	void delTimeEvent(TimeEvent *te);
 
 	Item *findInByClass(Item *i, int16 m);
@@ -845,6 +950,12 @@ protected:
 
 	void endCutscene();
 	virtual void runSubroutine101();
+	bool isSimon2LanguageToggleKeyPressed() const;
+	void refreshSimon2LanguageText();
+	uint8 mapRGBToPaletteIndex(uint8 r, uint8 g, uint8 b) const;
+	void fillSimon2LanguageFlagRect(int x1, int y1, int x2, int y2, uint8 color);
+	void restoreSimon2LanguageFlagArea();
+	void drawSimon2LanguageFlag();
 
 	virtual void inventoryUp(WindowBlock *window);
 	virtual void inventoryDown(WindowBlock *window);
@@ -1175,7 +1286,7 @@ protected:
 	void drawVertImage(VC10_state *state);
 	void drawVertImageCompressed(VC10_state *state);
 	void drawVertImageUncompressed(VC10_state *state);
-
+	void remapElvira2AtariSTUIRegions(Graphics::Surface *screen);
 	void setMoveRect(uint16 x, uint16 y, uint16 width, uint16 height);
 
 	void horizontalScroll(VC10_state *state);
@@ -1201,6 +1312,16 @@ protected:
 	void clearVideoBackGround(uint16 windowNum, uint16 color);
 
 	void setPaletteSlot(uint16 srcOffs, uint8 dstOffs);
+	bool isPNDayNightPaletteMode() const;
+	uint8 getPNDesiredPaletteBank() const;
+	void notePNClockValueChange();
+	void resetPNRoomPaletteState();
+	void buildPNPaletteTarget(uint16 selectorMask, uint16 *target) const;
+	uint16 blendPNPaletteColor(uint16 source, uint16 target, uint8 steps) const;
+	uint8 getPNDayNightControllerStage() const;
+	void startPNDayNightController(uint16 selectorMask);
+	void updatePNDayNightController(uint16 selectorMask);
+	void applyPNDayNightPalette(const uint16 *palette);
 	void checkOnStopTable();
 	void checkWaitEndTable();
 
@@ -1214,6 +1335,8 @@ protected:
 	void addVgaEvent(uint16 num, uint8 type, const byte *codePtr, uint16 curSprite, uint16 curZoneNum);
 	void deleteVgaEvent(VgaTimerEntry * vte);
 	void processVgaEvents();
+	void schedulePNFadeEvent();
+	void removePNFadeEvent();
 	void animateEvent(const byte *codePtr, uint16 curZoneNum, uint16 curSprite);
 	void scrollEvent();
 	void drawStuff(const byte *src, uint offs);
@@ -1298,11 +1421,12 @@ protected:
 	void windowScroll(WindowBlock *window);
 	virtual void windowDrawChar(WindowBlock *window, uint x, uint y, byte chr);
 
-	// Loads the MIDI data for the specified track. The forceSimon2Gm parameter
-	// forces loading the MIDI data from the GM data set and activates GM to
-	// MT-32 instrument remapping. This is useful only for a specific
+	// Loads the MIDI data for the specified track. The forceSimon2GmData
+	// parameter forces loading the MIDI data from the GM data set.
+	// The useSimon2Remapping parameter activates GM to MT-32 instrument
+	// remapping. These parameters are useful only for a specific
 	// workaround (see AGOSEngine_Simon2::playMusic for more details).
-	void loadMusic(uint16 track, bool forceSimon2Gm = false);
+	void loadMusic(uint16 track, bool forceSimon2GmData = false, bool useSimon2Remapping = false);
 	void playModule(uint16 music);
 	virtual void playMusic(uint16 music, uint16 track);
 	void stopMusic();
@@ -1332,6 +1456,7 @@ protected:
 	int countSaveGames();
 
 	virtual Common::String genSaveName(int slot) const;
+	void enterSaveLoadScreen(bool entering);
 };
 
 class AGOSEngine_PN : public AGOSEngine {
@@ -1348,7 +1473,11 @@ public:
 	void setupGame() override;
 	void setupOpcodes() override;
 	void setupVideoOpcodes(VgaOpcodeProc *op) override;
-
+	void windowDrawChar(WindowBlock *window, uint x, uint y, byte chr) override;
+	void saveInventoryPalette();
+	void applyInventoryPalette();
+	void restoreInventoryPalette();
+	
 	void executeOpcode(int opcode) override;
 
 	int actCallD(int n);
@@ -1480,6 +1609,8 @@ protected:
 	uint8 *_linebase;
 	uint8 *_workptr;
 
+	bool _keymapEnabled;
+
 	uint16 getptr(uint32 pos);
 	uint32 getlong(uint32 pos);
 
@@ -1567,6 +1698,9 @@ protected:
 	void addChar(uint8 chr);
 	void clearCursor(WindowBlock *window);
 	void clearInputLine();
+	bool tryHandleDebugTimeCommand();
+	bool tryParseDebugTimeCommand(const char *typed, uint16 &hour, uint16 &minute) const;
+	void setDebugTime(uint16 hour, uint16 minute);
 	void handleKeyboard();
 	void handleMouseMoved() override;
 	void interact(char *buffer, uint8 size);
@@ -1886,6 +2020,10 @@ protected:
 
 	void dumpVgaFile(const byte *vga) override;
 
+	bool loadSimonAcornFloppyDemoPalette(Common::Array<byte> &outPalette);
+	bool _simonAcornFloppyDemoPaletteLoaded = false;
+	void patchSimonAcornFloppyDemoPalettes();
+	
 	void clearName() override;
 
 	void handleMouseWheelUp() override;
@@ -2083,7 +2221,7 @@ protected:
 	void printScreenText(uint vgaSpriteId, uint color, const char *stringPtr, int16 x, int16 y, int16 width) override;
 
 	void printInteractText(uint16 num, const char *string);
-	void sendInteractText(uint16 num, const char *fmt, ...) GCC_PRINTF(3, 4);
+	void sendInteractText(uint16 num, MSVC_PRINTF const char *fmt, ...) GCC_PRINTF(3, 4);
 
 	void checkLinkBox();
 	void hyperLinkOn(uint16 x);

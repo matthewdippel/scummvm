@@ -48,13 +48,10 @@ Common::Error KyraEngine_LoK::loadGameState(int slot) {
 
 	// unloading the current voice file should fix some problems with voices
 	if (_currentRoom != 0xFFFF && _flags.isTalkie) {
-		char file[32];
 		assert(_currentRoom < _roomTableSize);
 		int tableId = _roomTable[_currentRoom].nameIndex;
 		assert(tableId < _roomFilenameTableSize);
-		strcpy(file, _roomFilenameTable[tableId]);
-		strcat(file, ".VRM");
-		_res->unloadPakFile(file);
+		_res->unloadPakFile(Common::String(_roomFilenameTable[tableId]) + ".VRM");
 	}
 
 	for (int i = 0; i < 11; i++) {
@@ -204,7 +201,7 @@ Common::Error KyraEngine_LoK::loadGameState(int slot) {
 	_brandonPosY = _currentCharacter->y2 = _currentCharacter->y1;
 
 	// We need to reset the "_noDrawShapesFlag" flag of Animator_LoK
-	// over here. Else in certain cases restoring an savegame might
+	// over here. Else in certain cases restoring a savegame might
 	// result in no shapes being drawn at all. See bug report
 	// #4625 "KYRA1: Invisible Brandon" for an example of this.
 	_animator->_noDrawShapesFlag = 0;

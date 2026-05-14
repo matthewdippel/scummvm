@@ -48,23 +48,34 @@ Common::SeekableReadStream *ResMan::open(uint32 fileRef) {
 Common::SeekableReadStream *ResMan::open(const ResInfo &resInfo) {
 	// Do we know the name of the required GJD?
 	if (resInfo.gjd >= _gjds.size()) {
+		// Is this a raw vob file? (TLC DVD)
+		if (resInfo.gjd >= 1000) {
+			Common::Path filename = Common::Path(Common::String::format("VOB%u.VOB", resInfo.offset));
+			if (!Common::File::exists(filename)) {
+				return nullptr;
+			}
+			Common::File *vobFile = new Common::File();
+			vobFile->open(filename);
+			return vobFile;
+		}
+
 		error("Groovie::Resource: Unknown GJD %d", resInfo.gjd);
 		return nullptr;
 	}
 
-	debugC(1, kDebugResource, "Groovie::Resource: Opening resource (%s, %d, %d, %d)", _gjds[resInfo.gjd].c_str(), resInfo.offset, resInfo.size, resInfo.disks);
+	debugC(1, kDebugResource, "Groovie::Resource: Opening resource (%s, %d, %d, %d)", _gjds[resInfo.gjd].toString().c_str(), resInfo.offset, resInfo.size, resInfo.disks);
 
 	// Does it exist?
 	if (!Common::File::exists(_gjds[resInfo.gjd])) {
-		error("Groovie::Resource: %s not found (resInfo.disks: %d)", _gjds[resInfo.gjd].c_str(), resInfo.disks);
+		error("Groovie::Resource: %s not found (resInfo.disks: %d)", _gjds[resInfo.gjd].toString().c_str(), resInfo.disks);
 		return nullptr;
 	}
 
 	// Open the pack file
 	Common::File *gjdFile = new Common::File();
-	if (!gjdFile->open(_gjds[resInfo.gjd].c_str())) {
+	if (!gjdFile->open(_gjds[resInfo.gjd])) {
 		delete gjdFile;
-		error("Groovie::Resource: Couldn't open %s", _gjds[resInfo.gjd].c_str());
+		error("Groovie::Resource: Couldn't open %s", _gjds[resInfo.gjd].toString().c_str());
 		return nullptr;
 	}
 
@@ -76,22 +87,34 @@ Common::SeekableReadStream *ResMan::open(const ResInfo &resInfo) {
 	// Returning the resource substream
 	Common::SeekableSubReadStream *file = new Common::SeekableSubReadStream(gjdFile, resInfo.offset, resInfo.offset + resInfo.size, DisposeAfterUse::YES);
 	if (ConfMan.getBool("dump_resources")) {
-		dumpResource(file, resInfo.filename, false);
+		dumpResource(file, Common::Path(resInfo.filename), false);
 	}
 	return file;
 }
 
-void ResMan::dumpResource(const Common::String &fileName) {
-	uint32 fileRef = getRef(fileName);
-	dumpResource(fileRef, fileName);
+Common::String ResMan::getGjdName(const ResInfo &resInfo) {
+	if (resInfo.gjd >= _gjds.size()) {
+		if (resInfo.gjd >= 1000) {
+			return Common::String::format("VOB%u.VOB", resInfo.offset);
+		}
+
+		error("Groovie::Resource: Unknown GJD %d", resInfo.gjd);
+	}
+
+	return _gjds[resInfo.gjd].baseName();
 }
 
-void ResMan::dumpResource(uint32 fileRef, const Common::String &fileName) {
+void ResMan::dumpResource(const Common::String &fileName) {
+	uint32 fileRef = getRef(fileName);
+	dumpResource(fileRef, Common::Path(fileName));
+}
+
+void ResMan::dumpResource(uint32 fileRef, const Common::Path &fileName) {
 	Common::SeekableReadStream *inFile = open(fileRef);
 	dumpResource(inFile, fileName);
 }
 
-void ResMan::dumpResource(Common::SeekableReadStream *inFile, const Common::String &fileName, bool dispose) {
+void ResMan::dumpResource(Common::SeekableReadStream *inFile, const Common::Path &fileName, bool dispose) {
 	Common::DumpFile outFile;
 	outFile.open(fileName);
 
@@ -127,7 +150,7 @@ ResMan_t7g::ResMan_t7g(Common::MacResManager *macResFork) : _macResFork(macResFo
 			filename = "T7GData";
 
 		// Append it to the list of GJD files
-		_gjds.push_back(filename);
+		_gjds.push_back(Common::Path(filename));
 	}
 }
 
@@ -143,7 +166,7 @@ uint32 ResMan_t7g::getRef(Common::String name) {
 		rlFile = _macResFork->getResource(rlFileName);
 	} else {
 		// Open the RL file
-		rlFile = SearchMan.createReadStreamForMember(rlFileName);
+		rlFile = SearchMan.createReadStreamForMember(Common::Path(rlFileName));
 	}
 
 	if (!rlFile)
@@ -195,7 +218,7 @@ bool ResMan_t7g::getResInfo(uint32 fileRef, ResInfo &resInfo) {
 		rlFile = _macResFork->getResource(rlFileName);
 	} else {
 		// Open the RL file
-		rlFile = SearchMan.createReadStreamForMember(rlFileName);
+		rlFile = SearchMan.createReadStreamForMember(Common::Path(rlFileName));
 	}
 
 	if (!rlFile)
@@ -247,7 +270,7 @@ ResMan_v2::ResMan_v2() {
 
 		// Append it to the list of GJD files
 		if (!filename.empty()) {
-			_gjds.push_back(filename);
+			_gjds.push_back(Common::Path(filename));
 		}
 
 		// Read the next line
@@ -280,7 +303,7 @@ uint32 ResMan_v2::getRef(Common::String name) {
 
 		// Test whether it's the resource we're searching
 		Common::String resname(readname, 18);
-		if (resname.hasPrefix(name.c_str())) {
+		if (resname.hasPrefixIgnoreCase(name.c_str())) {
 			debugC(2, kDebugResource, "Groovie::Resource: Resource %18s matches %s", readname, name.c_str());
 			found = true;
 			break;

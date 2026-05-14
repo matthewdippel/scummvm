@@ -4297,6 +4297,8 @@ void Scene4300::signal() {
 
 		if (g_vm->getLanguage() == Common::ES_ESP) {
 			_gfxButton.setText(ESP_EXIT_MSG);
+		} else if (g_vm->getLanguage() == Common::RU_RUS) {
+			_gfxButton.setText(RUS_EXIT_MSG);
 		} else {
 			_gfxButton.setText(EXIT_MSG);
 		}
@@ -4481,7 +4483,7 @@ void Scene4301::Action1::process(Event &event) {
 		}
 	}
 
-	if ((event.eventType == EVENT_KEYPRESS) && (event.kbd.keycode == Common::KEYCODE_ESCAPE)) {
+	if ((event.eventType == EVENT_CUSTOM_ACTIONSTART) && (event.customType == kActionEscape)) {
 		event.handled = true;
 		remove();
 	}

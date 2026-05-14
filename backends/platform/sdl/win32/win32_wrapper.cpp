@@ -19,16 +19,28 @@
  *
  */
 
+// For _tcscat
+#define FORBIDDEN_SYMBOL_EXCEPTION_strcat
+
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <shellapi.h> // for CommandLineToArgvW()
-#if defined(__GNUC__) && defined(__MINGW32__) && !defined(__MINGW64_VERSION_MAJOR)
+#include <sdkddkver.h>
+#if !defined(_WIN32_IE) || (_WIN32_IE < 0x500)
  // required for SHGetSpecialFolderPath and SHGFP_TYPE_CURRENT in shlobj.h
+#undef _WIN32_IE
 #define _WIN32_IE 0x500
 #endif
+#if !defined(_WIN32_WINNT) || (_WIN32_WINNT < 0x500)
+ // required for VER_MAJORVERSION, VER_MINORVERSION and VER_GREATER_EQUAL in winnt.h
+ // set to Windows 2000 which is the minimum needed for these constants
+#undef _WIN32_WINNT
+#define _WIN32_WINNT 0x500
+#endif
+#include <windows.h>
+#include <shellapi.h> // for CommandLineToArgvW()
 #include <shlobj.h>
 #include <tchar.h>
 
+#include "common/ptr.h"
 #include "common/scummsys.h"
 #include "common/textconsole.h"
 #include "backends/platform/sdl/win32/win32_wrapper.h"
@@ -86,8 +98,11 @@ HRESULT SHGetFolderPathFunc(HWND hwnd, int csidl, HANDLE hToken, DWORD dwFlags, 
 namespace Win32 {
 
 bool getApplicationDataDirectory(TCHAR *applicationDataDirectory) {
-	if (SHGetFolderPathFunc(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, applicationDataDirectory) != S_OK) {
-		warning("Unable to access application data directory");
+	HRESULT hr = SHGetFolderPathFunc(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, applicationDataDirectory);
+	if (hr != S_OK) {
+		if (hr != E_NOTIMPL) {
+			warning("Unable to locate application data directory");
+		}
 		return false;
 	}
 
@@ -125,6 +140,33 @@ bool confirmWindowsVersion(int majorVersion, int minorVersion) {
 	conditionMask = VerSetConditionMaskFunc(conditionMask, VER_MINORVERSION, VER_GREATER_EQUAL);
 
 	return VerifyVersionInfoFunc(&versionInfo, VER_MAJORVERSION | VER_MINORVERSION, conditionMask);
+}
+
+// for using ScopedPtr with malloc/free
+template <typename T>
+struct Freer {
+	inline void operator()(T *object) {
+		free(object);
+	}
+};
+
+bool moveFile(const Common::String &src, const Common::String &dst) {
+	Common::ScopedPtr<TCHAR, Freer<TCHAR>> tSrc(stringToTchar(src));
+	Common::ScopedPtr<TCHAR, Freer<TCHAR>> tDst(stringToTchar(dst));
+
+	if (MoveFileEx(tSrc.get(), tDst.get(), MOVEFILE_REPLACE_EXISTING)) {
+		return true;
+	}
+
+	// MoveFileEx may not be supported on the platform (Win9x)
+	if (GetLastError() == ERROR_CALL_NOT_IMPLEMENTED) {
+		// Fall back to deleting the destination before using MoveFile.
+		// MoveFile requires that the destination not already exist.
+		DeleteFile(tDst.get());
+		return MoveFile(tSrc.get(), tDst.get());
+	}
+
+	return false;
 }
 
 bool isDriveCD(char driveLetter) {
@@ -171,7 +213,7 @@ char *unicodeToAnsi(const wchar_t *s) {
 TCHAR *stringToTchar(const Common::String& s) {
 #ifndef UNICODE
 	char *t = (char *)malloc(s.size() + 1);
-	strcpy(t, s.c_str());
+	Common::strcpy_s(t, s.size() + 1, s.c_str());
 	return t;
 #else
 	return ansiToUnicode(s.c_str());

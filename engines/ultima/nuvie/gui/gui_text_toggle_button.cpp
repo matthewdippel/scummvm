@@ -27,22 +27,18 @@ namespace Nuvie {
 
 GUI_TextToggleButton::GUI_TextToggleButton(void *data, int x, int y, int w, int h,
 		const char *const *texts_, int count_, int selection_,
-		GUI_Font *font, int alignment_,
+		GUI_Font *font, ButtonTextAlign alignment_,
 		GUI_CallBack *callback, int flat)
-	: GUI_Button(data, x, y, w, h, "", font, alignment_, 0, callback, flat) {
-	count = count_;
+	: GUI_Button(data, x, y, w, h, "", font, alignment_, false, callback, flat), count(count_),
+	  selection(selection_), alignment(alignment_) {
 	assert(count > 0);
-
-	selection = selection_;
 	assert(selection >= 0 && selection < count);
-
-	alignment = alignment_;
 
 	texts = new char *[count];
 	for (int i = 0; i < count; ++i) {
-		int l = strlen(texts_[i]);
-		texts[i] = new char[l + 1];
-		strcpy(texts[i], texts_[i]);
+		int l = strlen(texts_[i]) + 1;
+		texts[i] = new char[l];
+		Common::strcpy_s(texts[i], l, texts_[i]);
 	}
 
 	ChangeTextButton(-1, -1, -1, -1, texts[selection], alignment);
@@ -55,7 +51,7 @@ GUI_TextToggleButton::~GUI_TextToggleButton() {
 	texts = 0;
 }
 
-GUI_status GUI_TextToggleButton::MouseUp(int x, int y, Shared::MouseButton button_) {
+GUI_status GUI_TextToggleButton::MouseUp(int x, int y, Events::MouseButton button_) {
 	if ((button_ == 1 || button_ == 3) && (pressed[0])) {
 		pressed[0] = 0;
 		return Activate_button(x, y, button_);
@@ -63,8 +59,8 @@ GUI_status GUI_TextToggleButton::MouseUp(int x, int y, Shared::MouseButton butto
 	return GUI_Button::MouseUp(x, y, button_);
 }
 
-GUI_status GUI_TextToggleButton::Activate_button(int x, int y, Shared::MouseButton button_) {
-	selection = (selection + (button_ == Shared::BUTTON_LEFT ? 1 : -1)) % count;
+GUI_status GUI_TextToggleButton::Activate_button(int x, int y, Events::MouseButton button_) {
+	selection = (selection + (button_ == Events::BUTTON_LEFT ? 1 : -1)) % count;
 	if (selection < 0)
 		selection = count - 1;
 

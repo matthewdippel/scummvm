@@ -74,7 +74,7 @@ Breath::Breath() {
 #define SMOKE_IC (32)
 #define SMOKE_IS (4)
 
-#define BREATH_DY (-(g_icb->getRandomSource()->getRandomNumber(2 - 1)))
+#define BREATH_DY (-static_cast<int>(g_icb->getRandomSource()->getRandomNumber(2 - 1)))
 #define BREATH_DZ (g_icb->getRandomSource()->getRandomNumber(4 - 1))
 #define BREATH_DC (-4)
 #define BREATH_DS (2)
@@ -150,7 +150,7 @@ void Breath::Update() {
 					breathColour[i] = SMOKE_IC;
 				}
 
-				// we have definately started now!
+				// we have definitely started now!
 				breathStarted[i] = 1;
 			}
 

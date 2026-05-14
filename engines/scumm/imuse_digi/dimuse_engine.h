@@ -67,7 +67,7 @@ struct IMuseDigiStreamZone;
 
 class IMuseDigital : public MusicEngine {
 private:
-	Common::Mutex _mutex;
+	Common::Mutex *_mutex;
 	ScummEngine_v7 *_vm;
 	Audio::Mixer *_mixer;
 	SmushPlayer *_splayer;
@@ -84,13 +84,23 @@ private:
 
 	bool _isEarlyDiMUSE;
 	bool _isEngineDisabled;
+	bool _checkForUnderrun;
+	int _underrunCooldown;
+	bool _lowLatencyMode;
+
+	int _internalFeedSize;
+	int _internalSampleRate;
 
 	// These three are manipulated in the waveOut functions
 	uint8 *_outputAudioBuffer;
 	int _outputFeedSize;
 	int _outputSampleRate;
 
+	// Used in low latency mode only
+	uint8 *_outputLowLatencyAudioBuffers[DIMUSE_MAX_TRACKS];
+
 	int _maxQueuedStreams; // maximum number of streams which can be queued before they are played
+	int _nominalBufferCount;
 
 	int _currentSpeechVolume, _currentSpeechFrequency, _currentSpeechPan;
 	int _curMixerMusicVolume, _curMixerSpeechVolume, _curMixerSFXVolume;
@@ -109,6 +119,7 @@ private:
 	int _stopSequenceFlag;
 	int _scriptInitializedFlag;
 	char _emptyMarker[1];
+	bool _spooledMusicEnabled;
 
 	int _usecPerInt; // Microseconds between each callback (will be set to 50 Hz)
 	int _callbackInterruptFlag;
@@ -125,6 +136,8 @@ private:
 	void playComiMusic(const char *songName, const imuseComiTable *table, int attribPos, bool sequence);
 	void playComiDemoMusic(const char *songName, const imuseComiTable *table, int attribPos, bool sequence);
 	int getSoundIdByName(const char *soundName);
+	bool isMusicStreamIdle();
+	bool isMusicCritical();
 
 	// Script
 	int scriptParse(int cmd, int a, int b);
@@ -171,7 +184,7 @@ private:
 	int streamerSetLoadIndex(IMuseDigiStream *streamPtr, int offset);
 	int streamerGetFreeBufferAmount(IMuseDigiStream *streamPtr);
 	int streamerSetSoundToStreamFromOffset(IMuseDigiStream *streamPtr, int soundId, int32 offset);
-	int streamerQueryStream(IMuseDigiStream *streamPtr, int32 &bufSize, int32 &criticalSize, int32 &freeSpace, int &paused);
+	void streamerQueryStream(IMuseDigiStream *streamPtr, int32 &bufSize, int32 &criticalSize, int32 &freeSpace, int &paused);
 	int streamerFeedStream(IMuseDigiStream *streamPtr, uint8 *srcBuf, int32 sizeToFeed, int paused);
 	int streamerFetchData(IMuseDigiStream *streamPtr);
 	void streamerSetLoopFlag(IMuseDigiStream *streamPtr, int offset);
@@ -183,7 +196,6 @@ private:
 
 	int _trackCount;
 	int _tracksPauseTimer;
-	int _tracksPrefSampleRate;
 	int _tracksMicroSecsToFeed;
 
 	int tracksInit();
@@ -192,11 +204,12 @@ private:
 	void tracksSaveLoad(Common::Serializer &ser);
 	void tracksSetGroupVol();
 	void tracksCallback();
+	void tracksLowLatencyCallback();
 	int tracksStartSound(int soundId, int tryPriority, int group);
 	int tracksStopSound(int soundId);
 	int tracksStopAllSounds();
 	int tracksGetNextSound(int soundId);
-	void tracksQueryStream(int soundId, int32 &bufSize, int32 &criticalSize, int32 &freeSpace, int &paused);
+	int tracksQueryStream(int soundId, int32 &bufSize, int32 &criticalSize, int32 &freeSpace, int &paused);
 	int tracksFeedStream(int soundId, uint8 *srcBuf, int32 sizeToFeed, int paused);
 	void tracksClear(IMuseDigiTrack *trackPtr);
 	int tracksSetParam(int soundId, int opcode, int value);
@@ -232,18 +245,18 @@ private:
 	int dispatchRestoreStreamZones();
 	int dispatchAllocateSound(IMuseDigiTrack *trackPtr, int groupId);
 	int dispatchRelease(IMuseDigiTrack *trackPtr);
-	int dispatchSwitchStream(int oldSoundId, int newSoundId, int fadeLength, int unusedFadeSyncFlag, int offsetFadeSyncFlag);
+	int dispatchSwitchStream(int oldSoundId, int newSoundId, int fadeLength, int exitTriggerSyncFlag, int offsetFadeSyncFlag);
 	int dispatchSwitchStream(int oldSoundId, int newSoundId, uint8 *crossfadeBuffer, int crossfadeBufferSize, int vocLoopFlag);
 	void dispatchProcessDispatches(IMuseDigiTrack *trackPtr, int feedSize, int sampleRate);
 	void dispatchProcessDispatches(IMuseDigiTrack *trackPtr, int feedSize);
 	void dispatchPredictFirstStream();
 	int dispatchNavigateMap(IMuseDigiDispatch *dispatchPtr);
 	int dispatchGetMap(IMuseDigiDispatch *dispatchPtr);
-	int dispatchConvertMap(uint8 *rawMap, uint8 *destMap);
-	int32 *dispatchGetNextMapEvent(int32 *mapPtr, int32 soundOffset, int32 *mapEvent);
+	int dispatchConvertMap(uint8 *rawMap, int32 *destMap);
+	uint8 *dispatchGetNextMapEvent(int32 *mapPtr, int32 soundOffset, uint8 *mapEvent);
 	void dispatchPredictStream(IMuseDigiDispatch *dispatchPtr);
-	int32 *dispatchCheckForJump(int32 *mapPtr, IMuseDigiStreamZone *strZnPtr, int &candidateHookId);
-	void dispatchPrepareToJump(IMuseDigiDispatch *dispatchPtr, IMuseDigiStreamZone *strZnPtr, int32 *jumpParamsFromMap, int calledFromGetNextMapEvent);
+	uint8 *dispatchCheckForJump(int32 *mapPtr, IMuseDigiStreamZone *strZnPtr, int &candidateHookId);
+	void dispatchPrepareToJump(IMuseDigiDispatch *dispatchPtr, IMuseDigiStreamZone *strZnPtr, uint8 *jumpParamsFromMap, int calledFromGetNextMapEvent);
 	void dispatchStreamNextZone(IMuseDigiDispatch *dispatchPtr, IMuseDigiStreamZone *strZnPtr);
 	IMuseDigiStreamZone *dispatchAllocateStreamZone();
 	uint8 *dispatchAllocateFade(int32 &fadeSize, const char *functionName);
@@ -274,7 +287,7 @@ private:
 	int waveSwitchStream(int oldSoundId, int newSoundId, int fadeLengthMs, int fadeSyncFlag2, int fadeSyncFlag1);
 	int waveSwitchStream(int oldSoundId, int newSoundId, uint8 *crossfadeBuffer, int crossfadeBufferSize, int vocLoopFlag);
 	int waveProcessStreams();
-	void waveQueryStream(int soundId, int32 &bufSize, int32 &criticalSize, int32 &freeSpace, int &paused);
+	int waveQueryStream(int soundId, int32 &bufSize, int32 &criticalSize, int32 &freeSpace, int &paused);
 	int waveFeedStream(int soundId, uint8 *srcBuf, int32 sizeToFeed, int paused);
 	int waveLipSync(int soundId, int syncId, int msPos, int32 &width, int32 &height);
 
@@ -293,14 +306,20 @@ private:
 	int _waveOutWriteIndex;
 	int _waveOutDisableWrite;
 
-	int waveOutInit(int sampleRate, waveOutParamsStruct *waveOutSettings);
+	int waveOutInit(waveOutParamsStruct *waveOutSettings);
 	void waveOutWrite(uint8 **audioBuffer, int &feedSize, int &sampleRate);
 	int waveOutDeinit();
 	void waveOutCallback();
 	byte waveOutGetStreamFlags();
 
+	// Low latency mode
+	void waveOutLowLatencyWrite(uint8 **audioBuffer, int &feedSize, int &sampleRate, int idx);
+	void waveOutEmptyBuffer(int idx);
+
+	uint8 *_waveOutLowLatencyOutputBuffer;
+
 public:
-	IMuseDigital(ScummEngine_v7 *scumm, Audio::Mixer *mixer);
+	IMuseDigital(ScummEngine_v7 *scumm, int sampleRate, Audio::Mixer *mixer, Common::Mutex *mutex, bool lowLatencyMode = false);
 	~IMuseDigital() override;
 
 	// Wrapper functions used by the main engine
@@ -333,6 +352,11 @@ public:
 	void stopSMUSHAudio();
 	void receiveAudioFromSMUSH(uint8 *srcBuf, int32 inFrameCount, int32 feedSize, int32 mixBufStartIndex, int volume, int pan, bool is11025Hz);
 	void setSmushPlayer(SmushPlayer *splayer);
+	void floodMusicBuffer();
+	void fillStreamsWhileMusicCritical(int fillTimesAfter);
+	bool queryNextSoundFile(int32 &bufSize, int32 &criticalSize, int32 &freeSpace, int &paused);
+	int getSampleRate();
+	int getFeedSize();
 
 	bool isFTSoundEngine(); // Used in the handlers to check if we're using the FT version of the engine
 
@@ -370,9 +394,12 @@ public:
 	int diMUSESwitchStream(int oldSoundId, int newSoundId, int fadeDelay, int fadeSyncFlag2, int fadeSyncFlag1);
 	int diMUSESwitchStream(int oldSoundId, int newSoundId, uint8 *crossfadeBuffer, int crossfadeBufferSize, int vocLoopFlag);
 	int diMUSEProcessStreams();
-	void diMUSEQueryStream(int soundId, int32 &bufSize, int32 &criticalSize, int32 &freeSpace, int &paused);
+	int diMUSEQueryStream(int soundId, int32 &bufSize, int32 &criticalSize, int32 &freeSpace, int &paused);
 	int diMUSEFeedStream(int soundId, uint8 *srcBuf, int32 sizeToFeed, int paused);
 	int diMUSELipSync(int soundId, int syncId, int msPos, int32 &width, int32 &height);
+	int diMUSEGetMusicGroupVol();
+	int diMUSEGetSFXGroupVol();
+	int diMUSEGetVoiceGroupVol();
 	int diMUSESetMusicGroupVol(int volume);
 	int diMUSESetSFXGroupVol(int volume);
 	int diMUSESetVoiceGroupVol(int volume);
@@ -383,6 +410,8 @@ public:
 	int diMUSESetSequence(int soundId);
 	int diMUSESetCuePoint(int cueId);
 	int diMUSESetAttribute(int attrIndex, int attrVal);
+	void diMUSEEnableSpooledMusic();
+	void diMUSEDisableSpooledMusic();
 
 	// Utils
 	int addTrackToList(IMuseDigiTrack **listPtr, IMuseDigiTrack *listPtr_Item);
@@ -392,6 +421,8 @@ public:
 	int clampNumber(int value, int minValue, int maxValue);
 	int clampTuning(int value, int minValue, int maxValue);
 	int checkHookId(int &trackHookId, int sampleHookId);
+	int roundRobinSetBufferCount();
+	void adaptBufferCount();
 
 	// CMDs
 	int cmdsHandleCmd(int cmd, uint8 *ptr = nullptr,

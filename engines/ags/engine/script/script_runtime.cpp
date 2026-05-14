@@ -19,25 +19,10 @@
  *
  */
 
-//=============================================================================
-//
-// C-Script run-time interpreter (c) 2001 Chris Jones
-//
-// You must DISABLE OPTIMIZATIONS AND REGISTER VARIABLES in your compiler
-// when compiling this, or strange results can happen.
-//
-// There is a problem with importing functions on 16-bit compilers: the
-// script system assumes that all parameters are passed as 4 bytes, which
-// ints are not on 16-bit systems. Be sure to define all parameters as longs,
-// or join the 21st century and switch to DJGPP or Visual C++.
-//
-//=============================================================================
-
+#include "ags/engine/script/script_runtime.h"
 #include "ags/engine/ac/dynobj/cc_dynamic_array.h"
-#include "ags/engine/ac/statobj/static_object.h"
 #include "ags/shared/script/cc_common.h"
 #include "ags/engine/script/system_imports.h"
-#include "ags/engine/script/script_runtime.h"
 #include "ags/globals.h"
 
 namespace AGS3 {
@@ -46,24 +31,43 @@ bool ccAddExternalStaticFunction(const String &name, ScriptAPIFunction *pfn) {
 	return _GP(simp).add(name, RuntimeScriptValue().SetStaticFunction(pfn), nullptr) != UINT32_MAX;
 }
 
+bool ccAddExternalObjectFunction(const String &name, ScriptAPIObjectFunction *pfn) {
+	return _GP(simp).add(name, RuntimeScriptValue().SetObjectFunction(pfn), nullptr) != UINT32_MAX;
+}
+
+bool ccAddExternalFunctionForPlugin(const String &name, Plugins::ScriptContainer *instance) {
+	return _GP(simp_for_plugin).add(name, RuntimeScriptValue().SetPluginMethod(instance, name), nullptr) != UINT32_MAX;
+}
+
+bool ccAddExternalStaticFunction361(const String &name, ScriptAPIFunction *scfn, void *dirfn) {
+	return _GP(simp).add(name, RuntimeScriptValue().SetStaticFunction(scfn), nullptr) != UINT32_MAX &&
+		   (!dirfn ||
+			_GP(simp_for_plugin).add(name, RuntimeScriptValue().SetPluginMethod((Plugins::ScriptContainer *)dirfn, name), nullptr) != UINT32_MAX);
+}
+
+bool ccAddExternalObjectFunction361(const String &name, ScriptAPIObjectFunction *scfn, void *dirfn) {
+	return _GP(simp).add(name, RuntimeScriptValue().SetObjectFunction(scfn), nullptr) != UINT32_MAX &&
+		   (!dirfn ||
+			_GP(simp_for_plugin).add(name, RuntimeScriptValue().SetPluginMethod((Plugins::ScriptContainer *)dirfn, name), nullptr) != UINT32_MAX);
+}
+
+bool ccAddExternalFunction361(const ScFnRegister &scfnreg) {
+	String name = String::Wrapper(scfnreg.Name);
+	return _GP(simp).add(name, scfnreg.Fn, nullptr) != UINT32_MAX &&
+		   (scfnreg.PlFn.IsNull() ||
+			_GP(simp_for_plugin).add(name, scfnreg.PlFn, nullptr) != UINT32_MAX);
+}
+
 bool ccAddExternalPluginFunction(const String &name, Plugins::ScriptContainer *instance) {
 	return _GP(simp).add(name, RuntimeScriptValue().SetPluginMethod(instance, name), nullptr) != UINT32_MAX;
 }
 
-bool ccAddExternalStaticObject(const String &name, void *ptr, ICCStaticObject *manager) {
-	return _GP(simp).add(name, RuntimeScriptValue().SetStaticObject(ptr, manager), nullptr) != UINT32_MAX;
-}
-
-bool ccAddExternalStaticArray(const String &name, void *ptr, StaticArray *array_mgr) {
+bool ccAddExternalStaticArray(const String &name, void *ptr, CCStaticArray *array_mgr) {
 	return _GP(simp).add(name, RuntimeScriptValue().SetStaticArray(ptr, array_mgr), nullptr) != UINT32_MAX;
 }
 
-bool ccAddExternalDynamicObject(const String &name, void *ptr, ICCDynamicObject *manager) {
-	return _GP(simp).add(name, RuntimeScriptValue().SetDynamicObject(ptr, manager), nullptr) != UINT32_MAX;
-}
-
-bool ccAddExternalObjectFunction(const String &name, ScriptAPIObjectFunction *pfn) {
-	return _GP(simp).add(name, RuntimeScriptValue().SetObjectFunction(pfn), nullptr) != UINT32_MAX;
+bool ccAddExternalScriptObject(const String &name, void *ptr, IScriptObject *manager) {
+	return _GP(simp).add(name, RuntimeScriptValue().SetScriptObject(ptr, manager), nullptr) != UINT32_MAX;
 }
 
 bool ccAddExternalScriptSymbol(const String &name, const RuntimeScriptValue &prval, ccInstance *inst) {
@@ -78,21 +82,12 @@ void ccRemoveAllSymbols() {
 	_GP(simp).clear();
 }
 
-void nullfree(void *data) {
-	if (data != nullptr)
-		free(data);
-}
-
 void *ccGetSymbolAddress(const String &name) {
 	const ScriptImport *import = _GP(simp).getByName(name);
 	if (import) {
 		return import->Value.Ptr;
 	}
 	return nullptr;
-}
-
-bool ccAddExternalFunctionForPlugin(const String &name, Plugins::ScriptContainer *instance) {
-	return _GP(simp_for_plugin).add(name, RuntimeScriptValue().SetPluginMethod(instance, name), nullptr) == 0;
 }
 
 Plugins::PluginMethod ccGetSymbolAddressForPlugin(const String &name) {
@@ -110,22 +105,32 @@ Plugins::PluginMethod ccGetSymbolAddressForPlugin(const String &name) {
 	return Plugins::PluginMethod();
 }
 
+void *ccGetScriptObjectAddress(const String &name, const String &type) {
+	const auto *imp = _GP(simp).getByName(name);
+	if (!imp)
+		return nullptr;
+	if (imp->Value.Type != kScValScriptObject && imp->Value.Type != kScValPluginObject)
+		return nullptr;
+	if (type != imp->Value.ObjMgr->GetType())
+		return nullptr;
+	return imp->Value.Ptr;
+}
+
 void ccSetScriptAliveTimer(unsigned sys_poll_timeout, unsigned abort_timeout, unsigned abort_loops) {
-	 ccInstance::SetExecTimeout(sys_poll_timeout, abort_timeout, abort_loops);
- }
+	ccInstance::SetExecTimeout(sys_poll_timeout, abort_timeout, abort_loops);
+}
 
 void ccNotifyScriptStillAlive() {
 	ccInstance *cur_inst = ccInstance::GetCurrentInstance();
 	if (cur_inst)
-		cur_inst->flags |= INSTF_RUNNING;
+		cur_inst->NotifyAlive();
 }
 
 void ccSetDebugHook(new_line_hook_type jibble) {
 	_G(new_line_hook) = jibble;
 }
 
-int call_function(const Plugins::PluginMethod &method,
-		const RuntimeScriptValue *object, int numparm, const RuntimeScriptValue *parms) {
+NumberPtr call_function(const Plugins::PluginMethod &method, const RuntimeScriptValue *object, int numparm, const RuntimeScriptValue *parms) {
 	if (!method) {
 		cc_error("invalid method in call_function");
 		return -1;

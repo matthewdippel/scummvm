@@ -206,6 +206,9 @@ int savageIslandMenu(uint8_t **sf, size_t *extent, int recIndex) {
 				g_scott->glk_request_char_event(_G(_bottomWindow));
 			}
 		}
+
+		if (g_vm->shouldQuit())
+			return 0;
 	} while (result == 0);
 
 	g_scott->glk_window_clear(_G(_bottomWindow));
@@ -235,7 +238,6 @@ int savageIslandMenu(uint8_t **sf, size_t *extent, int recIndex) {
 		return decrunchC64(sf, extent, rec);
 	} else {
 		error("savageIslandMenu: Failed loading file %s\n", rec._appendFile);
-		return 0;
 	}
 }
 
@@ -258,6 +260,7 @@ void appendSIfiles(uint8_t **sf, size_t *extent) {
 	*extent = offset + _G(_saveIslandAppendix1Length) + _G(_saveIslandAppendix2Length);
 	*sf = new uint8_t[*extent];
 	memcpy(*sf, megabuf, *extent);
+	delete[] megabuf;
 }
 
 int mysteriousMenu(uint8_t **sf, size_t *extent, int recindex) {
@@ -284,6 +287,9 @@ int mysteriousMenu(uint8_t **sf, size_t *extent, int recindex) {
 				g_scott->glk_request_char_event(_G(_bottomWindow));
 			}
 		}
+
+		if (g_vm->shouldQuit())
+			return 0;
 	} while (result == 0);
 
 	g_scott->glk_window_clear(_G(_bottomWindow));
@@ -310,7 +316,6 @@ int mysteriousMenu(uint8_t **sf, size_t *extent, int recindex) {
 		break;
 	default:
 		error("mysteriousMenu: Unknown Game");
-		break;
 	}
 
 	int length;
@@ -351,6 +356,9 @@ int mysteriousMenu2(uint8_t **sf, size_t *extent, int recindex) {
 				g_scott->glk_request_char_event(_G(_bottomWindow));
 			}
 		}
+
+		if (g_vm->shouldQuit())
+			return 0;
 	} while (result == 0);
 
 	g_scott->glk_window_clear(_G(_bottomWindow));
@@ -374,7 +382,6 @@ int mysteriousMenu2(uint8_t **sf, size_t *extent, int recindex) {
 		break;
 	default:
 		error("mysteriousMenu2: Unknown Game");
-		break;
 	}
 
 	int length;
@@ -388,7 +395,6 @@ int mysteriousMenu2(uint8_t **sf, size_t *extent, int recindex) {
 		return decrunchC64(sf, extent, rec);
 	} else {
 		error("mysteriousMenu2: Failed loading file %s", filename);
-		return 0;
 	}
 }
 
@@ -424,11 +430,13 @@ int detectC64(uint8_t **sf, size_t *extent) {
 			memcpy(megabuf + newlength + g_C64Registry[index]._parameter, appendix + 2, appendixlen);
 			newlength += appendixlen;
 		}
+		delete[] appendix;
 
 		if (largest_file) {
 			*sf = megabuf;
 			*extent = newlength;
 		}
+		delete[] largest_file;
 
 	} else if (g_C64Registry[index]._type == TYPE_T64) {
 		uint8_t *file_records = *sf + 64;
@@ -471,26 +479,14 @@ int decrunchC64(uint8_t **sf, size_t *extent, C64Rec record) {
 
 	uncompressed = new uint8_t[0xffff];
 
-	char *switches[3];
-	int numSwitches = 0;
-
-	if (record._switches != nullptr) {
-		char string[100];
-		strcpy(string, record._switches);
-		switches[numSwitches] = strtok(string, " ");
-
-		while (switches[numSwitches] != nullptr)
-			switches[++numSwitches] = strtok(nullptr, " ");
-	}
-
 	size_t result = 0;
 
 	for (int i = 1; i <= record._decompressIterations; i++) {
 		/* We only send switches on the iteration specified by parameter */
 		if (i == record._parameter && record._switches != nullptr) {
-			result = unp64(_G(_entireFile), _G(_fileLength), uncompressed, &decompressedLength, switches, numSwitches);
+			result = unp64(_G(_entireFile), _G(_fileLength), uncompressed, &decompressedLength, record._switches);
 		} else
-			result = unp64(_G(_entireFile), _G(_fileLength), uncompressed, &decompressedLength, nullptr, 0);
+			result = unp64(_G(_entireFile), _G(_fileLength), uncompressed, &decompressedLength, nullptr);
 		if (result) {
 			if (_G(_entireFile) != nullptr)
 				delete[] _G(_entireFile);

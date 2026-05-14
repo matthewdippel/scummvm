@@ -23,9 +23,7 @@
 #include "ags/shared/ac/common.h"
 #include "ags/engine/ac/display.h"
 #include "ags/engine/ac/draw.h"
-#include "ags/shared/ac/game_version.h"
 #include "ags/engine/ac/game_setup.h"
-#include "ags/shared/ac/game_setup_struct.h"
 #include "ags/engine/ac/game_state.h"
 #include "ags/engine/ac/global_game.h"
 #include "ags/engine/ac/mouse.h"
@@ -38,6 +36,7 @@
 #include "ags/engine/gfx/graphics_driver.h"
 #include "ags/shared/gui/gui_main.h"
 #include "ags/shared/gui/gui_inv.h"
+#include "ags/engine/main/game_run.h"
 #include "ags/engine/main/graphics_mode.h"
 #include "ags/engine/main/engine_setup.h"
 #include "ags/engine/media/video/video.h"
@@ -50,93 +49,6 @@ namespace AGS3 {
 using namespace AGS::Shared;
 using namespace AGS::Engine;
 
-// Convert guis position and size to proper game resolution.
-// Necessary for pre 3.1.0 games only to sync with modern engine.
-void convert_gui_to_game_resolution(GameDataVersion filever) {
-	if (filever >= kGameVersion_310)
-		return;
-
-	const int mul = _GP(game).GetDataUpscaleMult();
-	for (int i = 0; i < _GP(game).numcursors; ++i) {
-		_GP(game).mcurs[i].hotx *= mul;
-		_GP(game).mcurs[i].hoty *= mul;
-	}
-
-	for (int i = 0; i < _GP(game).numinvitems; ++i) {
-		_GP(game).invinfo[i].hotx *= mul;
-		_GP(game).invinfo[i].hoty *= mul;
-	}
-
-	for (int i = 0; i < _GP(game).numgui; ++i) {
-		GUIMain *cgp = &_GP(guis)[i];
-		cgp->X *= mul;
-		cgp->Y *= mul;
-		if (cgp->Width < 1)
-			cgp->Width = 1;
-		if (cgp->Height < 1)
-			cgp->Height = 1;
-		// This is probably a way to fix GUIs meant to be covering whole screen
-		if (cgp->Width == _GP(game).GetDataRes().Width - 1)
-			cgp->Width = _GP(game).GetDataRes().Width;
-
-		cgp->Width *= mul;
-		cgp->Height *= mul;
-
-		cgp->PopupAtMouseY *= mul;
-
-		for (int j = 0; j < cgp->GetControlCount(); ++j) {
-			GUIObject *guio = cgp->GetControl(j);
-			guio->X *= mul;
-			guio->Y *= mul;
-			guio->Width *= mul;
-			guio->Height *= mul;
-			guio->IsActivated = false;
-			guio->OnResized();
-		}
-	}
-}
-
-// Convert certain coordinates to data resolution (only if it's different from game resolution).
-// Necessary for 3.1.0 and above games with legacy "low-res coordinates" setting.
-void convert_objects_to_data_resolution(GameDataVersion filever) {
-	if (filever < kGameVersion_310 || _GP(game).GetDataUpscaleMult() == 1)
-		return;
-
-	const int mul = _GP(game).GetDataUpscaleMult();
-	for (int i = 0; i < _GP(game).numcharacters; ++i) {
-		_GP(game).chars[i].x /= mul;
-		_GP(game).chars[i].y /= mul;
-	}
-
-	for (auto &inv : _GP(guiinv)) {
-		inv.ItemWidth /= mul;
-		inv.ItemHeight /= mul;
-		inv.OnResized();
-	}
-}
-
-void engine_setup_system_gamesize() {
-	_GP(scsystem).width = _GP(game).GetGameRes().Width;
-	_GP(scsystem).height = _GP(game).GetGameRes().Height;
-	_GP(scsystem).viewport_width = game_to_data_coord(_GP(play).GetMainViewport().GetWidth());
-	_GP(scsystem).viewport_height = game_to_data_coord(_GP(play).GetMainViewport().GetHeight());
-}
-
-void engine_init_resolution_settings(const Size game_size) {
-	Debug::Printf("Initializing resolution settings");
-	_GP(usetup).textheight = get_font_height_outlined(0) + 1;
-
-	Debug::Printf(kDbgMsg_Info, "Game native resolution: %d x %d (%d bit)%s", game_size.Width, game_size.Height, _GP(game).color_depth * 8,
-	              _GP(game).IsLegacyLetterbox() ? " letterbox-by-design" : "");
-
-	convert_gui_to_game_resolution(_G(loaded_game_file_version));
-	convert_objects_to_data_resolution(_G(loaded_game_file_version));
-
-	Rect viewport = RectWH(game_size);
-	_GP(play).SetMainViewport(viewport);
-	_GP(play).SetUIViewport(viewport);
-	engine_setup_system_gamesize();
-}
 
 void engine_adjust_for_rotation_settings() {
 #if 0
@@ -157,16 +69,16 @@ void engine_adjust_for_rotation_settings() {
 
 // Setup gfx driver callbacks and options
 void engine_post_gfxmode_driver_setup() {
-	_G(gfxDriver)->SetCallbackForPolling(update_polled_stuff_if_runtime);
+	_G(gfxDriver)->SetCallbackForPolling(update_polled_stuff);
 	_G(gfxDriver)->SetCallbackToDrawScreen(draw_game_screen_callback, construct_engine_overlay);
-	_G(gfxDriver)->SetCallbackForNullSprite(GfxDriverNullSpriteCallback);
+	_G(gfxDriver)->SetCallbackOnSpriteEvt(GfxDriverSpriteEvtCallback);
 }
 
 // Reset gfx driver callbacks
 void engine_pre_gfxmode_driver_cleanup() {
 	_G(gfxDriver)->SetCallbackForPolling(nullptr);
 	_G(gfxDriver)->SetCallbackToDrawScreen(nullptr, nullptr);
-	_G(gfxDriver)->SetCallbackForNullSprite(nullptr);
+	_G(gfxDriver)->SetCallbackOnSpriteEvt(nullptr);
 	_G(gfxDriver)->SetMemoryBackBuffer(nullptr);
 }
 
@@ -253,16 +165,15 @@ void engine_pre_gfxmode_mouse_cleanup() {
 
 // Fill in _GP(scsystem) struct with display mode parameters
 void engine_setup_scsystem_screen(const DisplayMode &dm) {
-	_GP(scsystem).coldepth = dm.ColorDepth;
 	_GP(scsystem).windowed = dm.IsWindowed();
 	_GP(scsystem).vsync = dm.Vsync;
 }
 
-void engine_post_gfxmode_setup(const Size &init_desktop) {
+void engine_post_gfxmode_setup(const Size &init_desktop, const DisplayMode &old_dm) {
 	DisplayMode dm = _G(gfxDriver)->GetDisplayMode();
 	// If color depth has changed (or graphics mode was inited for the
 	// very first time), we also need to recreate bitmaps
-	bool has_driver_changed = _GP(scsystem).coldepth != dm.ColorDepth;
+	bool has_driver_changed = old_dm.ColorDepth != dm.ColorDepth;
 
 	engine_setup_scsystem_screen(dm);
 	engine_post_gfxmode_driver_setup();

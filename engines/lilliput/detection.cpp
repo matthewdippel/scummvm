@@ -30,7 +30,7 @@ namespace Lilliput {
 
 static const PlainGameDescriptor lilliputGames[] = {
 	// Games
-	{"robin", "Adventures of Robin Hood"},
+	{"robin", "The Adventures of Robin Hood"},
 	{"rome", "Rome: Pathway to Power"},
 	{nullptr, nullptr}
 };
@@ -114,16 +114,16 @@ static const LilliputGameDescription gameDescriptions[] = {
 	{AD_TABLE_END_MARKER, kGameTypeNone}
 };
 
-class LilliputMetaEngineDetection : public AdvancedMetaEngineDetection {
+class LilliputMetaEngineDetection : public AdvancedMetaEngineDetection<LilliputGameDescription> {
 public:
-	LilliputMetaEngineDetection() : AdvancedMetaEngineDetection(gameDescriptions, sizeof(LilliputGameDescription), lilliputGames) {
-	}
-
-	const char *getEngineId() const override {
-		return "lilliput";
+	LilliputMetaEngineDetection() : AdvancedMetaEngineDetection(gameDescriptions, lilliputGames) {
 	}
 
 	const char *getName() const override {
+		return "lilliput";
+	}
+
+	const char *getEngineName() const override {
 		return "Lilliput";
 	}
 

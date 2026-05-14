@@ -28,7 +28,7 @@
 #include "common/events.h"
 #include "common/rendermode.h"
 #include "graphics/cursorman.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/surface.h"
 
 namespace StarTrek {
@@ -48,7 +48,7 @@ Graphics::Graphics(StarTrekEngine *vm) : _vm(vm), _egaMode(false) {
 	if (ConfMan.hasKey("render_mode"))
 		_egaMode = (Common::parseRenderMode(ConfMan.get("render_mode").c_str()) == Common::kRenderEGA) && (_vm->getGameType() != GType_STJR) && !(_vm->getFeatures() & GF_DEMO);
 
-	if (_vm->getGameType() == GType_ST25 && _vm->getPlatform() == Common::kPlatformDOS)
+	if (_vm->getGameType() == GType_ST25 && _vm->getPlatform() != Common::kPlatformAmiga)
 		_font = new Font(_vm);
 
 	_numSprites = 0;
@@ -120,9 +120,7 @@ void Graphics::unlockScreenPixels() {
 void Graphics::clearScreenAndPriBuffer() {
 	Common::fill(_priData, _priData + sizeof(_priData), 0);
 
-	::Graphics::Surface *surface = _vm->_system->lockScreen();
-	surface->fillRect(_screenRect, 0);
-	_vm->_system->unlockScreen();
+	_vm->_system->fillScreen(_screenRect, 0);
 	_vm->_system->updateScreen();
 	_vm->_system->delayMillis(10);
 }

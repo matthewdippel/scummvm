@@ -31,26 +31,20 @@ namespace Scumm {
  */
 class ScummEngine_v4 : public ScummEngine_v5 {
 	friend class ScummEngine_v5;
-public:
-
-	/**
-	 * Prepared savegame used by the original save/load dialog.
-	 * Must be valid as long as the savescreen is active. As we are not
-	 * notified when the savescreen is closed, memory is only freed on a game
-	 * reset, at the destruction of the engine or when the original save/load
-	 * dialog is entered the next time.
-	 */
-	Common::SeekableReadStream *_savePreparedSavegame;
-
-	void prepareSavegame();
-	bool savePreparedSavegame(int slot, char *desc);
 
 public:
 	ScummEngine_v4(OSystem *syst, const DetectorResult &dr);
 
 	void resetScumm() override;
 
+	// Used by MacGui
+	void clearSeriesIQPoints();
+	void updateIQPoints();
+
 protected:
+	const byte _GUIPalette[13]    = {0x00, 0x01, 0x0B, 0x03, 0x00, 0x0B, 0x0B, 0x03, 0x01, 0x00, 0x01, 0x0B, 0x09};
+	const byte _GUIPaletteCGA[13] = {0x00, 0x03, 0x0B, 0x03, 0x00, 0x0B, 0x0B, 0x0F, 0x03, 0x00, 0x0B, 0x0B, 0x05};
+
 	void setupOpcodes() override;
 
 	int readResTypeList(ResType type) override;
@@ -64,9 +58,11 @@ protected:
 
 	void saveVars();
 	void loadVars();
-	void saveIQPoints();
+	void saveIQPoints(const byte *ptr, int size);
 	void loadIQPoints(byte *ptr, int size);
-	void updateIQPoints();
+
+	int getBannerColor(int bannerId) override;
+	void setUpMainMenuControls() override;
 
 	/* Version 4 script opcodes */
 	void o4_ifState();

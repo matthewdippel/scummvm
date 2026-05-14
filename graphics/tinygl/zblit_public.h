@@ -48,12 +48,12 @@ struct BlitTransform {
 		_gTint = gTint;
 		_bTint = bTint;
 	}
-/*
+
 	void scale(int width, int height) {
 		_destinationRectangle.setWidth(width);
 		_destinationRectangle.setHeight(height);
 	}
-*/
+
 	void rotate(int rotation, int originX, int originY) {
 		_rotation = rotation;
 		_originX = originX;
@@ -94,11 +94,11 @@ TinyGL::BlitImage *tglGenBlitImage();
 /**
 @brief Copies a surface data into the provided blit image.
 @param pointer to the blit image.
-@param referece to the surface that's being copied
+@param reference to the surface that's being copied
 @param color key value for alpha color keying
 @param boolean that enables alpha color keying
 */
-void tglUploadBlitImage(TinyGL::BlitImage *blitImage, const Graphics::Surface &surface, uint32 colorKey, bool applyColorKey);
+void tglUploadBlitImage(TinyGL::BlitImage *blitImage, const Graphics::Surface &surface, uint32 colorKey, bool applyColorKey, bool zBuffer = false);
 
 /**
 @brief Destroys an instance of blit image.
@@ -135,13 +135,6 @@ void tglBlit(TinyGL::BlitImage *blitImage, const TinyGL::BlitTransform &transfor
 @param y destination coordinate.
 */
 void tglBlit(TinyGL::BlitImage *blitImage, int x, int y);
-
-/**
-@brief Blits an image to the color buffer without performing any type of blending.
-@param pointer to the blit image.
-@param blit transform information.
-*/
-void tglBlitNoBlend(TinyGL::BlitImage *blitImage, const TinyGL::BlitTransform &transform);
 
 /**
 @brief Blits an image to the color buffer without performinc any type of blending, image transformation or tinting.

@@ -139,7 +139,6 @@ void CPetGlyphs::draw(CScreenManager *screenManager) {
 	if (_highlightIndex != -1) {
 		int index = getHighlightedIndex(_highlightIndex);
 		if (index != -1) {
-			Point tempPoint;
 			Point pt = getPosition(index);
 			pt -= Point(12, 13);
 			_selection.translate(pt.x, pt.y);
@@ -413,10 +412,10 @@ bool CPetGlyphs::KeyCharMsg(int key) {
 	return false;
 }
 
-bool CPetGlyphs::VirtualKeyCharMsg(CVirtualKeyCharMsg *msg) {
+bool CPetGlyphs::ActionMsg(CActionMsg *msg) {
 	if (_highlightIndex >= 0) {
 		CPetGlyph *glyph = getGlyph(_highlightIndex);
-		if (glyph && glyph->VirtualKeyCharMsg(msg))
+		if (glyph && glyph->ActionMsg(msg))
 			return true;
 	}
 

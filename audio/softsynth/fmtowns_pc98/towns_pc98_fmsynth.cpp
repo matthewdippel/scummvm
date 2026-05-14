@@ -967,8 +967,7 @@ TownsPC98_FmSynth::TownsPC98_FmSynth(Audio::Mixer *mixer, EmuType type) :
 	memset(&_timers[0], 0, sizeof(ChipTimer));
 	memset(&_timers[1], 0, sizeof(ChipTimer));
 
-	memset(_registers[0], 0, 255);
-	memset(_registers[1], 0, 255);
+	memset(_registers, 0, sizeof(_registers));
 
 	_timerProcIdle = new ChipTimerProc(this, &TownsPC98_FmSynth::idleTimerCallback);
 	_timerProcA = new ChipTimerProc(this, &TownsPC98_FmSynth::timerCallbackA);
@@ -1056,8 +1055,7 @@ void TownsPC98_FmSynth::reset() {
 		_chanInternal[i].updateEnvelopeParameters = false;
 	}
 
-	memset(_registers[0], 0, 255);
-	memset(_registers[1], 0, 255);
+	memset(_registers, 0, sizeof(_registers));
 
 #ifdef ENABLE_SNDTOWNS98_WAITCYCLES
 	_waitCycleElapsedWrites.clear();
@@ -1828,10 +1826,6 @@ const uint8 TownsPC98_FmSynth::_percussionData[] = {
 	58, 145, 244, 145, 43, 35, 9, 171, 16, 110, 25, 8, 28, 74, 162, 128, 26, 27, 82, 45, 136, 153, 18, 8, 136, 8
 };
 #endif // DISABLE_PC98_RHYTHM_CHANNEL
-
-TownsPC98_FmSynth::ChanInternal::ChanInternal() {
-	memset(this, 0, sizeof(ChanInternal));
-}
 
 TownsPC98_FmSynth::ChanInternal::~ChanInternal() {
 	for (uint i = 0; i < ARRAYSIZE(opr); ++i)

@@ -20,6 +20,7 @@
  */
 
 #include "ags/engine/media/audio/sound_clip.h"
+#include "ags/engine/media/audio/audio_defines.h"
 #include "ags/ags.h"
 
 namespace AGS3 {
@@ -124,7 +125,7 @@ SoundClipWaveBase::SoundClipWaveBase(Audio::AudioStream *stream, bool repeat) :
 	_vol255 = 255;
 
 	if (repeat) {
-		Audio::SeekableAudioStream *str = dynamic_cast<Audio::SeekableAudioStream *>(stream);
+		Audio::RewindableAudioStream *str = dynamic_cast<Audio::RewindableAudioStream *>(stream);
 		if (str)
 			_stream = new Audio::LoopingAudioStream(str, 0);
 	}
@@ -146,8 +147,15 @@ void SoundClipWaveBase::poll() {
 
 int SoundClipWaveBase::play() {
 	if (_soundType != Audio::Mixer::kPlainSoundType) {
-		_mixer->playStream(_soundType, &_soundHandle, _stream,
-			-1, _vol255, 0, DisposeAfterUse::NO);
+		if (!_stream) {
+			warning("Sound stream is null");
+			return 0;
+		}
+		if (_stream->getRate() < 262144)  // maximum accepted value in audio/rate.cpp
+			_mixer->playStream(_soundType, &_soundHandle, _stream,
+							   -1, _vol255, 0, DisposeAfterUse::NO);
+		else
+			warning("Invalid sound clip sample rate: %d! Skipping", _stream->getRate());
 	} else {
 		_waitingToPlay = true;
 	}
@@ -193,12 +201,34 @@ bool SoundClipWaveBase::is_paused() {
 	return _state == SoundClipPaused;
 }
 
-void SoundClipWaveBase::seek(int offset) {
+int SoundClipWaveBase::pos_to_posms(int pos) const {
+	// The pos meaning depends on the sound type:
+	// - WAV / VOC - the sample number
+	// - OGG / MP3 - milliseconds
+	// - MOD - the pattern number
+	switch (get_sound_type()) {
+	case MUS_WAVE: // Pos is in samples
+		if (!_stream)
+			return 0;
+		return static_cast<int>((static_cast<int64_t>(pos) * 1000) / _stream->getRate());
+	case MUS_MOD:  /* TODO: reimplement */
+		// better say that it does not work than return wrong value
+		return 0;
+	default:
+		return pos;
+	}
+}
+
+void SoundClipWaveBase::seek(int pos) {
+	seek_ms(pos_to_posms(pos));
+}
+
+void SoundClipWaveBase::seek_ms(int pos_ms) {
 	Audio::SeekableAudioStream *stream =
 		dynamic_cast<Audio::SeekableAudioStream *>(_stream);
 
 	if (stream) {
-		stream->seek(Audio::Timestamp(offset));
+		stream->seek(Audio::Timestamp(pos_ms));
 	} else {
 		warning("Audio stream did not support seeking");
 	}
@@ -229,12 +259,22 @@ void SoundClipWaveBase::set_panning(int newPanning) {
 }
 
 void SoundClipWaveBase::set_speed(int new_speed) {
-	warning("TODO: SoundClipWaveBase::set_speed");
 	_speed = new_speed;
+
+	if (!_stream) {
+		warning("set_speed: sound stream is null");
+		return;
+	}
+
+	// get initial channel rate
+	const uint32_t rate = _stream->getRate();
+
+	// default speed = 1000, calculate new sample rate proportionally
+	_mixer->setChannelRate(_soundHandle, rate * new_speed / 1000);
 }
 
 void SoundClipWaveBase::adjust_volume() {
-	_mixer->setChannelVolume(_soundHandle, _vol255);
+	_mixer->setChannelVolume(_soundHandle, get_final_volume());
 }
 
 } // namespace AGS3

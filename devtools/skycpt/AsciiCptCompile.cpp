@@ -20,7 +20,6 @@
  */
 
 // AsciiCptCompile.cpp
-//
 
 #include "stdafx.h"
 #include <stdio.h>
@@ -41,8 +40,8 @@ void doCompile(FILE *inf, FILE *debOutf, FILE *resOutf, TextFile *cptDef, FILE *
 
 int main(int argc, char* argv[])
 {
-	uint8 testBuf[4] = { 0x11, 0x22, 0x33, 0x44 };
-	if (*(uint32 *)testBuf != 0x44332211) {
+	volatile uint32 t = 0x11223344;
+	if (*((volatile uint8 *)&t) != 0x44) {
 		printf("Sorry, this program only works on little endian systems.\nGoodbye.\n");
 		return 0;
 	}

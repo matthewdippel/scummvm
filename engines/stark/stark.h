@@ -59,6 +59,35 @@ class Settings;
 class GameChapter;
 class GameMessage;
 
+enum STARKAction {
+	kActionNone,
+	kActionDiaryMenu,
+	kActionSaveGame,
+	kActionLoadGame,
+	kActionConversationLog,
+	kActionAprilsDiary,
+	kActionVideoReplay,
+	kActionGameSettings,
+	kActionSaveScreenshot,
+	kActionToggleSubtitles,
+	kActionQuitToMenu,
+	kActionCycleBackInventory,
+	kActionCycleForwardInventory,
+	kActionInventory,
+	kActionDisplayExits,
+	kActionExitGame,
+	kActionPause,
+	kActionInventoryScrollUp,
+	kActionInventoryScrollDown,
+	kActionDialogueScrollUp,
+	kActionDialogueScrollDown,
+	kActionPrevDialogue,
+	kActionNextDialogue,
+	kActionSelectDialogue,
+	kActionSkip
+};
+
+
 class StarkEngine : public Engine {
 public:
 	StarkEngine(OSystem *syst, const ADGameDescription *gameDesc);
@@ -79,8 +108,8 @@ protected:
 	// Engine APIs
 	Common::Error run() override;
 	bool hasFeature(EngineFeature f) const override;
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 	void pauseEngineIntern(bool pause) override;

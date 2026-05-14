@@ -73603,7 +73603,7 @@ static const byte kEoB2PcmSoundEffectsFinaleFMTowns[36768] = {
 
 static const ByteProvider kEoB2PcmSoundEffectsFinaleFMTownsProvider = { ARRAYSIZE(kEoB2PcmSoundEffectsFinaleFMTowns), kEoB2PcmSoundEffectsFinaleFMTowns };
 
-static const uint16 kEoB2FontDmpSearchTblFMTowns[149] = {
+static const uint16 kEoB2FontLookupTblFMTowns[149] = {
 	0x4083, 0x4283, 0x4483, 0x4683, 0x4883, 0x8383, 0x8583, 0x8783, 0x6283, 0x4183, 0x4383, 0x4583, 0x4783, 0x4983, 0x4a83, 0x4c83,
 	0x4e83, 0x5083, 0x5283, 0x5483, 0x5683, 0x5883, 0x5a83, 0x5c83, 0x5e83, 0x6083, 0x6383, 0x6583, 0x6783, 0x6983, 0x6a83, 0x6b83,
 	0x6c83, 0x6d83, 0x6e83, 0x7183, 0x7483, 0x7783, 0x7a83, 0x7d83, 0x7e83, 0x8083, 0x8183, 0x8283, 0x8483, 0x8683, 0x8883, 0x8983,
@@ -73616,7 +73616,7 @@ static const uint16 kEoB2FontDmpSearchTblFMTowns[149] = {
 	0x9681, 0x4881, 0x8381, 0x8481, 0x0000
 };
 
-static const Uint16Provider kEoB2FontDmpSearchTblFMTownsProvider = { ARRAYSIZE(kEoB2FontDmpSearchTblFMTowns), kEoB2FontDmpSearchTblFMTowns };
+static const Uint16Provider kEoB2FontLookupTblFMTownsProvider = { ARRAYSIZE(kEoB2FontLookupTblFMTowns), kEoB2FontLookupTblFMTowns };
 
 static const char *const kEoB2SoundFilesIntroFMTowns[1] = {
 	"INTRO"

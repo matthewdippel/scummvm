@@ -24,8 +24,9 @@
 
 namespace Scumm {
 
-IMuseDigiTriggersHandler::IMuseDigiTriggersHandler(IMuseDigital *engine) {
+IMuseDigiTriggersHandler::IMuseDigiTriggersHandler(IMuseDigital *engine, Common::Mutex *mutex) {
 	_engine = engine;
+	_mutex = mutex;
 	_emptyMarker[0] = '\0';
 }
 
@@ -40,11 +41,40 @@ int IMuseDigiTriggersHandler::deinit() {
 }
 
 int IMuseDigiTriggersHandler::clearAllTriggers() {
+	Common::StackLock lock(*_mutex);
+
 	for (int l = 0; l < DIMUSE_MAX_TRIGGERS; l++) {
 		_trigs[l].sound = 0;
+		memset(_trigs[l].text, 0, sizeof(_trigs[l].text));
+		_trigs[l].opcode = 0;
+		_trigs[l].a = 0;
+		_trigs[l].b = 0;
+		_trigs[l].c = 0;
+		_trigs[l].d = 0;
+		_trigs[l].e = 0;
+		_trigs[l].f = 0;
+		_trigs[l].g = 0;
+		_trigs[l].h = 0;
+		_trigs[l].i = 0;
+		_trigs[l].j = 0;
 		_trigs[l].clearLater = 0;
-		_defers[l].counter = 0;
 	}
+
+	for (int l = 0; l < DIMUSE_MAX_DEFERS; l++) {
+		_defers[l].counter = 0;
+		_defers[l].opcode = 0;
+		_defers[l].a = 0;
+		_defers[l].b = 0;
+		_defers[l].c = 0;
+		_defers[l].d = 0;
+		_defers[l].e = 0;
+		_defers[l].f = 0;
+		_defers[l].g = 0;
+		_defers[l].h = 0;
+		_defers[l].i = 0;
+		_defers[l].j = 0;
+	}
+
 	_defersOn = 0;
 	_midProcessing = 0;
 	return 0;
@@ -88,6 +118,8 @@ void IMuseDigiTriggersHandler::saveLoad(Common::Serializer &ser) {
 }
 
 int IMuseDigiTriggersHandler::setTrigger(int soundId, char *marker, int opcode, int d, int e, int f, int g, int h, int i, int j, int k, int l, int m, int n) {
+	Common::StackLock lock(*_mutex);
+
 	if (soundId == 0) {
 		return -5;
 	}
@@ -122,11 +154,14 @@ int IMuseDigiTriggersHandler::setTrigger(int soundId, char *marker, int opcode, 
 			return 0;
 		}
 	}
+
 	debug(5, "IMuseDigiTriggersHandler::setTrigger(): ERROR: unable to allocate trigger \"%s\" for sound %d, every slot is full", marker, soundId);
 	return -6;
 }
 
 int IMuseDigiTriggersHandler::checkTrigger(int soundId, char *marker, int opcode) {
+	Common::StackLock lock(*_mutex);
+
 	int r = 0;
 	for (int l = 0; l < DIMUSE_MAX_TRIGGERS; l++) {
 		if (_trigs[l].sound != 0) {
@@ -143,6 +178,8 @@ int IMuseDigiTriggersHandler::checkTrigger(int soundId, char *marker, int opcode
 }
 
 int IMuseDigiTriggersHandler::clearTrigger(int soundId, char *marker, int opcode) {
+	Common::StackLock lock(*_mutex);
+
 	for (int l = 0; l < DIMUSE_MAX_TRIGGERS; l++) {
 		if ((_trigs[l].sound != 0) && (soundId == -1 || _trigs[l].sound == soundId) &&
             (!strcmp(marker, _emptyMarker) || !strcmp(marker, _trigs[l].text)) &&
@@ -161,6 +198,7 @@ int IMuseDigiTriggersHandler::clearTrigger(int soundId, char *marker, int opcode
 void IMuseDigiTriggersHandler::processTriggers(int soundId, char *marker) {
 	char textBuffer[256];
 	int r;
+
 	if (strlen(marker) >= 256) {
 		debug(5, "IMuseDigiTriggersHandler::processTriggers(): ERROR: the input marker string is oversized");
 		return;
@@ -186,7 +224,7 @@ void IMuseDigiTriggersHandler::processTriggers(int soundId, char *marker) {
 		_trigs[l].sound = 0;
 
 		debug(5, "IMuseDigiTriggersHandler::processTriggers(): executing trigger for soundId %d and marker '%s'", soundId, marker);
-		if (_trigs[l].opcode == 0) {
+		if (_trigs[l].opcode == DIMUSE_C_SCRIPT_CALLBACK) {
 			// Call the script callback (a function which sets _stoppingSequence to 1)
 			_engine->scriptTriggerCallback(_textBuffer);
 		} else {
@@ -221,9 +259,12 @@ void IMuseDigiTriggersHandler::processTriggers(int soundId, char *marker) {
 }
 
 int IMuseDigiTriggersHandler::deferCommand(int count, int opcode, int c, int d, int e, int f, int g, int h, int i, int j, int k, int l, int m, int n) {
+	Common::StackLock lock(*_mutex);
+
 	if (!count) {
 		return -5;
 	}
+
 	for (int index = 0; index < DIMUSE_MAX_DEFERS; index++) {
 		if (!_defers[index].counter) {
 			_defers[index].counter = count;
@@ -259,7 +300,9 @@ void IMuseDigiTriggersHandler::loop() {
 		_defers[l].counter--;
 
 		if (_defers[l].counter == 1) {
-			if (_defers[l].opcode != 0) {
+			if (_defers[l].opcode == DIMUSE_C_SCRIPT_CALLBACK) {
+				_engine->scriptTriggerCallback(_trigs[l].text);
+			} else {
 				if (_defers[l].opcode < 30) {
 					_engine->cmdsHandleCmd(_trigs[l].opcode, nullptr,
 						_trigs[l].a, _trigs[l].b,
@@ -268,21 +311,22 @@ void IMuseDigiTriggersHandler::loop() {
 						_trigs[l].g, _trigs[l].h,
 						_trigs[l].i, _trigs[l].j);
 				}
-			} else {
-				_engine->scriptTriggerCallback(_trigs[l].text);
 			}
 		}
 	}
 }
 
 int IMuseDigiTriggersHandler::countPendingSounds(int soundId) {
+	Common::StackLock lock(*_mutex);
+
 	int r = 0;
 	for (int l = 0; l < DIMUSE_MAX_TRIGGERS; l++) {
 		if (!_trigs[l].sound)
 			continue;
 
 		int opcode = _trigs[l].opcode;
-		if ((opcode == 8 && _trigs[l].a == soundId) || (opcode == 26 && _trigs[l].b == soundId)) {
+		if ((opcode == DIMUSE_C_START_SND && _trigs[l].a == soundId) ||
+			(opcode == DIMUSE_C_SWITCH_STREAM && _trigs[l].b == soundId)) {
 			r++;
 		}
 	}
@@ -292,7 +336,8 @@ int IMuseDigiTriggersHandler::countPendingSounds(int soundId) {
 			continue;
 
 		int opcode = _defers[l].opcode;
-		if ((opcode == 8 && _defers[l].a == soundId) || (opcode == 26 && _defers[l].b == soundId)) {
+		if ((opcode == DIMUSE_C_START_SND && _defers[l].a == soundId) ||
+			(opcode == DIMUSE_C_SWITCH_STREAM && _defers[l].b == soundId)) {
 			r++;
 		}
 	}

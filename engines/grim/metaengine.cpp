@@ -30,18 +30,44 @@
 
 namespace Grim {
 
-class GrimMetaEngine : public AdvancedMetaEngine {
+static const ADExtraGuiOptionsMap gameGuiOptions[] = {
+	{
+		GAMEOPTION_LOAD_DATAUSR,
+		{
+			_s("Load user patch (unsupported)"),
+			_s("Load an user patch. Please note that the ScummVM team doesn't provide support for using such patches."),
+			"datausr_load",
+			false,
+			0,
+			0
+		}
+	},
+	{
+		GAMEOPTION_SHOW_FPS,
+		{
+			_s("Show FPS"),
+			_s("Show the current FPS-rate, while you play."),
+			"show_fps",
+			false,
+			0,
+			0
+		}
+	},
+
+	AD_EXTRA_GUI_OPTIONS_TERMINATOR
+};
+
+class GrimMetaEngine : public AdvancedMetaEngine<Grim::GrimGameDescription> {
 public:
 	const char *getName() const override {
 		return "grim";
 	}
 
-	Common::Error createInstance(OSystem *syst, Engine **engine) override {
-		Engines::upgradeTargetIfNecessary(obsoleteGameIDsTable);
-		return AdvancedMetaEngine::createInstance(syst, engine);
+	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override {
+		return gameGuiOptions;
 	}
 
-	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override;
+	Common::Error createInstance(OSystem *syst, Engine **engine, const Grim::GrimGameDescription *desc) const override;
 
 	bool hasFeature(MetaEngineFeature f) const override;
 
@@ -51,11 +77,16 @@ public:
 
 };
 
-Common::Error GrimMetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const {
+Common::Error GrimMetaEngine::createInstance(OSystem *syst, Engine **engine, const Grim::GrimGameDescription *desc) const {
 	const GrimGameDescription *gd = (const GrimGameDescription *)desc;
 
 	if (gd->gameType == GType_MONKEY4) {
 #ifdef ENABLE_MONKEY4
+#if !defined(USE_MPEG2)
+		if (gd->desc.platform == Common::kPlatformPS2) {
+			return Common::Error(Common::kUnsupportedGameidError, _s("Escape from Monkey Island PS2 support required MPEG2 support, which is not compiled in"));
+		}
+#endif
 		*engine = new EMIEngine(syst, gd->desc.flags, gd->gameType, gd->desc.platform, gd->desc.language);
 #else
 		return Common::Error(Common::kUnsupportedGameidError, _s("Escape from Monkey Island support is not compiled in"));
@@ -92,19 +123,24 @@ Common::KeymapArray GrimMetaEngine::initKeymaps(const char *target) const {
 
 SaveStateList GrimMetaEngine::listSaves(const char *target) const {
 	Common::String gameId = ConfMan.get("gameid", target);
+	Common::String extra = ConfMan.get("extra", target);
+	const bool isDemo = extra.contains("Demo");
 	Common::Platform platform = Common::parsePlatform(ConfMan.get("platform", target));
 	Common::SaveFileManager *saveFileMan = g_system->getSavefileManager();
 	Common::StringArray filenames;
 	Common::String pattern = gameId == "monkey4" ? "efmi###.gsv" : "grim##.gsv";
+	SaveStateList saveList;
+	char str[256];
+	int32 strSize;
 
 	if (platform == Common::kPlatformPS2)
 		pattern = "efmi###.ps2";
 
+	if (isDemo)
+		return saveList; // Demos do not support saving
+
 	filenames = saveFileMan->listSavefiles(pattern);
 
-	SaveStateList saveList;
-	char str[256];
-	int32 strSize;
 	for (Common::StringArray::const_iterator file = filenames.begin(); file != filenames.end(); ++file) {
 		// Obtain the last digits of the filename, since they correspond to the save slot
 		int slotNum = atoi(file->c_str() + 4);

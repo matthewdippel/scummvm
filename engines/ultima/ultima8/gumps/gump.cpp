@@ -20,13 +20,14 @@
  */
 
 #include "ultima/ultima8/gumps/gump.h"
-#include "ultima/ultima8/graphics/render_surface.h"
-#include "ultima/ultima8/graphics/shape.h"
-#include "ultima/ultima8/graphics/shape_frame.h"
-#include "ultima/ultima8/graphics/shape_archive.h"
+#include "ultima/ultima8/gfx/render_surface.h"
+#include "ultima/ultima8/gfx/shape.h"
+#include "ultima/ultima8/gfx/shape_frame.h"
+#include "ultima/ultima8/gfx/shape_archive.h"
 #include "ultima/ultima8/games/game_data.h"
 #include "ultima/ultima8/gumps/gump_notify_process.h"
 #include "ultima/ultima8/kernel/kernel.h"
+#include "ultima/ultima8/kernel/mouse.h"
 #include "ultima/ultima8/kernel/object_manager.h"
 #include "ultima/ultima8/ultima8.h"
 
@@ -56,12 +57,7 @@ Gump::~Gump() {
 	_focusChild = nullptr;
 
 	// Delete all children
-	Std::list<Gump *>::iterator it = _children.begin();
-	Std::list<Gump *>::iterator end = _children.end();
-
-	while (it != end) {
-		Gump *g = *it;
-		it = _children.erase(it);
+	for (auto *g : _children) {
 		delete g;
 	}
 }
@@ -132,20 +128,15 @@ void Gump::Close(bool no_del) {
 }
 
 void Gump::RenderSurfaceChanged() {
-	// Iterate all children
-	Std::list<Gump *>::reverse_iterator it = _children.rbegin();
-	Std::list<Gump *>::reverse_iterator end = _children.rend();
-
-	while (it != end) {
-		(*it)->RenderSurfaceChanged();
-		++it;
+	for (auto *g : _children) {
+		g->RenderSurfaceChanged();
 	}
 }
 
 void Gump::run() {
 	// Iterate all children
-	Std::list<Gump *>::iterator it = _children.begin();
-	Std::list<Gump *>::iterator end = _children.end();
+	auto it = _children.begin();
+	const auto end = _children.end();
 
 	while (it != end) {
 		Gump *g = *it;
@@ -173,8 +164,8 @@ void Gump::CloseItemDependents() {
 	}
 
 	// Pass the MapChanged message to all the children
-	Std::list<Gump *>::iterator it = _children.begin();
-	Std::list<Gump *>::iterator end = _children.end();
+	auto it = _children.begin();
+	const auto end = _children.end();
 
 	while (it != end) {
 		Gump *g = *it;
@@ -199,13 +190,13 @@ bool Gump::GetMouseCursor(int32 mx, int32 my, Shape &shape, int32 &frame) {
 	bool ret = false;
 
 	// This reverse iterates the children
-	Std::list<Gump *>::reverse_iterator it;
-	for (it = _children.rbegin(); it != _children.rend(); ++it)
+	for (auto it = _children.reverse_begin(); it != _children.end(); --it)
 	{
 		Gump *g = *it;
 
-		// Not if closing
-		if (g->_flags & FLAG_CLOSING) continue;
+		// Not if closing or hidden
+		if (g->_flags & FLAG_CLOSING || g->IsHidden())
+			continue;
 
 		// It's got the point
 		if (g->PointOnGump(mx, my))
@@ -231,13 +222,12 @@ void Gump::Paint(RenderSurface *surf, int32 lerp_factor, bool scaled) {
 	surf->SetOrigin(ox + nx, oy + ny);
 
 	// Get Old Clipping Rect
-	Rect old_rect;
-	surf->GetClippingRect(old_rect);
+	Common::Rect32 old_rect = surf->getClippingRect();
 
 	// Set new clipping rect
-	Rect new_rect = _dims;
+	Common::Rect32 new_rect(_dims);
 	new_rect.clip(old_rect);
-	surf->SetClippingRect(new_rect);
+	surf->setClippingRect(new_rect);
 
 	// Paint This
 	PaintThis(surf, lerp_factor, scaled);
@@ -246,7 +236,7 @@ void Gump::Paint(RenderSurface *surf, int32 lerp_factor, bool scaled) {
 	PaintChildren(surf, lerp_factor, scaled);
 
 	// Reset The Clipping Rect
-	surf->SetClippingRect(old_rect);
+	surf->setClippingRect(old_rect);
 
 	// Reset The Origin
 	surf->SetOrigin(ox, oy);
@@ -258,17 +248,10 @@ void Gump::PaintThis(RenderSurface *surf, int32 /*lerp_factor*/, bool /*scaled*/
 }
 
 void Gump::PaintChildren(RenderSurface *surf, int32 lerp_factor, bool scaled) {
-	// Iterate all children
-	Std::list<Gump *>::iterator it = _children.begin();
-	Std::list<Gump *>::iterator end = _children.end();
-
-	while (it != end) {
-		Gump *g = *it;
+	for (auto *g : _children) {
 		// Paint if not closing
 		if (!(g->_flags & FLAG_CLOSING))
 			g->Paint(surf, lerp_factor, scaled);
-
-		++it;
 	}
 }
 
@@ -287,18 +270,17 @@ void Gump::PaintCompositing(RenderSurface *surf, int32 lerp_factor,
 	surf->SetOrigin(0, 0);
 
 	// Get Old Clipping Rect
-	Rect old_rect;
-	surf->GetClippingRect(old_rect);
+	Common::Rect32 old_rect = surf->getClippingRect();
 
 	// Set new clipping rect
-	Rect new_rect(_dims);
+	Common::Rect32 new_rect(_dims);
 	GumpRectToScreenSpace(new_rect, ROUND_OUTSIDE);
 	new_rect.clip(old_rect);
-	surf->SetClippingRect(new_rect);
+	surf->setClippingRect(new_rect);
 
 	// Iterate all children
-	Std::list<Gump *>::reverse_iterator it = _children.rbegin();
-	Std::list<Gump *>::reverse_iterator end = _children.rend();
+	auto it = _children.reverse_begin();
+	const auto end = _children.end();
 
 	while (it != end) {
 		Gump *g = *it;
@@ -306,14 +288,14 @@ void Gump::PaintCompositing(RenderSurface *surf, int32 lerp_factor,
 		if (!g->IsClosing())
 			g->PaintCompositing(surf, lerp_factor, sx, sy);
 
-		++it;
+		--it;
 	}
 
 	// Paint This
 	PaintComposited(surf, lerp_factor, sx, sy);
 
 	// Reset The Clipping Rect
-	surf->SetClippingRect(old_rect);
+	surf->setClippingRect(old_rect);
 
 	// Reset The Origin
 	surf->SetOrigin(ox, oy);
@@ -328,13 +310,13 @@ Gump *Gump::FindGump(int mx, int my) {
 	Gump *gump = nullptr;
 
 	// Iterate all children
-	Std::list<Gump *>::reverse_iterator it = _children.rbegin();
-	Std::list<Gump *>::reverse_iterator end = _children.rend();
+	auto it = _children.reverse_begin();
+	const auto end = _children.end();
 
 	while (it != end && !gump) {
 		Gump *g = *it;
 		gump = g->FindGump(gx, gy);
-		++it;
+		--it;
 	}
 
 	// it's over a child
@@ -350,8 +332,7 @@ Gump *Gump::FindGump(int mx, int my) {
 
 void Gump::setRelativePosition(Gump::Position pos, int xoffset, int yoffset) {
 	if (_parent) {
-		Rect rect;
-		_parent->GetDims(rect);
+		Common::Rect32 rect = _parent->getDims();
 
 		switch (pos) {
 		case CENTER:
@@ -375,6 +356,12 @@ void Gump::setRelativePosition(Gump::Position pos, int xoffset, int yoffset) {
 			break;
 		case BOTTOM_CENTER:
 			Move(rect.width() / 2 - _dims.width() / 2 + xoffset, rect.height() - _dims.height() + yoffset);
+			break;
+		case LEFT_CENTER:
+			Move(xoffset, rect.height() / 2 - _dims.height() / 2 + yoffset);
+			break;
+		case RIGHT_CENTER:
+			Move(rect.width() - _dims.width() + xoffset, rect.height() / 2 - _dims.height() / 2 + yoffset);
 			break;
 		default:
 			break;
@@ -403,8 +390,7 @@ bool Gump::PointOnGump(int mx, int my) {
 	}
 
 	// reverse-iterate children
-	Std::list<Gump *>::reverse_iterator it;
-	for (it = _children.rbegin(); it != _children.rend(); ++it) {
+	for (auto it = _children.reverse_begin(); it != _children.end(); --it) {
 		Gump *g = *it;
 
 		// It's got the point
@@ -451,7 +437,7 @@ void Gump::GumpToParent(int32 &gx, int32 &gy, PointRoundDir) {
 }
 
 // Transform a rectangle to screenspace from gumpspace
-void Gump::GumpRectToScreenSpace(Rect &gr, RectRoundDir r) {
+void Gump::GumpRectToScreenSpace(Common::Rect32 &gr, RectRoundDir r) {
 	PointRoundDir tl = (r == ROUND_INSIDE ? ROUND_BOTTOMRIGHT : ROUND_TOPLEFT);
 	PointRoundDir br = (r == ROUND_OUTSIDE ? ROUND_BOTTOMRIGHT : ROUND_TOPLEFT);
 
@@ -467,7 +453,7 @@ void Gump::GumpRectToScreenSpace(Rect &gr, RectRoundDir r) {
 }
 
 // Transform a rectangle to gumpspace from screenspace
-void Gump::ScreenSpaceToGumpRect(Rect &sr, RectRoundDir r) {
+void Gump::ScreenSpaceToGumpRect(Common::Rect32 &sr, RectRoundDir r) {
 	PointRoundDir tl = (r == ROUND_INSIDE ? ROUND_BOTTOMRIGHT : ROUND_TOPLEFT);
 	PointRoundDir br = (r == ROUND_OUTSIDE ? ROUND_BOTTOMRIGHT : ROUND_TOPLEFT);
 
@@ -490,12 +476,12 @@ uint16 Gump::TraceObjId(int32 mx, int32 my) {
 	uint16 objId_ = 0;
 
 	// reverse-iterate children
-	Std::list<Gump *>::reverse_iterator it;
-	for (it = _children.rbegin(); it != _children.rend(); ++it) {
+	for (auto it = _children.reverse_begin(); it != _children.end(); --it) {
 		Gump *g = *it;
 
-		// Not if closing
-		if (g->_flags & FLAG_CLOSING) continue;
+		// Not if closing or hidden
+		if (g->_flags & FLAG_CLOSING || g->IsHidden())
+			continue;
 
 		// It's got the point
 		if (g->PointOnGump(gx, gy)) objId_ = g->TraceObjId(gx, gy);
@@ -522,13 +508,7 @@ Gump *Gump::FindGump(const FindGumpPredicate predicate, bool recursive) {
 	if (predicate(this))
 		return this;
 
-	// Iterate all children
-	Std::list<Gump *>::iterator  it = _children.begin();
-	Std::list<Gump *>::iterator  end = _children.end();
-
-	for (; it != end; ++it) {
-		Gump *g = *it;
-
+	for (auto *g : _children) {
 		// Not if closing
 		if (g->_flags & FLAG_CLOSING)
 			continue;
@@ -541,20 +521,15 @@ Gump *Gump::FindGump(const FindGumpPredicate predicate, bool recursive) {
 		return nullptr;
 
 	// Recursive Iterate all children
-	it = _children.begin();
-	end = _children.end();
-
-	for (; it != end; ++it) {
-		Gump *g = (*it);
-
+	for (auto *g : _children) {
 		// Not if closing
 		if (g->_flags & FLAG_CLOSING)
 			continue;
 
-		g = g->FindGump(predicate, recursive);
+		Gump *match = g->FindGump(predicate, recursive);
 
-		if (g)
-			return g;
+		if (match)
+			return match;
 	}
 
 	return nullptr;
@@ -562,7 +537,7 @@ Gump *Gump::FindGump(const FindGumpPredicate predicate, bool recursive) {
 
 // Makes this gump the focus
 void Gump::MakeFocus() {
-	// By default we WONT do anything
+	// By default we WON'T do anything
 	if (_parent) {
 		if (_parent->_focusChild) _parent->_focusChild->OnFocus(false);
 		_parent->_focusChild = this;
@@ -576,9 +551,9 @@ void Gump::FindNewFocusChild() {
 	_focusChild = nullptr;
 
 	// Now add the gump to use as the new focus
-	Std::list<Gump *>::reverse_iterator	it = _children.rbegin();
+	const auto it = _children.reverse_begin();
 
-	if (it != _children.rend()) {
+	if (it != _children.end()) {
 		(*it)->MakeFocus();
 	}
 }
@@ -593,8 +568,8 @@ void Gump::AddChild(Gump *gump, bool take_focus) {
 	if (old_parent) old_parent->RemoveChild(gump);
 
 	// Now add the gump in the correct spot
-	Std::list<Gump *>::iterator  it = _children.begin();
-	Std::list<Gump *>::iterator  end = _children.end();
+	auto it = _children.begin();
+	const auto end = _children.end();
 
 	for (; it != end; ++it) {
 		Gump *other = *it;
@@ -602,7 +577,7 @@ void Gump::AddChild(Gump *gump, bool take_focus) {
 		// Why don't we check for FLAG_CLOSING here?
 		// Because we want to make sure that the sort order is always valid
 
-		// If we are same layer as focus and we wont take it, we will not be
+		// If we are same layer as focus and we won't take it, we will not be
 		// placed in front of it
 		if (!take_focus && other == _focusChild && other->_layer == gump->_layer)
 			break;
@@ -642,8 +617,8 @@ void Gump::MoveChildToFront(Gump *gump) {
 
 	_children.remove(gump);
 
-	Std::list<Gump *>::iterator  it = _children.begin();
-	Std::list<Gump *>::iterator  end = _children.end();
+	auto it = _children.begin();
+	const auto end = _children.end();
 	for (; it != end; ++it) {
 		Gump *other = *it;
 
@@ -661,16 +636,23 @@ Gump *Gump::GetRootGump() {
 }
 
 
-bool Gump::StartDraggingChild(Gump *gump, int32 mx, int32 my) {
+bool Gump::onDragStart(int32 mx, int32 my) {
+	if (IsDraggable() && _parent) {
+		ParentToGump(mx, my);
+		Mouse::get_instance()->setDraggingOffset(mx, my);
+		_parent->MoveChildToFront(this);
+		return true;
+	}
 	return false;
 }
 
-void Gump::DraggingChild(Gump *gump, int mx, int my) {
-	CANT_HAPPEN();
+void Gump::onDragStop(int32 mx, int32 my) {
 }
 
-void Gump::StopDraggingChild(Gump *gump) {
-	CANT_HAPPEN();
+void Gump::onDrag(int32 mx, int32 my) {
+	int32 dx, dy;
+	Mouse::get_instance()->getDraggingOffset(dx, dy);
+	Move(mx - dx, my - dy);
 }
 
 //
@@ -684,12 +666,12 @@ Gump *Gump::onMouseDown(int button, int32 mx, int32 my) {
 	Gump *handled = nullptr;
 
 	// Iterate children backwards
-	Std::list<Gump *>::reverse_iterator it;
-	for (it = _children.rbegin(); it != _children.rend(); ++it) {
+	for (auto it = _children.reverse_begin(); it != _children.end(); --it) {
 		Gump *g = *it;
 
-		// Not if closing
-		if (g->_flags & FLAG_CLOSING || g->IsHidden()) continue;
+		// Not if closing or hidden
+		if (g->_flags & FLAG_CLOSING || g->IsHidden())
+			continue;
 
 		// It's got the point
 		if (g->PointOnGump(mx, my)) handled = g->onMouseDown(button, mx, my);
@@ -707,12 +689,12 @@ Gump *Gump::onMouseMotion(int32 mx, int32 my) {
 	Gump *handled = nullptr;
 
 	// Iterate children backwards
-	Std::list<Gump *>::reverse_iterator it;
-	for (it = _children.rbegin(); it != _children.rend(); ++it) {
+	for (auto it = _children.reverse_begin(); it != _children.end(); --it) {
 		Gump *g = *it;
 
-		// Not if closing
-		if (g->_flags & FLAG_CLOSING || g->IsHidden()) continue;
+		// Not if closing or hidden
+		if (g->_flags & FLAG_CLOSING || g->IsHidden())
+			continue;
 
 		// It's got the point
 		if (g->PointOnGump(mx, my)) handled = g->onMouseMotion(mx, my);
@@ -750,6 +732,10 @@ bool Gump::OnTextInput(int unicode) {
 bool Gump::mustSave(bool toplevel) const {
 	// DONT_SAVE flag
 	if (_flags & FLAG_DONT_SAVE)
+		return false;
+
+	// don't save when ready for deletion
+	if (_flags & FLAG_CLOSE_AND_DEL)
 		return false;
 
 	if (toplevel) {
@@ -792,18 +778,19 @@ void Gump::saveData(Common::WriteStream *ws) {
 	ws->writeUint32LE(_processResult);
 
 	unsigned int childcount = 0;
-	Std::list<Gump *>::iterator it;
-	for (it = _children.begin(); it != _children.end(); ++it) {
-		if (!(*it)->mustSave(false)) continue;
+	for (auto *g : _children) {
+		if (!g->mustSave(false))
+			continue;
 		childcount++;
 	}
 
 	// write children:
 	ws->writeUint32LE(childcount);
-	for (it = _children.begin(); it != _children.end(); ++it) {
-		if (!(*it)->mustSave(false)) continue;
+	for (auto *g : _children) {
+		if (!g->mustSave(false))
+			continue;
 
-		ObjectManager::get_instance()->saveObject(ws, *it);
+		ObjectManager::get_instance()->saveObject(ws, g);
 	}
 }
 

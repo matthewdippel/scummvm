@@ -19,18 +19,18 @@
  *
  */
 
-#include "common/keyboard.h"
-
 #include "ultima/ultima8/gumps/computer_gump.h"
-#include "ultima/ultima8/games/game_data.h"
+
+#include "common/keyboard.h"
+#include "common/str.h"
 #include "ultima/ultima8/audio/audio_process.h"
-#include "ultima/ultima8/graphics/shape.h"
-#include "ultima/ultima8/graphics/gump_shape_archive.h"
-#include "ultima/ultima8/graphics/shape_frame.h"
-#include "ultima/ultima8/graphics/fonts/rendered_text.h"
-#include "ultima/ultima8/graphics/fonts/font.h"
-#include "ultima/ultima8/graphics/fonts/font_manager.h"
-#include "ultima/ultima8/graphics/fonts/shape_font.h"
+#include "ultima/ultima8/games/game_data.h"
+#include "ultima/ultima8/gfx/fonts/font.h"
+#include "ultima/ultima8/gfx/fonts/font_manager.h"
+#include "ultima/ultima8/gfx/fonts/rendered_text.h"
+#include "ultima/ultima8/gfx/gump_shape_archive.h"
+#include "ultima/ultima8/gfx/shape.h"
+#include "ultima/ultima8/gfx/shape_frame.h"
 #include "ultima/ultima8/usecode/uc_machine.h"
 
 namespace Ultima {
@@ -53,7 +53,7 @@ ComputerGump::ComputerGump()
 	}
 }
 
-ComputerGump::ComputerGump(const Std::string &msg) :
+ComputerGump::ComputerGump(const Common::String &msg) :
 	ModalGump(0, 0, 100, 100), _curTextLine(0), _curDisplayLine(0),
 	_charOff(0), _nextCharTick(0), _paused(false), _tick(0) {
 	for (int i = 0; i < ARRAYSIZE(_renderedLines); i++) {
@@ -260,11 +260,11 @@ uint32 ComputerGump::I_readComputer(const uint8 *args, unsigned int /*argsize*/)
 }
 
 void ComputerGump::saveData(Common::WriteStream *ws) {
-	CANT_HAPPEN_MSG("Trying to load ModalGump");
+	warning("Trying to save ModalGump");
 }
 
 bool ComputerGump::loadData(Common::ReadStream *rs, uint32 version) {
-	CANT_HAPPEN_MSG("Trying to load ModalGump");
+	warning("Trying to load ModalGump");
 
 	return false;
 }

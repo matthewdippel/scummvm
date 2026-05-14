@@ -146,7 +146,7 @@ protected:
 	void pauseEngineIntern(bool pause) override;
 
 public:
-	Sword2Engine(OSystem *syst);
+	Sword2Engine(OSystem *syst, const ADGameDescription *gameDesc);
 	~Sword2Engine() override;
 
 	int getFramesPerSecond();
@@ -162,9 +162,9 @@ public:
 
 	// GMM Loading/Saving
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
-	bool canSaveGameStateCurrently() override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error loadGameState(int slot) override;
-	bool canLoadGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	uint32 _features;
 
@@ -175,6 +175,8 @@ public:
 	Mouse *_mouse;
 	Logic *_logic;
 	FontRenderer *_fontRenderer;
+
+	bool _isRTL;
 
 	Debugger *_debugger;
 
@@ -195,6 +197,8 @@ public:
 	bool _wantSfxDebug;
 
 	int32 _gameCycle;
+
+	bool _isKorTrs;
 
 #if RIGHT_CLICK_CLEARS_LUGGAGE
 	bool heldIsInInventory();
@@ -246,7 +250,7 @@ public:
 	// This is a bit hackish, of course :-).
 	uint32 getMillis();
 
-	//Used to check wether we are running PSX version
+	// Used to check whether we are running PSX version
 	static bool isPsx() { return _platform == Common::kPlatformPSX; }
 };
 

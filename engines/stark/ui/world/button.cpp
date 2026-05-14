@@ -22,7 +22,6 @@
 #include "engines/stark/ui/world/button.h"
 #include "engines/stark/services/services.h"
 #include "engines/stark/gfx/driver.h"
-#include "engines/stark/gfx/texture.h"
 #include "engines/stark/visual/explodingimage.h"
 #include "engines/stark/visual/flashingimage.h"
 #include "engines/stark/visual/image.h"
@@ -85,7 +84,7 @@ void Button::showButtonHint() {
 	if (!_mouseText) {
 		_mouseText = new VisualText(StarkGfx);
 		_mouseText->setText(_text);
-		_mouseText->setColor(Color(0xFF, 0xFF, 0xFF));
+		_mouseText->setColor(Gfx::Color(0xFF, 0xFF, 0xFF));
 		_mouseText->setFont(FontProvider::kSmallFont);
 		_mouseText->setTargetWidth(96);
 	}

@@ -20,6 +20,7 @@
  */
 
 #include "common/archive.h"
+#include "common/config-manager.h"
 
 #include "audio/audiostream.h"
 #include "audio/decoders/wave.h"
@@ -79,9 +80,8 @@ bool PrinceEngine::loadSample(uint32 sampleSlot, const Common::String &streamNam
 	debugEngine("loadSample slot %d, name %s", sampleSlot, normalizedPath.c_str());
 
 	freeSample(sampleSlot);
-	Common::SeekableReadStream *sampleStream = SearchMan.createReadStreamForMember(normalizedPath);
+	Common::SeekableReadStream *sampleStream = SearchMan.createReadStreamForMember(Common::Path(normalizedPath));
 	if (sampleStream == nullptr) {
-		delete sampleStream;
 		error("Can't load sample %s to slot %d", normalizedPath.c_str(), sampleSlot);
 	}
 	_audioStream[sampleSlot] = Audio::makeWAVStream(sampleStream->readStream(sampleStream->size()), DisposeAfterUse::YES);
@@ -103,12 +103,18 @@ bool PrinceEngine::loadVoice(uint32 slot, uint32 sampleSlot, const Common::Strin
 	}
 
 	freeSample(sampleSlot);
-	Common::SeekableReadStream *sampleStream = SearchMan.createReadStreamForMember(streamName);
+	Common::SeekableReadStream *sampleStream = SearchMan.createReadStreamForMember(Common::Path(streamName));
 	if (sampleStream == nullptr) {
 		warning("loadVoice: Can't open %s", streamName.c_str());
 		_missingVoice = true;	// Insert END tag if needed
 		_textSlots[slot]._time = 1; // Set phrase time to none
 		_mainHero->_talkTime = 1;
+
+		// Speak missing voice clips like objects
+		if (_textSlots[slot]._str && (ConfMan.getBool("tts_enabled_missing_voice") || ConfMan.getBool("tts_enabled_speech"))) {
+			sayText(_textSlots[slot]._str, false);
+		}
+
 		return false;
 	}
 

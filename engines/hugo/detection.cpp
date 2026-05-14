@@ -43,9 +43,9 @@ namespace Hugo {
 
 static const PlainGameDescriptor hugoGames[] = {
 	// Games
-	{"hugo1", "Hugo 1: Hugo's House of Horrors"},
-	{"hugo2", "Hugo 2: Whodunit?"},
-	{"hugo3", "Hugo 3: Jungle of Doom"},
+	{"hugo1", "Hugo's House of Horrors"},
+	{"hugo2", "Hugo II: Whodunit?"},
+	{"hugo3", "Hugo III: Jungle of Doom"},
 	{nullptr, nullptr}
 };
 
@@ -59,7 +59,7 @@ static const HugoGameDescription gameDescriptions[] = {
 			Common::EN_ANY,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO0()
+			GUIO2(GAMEOPTION_TTS, GAMEOPTION_WINDOWS_INTERFACE)
 		},
 		kGameTypeHugo1
 	},
@@ -71,7 +71,7 @@ static const HugoGameDescription gameDescriptions[] = {
 			Common::EN_ANY,
 			Common::kPlatformWindows,
 			GF_PACKED,
-			GUIO0()
+			GUIO1(GAMEOPTION_TTS)
 		},
 		kGameTypeHugo1
 	},
@@ -83,7 +83,7 @@ static const HugoGameDescription gameDescriptions[] = {
 			Common::EN_ANY,
 			Common::kPlatformDOS,
 			GF_PACKED,
-			GUIO0()
+			GUIO2(GAMEOPTION_TTS, GAMEOPTION_WINDOWS_INTERFACE)
 		},
 		kGameTypeHugo2
 	},
@@ -95,7 +95,7 @@ static const HugoGameDescription gameDescriptions[] = {
 			Common::EN_ANY,
 			Common::kPlatformWindows,
 			GF_PACKED,
-			GUIO0()
+			GUIO1(GAMEOPTION_TTS)
 		},
 		kGameTypeHugo2
 	},
@@ -107,7 +107,7 @@ static const HugoGameDescription gameDescriptions[] = {
 			Common::EN_ANY,
 			Common::kPlatformDOS,
 			GF_PACKED,
-			GUIO0()
+			GUIO2(GAMEOPTION_TTS, GAMEOPTION_WINDOWS_INTERFACE)
 		},
 		kGameTypeHugo3
 	},
@@ -119,7 +119,7 @@ static const HugoGameDescription gameDescriptions[] = {
 			Common::EN_ANY,
 			Common::kPlatformWindows,
 			GF_PACKED,
-			GUIO0()
+			GUIO1(GAMEOPTION_TTS)
 		},
 		kGameTypeHugo3
 	},
@@ -127,16 +127,16 @@ static const HugoGameDescription gameDescriptions[] = {
 	{AD_TABLE_END_MARKER, kGameTypeNone}
 };
 
-class HugoMetaEngineDetection : public AdvancedMetaEngineDetection {
+class HugoMetaEngineDetection : public AdvancedMetaEngineDetection<HugoGameDescription> {
 public:
-	HugoMetaEngineDetection() : AdvancedMetaEngineDetection(gameDescriptions, sizeof(HugoGameDescription), hugoGames) {
-	}
-
-	const char *getEngineId() const override {
-		return "hugo";
+	HugoMetaEngineDetection() : AdvancedMetaEngineDetection(gameDescriptions, hugoGames) {
 	}
 
 	const char *getName() const override {
+		return "hugo";
+	}
+
+	const char *getEngineName() const override {
 		return "Hugo";
 	}
 

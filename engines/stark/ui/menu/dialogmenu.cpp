@@ -328,7 +328,7 @@ DialogLineText::DialogLineText(Gfx::Driver *gfx, uint logIndex, uint lineIndex, 
 	Common::String name = StarkGlobal->getCharacterName(logLine.characterId);
 	name.toUppercase();
 
-	Color color = logLine.characterId == StarkGlobal->getApril()->getCharacterIndex() ? _textColorApril : _textColorNormal;
+	Gfx::Color color = logLine.characterId == StarkGlobal->getApril()->getCharacterIndex() ? _textColorApril : _textColorNormal;
 
 	_nameText.setText(name);
 	_nameText.setColor(color);
@@ -384,7 +384,7 @@ void DialogTitleWidget::onClick() {
 }
 
 void DialogTitleWidget::onScreenChanged() {
-	_text.resetTexture();
+	_text.reset();
 }
 
 } // End of namespace Stark

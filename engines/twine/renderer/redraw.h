@@ -24,19 +24,29 @@
 
 #include "common/scummsys.h"
 #include "common/rect.h"
+#include "common/str.h"
 #include "twine/shared.h"
 
 namespace TwinE {
 
+// MAX_INCRUST_DISP
 #define OVERLAY_MAX_ENTRIES 10
 
 enum class OverlayType {
-	koSprite = 0,
-	koNumber = 1,
-	koNumberRange = 2,
-	koInventoryItem = 3,
-	koText = 4
+	koSprite = 0,        // INCRUST_SPRITE
+	koNumber = 1,        // INCRUST_NUM
+	koNumberRange = 2,   // INCRUST_CMPT
+	koInventoryItem = 3, // INCRUST_OBJ
+	koText = 4,          // INCRUST_TEXT
+	koInventory = 5,     // lba2 (INCRUST_INVENTORY)
+	koSysText = 6,       // lba2 (INCRUST_SYS_TEXT)
+	koFlash = 7,         // lba2 (INCRUST_ECLAIR)
+	koRain = 8,          // lba2 (INCRUST_PLUIE)
+	koMax
 };
+
+// lba2
+#define INCRUST_YCLIP (1 << 8)
 
 enum class OverlayPosType {
 	koNormal = 0,
@@ -45,37 +55,33 @@ enum class OverlayPosType {
 
 /** Overlay list structure */
 struct OverlayListStruct {
-	OverlayType type = OverlayType::koSprite;
-	int16 info0 = 0; // sprite/3d model entry | number | number range
+	int16 num = 0; // sprite/3d model entry | number | number range
 	int16 x = 0;
 	int16 y = 0;
-	int16 info1 = 0; // text = actor | total coins
-	OverlayPosType posType = OverlayPosType::koNormal;
-	int16 lifeTime = 0;
+	OverlayType type = OverlayType::koSprite;
+	int16 info = 0; // text = actor | total coins
+	OverlayPosType move = OverlayPosType::koNormal;
+	int16 timerEnd = 0; // life time in ticks - see toSeconds()
 };
 
 struct DrawListStruct {
-	// DrawActorSprites, DrawShadows, DrawExtras
-	int16 posValue = 0; // sorting value
+	int16 z = 0; // depth sorting value
 	uint32 type = 0;
-	uint16 actorIdx = 0;
+	// NumObj was also used with mask of type and numObj - we are
+	// not masking the value in numObj, but store the type in type
+	uint16 numObj = 0;
 
-	// DrawShadows
-	uint16 x = 0;
-	uint16 y = 0;
-	uint16 z = 0;
-	uint16 offset = 0;
-
-	uint16 field_C = 0;
-	uint16 field_E = 0;
-	uint16 field_10 = 0;
+	uint16 xw = 0;
+	uint16 yw = 0;
+	uint16 zw = 0;
+	uint16 num = 0;
 
 	inline bool operator==(const DrawListStruct& other) const {
-		return posValue == other.posValue;
+		return z == other.z;
 	}
 
 	inline bool operator<(const DrawListStruct& other) const {
-		return posValue < other.posValue;
+		return z < other.z;
 	}
 };
 
@@ -88,13 +94,13 @@ class Redraw {
 private:
 	TwinEEngine *_engine;
 	enum DrawListType {
-		DrawObject3D = (0 << TYPE_OBJ_SHIFT),
+		DrawObject3D = (0 << TYPE_OBJ_SHIFT), // TYPE_OBJ_3D
 		DrawFlagRed = (1 << TYPE_OBJ_SHIFT),
 		DrawFlagYellow = (2 << TYPE_OBJ_SHIFT),
-		DrawShadows = (3 << TYPE_OBJ_SHIFT),
-		DrawActorSprites = (4 << TYPE_OBJ_SHIFT),
+		DrawShadows = (3 << TYPE_OBJ_SHIFT), // TYPE_SHADOW
+		DrawActorSprites = (4 << TYPE_OBJ_SHIFT), // TYPE_OBJ_SPRITE
 		DrawZoneDec = (5 << TYPE_OBJ_SHIFT),
-		DrawExtras = (6 << TYPE_OBJ_SHIFT),
+		DrawExtras = (6 << TYPE_OBJ_SHIFT), // TYPE_EXTRA
 		DrawPrimitive = (7 << TYPE_OBJ_SHIFT)
 	};
 
@@ -106,8 +112,6 @@ private:
 	/** Save last actor that bubble dialog icon */
 	int32 _bubbleActor = -1;
 	int32 _bubbleSpriteIndex;
-
-	IVec3 _projPosScreen;
 
 	// big font shadow text in the lower left corner
 	Common::String _text;
@@ -132,32 +136,38 @@ private:
 
 	int32 fillActorDrawingList(DrawListStruct *drawList, bool bgRedraw);
 	int32 fillExtraDrawingList(DrawListStruct *drawList, int32 drawListPos);
+	void correctZLevels(DrawListStruct *drawList, int32 drawListPos);
 	void processDrawList(DrawListStruct *drawList, int32 drawListPos, bool bgRedraw);
 	void renderOverlays();
 	void renderText();
 
+	void fillBackground(uint8 color);
+
 public:
 	Redraw(TwinEEngine *engine);
 
-	bool _inSceneryView = false;
+	bool _flagMCGA = false;
 
 	/** Request background redraw */
 	bool _firstTime = false;
 
-	/** Current number of redraw regions in the screen */
-	int32 _currNumOfRedrawBox = 0; // fullRedrawVar8
-	/** Number of redraw regions in the screen */
-	int32 _numOfRedrawBox = 0;
+	IVec3 _projPosScreen; // XpOrgw, YpOrgw
 
-	int _sceneryViewX = 0;
-	int _sceneryViewY = 0;
+	/** Current number of redraw regions in the screen */
+	int32 _nbPhysBox = 0; // fullRedrawVar8
+	/** Number of redraw regions in the screen */
+	int32 _nbOptPhysBox = 0;
+
+	int _sceneryViewX = 0; // xmin
+	int _sceneryViewY = 0; // ymin
 
 	OverlayListStruct overlayList[OVERLAY_MAX_ENTRIES];
 
 	void setRenderText(const Common::String &text);
 
 	// InitIncrustDisp
-	void addOverlay(OverlayType type, int16 info0, int16 x, int16 y, int16 info1, OverlayPosType posType, int16 lifeTime);
+	int32 addOverlay(OverlayType type, int16 info0, int16 x, int16 y, int16 info1, OverlayPosType posType, int16 lifeTime);
+	void posObjIncrust(OverlayListStruct *ptrdisp, int32 num); // lba2
 
 	/**
 	 * Add a certain region to redraw list array
@@ -166,23 +176,23 @@ public:
 	 * @param right end width to redraw the region
 	 * @param bottom end height to redraw the region
 	 */
-	void addRedrawArea(int32 left, int32 top, int32 right, int32 bottom);
-	void addRedrawArea(const Common::Rect &rect);
+	void addRedrawArea(int32 left, int32 top, int32 right, int32 bottom); // AddPhysBox
+	void addPhysBox(const Common::Rect &rect); // AddPhysBox
 
 	/**
 	 * Flip currentRedrawList regions in the screen
 	 * This only updates small areas in the screen so few CPU processor is used
 	 */
-	void flipRedrawAreas();
+	void flipBoxes();
 
 	/** Blit/Update all screen regions in the currentRedrawList */
-	void blitBackgroundAreas();
+	void clsBoxes();
 
 	/**
 	 * This is responsible for the entire game screen redraw
 	 * @param bgRedraw true if we want to redraw background grid, false if we want to update certain screen areas
 	 */
-	void redrawEngineActions(bool bgRedraw);
+	void drawScene(bool bgRedraw);
 
 	/** Draw dialogue sprite image */
 	void drawBubble(int32 actorIdx);
@@ -193,11 +203,6 @@ public:
 	 * @param listSize number of drawing objects in the list
 	 */
 	void sortDrawingList(DrawListStruct *list, int32 listSize) const;
-
-	/**
-	 * Zooms the area around the scenery view focus positions
-	 */
-	void zoomScreenScale();
 };
 
 } // namespace TwinE

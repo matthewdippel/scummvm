@@ -21,7 +21,6 @@
 #ifndef ULTIMA8_USECODE_UCPROCESS_H
 #define ULTIMA8_USECODE_UCPROCESS_H
 
-#include "ultima/shared/std/containers.h"
 #include "ultima/ultima8/kernel/process.h"
 #include "ultima/ultima8/usecode/uc_stack.h"
 
@@ -52,8 +51,11 @@ public:
 		_temp32 = retval;
 	}
 
-	//! dump some info about this process to pout
-	void dumpInfo() const override;
+	uint16 getClassId() const {
+		return _classId;
+	}
+
+	Common::String dumpInfo() const override;
 
 	bool loadData(Common::ReadStream *rs, uint32 version);
 	void saveData(Common::WriteStream *ws) override;
@@ -78,7 +80,7 @@ protected:
 	UCStack _stack;
 
 	// "Free Me" list
-	Std::list<Std::pair<uint16, int> > _freeOnTerminate;
+	Common::List<Common::Pair<uint16, int> > _freeOnTerminate;
 };
 
 } // End of namespace Ultima8

@@ -35,10 +35,32 @@ enum TSpriteBlendMode {
 	NUM_BLEND_MODES
 };
 
+enum AlphaType {
+	ALPHA_OPAQUE = 0,
+	ALPHA_BINARY = 1,
+	ALPHA_FULL = 2
+};
+
+/**
+ @brief The possible flipping parameters for the blit method.
+ */
+enum FLIP_FLAGS {
+	/// The image will not be flipped.
+	FLIP_NONE = 0,
+	/// The image will be flipped at the horizontal axis.
+	FLIP_H = 1,
+	/// The image will be flipped at the vertical axis.
+	FLIP_V = 2,
+	/// The image will be flipped at the horizontal and vertical axis.
+	FLIP_HV = FLIP_H | FLIP_V,
+	/// The image will be flipped at the horizontal and vertical axis.
+	FLIP_VH = FLIP_H | FLIP_V
+};
+
 /**
  * Contains all the required information that define a transform.
  * Same source sprite + same TransformStruct = Same resulting sprite.
- * Has a number of overloaded constructors to accomodate various argument lists.
+ * Has a number of overloaded constructors to accommodate various argument lists.
  */
 
 const int32 kDefaultZoomX = 100;
@@ -65,7 +87,7 @@ public:
 	Common::Point _zoom;   ///< Zoom; 100 = no zoom
 	Common::Point _hotspot; ///< Position of the hotspot
 	int32 _angle;   ///< Rotation angle, in degrees
-	byte _flip;      ///< Bitflag: see TransparentSurface::FLIP_XXX
+	byte _flip;      ///< Bitflag: see FLIP_XXX
 	bool _alphaDisable;
 	TSpriteBlendMode _blendMode;
 	uint32 _rgbaMod;      ///< RGBa

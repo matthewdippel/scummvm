@@ -23,7 +23,7 @@
 #define BACKENDS_CLOUD_ID_IDLISTDIRECTORYREQUEST_H
 
 #include "backends/cloud/storage.h"
-#include "backends/networking/curl/request.h"
+#include "backends/networking/http/request.h"
 #include "common/callback.h"
 
 namespace Cloud {
@@ -44,19 +44,19 @@ class IdListDirectoryRequest: public Networking::Request {
 	Common::String _date;
 
 	void start();
-	void idResolvedCallback(Storage::UploadResponse response);
-	void idResolveErrorCallback(Networking::ErrorResponse error);
+	void idResolvedCallback(const Storage::UploadResponse &response);
+	void idResolveErrorCallback(const Networking::ErrorResponse &error);
 	void listNextDirectory();
-	void listedDirectoryCallback(Storage::FileArrayResponse response);
-	void listedDirectoryErrorCallback(Networking::ErrorResponse error);
-	void finishListing(Common::Array<StorageFile> &files);
+	void listedDirectoryCallback(const Storage::FileArrayResponse &response);
+	void listedDirectoryErrorCallback(const Networking::ErrorResponse &error);
+	void finishListing(const Common::Array<StorageFile> &files);
 public:
-	IdListDirectoryRequest(IdStorage *storage, Common::String path, Storage::ListDirectoryCallback cb, Networking::ErrorCallback ecb, bool recursive = false);
-	virtual ~IdListDirectoryRequest();
+	IdListDirectoryRequest(IdStorage *storage, const Common::String &path, Storage::ListDirectoryCallback cb, Networking::ErrorCallback ecb, bool recursive = false);
+	~IdListDirectoryRequest() override;
 
-	virtual void handle();
-	virtual void restart();
-	virtual Common::String date() const;
+	void handle() override;
+	void restart() override;
+	Common::String date() const override;
 };
 
 } // End of namespace Id

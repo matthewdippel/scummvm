@@ -1,12 +1,5 @@
 /*global Module*/
 Module["arguments"] = [];
-Module["arguments"].push("--config=/local/scummvm.ini");
-
-// https://developer.mozilla.org/en-US/docs/Web/API/Gamepad_API only works in secure contexts and supported browsers. 
-// This disables joystick support to avoid a crash when initializing the sdl subsystem without the gamepad API being available.
-if (!navigator.getGamepads && !navigator.webkitGetGamepads) {
-    Module["arguments"].push("--joystick=-1")
-}
 
 // Add all parameters passed via the fragment identifier
 if (window.location.hash.length > 0) {
@@ -14,4 +7,19 @@ if (window.location.hash.length > 0) {
     params.forEach((param) => {
         Module["arguments"].push(param);
     })
+}
+
+// MIDI support
+var midiOutputMap;
+if (!("requestMIDIAccess" in navigator)) {
+	console.error("No MIDI support in your browser.");
+} else {
+	navigator
+		.requestMIDIAccess({ sysex: true, software: true })
+		.then((midiAccess) => {
+			midiOutputMap = midiAccess.outputs;
+			midiAccess.onstatechange = (e) => {
+				midiOutputMap = e.target.outputs;
+			};
+		});
 }

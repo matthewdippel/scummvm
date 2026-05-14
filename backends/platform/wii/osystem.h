@@ -32,7 +32,7 @@
 #include "common/rect.h"
 #include "common/events.h"
 #include "backends/base-backend.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/surface.h"
 #include "audio/mixer_intern.h"
 
@@ -51,7 +51,7 @@ extern void wii_memstats(void);
 }
 #endif
 
-class OSystem_Wii final : public EventsBaseBackend, public PaletteManager {
+class OSystem_Wii final : virtual public BaseBackend, public Common::EventSource, public PaletteManager {
 private:
 	s64 _startup_time;
 
@@ -75,6 +75,7 @@ private:
 	gfx_screen_coords_t _coordsOverlay;
 	gfx_tex_t _texOverlay;
 	bool _overlayDirty;
+	bool _overlayInGUI;
 
 	u32 _lastScreenUpdate;
 	u16 _currentWidth, _currentHeight;
@@ -115,6 +116,7 @@ private:
 	void updateScreenResolution();
 	void switchVideoMode(int mode);
 	bool needsScreenUpdate();
+	void updateMousePalette();
 
 	void initSfx();
 	void deinitSfx();
@@ -173,15 +175,15 @@ public:
 	void unlockScreen() override;
 	void setShakePos(int shakeXOffset, int shakeYOffset) override;
 
-	void showOverlay() override;
+	void showOverlay(bool inGUI) override;
 	void hideOverlay() override;
 	bool isOverlayVisible() const override { return _overlayVisible; }
 	void clearOverlay() override;
 	void grabOverlay(Graphics::Surface &surface) override;
 	virtual void copyRectToOverlay(const void *buf, int pitch,
 									int x, int y, int w, int h) override;
-	int16 getOverlayWidth() override;
-	int16 getOverlayHeight() override;
+	int16 getOverlayWidth() const override;
+	int16 getOverlayHeight() const override;
 	Graphics::PixelFormat getOverlayFormat() const override;
 
 	bool showMouse(bool visible) override;
@@ -190,7 +192,7 @@ public:
 	virtual void setMouseCursor(const void *buf, uint w, uint h, int hotspotX,
 								int hotspotY, uint32 keycolor,
 								bool dontScale,
-								const Graphics::PixelFormat *format) override;
+								const Graphics::PixelFormat *format, const byte *mask) override;
 
 	bool pollEvent(Common::Event &event) override;
 	uint32 getMillis(bool skipRecord = false) override;

@@ -129,16 +129,13 @@ Script::~Script() {
 	// Smart pointers anyone?
 
 	// Clean variables
-	Std::map<Common::String, Script::Variable *>::iterator variableItem = _variables.begin();
-	Std::map<Common::String, Script::Variable *>::iterator variablesEnd = _variables.end();
-	while (variableItem != variablesEnd) {
-		delete variableItem->_value;
-		++variableItem;
+	for (auto &item : _variables) {
+		delete item._value;
 	}
 }
 
 void Script::removeCurrentVariable(const Common::String &name) {
-	Std::map<Common::String, Script::Variable *>::iterator dup = _variables.find(name);
+	Common::HashMap<Common::String, Script::Variable *>::iterator dup = _variables.find(name);
 	if (dup != _variables.end()) {
 		delete dup->_value;
 		_variables.erase(dup); // not strictly necessary, but correct.
@@ -160,7 +157,7 @@ bool Script::load(const Common::String &filename, const Common::String &baseId, 
 	 * Open and parse the .xml file
 	 */
 	Shared::XMLTree *doc = new Shared::XMLTree(
-		Common::String::format("data/conf/%s", filename.c_str()));
+		Common::Path(Common::String::format("data/conf/%s", filename.c_str())));
 	_vendorScriptDoc = root = doc->getTree();
 
 	if (!root->id().equalsIgnoreCase("scripts"))
@@ -648,7 +645,7 @@ void Script::translate(Common::String *text) {
 			provider = item.substr(0, index);
 			to_find = item.substr(index + 1);
 			if (_providers.find(provider) != _providers.end()) {
-				Std::vector<Common::String> parts = split(to_find, ":");
+				Common::Array<Common::String> parts = split(to_find, ":");
 				Provider *p = _providers[provider];
 				prop = p->translate(parts);
 			}
@@ -769,11 +766,11 @@ Shared::XMLNode *Script::find(Shared::XMLNode *node, const Common::String &scrip
 	return nullptr;
 }
 
-Common::String Script::getPropAsStr(Std::list<Shared::XMLNode *> &nodes, const Common::String &prop, bool recursive) {
+Common::String Script::getPropAsStr(Common::List<Shared::XMLNode *> &nodes, const Common::String &prop, bool recursive) {
 	Common::String propvalue;
-	Std::list<Shared::XMLNode *>::reverse_iterator i;
+	Common::List<Shared::XMLNode *>::iterator i;
 
-	for (i = nodes.rbegin(); i != nodes.rend(); ++i) {
+	for (i = nodes.reverse_begin(); i != nodes.end(); --i) {
 		Shared::XMLNode *node = *i;
 		if (node->hasProperty(prop)) {
 			propvalue = node->getProperty(prop);
@@ -782,7 +779,7 @@ Common::String Script::getPropAsStr(Std::list<Shared::XMLNode *> &nodes, const C
 	}
 
 	if (propvalue.empty() && recursive) {
-		for (i = nodes.rbegin(); i != nodes.rend(); ++i) {
+		for (i = nodes.reverse_begin(); i != nodes.end(); --i) {
 			Shared::XMLNode *node = *i;
 			if (node->getParent()) {
 				propvalue = getPropAsStr(node->getParent(), prop, recursive);
@@ -796,12 +793,12 @@ Common::String Script::getPropAsStr(Std::list<Shared::XMLNode *> &nodes, const C
 }
 
 Common::String Script::getPropAsStr(Shared::XMLNode *node, const Common::String &prop, bool recursive) {
-	Std::list<Shared::XMLNode *> list;
+	Common::List<Shared::XMLNode *> list;
 	list.push_back(node);
 	return getPropAsStr(list, prop, recursive);
 }
 
-int Script::getPropAsInt(Std::list<Shared::XMLNode *> &nodes, const Common::String &prop, bool recursive) {
+int Script::getPropAsInt(Common::List<Shared::XMLNode *> &nodes, const Common::String &prop, bool recursive) {
 	Common::String propvalue = getPropAsStr(nodes, prop, recursive);
 	return mathValue(propvalue);
 }
@@ -1239,7 +1236,7 @@ Script::ReturnCode Script::karma(Shared::XMLNode *script, Shared::XMLNode *curre
 	if (_debug)
 		debugN("Karma: adjusting - '%s'", action.c_str());
 
-	typedef Std::map<Common::String, KarmaAction /*, Std::less<Common::String> */> KarmaActionMap;
+	typedef Common::HashMap<Common::String, KarmaAction /*, Std::less<Common::String> */> KarmaActionMap;
 	static KarmaActionMap action_map;
 
 	if (action_map.size() == 0) {
@@ -1313,7 +1310,7 @@ Script::ReturnCode Script::setVar(Shared::XMLNode *script, Shared::XMLNode *curr
 }
 
 Script::ReturnCode Script::ztats(Shared::XMLNode *script, Shared::XMLNode *current) {
-	typedef Std::map<Common::String, StatsView/*, Std::less<Common::String>*/ > StatsViewMap;
+	typedef Common::HashMap<Common::String, StatsView/*, Std::less<Common::String>*/ > StatsViewMap;
 	static StatsViewMap view_map;
 
 	if (view_map.size() == 0) {

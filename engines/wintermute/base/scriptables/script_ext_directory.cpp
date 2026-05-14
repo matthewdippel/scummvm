@@ -25,10 +25,12 @@
  * Copyright (c) 2011 Jan Nedoma
  */
 
+#include "engines/wintermute/base/base_engine.h"
+#include "engines/wintermute/base/base_file_manager.h"
+#include "engines/wintermute/base/scriptables/script_ext_array.h"
 #include "engines/wintermute/base/scriptables/script_ext_directory.h"
 #include "engines/wintermute/base/scriptables/script_stack.h"
 #include "engines/wintermute/base/scriptables/script_value.h"
-#include "engines/wintermute/base/base_engine.h"
 #include "engines/wintermute/persistent.h"
 
 namespace Wintermute {
@@ -66,7 +68,7 @@ bool SXDirectory::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisSt
 		const char *dirName = stack->pop()->getString();
 
 		if (strcmp(dirName, "saves") == 0) {
-			// Known games that do this: alphapolaris, hamlet, papasdaughters1, papasdaughters2, polechudes
+			// Known games that do this: alphapolaris, hamlet, lostbride, papasdaughters1, papasdaughters2, polechudes, etc
 			// No need to actually create anything, files will be stored at SavefileManager
 			stack->pushBool(true);
 		} else {
@@ -101,15 +103,36 @@ bool SXDirectory::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisSt
 		stack->pop()->getString();
 
 		stack->pushInt(0);
-		BaseScriptable *array = makeSXArray(_gameRef, stack);
+		BaseScriptable *array = makeSXArray(_game, stack);
 
-		// used in secret scene of "Art of Murder 1: FBI Confidential"
-		if (strcmp(dirName, "X:\\FBI\\data\\scenes\\17-magic\\") == 0 && strcmp(name, "GetDirectories") == 0) {
+		if (strcmp(dirName, "saves") == 0 && strcmp(name, "GetFiles") == 0) {
+			// used in "Tale of The Lost Bride and A Hidden Treasure"
+			// returns list of saves, removing "lostbride-win-ru.saves_" prefix
+
+			Common::StringArray fnames;
+			BaseFileManager::getEngineInstance()->listMatchingFiles(fnames, "*");
+			for (uint32 i = 0; i < fnames.size(); i++) {
+				stack->pushString(fnames[i].c_str());
+				((SXArray *)array)->push(stack->pop());
+			}
+
+		} else if (strcmp(dirName, "X:\\FBI\\data\\scenes\\17-magic\\") == 0 && strcmp(name, "GetDirectories") == 0) {
+			// used in secret scene of "Art of Murder 1: FBI Confidential"
 			// TODO: return list of "scenes\17-magic" subfolders from data.dcp
+
 			warning("FBI\\scenes\\17-magic Directory.%s is not implemented! Returning empty array...", name);
+
+		} else if (strcmp(dirName, ".\\") == 0 && strcmp(name, "GetFiles") == 0) {
+			// Used in "Stroke of Fate: Operation Valkyrie" and "Stroke of Fate: Operation Bunker"
+			// to return list of log files to be removed.
+
+			// return empty list instead
+
 		} else {
 			// No currently known games need this
+
 			warning("Directory.%s is not implemented! Returning empty array...", name);
+
 		}
 
  		stack->pushNative(array, false);
@@ -126,7 +149,7 @@ bool SXDirectory::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisSt
 		warning("Directory.GetDrives is not implemented! Returning empty array...");
 
 		stack->pushInt(0);
- 		stack->pushNative(makeSXArray(_gameRef, stack), false);
+ 		stack->pushNative(makeSXArray(_game, stack), false);
  		return STATUS_OK;
 	} else {
 		return STATUS_FAILED;
@@ -135,13 +158,13 @@ bool SXDirectory::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisSt
 
 
 //////////////////////////////////////////////////////////////////////////
-ScValue *SXDirectory::scGetProperty(const Common::String &name) {
+ScValue *SXDirectory::scGetProperty(const char *name) {
 	_scValue->setNULL();
 
 	//////////////////////////////////////////////////////////////////////////
 	// Type
 	//////////////////////////////////////////////////////////////////////////
-	if (name == "Type") {
+	if (strcmp(name, "Type") == 0) {
 		_scValue->setString("directory");
 		return _scValue;
 	}
@@ -149,7 +172,7 @@ ScValue *SXDirectory::scGetProperty(const Common::String &name) {
 	//////////////////////////////////////////////////////////////////////////
 	// PathSeparator
 	//////////////////////////////////////////////////////////////////////////
-	else if (name == "PathSeparator") {
+	else if (strcmp(name, "PathSeparator") == 0) {
 		_scValue->setString("\\");
 		return _scValue;
 	}
@@ -157,7 +180,7 @@ ScValue *SXDirectory::scGetProperty(const Common::String &name) {
 	//////////////////////////////////////////////////////////////////////////
 	// CurrentDirectory
 	//////////////////////////////////////////////////////////////////////////
-	else if (name == "CurrentDirectory") {
+	else if (strcmp(name, "CurrentDirectory") == 0) {
 		_scValue->setString("."); // See also: BaseGame::scGetProperty("SaveDirectory")
 		return _scValue;
 	}
@@ -165,7 +188,7 @@ ScValue *SXDirectory::scGetProperty(const Common::String &name) {
 	//////////////////////////////////////////////////////////////////////////
 	// TempDirectory
 	//////////////////////////////////////////////////////////////////////////
-	else if (name == "TempDirectory") {
+	else if (strcmp(name, "TempDirectory") == 0) {
 		_scValue->setString("temp"); // See also: BaseGame::scGetProperty("SaveDirectory")
 		return _scValue;
 	} else {

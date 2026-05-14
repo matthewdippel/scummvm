@@ -21,6 +21,8 @@
 
 #include "ultima/ultima8/kernel/delay_process.h"
 
+#include "common/stream.h"
+
 namespace Ultima {
 namespace Ultima8 {
 
@@ -39,9 +41,9 @@ void DelayProcess::run() {
 		terminate();
 }
 
-void DelayProcess::dumpInfo() const {
-	Process::dumpInfo();
-	pout << "Frames left: " << _count << Std::endl;
+Common::String DelayProcess::dumpInfo() const {
+	return Process::dumpInfo() +
+		Common::String::format(", frames left: %d", _count);
 }
 
 

@@ -72,14 +72,15 @@ void sysexHandler_Scumm(Player *player, const byte *msg, uint16 len) {
 			part->volume(buf[3]);
 			part->set_pan(buf[4]);
 			part->_percussion = player->_supportsPercussion ? ((buf[5] & 0x80) > 0) : false;
-			part->set_transpose(buf[5]);
+			// The original MI2 and INDY4 drivers always use -12/12 boundaries here, even for the
+			// AdLib and PC Speaker drivers which use -24/24 in other locations. DOTT does not
+			// have/use this sysex code any more, but even at other locations it always uses -12/12.
+			part->set_transpose(buf[5], -12, 12);
 			part->set_detune(buf[6]);
 			part->pitchBendFactor(buf[7]);
 			if (part->_percussion) {
-				if (part->_mc) {
+				if (part->_mc)
 					part->off();
-					se->reallocateMidiChannels(player->_midi);
-				}
 			} else {
 				if (player->_isMIDI) {
 					// Even in cases where a program does not seem to be specified,
@@ -87,13 +88,22 @@ void sysexHandler_Scumm(Player *player, const byte *msg, uint16 len) {
 					// 0 is a valid program number. MI2 tests show that in such
 					// cases, a regular program change message always seems to follow
 					// anyway.
-					part->_instrument.program(buf[8], player->_isMT32);
+					part->_instrument.program(buf[8], 0, player->_isMT32);
 				} else {
 					// Like the original we set up the instrument data of the
 					// specified program here too. In case the global
 					// instrument data is not loaded already, this will take
 					// care of setting a default instrument too.
 					se->copyGlobalInstrument(buf[8], &part->_instrument);
+				}
+				// The newer reallocateMidiChannels() method can fail to assign a
+				// hardware channel here (bug #14618: Inaccurate fades in INDY4,
+				// "Test 1"). So instead, we implement the less dynamic alloacation
+				// method of the early version drivers here.
+				if (!part->_mc) {
+					part->_mc = se->allocateChannel(player->_midi, part->_pri_eff);
+					if (!part->_mc)
+						se->suspendPart(part);
 				}
 				part->sendAll();
 			}
@@ -108,6 +118,8 @@ void sysexHandler_Scumm(Player *player, const byte *msg, uint16 len) {
 		break;
 
 	case 2: // Start of song. Ignore for now.
+		if (!se->_dynamicChanAllocation)
+			player->uninit_parts();
 		break;
 
 	case 16: // AdLib instrument definition(Part)

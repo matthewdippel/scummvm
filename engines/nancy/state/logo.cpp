@@ -24,7 +24,7 @@
 #include "engines/nancy/nancy.h"
 #include "engines/nancy/sound.h"
 #include "engines/nancy/input.h"
-#include "engines/nancy/constants.h"
+#include "engines/nancy/graphics.h"
 
 #include "engines/nancy/state/logo.h"
 
@@ -40,6 +40,9 @@ void Logo::process() {
 	case kInit:
 		init();
 		break;
+	case kPlayIntroVideo:
+		playIntroVideo();
+		break;
 	case kStartSound:
 		startSound();
 		break;
@@ -51,18 +54,77 @@ void Logo::process() {
 	}
 }
 
-void Logo::onStateExit() {
-	destroy();
+void Logo::onStateEnter(const NancyState::NancyState prevState) {
+	// Handle returning from the GMM
+	if (prevState == NancyState::kPause) {
+		if (_state == kPlayIntroVideo) {
+			_tvdVideoDecoder.pauseVideo(false);
+		} else if (_state == kRun) {
+			g_nancy->_sound->pauseSound("MSND", false);
+		}
+	}
+}
+
+bool Logo::onStateExit(const NancyState::NancyState nextState) {
+	// Handle the GMM being called
+	if (nextState == NancyState::kPause) {
+		if (_state == kPlayIntroVideo) {
+			_tvdVideoDecoder.pauseVideo(true);
+		} else if (_state == kRun) {
+			g_nancy->_sound->pauseSound("MSND", true);
+		}
+
+		return false;
+	} else {
+		return true;
+	}
 }
 
 void Logo::init() {
-	Common::SeekableReadStream *lg = g_nancy->getBootChunkStream("LG0");
-	lg->seek(0);
+	const ImageChunk *lg0 = (const ImageChunk *)g_nancy->getEngineData("LG0");
+	const ImageChunk *plg0 = (const ImageChunk *)g_nancy->getEngineData("PLG0");
+	if (!plg0) {
+		plg0 = (const ImageChunk *)g_nancy->getEngineData("PLGO");
+	}
+	assert(lg0);
 
-	_logoImage.init(lg->readString());
+	_logoImage.init(lg0->imageName);
 	_logoImage.registerGraphics();
 
-	_state = kStartSound;
+	if (plg0) {
+		_partnerLogoImage.init(plg0->imageName);
+		_partnerLogoImage.registerGraphics();
+	}
+
+	if (g_nancy->getGameType() == kGameTypeVampire && _tvdVideoDecoder.loadFile("VAMPINTR.AVI")) {
+		_tvdVideoDecoder.start();
+		_videoObj.moveTo(Common::Rect(0, 0, 640, 480));
+		_videoObj._drawSurface.create(_tvdVideoDecoder.getWidth(), _tvdVideoDecoder.getHeight(), _tvdVideoDecoder.getPixelFormat());
+		_videoObj.setPalette(_tvdVideoDecoder.getPalette());
+		_videoObj.registerGraphics();
+		_videoObj.setVisible(true);
+		_state = kPlayIntroVideo;
+	} else {
+		_state = kStartSound;
+	}
+}
+
+// The Vampire Diaries originally shipped with a launcher that could either start the game
+// or play an introduction video. We don't bother giving the player a choice, and just
+// play the video before the game logo
+void Logo::playIntroVideo() {
+	if (_tvdVideoDecoder.needsUpdate()) {
+		const Graphics::Surface *frame = _tvdVideoDecoder.decodeNextFrame();
+		if (frame) {
+			_videoObj._drawSurface.blitFrom(*frame);
+			_videoObj.setVisible(true);
+		}
+	}
+	if (_tvdVideoDecoder.endOfVideo() || (g_nancy->_input->getInput().input & NancyInput::kLeftMouseButtonDown)) {
+		_state = kStartSound;
+		_videoObj.setVisible(false);
+		_tvdVideoDecoder.close();
+	}
 }
 
 void Logo::startSound() {
@@ -73,8 +135,18 @@ void Logo::startSound() {
 }
 
 void Logo::run() {
-	if ((g_nancy->getTotalPlayTime() - _startTicks >= g_nancy->getConstants().logoEndAfter) ||
-		(g_nancy->_input->getInput().input & NancyInput::kLeftMouseButtonDown)) {
+	if (g_nancy->getTotalPlayTime() - _startTicks >= g_nancy->getStaticData().logoEndAfter) {
+		// Display game logo after partner logo
+		if (!_partnerLogoImage._drawSurface.empty() && _partnerLogoImage.isVisible()) {
+			_logoImage.setVisible(true);
+			_partnerLogoImage.setVisible(false);
+			_startTicks = g_nancy->getTotalPlayTime();
+		} else {
+			_state = kStop;
+		}
+	}
+
+	if (g_nancy->_input->getInput().input & NancyInput::kLeftMouseButtonDown) {
 		_state = kStop;
 	}
 }
@@ -84,7 +156,7 @@ void Logo::stop() {
 	// For the N+C key combo it looks for some kind of cheat file
 	// to initialize the game state with.
 
-	if (ConfMan.getBool("original_menus")) {
+	if (!ConfMan.hasKey("original_menus") || ConfMan.getBool("original_menus")) {
 		g_nancy->setState(NancyState::kMainMenu);
 	} else {
 		g_nancy->setState(NancyState::kScene);

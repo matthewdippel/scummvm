@@ -17,6 +17,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, MojoTouch has
+ * exclusively licensed this code on March 23th, 2024, to be used in
+ * closed-source products.
+ * Therefore, any contributions (commits) to it will also be dual-licensed.
+ *
  */
 
 #include "common/debug.h"
@@ -311,11 +318,11 @@ int32 ScriptFunc::sys_Cmd_Flip_Screens(EMCState *state) {
 
 int32 ScriptFunc::sys_Cmd_Play_Flic(EMCState *state) {
 	Common::String stateText = GetText(0, state);
-	Common::String name;
+	Common::Path name;
 
 	// workaround for the video of the beginning
 	if (stateText.contains("209")) {
-		name = stateText;
+		name = Common::Path(stateText);
 	} else {
 		name = _vm->createRoomFilename(stateText.c_str());
 	}
@@ -883,7 +890,7 @@ int32 ScriptFunc::sys_Cmd_Set_Scene_Anim_Wait(EMCState *state) {
 	if (_vm->state()->_currentScene == 24) {
 		if (_vm->getCurrentUpdatingSceneAnimation() == 6) {
 			if (waitTicks == 1) {
-				waitTicks = 10;
+				waitTicks = 2;
 				_vm->setSceneAnimationScriptUpdate(false);
 			}
 		}
@@ -1186,17 +1193,17 @@ int32 ScriptFunc::sys_Cmd_Remove_Scene_Anim(EMCState *state) {
 	sceneAnim->_active = false;
 	_vm->getAnimationManager()->removeInstance(sceneAnim->_animInstance);
 	delete sceneAnim->_animation;
-	sceneAnim->_animation = NULL;
+	sceneAnim->_animation = nullptr;
 
 	// see if one character shares this instance
 	for (int32 c = 0; c < 32; c++) {
 		if (_vm->getCharacter(c) && _vm->getCharacter(c)->getAnimationInstance() == sceneAnim->_originalAnimInstance) {
-			_vm->getCharacter(c)->setAnimationInstance(NULL);
+			_vm->getCharacter(c)->setAnimationInstance(nullptr);
 		}
 	}
 	delete sceneAnim->_originalAnimInstance;
-	sceneAnim->_originalAnimInstance = NULL;
-	sceneAnim->_animInstance = NULL;
+	sceneAnim->_originalAnimInstance = nullptr;
+	sceneAnim->_animInstance = nullptr;
 	return 0;
 }
 

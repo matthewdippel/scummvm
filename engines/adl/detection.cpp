@@ -19,7 +19,6 @@
  *
  */
 
-#include "common/translation.h"
 #include "common/file.h"
 #include "common/md5.h"
 #include "common/debug.h"
@@ -33,85 +32,13 @@
 
 namespace Adl {
 
-// Mystery House was designed for monochrome display, so we default to
-// monochrome mode there. All the other games default to color mode.
-#define GAMEOPTION_COLOR_DEFAULT_OFF GUIO_GAMEOPTIONS1
-#define GAMEOPTION_SCANLINES         GUIO_GAMEOPTIONS2
-#define GAMEOPTION_COLOR_DEFAULT_ON  GUIO_GAMEOPTIONS3
-#define GAMEOPTION_NTSC              GUIO_GAMEOPTIONS4
-#define GAMEOPTION_MONO_TEXT         GUIO_GAMEOPTIONS5
-
 static const DebugChannelDef debugFlagList[] = {
 	{Adl::kDebugChannelScript, "Script", "Trace script execution"},
 	DEBUG_CHANNEL_END
 };
 
-static const ADExtraGuiOptionsMap optionsList[] = {
-	{
-		GAMEOPTION_NTSC,
-		{
-			_s("TV emulation"),
-			_s("Emulate composite output to an NTSC TV"),
-			"ntsc",
-			true,
-			0,
-			0
-		}
-	},
-
-	{
-		GAMEOPTION_COLOR_DEFAULT_OFF,
-		{
-			_s("Color graphics"),
-			_s("Use color graphics instead of monochrome"),
-			"color",
-			false,
-			0,
-			0
-		}
-	},
-
-	{
-		GAMEOPTION_COLOR_DEFAULT_ON,
-		{
-			_s("Color graphics"),
-			_s("Use color graphics instead of monochrome"),
-			"color",
-			true,
-			0,
-			0
-		}
-	},
-
-	{
-		GAMEOPTION_SCANLINES,
-		{
-			_s("Show scanlines"),
-			_s("Darken every other scanline to mimic the look of a CRT"),
-			"scanlines",
-			false,
-			0,
-			0
-		}
-	},
-
-	{
-		GAMEOPTION_MONO_TEXT,
-		{
-			_s("Always use sharp monochrome text"),
-			_s("Do not emulate NTSC artifacts for text"),
-			"monotext",
-			true,
-			0,
-			0
-		}
-	},
-
-	AD_EXTRA_GUI_OPTIONS_TERMINATOR
-};
-
-#define DEFAULT_OPTIONS GUIO5(GAMEOPTION_NTSC, GAMEOPTION_COLOR_DEFAULT_ON, GAMEOPTION_MONO_TEXT, GAMEOPTION_SCANLINES, GUIO_NOMIDI)
-#define MH_OPTIONS GUIO5(GAMEOPTION_NTSC, GAMEOPTION_COLOR_DEFAULT_OFF, GAMEOPTION_MONO_TEXT, GAMEOPTION_SCANLINES, GUIO_NOMIDI)
+#define DEFAULT_OPTIONS GUIO7(GAMEOPTION_NTSC, GAMEOPTION_COLOR_DEFAULT_ON, GAMEOPTION_MONO_TEXT, GAMEOPTION_SCANLINES, GAMEOPTION_APPLE2E_CURSOR, GUIO_NOMIDI, GAMEOPTION_TTS)
+#define MH_OPTIONS GUIO7(GAMEOPTION_NTSC, GAMEOPTION_COLOR_DEFAULT_OFF, GAMEOPTION_MONO_TEXT, GAMEOPTION_SCANLINES, GAMEOPTION_APPLE2E_CURSOR, GUIO_NOMIDI, GAMEOPTION_TTS)
 
 static const PlainGameDescriptor adlGames[] = {
 	{ "hires0", "Hi-Res Adventure #0: Mission Asteroid" },
@@ -369,9 +296,41 @@ static const AdlGameDescription gameDiskDescriptions[] = {
 		GAME_TYPE_HIRES3,
 		GAME_VER_NONE
 	},
-	{ // Hi-Res Adventure #4: Ulysses and the Golden Fleece - Apple II - Load 'N' Go
+	{ // Hi-Res Adventure #4: Ulysses and the Golden Fleece - Apple II - Original release
 		{
-			"hires4", "",
+			"hires4", "On-Line Systems [A]",
+			{
+				{ "ulyssesa", 0, "fac225127a35cf2596d41e91647a532c", 143360 },
+				{ "ulyssesb", 1, "793a01392a094d5e2988deab5510e9fc", 143360 },
+				AD_LISTEND
+			},
+			Common::EN_ANY,
+			Common::kPlatformApple2,
+			ADGF_NO_FLAGS,
+			DEFAULT_OPTIONS
+		},
+		GAME_TYPE_HIRES4,
+		GAME_VER_HR4_V1_0
+	},
+	{ // Hi-Res Adventure #4: Ulysses and the Golden Fleece - Apple II - Version 1.1
+		{
+			"hires4", "On-Line Systems [B]",
+			{
+				{ "ulyssesa", 0, "420f515e64612d21446ede8078055f0e", 143360 },
+				{ "ulyssesb", 1, "9fa8552255ae651b252844168b8b6617", 143360 },
+				AD_LISTEND
+			},
+			Common::EN_ANY,
+			Common::kPlatformApple2,
+			ADGF_NO_FLAGS,
+			DEFAULT_OPTIONS
+		},
+		GAME_TYPE_HIRES4,
+		GAME_VER_HR4_V1_1
+	},
+	{ // Hi-Res Adventure #4: Ulysses and the Golden Fleece - Apple II - Green Valley Publishing - Version 0.0
+		{
+			"hires4", "Green Valley [A]",
 			{
 				{ "ulyssesa", 0, "1eaeb2f1a773ce2d1cb9f16b2ef09049", 143360 },
 				{ "ulyssesb", 1, "9fa8552255ae651b252844168b8b6617", 143360 },
@@ -383,7 +342,23 @@ static const AdlGameDescription gameDiskDescriptions[] = {
 			DEFAULT_OPTIONS
 		},
 		GAME_TYPE_HIRES4,
-		GAME_VER_NONE
+		GAME_VER_HR4_LNG
+	},
+	{ // Hi-Res Adventure #4: Ulysses and the Golden Fleece - Apple II - Green Valley Publishing - Version 1.1
+		{
+			"hires4", "Green Valley [B]",
+			{
+				{ "ulyssesa", 0, "35b6dce492c893327796645f481737ca", 143360 },
+  				{ "ulyssesb", 1, "9fa8552255ae651b252844168b8b6617", 143360 },
+				AD_LISTEND
+			},
+			Common::EN_ANY,
+			Common::kPlatformApple2,
+			ADGF_NO_FLAGS,
+			DEFAULT_OPTIONS
+		},
+		GAME_TYPE_HIRES4,
+		GAME_VER_HR4_LNG
 	},
 	{ // Hi-Res Adventure #4: Ulysses and the Golden Fleece - Atari 8-bit - Re-release
 		{
@@ -403,9 +378,35 @@ static const AdlGameDescription gameDiskDescriptions[] = {
 		GAME_TYPE_HIRES4,
 		GAME_VER_NONE
 	},
-	{ // Hi-Res Adventure #5: Time Zone - Apple II - Version 1.1 - Roberta Williams Anthology
+	{ // Hi-Res Adventure #5: Time Zone - Apple II - On-Line Systems - Version 1.1
 		{
-			"hires5", "",
+			"hires5", "On-Line Systems",
+			{
+				{"tzone1a", 2, "6c1f4c9f774dbd9697e3b5b1fe2fb858", 143360},
+				{"tzone1b", 3, "4eaf8d790e3f93097cca9ddbe863df50", 143360},
+				{"tzone2c", 4, "e3aa4f56e727339b1ec00978ce9d435b", 143360},
+				{"tzone2d", 5, "77b8219a380410015c986fa192d4c3bf", 143360},
+				{"tzone3e", 6, "f7acc03edd8d8aecb90711cd5f9e5593", 143360},
+				{"tzone3f", 7, "ed74c056976ecea2eab07448c8a72eb8", 143360},
+				{"tzone4g", 8, "de7bda8a641169fc2dedd8a7b0b7e7de", 143360},
+				{"tzone4h", 9, "21cf76d97505ff09fff5d5e4711bc47c", 143360},
+				{"tzone5i", 10, "d665df374e594cd0978b73c3490e5de2", 143360},
+				{"tzone5j", 11, "5095be23d13201d0897b9169c4e473df", 143360},
+				{"tzone6k", 12, "bef044503f21af5f0a4088e99aa778b1", 143360},
+				{"tzone6l", 13, "84801b7c2ab6c09e62a2a0809b94d16a", 143360},
+				AD_LISTEND
+			},
+			Common::EN_ANY,
+			Common::kPlatformApple2,
+			ADGF_NO_FLAGS,
+			DEFAULT_OPTIONS
+		},
+		GAME_TYPE_HIRES5,
+		GAME_VER_NONE
+	},
+	{ // Hi-Res Adventure #5: Time Zone - Apple II - Roberta Williams Anthology - Version 1.1
+		{
+			"hires5", "Sierra On-Line",
 			{
 				{ "tzone1a", 2, "731844b1d19c2801e3a5bc61d109af54", 143360 },
 				{ "tzone1b", 3, "4eaf8d790e3f93097cca9ddbe863df50", 143360 },
@@ -468,15 +469,15 @@ static const AdlGameDescription gameDiskDescriptions[] = {
 	{ AD_TABLE_END_MARKER, GAME_TYPE_NONE, GAME_VER_NONE }
 };
 
-class AdlMetaEngineDetection : public AdvancedMetaEngineDetection {
+class AdlMetaEngineDetection : public AdvancedMetaEngineDetection<AdlGameDescription> {
 public:
-	AdlMetaEngineDetection() : AdvancedMetaEngineDetection(gameFileDescriptions, sizeof(AdlGameDescription), adlGames, optionsList) { }
+	AdlMetaEngineDetection() : AdvancedMetaEngineDetection(gameFileDescriptions, adlGames) { }
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "ADL";
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "adl";
 	}
 
@@ -490,10 +491,10 @@ public:
 
 	ADDetectedGames detectGame(const Common::FSNode &parent, const FileMap &allFiles, Common::Language language, Common::Platform platform, const Common::String &extra, uint32 skipADFlags, bool skipIncomplete) override;
 
-	bool addFileProps(const FileMap &allFiles, Common::String fname, FilePropertiesMap &filePropsMap) const;
+	bool addFileProps(const FileMap &allFiles, const Common::Path &fname, FilePropertiesMap &filePropsMap) const;
 };
 
-bool AdlMetaEngineDetection::addFileProps(const FileMap &allFiles, Common::String fname, FilePropertiesMap &filePropsMap) const {
+bool AdlMetaEngineDetection::addFileProps(const FileMap &allFiles, const Common::Path &fname, FilePropertiesMap &filePropsMap) const {
 	if (filePropsMap.contains(fname))
 		return true;
 
@@ -504,7 +505,7 @@ bool AdlMetaEngineDetection::addFileProps(const FileMap &allFiles, Common::Strin
 	fileProps.size = computeMD5(allFiles[fname], fileProps.md5, 16384);
 
 	if (fileProps.size != -1) {
-		debugC(3, kDebugGlobalDetection, "> '%s': '%s'", fname.c_str(), fileProps.md5.c_str());
+		debugC(3, kDebugGlobalDetection, "> '%s': '%s'", fname.toString().c_str(), fileProps.md5.c_str());
 		filePropsMap[fname] = fileProps;
 	}
 
@@ -519,7 +520,7 @@ ADDetectedGames AdlMetaEngineDetection::detectGame(const Common::FSNode &parent,
 	if (!matched.empty())
 		return matched;
 
-	debugC(3, kDebugGlobalDetection, "Starting disk image detection in dir '%s'", parent.getPath().c_str());
+	debugC(3, kDebugGlobalDetection, "Starting disk image detection in dir '%s'", parent.getPath().toString(Common::Path::kNativeSeparator).c_str());
 
 	FilePropertiesMap filesProps;
 
@@ -542,17 +543,17 @@ ADDetectedGames AdlMetaEngineDetection::detectGame(const Common::FSNode &parent,
 
 		for (uint f = 0; game.desc->filesDescriptions[f].fileName; ++f) {
 			const ADGameFileDescription &fDesc = game.desc->filesDescriptions[f];
-			Common::String fileName;
+			Common::Path fileName;
 			bool foundDiskImage = false;
 
 			for (uint e = 0; e < ARRAYSIZE(diskImageExts); ++e) {
 				if (diskImageExts[e].platform == game.desc->platform) {
-					Common::String testFileName(fDesc.fileName);
-					testFileName += diskImageExts[e].extension;
+					Common::Path testFileName(fDesc.fileName, Common::Path::kNoSeparator);
+					testFileName.appendInPlace(diskImageExts[e].extension);
 
 					if (addFileProps(allFiles, testFileName, filesProps)) {
 						if (foundDiskImage) {
-							warning("Ignoring '%s' (already found '%s')", testFileName.c_str(), fileName.c_str());
+							warning("Ignoring '%s' (already found '%s')", testFileName.toString().c_str(), fileName.toString().c_str());
 							filesProps.erase(testFileName);
 						} else {
 							foundDiskImage = true;
@@ -578,13 +579,13 @@ ADDetectedGames AdlMetaEngineDetection::detectGame(const Common::FSNode &parent,
 				continue;
 			}
 
-			if (fDesc.fileSize != -1 && fDesc.fileSize != filesProps[fileName].size) {
+			if (fDesc.fileSize != AD_NO_SIZE && fDesc.fileSize != filesProps[fileName].size) {
 				debugC(3, kDebugGlobalDetection, "Size Mismatch. Skipping");
 				game.hasUnknownFiles = true;
 				continue;
 			}
 
-			debugC(3, kDebugGlobalDetection, "Matched file: %s", fileName.c_str());
+			debugC(3, kDebugGlobalDetection, "Matched file: %s", fileName.toString().c_str());
 		}
 
 		// This assumes that the detection table groups together games that have the same gameId and platform

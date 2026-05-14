@@ -24,7 +24,7 @@
 
 #include "common/scummsys.h"
 #include "graphics/surface.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "audio/mixer_intern.h"
 #include "backends/base-backend.h"
 #include "backends/fs/psp/psp-fs-factory.h"
@@ -39,7 +39,7 @@
 #include "backends/platform/psp/audio.h"
 #include "backends/platform/psp/thread.h"
 
-class OSystem_PSP : public EventsBaseBackend, public PaletteManager {
+class OSystem_PSP : virtual public BaseBackend, public Common::EventSource, public PaletteManager {
 private:
 
 	Audio::MixerImpl *_mixer;
@@ -101,20 +101,20 @@ public:
 	void setShakePos(int shakeXOffset, int shakeYOffset);
 
 	// Overlay related
-	void showOverlay();
+	void showOverlay(bool inGUI);
 	void hideOverlay();
 	bool isOverlayVisible() const;
 	void clearOverlay();
 	void grabOverlay(Graphics::Surface &surface);
 	void copyRectToOverlay(const void *buf, int pitch, int x, int y, int w, int h);
-	int16 getOverlayHeight();
-	int16 getOverlayWidth();
+	int16 getOverlayHeight() const;
+	int16 getOverlayWidth() const;
 	Graphics::PixelFormat getOverlayFormat() const { return Graphics::PixelFormat(2, 4, 4, 4, 4, 0, 4, 8, 12); }
 
 	// Mouse related
 	bool showMouse(bool visible);
 	void warpMouse(int x, int y);
-	void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format);
+	void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format, const byte *mask);
 
 	// Events and input
 	bool pollEvent(Common::Event &event);
@@ -141,7 +141,7 @@ public:
 
 	void logMessage(LogMessageType::Type type, const char *message);
 
-	virtual Common::String getDefaultConfigFileName();
+	virtual Common::Path getDefaultConfigFileName();
 };
 
 #endif /* OSYS_PSP_H */

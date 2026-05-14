@@ -72,8 +72,8 @@ CmidPlayer::~CmidPlayer() {
 }
 
 unsigned char CmidPlayer::datalook(long pos_) {
-	if (pos_ < 0 || pos_ >= flen) return (0);
-	return (data[pos_]);
+	if (pos_ < 0 || pos_ >= flen) return 0;
+	return data[pos_];
 }
 
 unsigned long CmidPlayer::getnexti(unsigned long num) {
@@ -84,7 +84,7 @@ unsigned long CmidPlayer::getnexti(unsigned long num) {
 		v += (datalook(pos) << (8 * i));
 		pos++;
 	}
-	return (v);
+	return v;
 }
 
 unsigned long CmidPlayer::getnext(unsigned long num) {
@@ -96,7 +96,7 @@ unsigned long CmidPlayer::getnext(unsigned long num) {
 		v += datalook(pos);
 		pos++;
 	}
-	return (v);
+	return v;
 }
 
 unsigned long CmidPlayer::getval() {
@@ -109,14 +109,14 @@ unsigned long CmidPlayer::getval() {
 		b = (unsigned char)getnext(1);
 		v = (v << 7) + (b & 0x7F);
 	}
-	return (v);
+	return v;
 }
 
-bool CmidPlayer::load(const Std::string &filename) {
+bool CmidPlayer::load(const Common::Path &filename) {
 	return false;
 }
 
-bool CmidPlayer::load(Std::string &filename, int song_index) {
+bool CmidPlayer::load(const Common::Path &filename, int song_index) {
 	U6Lib_n f;
 	f.open(filename, 4, NUVIE_GAME_MD);
 	//binistream *f = fp.open(filename); if(!f) return false;
@@ -151,7 +151,7 @@ bool CmidPlayer::load(Std::string &filename, int song_index) {
 		subsongs = 1;
 	else {
 		delete [] data;
-		data = NULL;
+		data = nullptr;
 		return false;
 	}
 
@@ -522,8 +522,8 @@ void CmidPlayer::rewind(int subsong) {
 	}
 
 
-	/*        sprintf(info,"%s\r\nTicks/Quarter Note: %ld\r\n",info,deltas);
-	        sprintf(info,"%sms/Quarter Note: %ld",info,msqtr); */
+	/*        Common::sprintf_s(info,"%s\r\nTicks/Quarter Note: %ld\r\n",info,deltas);
+	        Common::sprintf_s(info,"%sms/Quarter Note: %ld",info,msqtr); */
 
 	for (i = 0; i < 16; i++)
 		if (track[i].on) {
@@ -549,22 +549,22 @@ void CmidPlayer::load_ultima_midi_tracks() {
 	}
 }
 
-Std::string CmidPlayer::gettype() {
+Common::String CmidPlayer::gettype() {
 	switch (type) {
 	case FILE_LUCAS:
-		return Std::string("LucasArts AdLib MIDI");
+		return Common::String("LucasArts AdLib MIDI");
 	case FILE_MIDI:
-		return Std::string("General MIDI");
+		return Common::String("General MIDI");
 	case FILE_CMF:
-		return Std::string("Creative Music Format (CMF MIDI)");
+		return Common::String("Creative Music Format (CMF MIDI)");
 	case FILE_OLDLUCAS:
-		return Std::string("Lucasfilm Adlib MIDI");
+		return Common::String("Lucasfilm Adlib MIDI");
 	case FILE_ADVSIERRA:
-		return Std::string("Sierra On-Line VGA MIDI");
+		return Common::String("Sierra On-Line VGA MIDI");
 	case FILE_SIERRA:
-		return Std::string("Sierra On-Line EGA MIDI");
+		return Common::String("Sierra On-Line EGA MIDI");
 	default:
-		return Std::string("MIDI unknown");
+		return Common::String("MIDI unknown");
 	}
 }
 

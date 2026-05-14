@@ -37,7 +37,7 @@ Resource::Resource(Common::Platform platform, bool isDemo) : _platform(platform)
 		_macResFork = new Common::MacResManager();
 		if (!_macResFork->open("Star Trek Data"))
 			error("Could not load Star Trek Data");
-		assert(_macResFork->hasDataFork() && _macResFork->hasResFork());
+		assert(_macResFork->hasResFork());
 	}
 
 	readIndexFile();
@@ -175,7 +175,17 @@ Common::MemoryReadStreamEndian *Resource::loadSequentialFile(Common::String file
 }
 
 uint32 Resource::getSequentialFileOffset(uint32 offset, int fileIndex) {
-	Common::SeekableReadStream *dataRunFile = SearchMan.createReadStreamForMember("data.run"); // FIXME: Amiga & Mac need this implemented
+	Common::SeekableReadStream *dataRunFile;
+
+	if (_platform == Common::kPlatformAmiga) {
+		// TODO: Amiga version
+		dataRunFile = nullptr;
+	} else if (_platform == Common::kPlatformMacintosh) {
+		dataRunFile = _macResFork->getResource("Runs");
+	} else {
+		dataRunFile = SearchMan.createReadStreamForMember("data.run");
+	}
+
 	if (!dataRunFile)
 		error("Could not open sequential file");
 
@@ -201,9 +211,10 @@ Common::MemoryReadStreamEndian *Resource::loadFile(Common::String filename, int 
 	bool bigEndian = _platform == Common::kPlatformAmiga;
 
 	// Load external patches
-	if (Common::File::exists(filename)) {
+	Common::Path path(filename);
+	if (Common::File::exists(path)) {
 		Common::File *patch = new Common::File();
-		patch->open(filename);
+		patch->open(path);
 		int32 size = patch->size();
 		byte *data = (byte *)malloc(size);
 		patch->read(data, size);
@@ -233,7 +244,7 @@ Common::MemoryReadStreamEndian *Resource::loadFile(Common::String filename, int 
 	if (_platform == Common::kPlatformAmiga) {
 		dataFile = SearchMan.createReadStreamForMember("data.000");
 	} else if (_platform == Common::kPlatformMacintosh) {
-		dataFile = _macResFork->getDataFork();
+		dataFile = Common::MacResManager::openFileOrDataFork("Star Trek Data");
 	} else {
 		dataFile = SearchMan.createReadStreamForMember("data.001");
 	}

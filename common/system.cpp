@@ -24,11 +24,14 @@
 #include "common/system.h"
 #include "common/events.h"
 #include "common/fs.h"
+#include "common/file.h"
+#include "common/printman.h"
 #include "common/savefile.h"
 #include "common/str.h"
 #include "common/taskbar.h"
 #include "common/updates.h"
 #include "common/dialogs.h"
+#include "common/rotationmode.h"
 #include "common/str-enc.h"
 #include "common/textconsole.h"
 #include "common/text-to-speech.h"
@@ -36,6 +39,7 @@
 #include "backends/audiocd/default/default-audiocd.h"
 #include "backends/fs/fs-factory.h"
 #include "backends/timer/default/default-timer.h"
+#include "backends/dlc/store.h"
 
 OSystem *g_system = nullptr;
 
@@ -44,6 +48,7 @@ OSystem::OSystem() {
 	_eventManager = nullptr;
 	_timerManager = nullptr;
 	_savefileManager = nullptr;
+	_printingManager = nullptr;
 #if defined(USE_TASKBAR)
 	_taskbarManager = nullptr;
 #endif
@@ -55,6 +60,7 @@ OSystem::OSystem() {
 	_dialogManager = nullptr;
 #endif
 	_fsFactory = nullptr;
+	_dlcStore = nullptr;
 	_backendInitialized = false;
 }
 
@@ -67,6 +73,9 @@ OSystem::~OSystem() {
 
 	delete _timerManager;
 	_timerManager = nullptr;
+
+	delete _printingManager;
+	_printingManager = nullptr;
 
 #if defined(USE_TASKBAR)
 	delete _taskbarManager;
@@ -91,6 +100,9 @@ OSystem::~OSystem() {
 
 	delete _fsFactory;
 	_fsFactory = nullptr;
+
+	delete _dlcStore;
+	_dlcStore = nullptr;
 }
 
 void OSystem::initBackend() {
@@ -120,6 +132,56 @@ void OSystem::destroy() {
 	delete this;
 }
 
+void OSystem::updateStartSettings(const Common::String &executable, Common::String &command, Common::StringMap &settings, Common::StringArray& additionalArgs) {
+	// If a command was explicitly passed on the command line, do not override it
+	if (!command.empty())
+		return;
+
+	bool autodetect = false;
+
+	// Check executable name
+	if (executable.equalsIgnoreCase("scummvm-auto")) {
+		warning("Will run in autodetection mode");
+		autodetect = true;
+	}
+
+	// Check for the autorun file
+	if (Common::File::exists("scummvm-autorun")) {
+		// Okay, the file exists. We open it and if it is empty, then run in the autorun mode
+		// If the file is not empty, we read command line arguments from it, one per line
+		warning("Autorun file is detected");
+
+		Common::File autorun;
+		Common::String line;
+		Common::String res;
+
+		if (autorun.open("scummvm-autorun")) {
+			while (!autorun.eos()) {
+				line = autorun.readLine();
+				if (!line.empty() && line[0] != '#') {
+					additionalArgs.push_back(line);
+					res += Common::String::format("\"%s\" ", line.c_str());
+				}
+			}
+		}
+
+		if (!res.empty())
+			warning("Autorun command: %s", res.c_str());
+		else
+			warning("Empty autorun file");
+
+		autorun.close();
+		autodetect = true;
+	}
+
+	if (autodetect && additionalArgs.empty()) {
+		warning("Running autodetection");
+		command = "auto-detect";
+		if (!settings.contains("path"))
+			settings["path"] = ".";
+	}
+}
+
 bool OSystem::setGraphicsMode(const char *name) {
 	if (!name)
 		return false;
@@ -136,27 +198,6 @@ bool OSystem::setGraphicsMode(const char *name) {
 			return setGraphicsMode(gm->id);
 		}
 		gm++;
-	}
-
-	return false;
-}
-
-bool OSystem::setShader(const char *name) {
-	if (!name)
-		return false;
-
-	// Special case for the 'default' filter
-	if (!scumm_stricmp(name, "default")) {
-		return setShader(getDefaultShader());
-	}
-
-	const GraphicsMode *sm = getSupportedShaders();
-
-	while (sm->name) {
-		if (!scumm_stricmp(sm->name, name)) {
-			return setShader(sm->id);
-		}
-		sm++;
 	}
 
 	return false;
@@ -183,6 +224,18 @@ bool OSystem::setStretchMode(const char *name) {
 	return false;
 }
 
+bool OSystem::setRotationMode(int rotation) {
+	return setRotationMode(Common::parseRotationMode(rotation));
+}
+
+Common::Rect OSystem::getSafeOverlayArea(int16 *width, int16 *height) const {
+	int16 w = getOverlayWidth(),
+		  h = getOverlayHeight();
+	if (width) *width = w;
+	if (height) *height = h;
+	return Common::Rect(w, h);
+}
+
 void OSystem::fatalError() {
 	quit();
 	exit(1);
@@ -191,6 +244,12 @@ void OSystem::fatalError() {
 FilesystemFactory *OSystem::getFilesystemFactory() {
 	assert(_fsFactory);
 	return _fsFactory;
+}
+
+void OSystem::addSysArchivesToSearchSet(Common::SearchSet &s, int priority) {
+	// Add the current dir as a very last resort (cf. bug #3984).
+	// TODO: check if it's really needed
+	s.addDirectory(".", ".", priority - 1);
 }
 
 Common::SeekableReadStream *OSystem::createConfigReadStream() {
@@ -207,7 +266,7 @@ Common::WriteStream *OSystem::createConfigWriteStream() {
 #endif
 }
 
-Common::String OSystem::getDefaultConfigFileName() {
+Common::Path OSystem::getDefaultConfigFileName() {
 	return "scummvm.ini";
 }
 

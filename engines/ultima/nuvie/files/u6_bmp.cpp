@@ -19,7 +19,7 @@
  *
  */
 
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 #include "ultima/nuvie/core/nuvie_defs.h"
 #include "ultima/nuvie/files/u6_lzw.h"
 #include "ultima/nuvie/files/u6_bmp.h"
@@ -27,31 +27,30 @@
 namespace Ultima {
 namespace Nuvie {
 
-U6Bmp::U6Bmp(): U6Shape() {
-	data = NULL;
+U6Bmp::U6Bmp(): U6Shape(), data(nullptr) {
 }
 
 U6Bmp::~U6Bmp() {
-	if (data != NULL)
+	if (data != nullptr)
 		free(data);
 
-	raw = NULL;
+	raw = nullptr;
 }
 
 
-bool U6Bmp::load(Std::string filename) {
+bool U6Bmp::load(const Common::Path &filename) {
 	U6Lzw lzw;
 	uint32 data_size;
 
-	if (data != NULL)
+	if (data != nullptr)
 		return false;
 
-	if (filename.length() == 0)
+	if (filename.empty())
 		return false;
 
 	data = lzw.decompress_file(filename, data_size);
 
-	if (data == NULL)
+	if (data == nullptr)
 		return false;
 
 	width = (data[0] + (data[1] << 8));

@@ -32,21 +32,22 @@ class Cu6mPlayer: public CPlayer {
 public:
 	static CPlayer *factory(Copl *newopl);
 
-	Cu6mPlayer(Copl *newopl) : CPlayer(newopl), song_data(0), driver_active(0),
-		songend(0), song_pos(0), loop_position(0), read_delay(0) {
+	Cu6mPlayer(Copl *newopl) : CPlayer(newopl), song_data(0), driver_active(false),
+		songend(false), song_pos(0), loop_position(0), read_delay(0), played_ticks(0) {
+		ARRAYCLEAR(channel_freq);
 	}
 
 	~Cu6mPlayer() override;
 
 
 
-	bool load(const Std::string &filename) override;
+	bool load(const Common::Path &filename) override;
 	bool update() override;
 	void rewind(int subsong) override;
 	float getrefresh() override;
 
-	Std::string gettype() override {
-		return Std::string("Ultima 6 Music");
+	Common::String gettype() override {
+		return Common::String("Ultima 6 Music");
 	};
 
 

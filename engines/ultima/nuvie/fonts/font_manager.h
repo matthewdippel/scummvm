@@ -22,7 +22,7 @@
 #ifndef NUVIE_FONTS_FONT_MANAGER_H
 #define NUVIE_FONTS_FONT_MANAGER_H
 
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 
 namespace Ultima {
 namespace Nuvie {
@@ -34,9 +34,9 @@ class Font;
 #define NUVIE_FONT_GARG   1
 
 class FontManager {
-	Configuration *config;
+	const Configuration *config;
 
-	Std::vector<Font *> fonts;
+	Common::Array<Font *> fonts;
 	uint16 num_fonts;
 	Font *conv_font;
 	Font *conv_garg_font;
@@ -44,7 +44,7 @@ class FontManager {
 	uint8 *conv_font_widths;
 public:
 
-	FontManager(Configuration *cfg);
+	FontManager(const Configuration *cfg);
 	~FontManager();
 
 	bool init(nuvie_game_t game_type);
@@ -61,7 +61,7 @@ public:
 protected:
 
 	bool initU6();
-	bool initWOU(Std::string filename);
+	bool initWOU(Common::String filename);
 	bool initWOUSystemFont();
 	bool initConvFonts(nuvie_game_t game_type);
 };

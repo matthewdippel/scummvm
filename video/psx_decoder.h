@@ -65,37 +65,48 @@ public:
 	};
 
 	PSXStreamDecoder(CDSpeed speed, uint32 frameCount = 0);
-	virtual ~PSXStreamDecoder();
+	virtual ~PSXStreamDecoder() override;
 
-	bool loadStream(Common::SeekableReadStream *stream);
-	void close();
+	bool loadStream(Common::SeekableReadStream *stream) override;
+	void close() override;
 
 protected:
-	void readNextPacket();
-	bool useAudioSync() const;
+	void readNextPacket() override;
+	bool useAudioSync() const override;
 
 private:
 	class PSXVideoTrack : public VideoTrack {
 	public:
-		PSXVideoTrack(Common::SeekableReadStream *firstSector, CDSpeed speed, int frameCount);
-		~PSXVideoTrack();
+		PSXVideoTrack(Common::SeekableReadStream *firstSector, CDSpeed speed, int frameCount, byte channel);
+		~PSXVideoTrack() override;
 
-		uint16 getWidth() const { return _surface->w; }
-		uint16 getHeight() const { return _surface->h; }
-		Graphics::PixelFormat getPixelFormat() const { return _surface->format; }
-		bool endOfTrack() const { return _endOfTrack; }
-		int getCurFrame() const { return _curFrame; }
-		int getFrameCount() const { return _frameCount; }
-		uint32 getNextFrameStartTime() const;
-		const Graphics::Surface *decodeNextFrame();
+		byte getChannel() const { return _channel; }
+		uint16 getWidth() const override { return _width; }
+		uint16 getHeight() const override { return _height; }
+		Graphics::PixelFormat getPixelFormat() const override { return _pixelFormat; }
+		bool setOutputPixelFormat(const Graphics::PixelFormat &format) override {
+			if (format.bytesPerPixel != 2 && format.bytesPerPixel != 4)
+				return false;
+			_pixelFormat = format;
+			return true;
+		}
+		bool endOfTrack() const override { return _endOfTrack; }
+		int getCurFrame() const override { return _curFrame; }
+		int getFrameCount() const override { return _frameCount; }
+		uint32 getNextFrameStartTime() const override;
+		const Graphics::Surface *decodeNextFrame() override;
 
 		void setEndOfTrack() { _endOfTrack = true; }
 		void decodeFrame(Common::BitStreamMemoryStream *frame, uint sectorCount);
 
 	private:
 		Graphics::Surface *_surface;
+		Graphics::PixelFormat _pixelFormat;
+		uint16 _width;
+		uint16 _height;
 		uint32 _frameCount;
 		Audio::Timestamp _nextFrameStartTime;
+		byte _channel;
 		bool _endOfTrack;
 		int _curFrame;
 
@@ -126,19 +137,21 @@ private:
 
 	class PSXAudioTrack : public AudioTrack {
 	public:
-		PSXAudioTrack(Common::SeekableReadStream *sector, Audio::Mixer::SoundType soundType);
-		~PSXAudioTrack();
+		PSXAudioTrack(Common::SeekableReadStream *sector, Audio::Mixer::SoundType soundType, byte channel);
+		~PSXAudioTrack() override;
 
-		bool endOfTrack() const;
+		byte getChannel() const { return _channel; }
+		bool endOfTrack() const override;
 
 		void setEndOfTrack() { _endOfTrack = true; }
 		void queueAudioFromSector(Common::SeekableReadStream *sector);
 
 	private:
-		Audio::AudioStream *getAudioStream() const;
+		Audio::AudioStream *getAudioStream() const override;
 
 		Audio::QueuingAudioStream *_audStream;
 
+		byte _channel;
 		bool _endOfTrack;
 		bool _stereo;
 		uint _rate;

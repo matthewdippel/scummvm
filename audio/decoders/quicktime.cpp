@@ -39,29 +39,6 @@
 namespace Audio {
 
 /**
- * An AudioStream that just returns silent samples and runs infinitely.
- * Used to fill in the "empty edits" in the track queue which are just
- * supposed to be no sound playing.
- */
-class SilentAudioStream : public AudioStream {
-public:
-	SilentAudioStream(int rate, bool stereo) : _rate(rate), _isStereo(stereo) {}
-
-	int readBuffer(int16 *buffer, const int numSamples) override {
-		memset(buffer, 0, numSamples * 2);
-		return numSamples;
-	}
-
-	bool endOfData() const override { return false; } // it never ends!
-	bool isStereo() const override { return _isStereo; }
-	int getRate() const override { return _rate; }
-
-private:
-	int _rate;
-	bool _isStereo;
-};
-
-/**
  * An AudioStream wrapper that forces audio to be played in mono.
  * It currently just ignores the right channel if stereo.
  */
@@ -108,7 +85,7 @@ QuickTimeAudioDecoder::~QuickTimeAudioDecoder() {
 		delete _audioTracks[i];
 }
 
-bool QuickTimeAudioDecoder::loadAudioFile(const Common::String &filename) {
+bool QuickTimeAudioDecoder::loadAudioFile(const Common::Path &filename) {
 	if (!Common::QuickTimeParser::parseFile(filename))
 		return false;
 
@@ -228,7 +205,7 @@ void QuickTimeAudioDecoder::QuickTimeAudioTrack::queueAudio(const Timestamp &len
 				_skipSamples = Timestamp();
 			}
 
-			queueStream(makeLimitingAudioStream(new SilentAudioStream(getRate(), isStereo()), editLength), editLength);
+			queueStream(makeLimitingAudioStream(makeSilentAudioStream(getRate(), isStereo()), editLength), editLength);
 			_curEdit++;
 			enterNewEdit(nextEditTime);
 		} else {
@@ -238,7 +215,7 @@ void QuickTimeAudioDecoder::QuickTimeAudioTrack::queueAudio(const Timestamp &len
 			_skipAACPrimer = false;
 			_curChunk++;
 
-			// If we have any samples that we need to skip (ie. we seeked into
+			// If we have any samples that we need to skip (ie. we seek'ed into
 			// the middle of a chunk), skip them here.
 			if (_skipSamples != Timestamp()) {
 				if (_skipSamples > chunkLength) {
@@ -457,7 +434,7 @@ void QuickTimeAudioDecoder::QuickTimeAudioTrack::enterNewEdit(const Timestamp &p
 	// I really hope I never need to implement this :P
 	// But, I'll throw in this error just to make sure I catch anything with this...
 	if (_parentTrack->editList[_curEdit].mediaRate != 1)
-		error("Unhandled QuickTime audio rate change");
+		warning("QuickTimeAudioDecoder: Unhandled QuickTime audio rate change");
 
 	// Reinitialize the codec
 	((AudioSampleDesc *)_parentTrack->sampleDescs[0])->initCodec();
@@ -593,7 +570,7 @@ bool QuickTimeAudioDecoder::AudioSampleDesc::isAudioCodecSupported() const {
 	if (_codecTag == MKTAG('t', 'w', 'o', 's') || _codecTag == MKTAG('r', 'a', 'w', ' ') || _codecTag == MKTAG('i', 'm', 'a', '4'))
 		return true;
 
-#ifdef AUDIO_QDM2_H
+#ifdef USE_QDM2
 	if (_codecTag == MKTAG('Q', 'D', 'M', '2'))
 		return true;
 #endif
@@ -657,7 +634,7 @@ void QuickTimeAudioDecoder::AudioSampleDesc::initCodec() {
 
 	switch (_codecTag) {
 	case MKTAG('Q', 'D', 'M', '2'):
-#ifdef AUDIO_QDM2_H
+#ifdef USE_QDM2
 		_codec = makeQDM2Decoder(_extraData);
 #endif
 		break;
@@ -680,7 +657,7 @@ public:
 	QuickTimeAudioStream() {}
 	~QuickTimeAudioStream() {}
 
-	bool openFromFile(const Common::String &filename) {
+	bool openFromFile(const Common::Path &filename) {
 		return QuickTimeAudioDecoder::loadAudioFile(filename) && !_audioTracks.empty();
 	}
 
@@ -710,7 +687,7 @@ public:
 	Timestamp getLength() const override { return _audioTracks[0]->getLength(); }
 };
 
-SeekableAudioStream *makeQuickTimeStream(const Common::String &filename) {
+SeekableAudioStream *makeQuickTimeStream(const Common::Path &filename) {
 	QuickTimeAudioStream *audioStream = new QuickTimeAudioStream();
 
 	if (!audioStream->openFromFile(filename)) {

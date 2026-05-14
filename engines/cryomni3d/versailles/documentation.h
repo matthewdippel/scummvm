@@ -33,19 +33,19 @@ class FontManager;
 class MouseBoxes;
 class Sprites;
 
-class CryOmni3DEngine;
-
 namespace Versailles {
+class CryOmni3DEngine_Versailles;
+
 class Versailles_Documentation {
 public:
 	Versailles_Documentation() : _engine(nullptr), _fontManager(nullptr), _sprites(nullptr),
-		_messages(nullptr), _linksData(nullptr), _linksSize(0),
+		_messages(nullptr), _multilineAttributes(false), _linksData(nullptr), _linksSize(0),
 		_currentInTimeline(false), _currentMapLayout(false), _currentHasMap(false) { }
 	~Versailles_Documentation() { delete [] _linksData; }
 
 	void init(const Sprites *sprites, FontManager *fontManager, const Common::StringArray *messages,
-	          CryOmni3DEngine *engine, const Common::String &allDocsFileName,
-	          const Common::String &linksDocsFileName);
+	          CryOmni3DEngine_Versailles *engine, const Common::Path &allDocsFilePath,
+	          const Common::Path &linksDocsFilePath);
 	void handleDocArea();
 	void handleDocInGame(const Common::String &record);
 
@@ -110,12 +110,12 @@ private:
 	void loadLinksFile();
 	void getLinks(const Common::String &record, Common::Array<LinkInfo> &links);
 
-	Common::String _allDocsFileName;
-	Common::String _linksDocsFileName;
+	Common::Path _allDocsFilePath;
+	Common::Path _linksDocsFilePath;
 
 	static const uint kPopupMenuMargin = 5;
 
-	CryOmni3DEngine *_engine;
+	CryOmni3DEngine_Versailles *_engine;
 	FontManager *_fontManager;
 	const Sprites *_sprites;
 	const Common::StringArray *_messages;

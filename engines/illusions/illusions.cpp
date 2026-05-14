@@ -55,7 +55,6 @@
 #include "graphics/cursorman.h"
 #include "graphics/font.h"
 #include "graphics/fontman.h"
-#include "graphics/palette.h"
 #include "graphics/surface.h"
 
 namespace Illusions {
@@ -82,7 +81,7 @@ void swapBytesInWideString(byte *wstr) {
 }
 
 IllusionsEngine::IllusionsEngine(OSystem *syst, const IllusionsGameDescription *gd) :
-	Engine(syst), _gameDescription(gd) {
+	Engine(syst), _gameDescription(gd), _specialCode(nullptr) {
 
 	_random = new Common::RandomSource("illusions");
 

@@ -20,6 +20,7 @@
  */
 
 #include "common/scummsys.h"
+#include "graphics/paletteman.h"
 
 #include "asylum/system/screen.h"
 
@@ -183,6 +184,10 @@ void Screen::draw(GraphicResource *resource, uint32 frameIndex, const Common::Po
 	}
 }
 
+void Screen::draw(const Graphics::Surface &surface, int x, int y) {
+	_backBuffer.copyRectToSurface(surface, x, y, Common::Rect(0, 0, surface.w, surface.h));
+}
+
 //////////////////////////////////////////////////////////////////////////
 // Misc
 //////////////////////////////////////////////////////////////////////////
@@ -193,10 +198,8 @@ void Screen::clear() {
 
 void Screen::drawWideScreenBars(int16 barSize) const {
 	if (barSize > 0) {
-		_vm->_system->lockScreen()->fillRect(Common::Rect(0, 0, 640, barSize), 0);
-		_vm->_system->unlockScreen();
-		_vm->_system->lockScreen()->fillRect(Common::Rect(0, 480 - barSize, 640, 480), 0);
-		_vm->_system->unlockScreen();
+		_vm->_system->fillScreen(Common::Rect(0, 0, 640, barSize), 0);
+		_vm->_system->fillScreen(Common::Rect(0, 480 - barSize, 640, 480), 0);
 	}
 }
 
@@ -700,16 +703,14 @@ void Screen::drawGraphicsInQueue() {
 	// Sort by priority first
 	Common::sort(_queueItems.begin(), _queueItems.end(), &Screen::graphicQueueItemComparator);
 
-	for (Common::Array<GraphicQueueItem>::const_iterator i = _queueItems.begin(); i != _queueItems.end(); i++) {
-		const GraphicQueueItem *item = i;
-
-		if (item->type == kGraphicItemNormal) {
-			if (item->transTableNum <= 0 || Config.performance <= 1)
-				draw(item->resourceId, item->frameIndex, item->source, item->flags);
+	for (const auto &item : _queueItems) {
+		if (item.type == kGraphicItemNormal) {
+			if (item.transTableNum <= 0 || Config.performance <= 1)
+				draw(item.resourceId, item.frameIndex, item.source, item.flags);
 			else
-				drawTransparent(item->resourceId, item->frameIndex, item->source, item->flags, (uint32)(item->transTableNum - 1));
-		} else if (item->type == kGraphicItemMasked) {
-			draw(item->resourceId, item->frameIndex, item->source, item->flags, item->resourceIdDestination, item->destination);
+				drawTransparent(item.resourceId, item.frameIndex, item.source, item.flags, (uint32)(item.transTableNum - 1));
+		} else if (item.type == kGraphicItemMasked) {
+			draw(item.resourceId, item.frameIndex, item.source, item.flags, item.resourceIdDestination, item.destination);
 		}
 	}
 }
@@ -1138,16 +1139,16 @@ void Screen::bltMasked(byte *srcBuffer, byte *maskBuffer, int16 height, int16 wi
 
 void Screen::blt(Common::Rect *dest, GraphicFrame *frame, Common::Rect *source, int32 flags) {
 	if (_useColorKey) {
-		copyToBackBufferWithTransparency((byte *)frame->surface.getPixels() + (source->top * frame->surface.w + source->left),
-		                                 frame->surface.w,
+		copyToBackBufferWithTransparency((byte *)frame->surface.getBasePtr(source->left, source->top),
+		                                 frame->surface.pitch,
 		                                 dest->left,
 		                                 dest->top,
 		                                 (uint16)source->width(),
 		                                 (uint16)source->height(),
 		                                 (bool)(flags & kDrawFlagMirrorLeftRight));
 	} else {
-		copyToBackBuffer((byte *)frame->surface.getPixels() + (source->top * frame->surface.w + source->left),
-		                 frame->surface.w,
+		copyToBackBuffer((byte *)frame->surface.getBasePtr(source->left, source->top),
+		                 frame->surface.pitch,
 		                 dest->left,
 		                 dest->top,
 		                 (uint16)source->width(),
@@ -1157,32 +1158,22 @@ void Screen::blt(Common::Rect *dest, GraphicFrame *frame, Common::Rect *source, 
 }
 
 void Screen::bltFast(int16 dX, int16 dY, GraphicFrame *frame, Common::Rect *source) {
+	if (!frame->surface.getPixels() || source->width() == 0 || source->height() == 0)
+		return;
+
 	if (_useColorKey) {
-		copyToBackBufferWithTransparency((byte *)frame->surface.getPixels() + (source->top * frame->surface.w + source->left),
-		                                 frame->surface.w,
-		                                 dX,
-		                                 dY,
-		                                 (uint16)source->width(),
-		                                 (uint16)source->height());
+		_backBuffer.copyRectToSurfaceWithKey(frame->surface, dX, dY, *source, 0x00);
 	} else {
-		copyToBackBuffer((byte *)frame->surface.getPixels() + (source->top * frame->surface.w + source->left),
-		                 frame->surface.w,
-		                 dX,
-		                 dY,
-		                 (uint16)source->width(),
-		                 (uint16)source->height());
+		_backBuffer.copyRectToSurface(frame->surface, dX, dY, *source);
 	}
 }
 
 void Screen::copyToBackBuffer(const byte *buffer, int32 pitch, int16 x, int16 y, uint16 width, uint16 height, bool mirrored) {
-	byte *dest = (byte *)_backBuffer.getPixels();
+	if (!buffer || width == 0 || height == 0)
+		return;
 
 	if (!mirrored) {
-		while (height--) {
-			memcpy(dest + y * _backBuffer.pitch + x, buffer, width);
-			dest += 640;
-			buffer += pitch;
-		}
+		_backBuffer.copyRectToSurface(buffer, pitch, x, y, width, height);
 	} else {
 		error("[Screen::copyToBackBuffer] Mirrored drawing not implemented (no color key)");
 	}

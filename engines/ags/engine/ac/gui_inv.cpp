@@ -51,12 +51,12 @@ void GUIInvWindow::Draw(Bitmap *ds, int x, int y) {
 		return;
 
 	// backwards compatibility
+	// TODO: find a way to not have this inside GUIInvWindow::Draw!
 	_GP(play).inv_numinline = ColCount;
 	_GP(play).inv_numdisp = RowCount * ColCount;
-	_GP(play).obsolete_inv_numorder = _GP(charextra)[_GP(game).playercharacter].invorder_count;
-	// if the user changes top_inv_item, switch into backwards
-	// compatibiltiy mode
-	if (_GP(play).inv_top)
+	_GP(play).inv_numorder = _GP(charextra)[_GP(game).playercharacter].invorder_count;
+	// if the user changes top_inv_item, switch into backwards compat mode
+	if (_GP(play).inv_top != 0)
 		_GP(play).inv_backwards_compatibility = 1;
 	if (_GP(play).inv_backwards_compatibility)
 		TopItem = _GP(play).inv_top;
@@ -85,7 +85,7 @@ void GUIInvWindow::Draw(Bitmap *ds, int x, int y) {
 		GUI::Options.DisabledStyle == kGuiDis_Greyout &&
 		_GP(play).inventory_greys_out == 1) {
 		// darken the inventory when disabled
-		GUI::DrawDisabledEffect(ds, RectWH(x, y, Width, Height));
+		GUI::DrawDisabledEffect(ds, RectWH(x, y, _width, _height));
 	}
 }
 

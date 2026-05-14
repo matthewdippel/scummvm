@@ -22,7 +22,7 @@
 #ifndef AGS_SHARED_GUI_GUI_MAIN_H
 #define AGS_SHARED_GUI_GUI_MAIN_H
 
-#include "ags/lib/std/vector.h"
+#include "common/std/vector.h"
 #include "ags/engine/ac/draw.h"
 #include "ags/shared/ac/common.h"
 #include "ags/shared/ac/common_defines.h" // TODO: split out gui drawing helpers
@@ -42,8 +42,7 @@ class Stream;
 }
 using namespace AGS; // FIXME later
 
-// There were issues when including header caused conflicts
-struct GameSetupStruct;
+class SplitLines;
 
 #define LEGACY_MAX_OBJS_ON_GUI             30
 
@@ -73,41 +72,48 @@ public:
 public:
 	GUIMain();
 
-	void        InitDefaults();
+	void	InitDefaults();
 
 	// Tells if the gui background supports alpha channel
-	bool        HasAlphaChannel() const;
+	bool	HasAlphaChannel() const;
 	// Tells if GUI will react on clicking on it
-	bool        IsClickable() const;
+	bool	IsClickable() const { return (_flags & kGUIMain_Clickable) != 0; }
 	// Tells if GUI's visibility is overridden and it won't be displayed on
 	// screen regardless of Visible property (until concealed mode is off).
-	bool        IsConcealed() const;
+	bool	IsConcealed() const { return (_flags & kGUIMain_Concealed) != 0; }
 	// Tells if gui is actually meant to be displayed on screen.
 	// Normally Visible property determines whether GUI is allowed to be seen,
 	// but there may be other settings that override it.
-	bool        IsDisplayed() const;
+	bool	IsDisplayed() const { return IsVisible() && !IsConcealed(); }
 	// Tells if given coordinates are within interactable area of gui
 	// NOTE: this currently tests for actual visibility and Clickable property
-	bool        IsInteractableAt(int x, int y) const;
+	bool	IsInteractableAt(int x, int y) const;
 	// Tells if gui is a text window
-	bool        IsTextWindow() const;
+	bool	IsTextWindow() const { return (_flags & kGUIMain_TextWindow) != 0; }
 	// Tells if GUI is *allowed* to be displayed and interacted with.
 	// This does not necessarily mean that it is displayed right now, because
 	// GUI may be hidden for other reasons, including overriding behavior.
 	// For example GUI with kGUIPopupMouseY style will not be shown unless
 	// mouse cursor is at certain position on screen.
-	bool        IsVisible() const;
+	bool	IsVisible() const { return (_flags & kGUIMain_Visible) != 0; }
 
 	// Tells if GUI has graphically changed recently
-	bool        HasChanged() const;
-	bool        HasControlsChanged() const;
+	bool	HasChanged() const { return _hasChanged; }
+	bool	HasControlsChanged() const { return _hasControlsChanged; }
 	// Manually marks GUI as graphically changed
 	// NOTE: this only matters if GUI's own graphic changes (content, size etc),
 	// but not its state (visible) or texture drawing mode (transparency, etc).
-	void        MarkChanged();
-	void        MarkControlsChanged();
+	void	MarkChanged();
+	// Marks GUI as having any of its controls changed its looks.
+	void	MarkControlChanged();
 	// Clears changed flag
-	void        ClearChanged();
+	void	ClearChanged();
+	// Notify GUI about any of its controls changing its location.
+	void	NotifyControlPosition();
+	// Notify GUI about one of its controls changing its interactive state.
+	void	NotifyControlState(int objid, bool mark_changed);
+	// Resets control-under-mouse detection.
+	void	ResetOverControl();
 
 	// Finds a control under given screen coordinates, returns control's child ID.
 	// Optionally allows extra leeway (offset in all directions) to let the user grab tiny controls.
@@ -200,6 +206,7 @@ private:
 	int32_t _flags;         // style and behavior flags
 	bool    _hasChanged;    // flag tells whether GUI has graphically changed recently
 	bool    _hasControlsChanged;
+	bool	_polling; // inside the polling process
 
 	// Array of types and control indexes in global GUI object arrays;
 	// maps GUI child slots to actual controls and used for rebuilding Controls array
@@ -216,10 +223,24 @@ namespace GUI {
 extern GuiVersion GameGuiVersion;
 extern GuiOptions Options;
 
-// Calculates the text's graphical position, given the alignment
-Rect CalcTextPosition(const char *text, int font, const Rect &frame, FrameAlignment align);
-// Calculates the text's graphical position, given the horizontal alignment
+// Applies current text direction setting (may depend on multiple factors)
+String ApplyTextDirection(const String &text);
+// Calculates the text's draw position, given the alignment
+// optionally returns the real graphical rect that the text would occupy
+Point CalcTextPosition(const char *text, int font, const Rect &frame, FrameAlignment align, Rect *gr_rect = nullptr);
+// Calculates the text's draw position and horizontal extent,
+// using strictly horizontal alignment
 Line CalcTextPositionHor(const char *text, int font, int x1, int x2, int y, FrameAlignment align);
+// Calculates the graphical rect that the text would occupy
+// if drawn at the given coordinates
+Rect CalcTextGraphicalRect(const char *text, int font, const Point &at);
+// Calculates the graphical rect that the text would occupy
+// if drawn aligned to the given frame
+Rect CalcTextGraphicalRect(const char *text, int font, const Rect &frame, FrameAlignment align);
+// Calculates a vertical graphical extent for a given font,
+// which is a top and bottom offsets in zero-based coordinates.
+// NOTE: this applies font size fixups.
+Line CalcFontGraphicalVExtent(int font);
 // Draw standart "shading" effect over rectangle
 void DrawDisabledEffect(Bitmap *ds, const Rect &rc);
 // Draw text aligned inside rectangle
@@ -227,19 +248,27 @@ void DrawTextAligned(Bitmap *ds, const char *text, int font, color_t text_color,
 // Draw text aligned horizontally inside given bounds
 void DrawTextAlignedHor(Bitmap *ds, const char *text, int font, color_t text_color, int x1, int x2, int y, FrameAlignment align);
 
+// Parses the string and returns combination of label macro flags
+GUILabelMacro FindLabelMacros(const String &text);
+// Applies text transformation necessary for rendering, in accordance to the
+// current game settings, such as right-to-left render, and anything else
+String TransformTextForDrawing(const String &text, bool translate, bool apply_direction);
+// Wraps given text to make it fit into width, stores it in the lines;
+// apply_direction param tells whether text direction setting should be applied
+size_t SplitLinesForDrawing(const char *text, bool apply_direction, SplitLines &lines, int font, int width, size_t max_lines = -1);
+
 // Mark all existing GUI for redraw
-void MarkAllGUIForUpdate();
+void MarkAllGUIForUpdate(bool redraw, bool reset_over_ctrl);
 // Mark all translatable GUI controls for redraw
 void MarkForTranslationUpdate();
-// Mark all GUI which use the given font for redraw
+// Mark all GUI which use the given font for recalculate/redraw;
+// pass -1 to update all the textual controls together
 void MarkForFontUpdate(int font);
 // Mark labels that acts as special text placeholders for redraw
 void MarkSpecialLabelsForUpdate(GUILabelMacro macro);
-// Mark inventory windows for redraw, optionally only ones linked to given character
+// Mark inventory windows for redraw, optionally only ones linked to given character;
+// also marks buttons with inventory icon mode
 void MarkInventoryForUpdate(int char_id, bool is_player);
-
-// Parses the string and returns combination of label macro flags
-GUILabelMacro FindLabelMacros(const String &text);
 
 // Reads all GUIs and their controls.
 // WARNING: the data is read into the global arrays (guis, guibuts, and so on)
@@ -251,6 +280,10 @@ HError ReadGUI(Stream *in, bool is_savegame = false);
 void WriteGUI(Stream *out);
 // Converts legacy GUIVisibility into appropriate GUIMain properties
 void ApplyLegacyVisibility(GUIMain &gui, LegacyGUIVisState vis);
+
+// Rebuilds GUIs, connecting them to the child controls in memory.
+// WARNING: the data is processed in the global arrays (guis, guibuts, and so on)
+HError RebuildGUI();
 }
 
 } // namespace Shared
@@ -260,7 +293,6 @@ extern int get_adjusted_spritewidth(int spr);
 extern int get_adjusted_spriteheight(int spr);
 extern bool is_sprite_alpha(int spr);
 
-#define SET_EIP(x) set_our_eip(x);
 extern void set_eip_guiobj(int eip);
 extern int get_eip_guiobj();
 

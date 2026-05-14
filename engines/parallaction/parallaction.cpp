@@ -19,9 +19,11 @@
  *
  */
 
+#include "common/config-manager.h"
 #include "common/debug-channels.h"
 #include "common/system.h"
 #include "common/textconsole.h"
+#include "common/text-to-speech.h"
 
 #include "parallaction/exec.h"
 #include "parallaction/input.h"
@@ -76,6 +78,7 @@ Parallaction::Parallaction(OSystem *syst, const PARALLACTIONGameDescription *gam
 	_currentLocationIndex = 0;
 	_numLocations = 0;
 	_language = 0;
+	_characterVoiceID = 0;
 }
 
 Parallaction::~Parallaction() {
@@ -116,9 +119,22 @@ Common::Error Parallaction::init() {
 	_location._followerStartFrame = 0;
 	_objects = nullptr;
 
+	Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
+	if (ttsMan != nullptr) {
+		ttsMan->enable(ConfMan.getBool("tts_enabled"));
+
+		// For the multilingual versions, start with English TTS
+		// The language will be switched later after the user picks their language
+		if (getLanguage() != Common::UNK_LANG) {
+			ttsMan->setLanguage(ConfMan.get("language"));
+		} else {
+			ttsMan->setLanguage("en");
+		}
+	}
+
 	_screenSize = _screenWidth * _screenHeight;
 
-	strcpy(_characterName1, "null");
+	Common::strcpy_s(_characterName1, "null");
 
 	memset(_localFlags, 0, sizeof(_localFlags));
 	memset(_locationNames, 0, NUM_LOCATIONS * 32);
@@ -254,6 +270,8 @@ void Parallaction::showSlide(const char *name, int x, int y) {
 }
 
 void Parallaction::showLocationComment(const Common::String &text, bool end) {
+	setTTSVoice(kNarratorVoiceID);
+	sayText(text, Common::TextToSpeechManager::INTERRUPT);
 	_balloonMan->setLocationBalloon(text, end);
 }
 
@@ -346,6 +364,7 @@ void Parallaction::doLocationEnterTransition() {
 
 	_input->waitForButtonEvent(kMouseLeftUp);
 	_gfx->freeDialogueObjects();
+	setTTSVoice(_characterVoiceID);
 
 	// fades maximum intensity palette towards approximation of main palette
 	for (uint16 _si = 0; _si<6; _si++) {
@@ -792,6 +811,59 @@ ZonePtr Parallaction::hitZone(uint32 type, uint16 x, uint16 y) {
 	return ZonePtr();
 }
 
+void Parallaction::sayText(const Common::String &text, Common::TextToSpeechManager::Action action) const {
+	Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
+	if (ttsMan != nullptr && ConfMan.getBool("tts_enabled")) {
+		ttsMan->say(text, action, Common::CodePage::kWindows1252);
+	}
+}
+
+void Parallaction::setTTSVoice(int id) const {
+#ifdef USE_TTS
+	Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
+	if (ttsMan != nullptr && ConfMan.getBool("tts_enabled") && _gameType == GType_Nippon) {
+		Common::Array<int> voices;
+		int pitch = 0;
+		Common::TTSVoice::Gender gender;
+
+		if (characterVoiceDatas[id].male) {
+			voices = ttsMan->getVoiceIndicesByGender(Common::TTSVoice::MALE);
+			gender = Common::TTSVoice::MALE;
+		} else {
+			voices = ttsMan->getVoiceIndicesByGender(Common::TTSVoice::FEMALE);
+			gender = Common::TTSVoice::FEMALE;
+		}
+
+		// If no voice is available for the necessary gender, set the voice to default
+		if (voices.empty()) {
+			ttsMan->setVoice(0);
+		} else {
+			int voiceIndex = characterVoiceDatas[id].voiceID % voices.size();
+			ttsMan->setVoice(voices[voiceIndex]);
+		}
+
+		// If no voices are available for this gender, alter the pitch to mimic a voice
+		// of the other gender
+		if (ttsMan->getVoice().getGender() != gender) {
+			if (gender == Common::TTSVoice::MALE) {
+				pitch -= 50;
+			} else {
+				pitch += 50;
+			}
+		}
+
+		ttsMan->setPitch(pitch);
+	}
+#endif
+}
+
+void Parallaction::stopTextToSpeech() const {
+	Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
+	if (ttsMan != nullptr && ConfMan.getBool("tts_enabled") && ttsMan->isSpeaking()) {
+		ttsMan->stop();
+	}
+}
+
 ZonePtr Location::findZone(const char *name) {
 	for (ZoneList::iterator it = _zones.begin(); it != _zones.end(); ++it) {
 		if (!scumm_stricmp((*it)->_name, name)) return *it;
@@ -947,8 +1019,8 @@ void CharacterName::bind(const char *name) {
 
 	memset(_baseName, 0, 30);
 	strncpy(_baseName, begin, end - begin);
-	sprintf(_name, "%s%s", _prefix, _baseName);
-	sprintf(_fullName, "%s%s%s", _prefix, _baseName, _suffix);
+	Common::sprintf_s(_name, "%s%s", _prefix, _baseName);
+	Common::sprintf_s(_fullName, "%s%s%s", _prefix, _baseName, _suffix);
 }
 
 const char *CharacterName::getName() const {

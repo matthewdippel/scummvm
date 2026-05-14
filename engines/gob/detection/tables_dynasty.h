@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 /* Detection tables for The Last Dynasty. */
@@ -32,11 +38,10 @@
 		"",
 		AD_ENTRY1s("intro.stk", "6190e32404b672f4bbbc39cf76f41fda", 2511470),
 		EN_USA,
-		kPlatformDOS,
+		kPlatformWindows,
 		ADGF_NO_FLAGS,
 		GUIO3(GUIO_NOSUBTITLES, GUIO_NOSPEECH, GUIO_NOASPECT)
 	},
-	kGameTypeDynasty,
 	kFeatures640x480,
 	0, 0, 0
 },
@@ -50,7 +55,6 @@
 		ADGF_NO_FLAGS,
 		GUIO3(GUIO_NOSUBTITLES, GUIO_NOSPEECH, GUIO_NOASPECT)
 	},
-	kGameTypeDynasty,
 	kFeatures640x480,
 	0, 0, 0
 },
@@ -64,7 +68,6 @@
 		ADGF_NO_FLAGS,
 		GUIO3(GUIO_NOSUBTITLES, GUIO_NOSPEECH, GUIO_NOASPECT)
 	},
-	kGameTypeDynasty,
 	kFeatures640x480,
 	0, 0, 0
 },
@@ -78,7 +81,6 @@
 		ADGF_NO_FLAGS,
 		GUIO3(GUIO_NOSUBTITLES, GUIO_NOSPEECH, GUIO_NOASPECT)
 	},
-	kGameTypeDynasty,
 	kFeatures640x480,
 	0, 0, 0
 },
@@ -92,12 +94,11 @@
 		ADGF_NO_FLAGS,
 		GUIO3(GUIO_NOSUBTITLES, GUIO_NOSPEECH, GUIO_NOASPECT)
 	},
-	kGameTypeDynasty,
 	kFeatures640x480,
 	0, 0, 0
 },
 {
-	{
+	{ // Supplied by trembyle
 		"dynasty",
 		"",
 		AD_ENTRY1s("intro.stk", "a4a50c70d001b4398b174f1bff1987f6", 2607984),
@@ -106,12 +107,11 @@
 		ADGF_NO_FLAGS,
 		GUIO3(GUIO_NOSUBTITLES, GUIO_NOSPEECH, GUIO_NOASPECT)
 	},
-	kGameTypeDynasty,
 	kFeatures640x480,
 	0, 0, 0
 },
 {
-	{
+	{ // Supplied by trembyle
 		"dynasty",
 		"",
 		AD_ENTRY1s("intro.stk", "4bfcc878f2fb2f0809d1f257e1180cf1", 2857990),
@@ -120,7 +120,6 @@
 		ADGF_NO_FLAGS,
 		GUIO3(GUIO_NOSUBTITLES, GUIO_NOSPEECH, GUIO_NOASPECT)
 	},
-	kGameTypeDynasty,
 	kFeatures640x480,
 	0, 0, 0
 },
@@ -137,12 +136,11 @@
 		ADGF_DEMO,
 		GUIO1(GUIO_NOASPECT)
 	},
-	kGameTypeDynasty,
 	kFeatures640x480,
 	0, 0, 0
 },
 {	// Non-interactive
-	{
+	{ // Supplied by trembyle
 		"dynasty",
 		"Demo",
 		AD_ENTRY1s("intro.stk", "e49340fe5078e38e9f9290dfb75f98a5", 1348),
@@ -151,7 +149,6 @@
 		ADGF_DEMO,
 		GUIO1(GUIO_NOASPECT)
 	},
-	kGameTypeDynasty,
 	kFeatures640x480,
 	0, 0, 0
 },
@@ -165,7 +162,6 @@
 		ADGF_DEMO,
 		GUIO1(GUIO_NOASPECT)
 	},
-	kGameTypeDynasty,
 	kFeatures640x480,
 	"lda1.stk", 0, 0
 },
@@ -179,12 +175,11 @@
 		ADGF_DEMO,
 		GUIO1(GUIO_NOASPECT)
 	},
-	kGameTypeDynasty,
 	kFeatures640x480,
 	"lda1.stk", 0, 0
 },
 {
-	{
+	{ // Supplied by trembyle
 		"dynasty",
 		"Demo",
 		AD_ENTRY2s("demo.scn",	"a0d801c43a560b7471114744858b129c", 89,
@@ -194,23 +189,21 @@
 		ADGF_DEMO,
 		GUIO3(GUIO_NOSUBTITLES, GUIO_NOSPEECH, GUIO_NOASPECT)
 	},
-	kGameTypeDynasty,
 	kFeatures640x480 | kFeaturesSCNDemo,
 	"demo.scn", 0, 1
 },
 // Combined demo for Woodruff and The Last Dynasty
 {
-	{
+	{ // Supplied by trembyle
 		"dynastywood",
 		"Non-Interactive Demos",
-		AD_ENTRY2s("demo.scn",		"040a00b7276aa86fe7a51f5f362f63c7", 124,
-				   "demo5.vmd",		"2abb7b6a26406c984f389f0b24b5e28e", 13290970),
+		AD_ENTRY2s("demo.scn",	"040a00b7276aa86fe7a51f5f362f63c7", 124,
+				   "demo5.vmd",	"2abb7b6a26406c984f389f0b24b5e28e", 13290970),
 		EN_ANY,
 		kPlatformDOS,
 		ADGF_DEMO,
-		GUIO3(GUIO_NOSUBTITLES, GUIO_NOSPEECH, GUIO_NOASPECT)	
+		GUIO3(GUIO_NOSUBTITLES, GUIO_NOSPEECH, GUIO_NOASPECT)
 	},
-	kGameTypeDynastyWood,
 	kFeatures640x480 | kFeaturesSCNDemo,
 	"demo.scn", 0, 1
 },

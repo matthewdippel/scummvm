@@ -17,6 +17,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, MojoTouch has
+ * exclusively licensed this code on March 23th, 2024, to be used in
+ * closed-source products.
+ * Therefore, any contributions (commits) to it will also be dual-licensed.
+ *
  */
 
 #include "common/debug.h"
@@ -30,8 +37,8 @@
 namespace Toon {
 
 Character::Character(ToonEngine *vm) : _vm(vm) {
-	_animationInstance = NULL;
-	_shadowAnimationInstance = NULL;
+	_animationInstance = nullptr;
+	_shadowAnimationInstance = nullptr;
 	_x = 0;
 	_y = 0;
 	_z = 0;
@@ -39,11 +46,11 @@ Character::Character(ToonEngine *vm) : _vm(vm) {
 	_finalY = 0;
 	_sceneAnimationId = -1;
 
-	_walkAnim = NULL;
-	_idleAnim = NULL;
-	_talkAnim = NULL;
-	_shadowAnim = NULL;
-	_specialAnim = NULL;
+	_walkAnim = nullptr;
+	_idleAnim = nullptr;
+	_talkAnim = nullptr;
+	_shadowAnim = nullptr;
+	_specialAnim = nullptr;
 
 	_facing = 0;
 	_flags = 0;
@@ -100,7 +107,7 @@ void Character::setFacing(int32 facing) {
 	if (_blockingWalk) {
 		_flags |= 2;
 
-		_currentFacingStamp++;
+		++_currentFacingStamp;
 		int32 localFacingStamp = _currentFacingStamp;
 
 		int32 dir = 0;
@@ -165,11 +172,13 @@ void Character::setPosition(int16 x, int16 y) {
 bool Character::walkTo(int16 newPosX, int16 newPosY) {
 	debugC(1, kDebugCharacter, "walkTo(%d, %d)", newPosX, newPosY);
 
-	if (!_visible)
+	if (!_visible) {
 		return true;
+	}
 
-	if (_x == newPosX && _y == newPosY)
+	if (_x == newPosX && _y == newPosY) {
 		return true;
+	}
 
 	_vm->getPathFinding()->resetBlockingRects();
 
@@ -181,8 +190,9 @@ bool Character::walkTo(int16 newPosX, int16 newPosY) {
 	}
 
 	_vm->getPathFinding()->findClosestWalkingPoint(newPosX, newPosY, &_finalX, &_finalY, _x, _y);
-	if (_x == _finalX && _y == _finalY)
+	if (_x == _finalX && _y == _finalY) {
 		return true;
+	}
 
 	if (_vm->getPathFinding()->findPath(_x, _y, _finalX, _finalY)) {
 
@@ -192,7 +202,7 @@ bool Character::walkTo(int16 newPosX, int16 newPosY) {
 		int32 smoothDy = 0;
 
 		_currentPath.clear();
-		for (uint32 a = 0; a < _vm->getPathFinding()->getPathNodeCount(); a++)
+		for (uint32 a = 0; a < _vm->getPathFinding()->getPathNodeCount(); ++a)
 			_currentPath.push_back(Common::Point(_vm->getPathFinding()->getPathNodeX(a), _vm->getPathFinding()->getPathNodeY(a)));
 		_currentPathNode = 0;
 		stopSpecialAnim();
@@ -203,7 +213,7 @@ bool Character::walkTo(int16 newPosX, int16 newPosY) {
 
 		_flags |= 0x1;
 
-		_currentWalkStamp++;
+		++_currentWalkStamp;
 
 		int32 localWalkStamp = _currentWalkStamp;
 
@@ -240,7 +250,7 @@ bool Character::walkTo(int16 newPosX, int16 newPosY) {
 				while (_numPixelToWalk >= 1000 && _currentPathNode < _currentPath.size()) {
 					_x = _currentPath[_currentPathNode].x;
 					_y = _currentPath[_currentPathNode].y;
-					_currentPathNode += 1;
+					++_currentPathNode;
 					_numPixelToWalk -= 1000;
 				}
 				setPosition(_x, _y);
@@ -376,7 +386,7 @@ void Character::update(int32 timeIncrement) {
 			while (_numPixelToWalk > 1000 && _currentPathNode < _currentPath.size()) {
 				_x = _currentPath[_currentPathNode].x;
 				_y = _currentPath[_currentPathNode].y;
-				_currentPathNode += 1;
+				++_currentPathNode;
 				_numPixelToWalk -= 1000;
 			}
 			setPosition(_x, _y);
@@ -569,12 +579,12 @@ int32 Character::getFacingFromDirection(int16 dx, int16 dy) {
 		ydiff = xdiff;
 		xdiff = temp;
 	} else
-		facingEntry++;
+		++facingEntry;
 
 	facingEntry *= 2;
 
 	if (xdiff < ((ydiff + 1) / 2))
-		facingEntry++;
+		++facingEntry;
 
 	return facingTable[facingEntry];
 }
@@ -612,6 +622,7 @@ void Character::save(Common::WriteStream *stream) {
 	stream->writeSint32LE(_z);
 	stream->writeSint32LE(_finalX);
 	stream->writeSint32LE(_finalY);
+	stream->writeSint32LE(_facing); // Introduced in save game version 6 and greater
 	stream->writeSint32LE(_scale);
 	stream->writeSint32LE(_id);
 
@@ -621,7 +632,7 @@ void Character::save(Common::WriteStream *stream) {
 	stream->writeSint32LE(_sceneAnimationId);
 }
 
-void Character::load(Common::ReadStream *stream) {
+void Character::load(Common::ReadStream *stream, int32 saveGameVersion) {
 	debugC(1, kDebugCharacter, "read(stream)");
 
 	_flags = stream->readSint32LE();
@@ -632,6 +643,9 @@ void Character::load(Common::ReadStream *stream) {
 	_z = stream->readSint32LE();
 	_finalX = stream->readSint32LE();
 	_finalY = stream->readSint32LE();
+	if (saveGameVersion >= 6) {
+		_facing = stream->readSint32LE();
+	}
 	_scale = stream->readSint32LE();
 	_id = stream->readSint32LE();
 
@@ -1304,7 +1318,7 @@ bool Character::loadShadowAnimation(const Common::String &animName) {
 }
 
 void Character::plotPath(Graphics::Surface& surface) {
-	for (uint32 i = 0; i < _currentPath.size(); i++) {
+	for (uint32 i = 0; i < _currentPath.size(); ++i) {
 		 *(byte *)surface.getBasePtr(_currentPath[i].x, _currentPath[i].y) = (i < _currentPathNode);
 	}
 }

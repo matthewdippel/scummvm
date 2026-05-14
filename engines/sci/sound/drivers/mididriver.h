@@ -19,8 +19,8 @@
  *
  */
 
-#ifndef SCI_SFX_SOFTSEQ_MIDIDRIVER_H
-#define SCI_SFX_SOFTSEQ_MIDIDRIVER_H
+#ifndef SCI_SOUND_DRIVERS_MIDIDRIVER_H
+#define SCI_SOUND_DRIVERS_MIDIDRIVER_H
 
 #include "sci/sci.h"
 #include "sci/util.h"
@@ -144,12 +144,12 @@ extern MidiPlayer *MidiPlayer_AmigaMac1_create(SciVersion version, Common::Platf
 extern MidiPlayer *MidiPlayer_PCJr_create(SciVersion version);
 extern MidiPlayer *MidiPlayer_PCSpeaker_create(SciVersion version);
 extern MidiPlayer *MidiPlayer_CMS_create(SciVersion version);
-extern MidiPlayer *MidiPlayer_MacSci0_create(SciVersion version);
 extern MidiPlayer *MidiPlayer_Midi_create(SciVersion version);
 extern MidiPlayer *MidiPlayer_Fb01_create(SciVersion version);
+extern MidiPlayer *MidiPlayer_Casio_create(SciVersion version, MusicType midiType);
 extern MidiPlayer *MidiPlayer_FMTowns_create(SciVersion version);
 extern MidiPlayer *MidiPlayer_PC9801_create(SciVersion version);
 
 } // End of namespace Sci
 
-#endif // SCI_SFX_SOFTSEQ_MIDIDRIVER_H
+#endif // SCI_SOUND_DRIVERS_MIDIDRIVER_H

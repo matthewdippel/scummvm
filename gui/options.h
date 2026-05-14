@@ -32,7 +32,7 @@
 #include "gui/fluidsynth-dialog.h"
 #endif
 
-#ifdef USE_LIBCURL
+#ifdef USE_CLOUD
 #include "backends/cloud/storage.h"
 #endif
 
@@ -54,6 +54,8 @@ class CommandSender;
 class GuiObject;
 class RadiobuttonGroup;
 class RadiobuttonWidget;
+class PathWidget;
+class ScrollContainerWidget;
 class OptionsContainerWidget;
 
 class OptionsDialog : public Dialog {
@@ -80,20 +82,19 @@ protected:
 	Common::String _domain;
 
 	ButtonWidget *_soundFontButton;
-	StaticTextWidget *_soundFont;
+	PathWidget *_soundFont;
 	ButtonWidget *_soundFontClearButton;
 
 	virtual void build();
 	virtual void clean();
 	void rebuild();
-
+	bool testGraphicsSettings();
 
 	void addControlControls(GuiObject *boss, const Common::String &prefix);
 	void addKeyMapperControls(GuiObject *boss, const Common::String &prefix, const Common::Array<Common::Keymap *> &keymaps, const Common::String &domain);
 	void addAchievementsControls(GuiObject *boss, const Common::String &prefix);
 	void addStatisticsControls(GuiObject *boss, const Common::String &prefix);
 	void addGraphicControls(GuiObject *boss, const Common::String &prefix);
-	void addShaderControls(GuiObject *boss, const Common::String &prefix);
 	void addAudioControls(GuiObject *boss, const Common::String &prefix);
 	void addMIDIControls(GuiObject *boss, const Common::String &prefix);
 	void addMT32Controls(GuiObject *boss, const Common::String &prefix);
@@ -103,12 +104,13 @@ protected:
 	void addSubtitleControls(GuiObject *boss, const Common::String &prefix, int maxSliderVal = 255);
 
 	void setGraphicSettingsState(bool enabled);
-	void setShaderSettingsState(bool enabled);
 	void setAudioSettingsState(bool enabled);
 	void setMIDISettingsState(bool enabled);
 	void setMT32SettingsState(bool enabled);
 	void setVolumeSettingsState(bool enabled);
 	void setSubtitleSettingsState(bool enabled);
+
+	void enableShaderControls(bool enabled);
 
 	virtual void setupGraphicsTab();
 	void updateScaleFactors(uint32 tag);
@@ -119,7 +121,12 @@ protected:
 	TabWidget *_tabWidget;
 	int _graphicsTabId;
 	int _midiTabId;
-	int _pathsTabId;
+
+	ScrollContainerWidget *_pathsContainer;
+
+	PathWidget *_shader;
+	ButtonWidget *_shaderClearButton;
+	ButtonWidget *_updateShadersButton = nullptr;
 
 private:
 
@@ -152,6 +159,7 @@ private:
 	PopUpWidget *_stretchPopUp;
 	StaticTextWidget *_scalerPopUpDesc;
 	PopUpWidget *_scalerPopUp, *_scaleFactorPopUp;
+	ButtonWidget *_shaderButton;
 	CheckboxWidget *_fullscreenCheckbox;
 	CheckboxWidget *_filteringCheckbox;
 	CheckboxWidget *_aspectCheckbox;
@@ -162,13 +170,8 @@ private:
 	PopUpWidget *_antiAliasPopUp;
 	StaticTextWidget *_renderModePopUpDesc;
 	PopUpWidget *_renderModePopUp;
-
-	//
-	// Shader controls
-	//
-	bool _enableShaderSettings;
-	StaticTextWidget *_shaderPopUpDesc;
-	PopUpWidget *_shaderPopUp;
+	StaticTextWidget *_rotationModePopUpDesc;
+	PopUpWidget *_rotationModePopUp;
 
 	//
 	// Audio controls
@@ -277,40 +280,55 @@ protected:
 
 	void addMIDIControls(GuiObject *boss, const Common::String &prefix);
 
-	StaticTextWidget *_savePath;
+	PathWidget       *_savePath;
 	ButtonWidget	 *_savePathClearButton;
-	StaticTextWidget *_themePath;
+	PathWidget       *_themePath;
 	ButtonWidget	 *_themePathClearButton;
-	StaticTextWidget *_iconPath;
+	PathWidget       *_iconPath;
 	ButtonWidget	 *_iconPathClearButton;
-	StaticTextWidget *_extraPath;
+#ifdef USE_DLC
+	PathWidget       *_dlcPath;
+	ButtonWidget	 *_dlcPathClearButton;
+#endif
+	PathWidget       *_extraPath;
 	ButtonWidget	 *_extraPathClearButton;
 #ifdef DYNAMIC_MODULES
-	StaticTextWidget *_pluginsPath;
+	PathWidget       *_pluginsPath;
 	ButtonWidget	 *_pluginsPathClearButton;
 #endif
 	StaticTextWidget *_browserPath;
 	ButtonWidget	 *_browserPathClearButton;
+	StaticTextWidget *_logPath;
 
 	void addPathsControls(GuiObject *boss, const Common::String &prefix, bool lowres);
 
 	//
-	// Misc controls
+	// GUI controls
 	//
 	StaticTextWidget *_curTheme;
 	StaticTextWidget *_guiBasePopUpDesc;
 	PopUpWidget *_guiBasePopUp;
 	StaticTextWidget *_rendererPopUpDesc;
 	PopUpWidget *_rendererPopUp;
-	StaticTextWidget *_autosavePeriodPopUpDesc;
-	PopUpWidget *_autosavePeriodPopUp;
 	StaticTextWidget *_guiLanguagePopUpDesc;
 	PopUpWidget *_guiLanguagePopUp;
 	CheckboxWidget *_guiLanguageUseGameLanguageCheckbox;
 	CheckboxWidget *_useSystemDialogsCheckbox;
 	CheckboxWidget *_guiReturnToLauncherAtExit;
 	CheckboxWidget *_guiConfirmExit;
+	CheckboxWidget *_guiDisableBDFScaling;
 
+	void addGUIControls(GuiObject *boss, const Common::String &prefix, bool lowres);
+
+	//
+	// Misc controls
+	//
+	StaticTextWidget *_autosavePeriodPopUpDesc;
+	PopUpWidget      *_autosavePeriodPopUp;
+	StaticTextWidget *_randomSeedDesc;
+	EditTextWidget   *_randomSeed;
+	ButtonWidget	 *_randomSeedClearButton;
+	PopUpWidget      *_debugLevelPopUp;
 
 #ifdef USE_UPDATES
 	StaticTextWidget *_updatesPopUpDesc;
@@ -321,7 +339,6 @@ protected:
 	void addMiscControls(GuiObject *boss, const Common::String &prefix, bool lowres);
 
 #ifdef USE_CLOUD
-#ifdef USE_LIBCURL
 	//
 	// Cloud controls
 	//
@@ -345,23 +362,16 @@ protected:
 
 	bool _connectingStorage;
 	StaticTextWidget *_storageWizardNotConnectedHint;
-	StaticTextWidget *_storageWizardOpenLinkHint;
-	StaticTextWidget *_storageWizardLink;
-	StaticTextWidget *_storageWizardCodeHint;
-	EditTextWidget   *_storageWizardCodeBox;
-	ButtonWidget	 *_storageWizardPasteButton;
-	ButtonWidget	 *_storageWizardConnectButton;
-	StaticTextWidget *_storageWizardConnectionStatusHint;
+	ButtonWidget     *_storageWizardConnectButton;
 	bool _redrawCloudTab;
 
 	void addCloudControls(GuiObject *boss, const Common::String &prefix, bool lowres);
 	void setupCloudTab();
 	void shiftWidget(Widget *widget, const char *widgetName, int32 xOffset, int32 yOffset);
 
-	void storageConnectionCallback(Networking::ErrorResponse response);
-	void storageSavesSyncedCallback(Cloud::Storage::BoolResponse response);
-	void storageErrorCallback(Networking::ErrorResponse response);
-#endif // USE_LIBCURL
+	void storageSavesSyncedCallback(const Cloud::Storage::BoolResponse &response);
+	void storageErrorCallback(const Networking::ErrorResponse &response);
+#endif // USE_CLOUD
 
 #ifdef USE_SDL_NET
 	//
@@ -370,7 +380,7 @@ protected:
 	ButtonWidget	 *_runServerButton;
 	StaticTextWidget *_serverInfoLabel;
 	ButtonWidget	 *_rootPathButton;
-	StaticTextWidget *_rootPath;
+	PathWidget       *_rootPath;
 	ButtonWidget	 *_rootPathClearButton;
 	StaticTextWidget *_serverPortDesc;
 	EditTextWidget   *_serverPort;
@@ -383,7 +393,6 @@ protected:
 	void reflowNetworkTabLayout();
 #endif // USE_SDL_NET
 
-#endif // USE_CLOUD
 	//
 	// Accessibility controls
 	//

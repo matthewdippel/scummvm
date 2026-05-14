@@ -58,12 +58,12 @@ GfxMenu::GfxMenu(AgiEngine *vm, GfxMgr *gfx, PictureMgr *picture, TextMgr *text)
 }
 
 GfxMenu::~GfxMenu() {
-	for (GuiMenuArray::iterator itemIter = _array.begin(); itemIter != _array.end(); ++itemIter)
-		delete *itemIter;
+	for (auto *menu : _array)
+		delete menu;
 	_array.clear();
 
-	for (GuiMenuItemArray::iterator menuIter = _itemArray.begin(); menuIter != _itemArray.end(); ++menuIter)
-		delete *menuIter;
+	for (auto *menuItem : _itemArray)
+		delete menuItem;
 	_itemArray.clear();
 }
 
@@ -164,22 +164,15 @@ void GfxMenu::addMenuItem(const char *menuItemText, uint16 controllerSlot) {
 }
 
 void GfxMenu::submit() {
-	GuiMenuEntry *menuEntry = nullptr;
-	GuiMenuItemEntry *menuItemEntry = nullptr;
-	int16 menuCount = _array.size();
-	int16 menuNr = 0;
-	int16 menuItemNr = 0;
-	int16 menuItemLastNr = 0;
-
 	if ((_array.size() == 0) || (_itemArray.size() == 0))
 		return;
 
 	// WORKAROUND: For Apple II gs we add a Speed menu
 	if (_vm->getPlatform() == Common::kPlatformApple2GS && ConfMan.getBool("apple2gs_speedmenu")) {
 		uint16 maxControllerSlot = 0;
-		for (GuiMenuItemArray::iterator menuIter = _itemArray.begin(); menuIter != _itemArray.end(); ++menuIter)
-			if ((*menuIter)->controllerSlot > maxControllerSlot)
-				maxControllerSlot = (*menuIter)->controllerSlot;
+		for (auto &menuItem : _itemArray)
+			if (menuItem->controllerSlot > maxControllerSlot)
+				maxControllerSlot = menuItem->controllerSlot;
 		for (uint16 curMapping = 0; curMapping < MAX_CONTROLLER_KEYMAPPINGS; curMapping++)
 			if (_vm->_game.controllerKeyMapping[curMapping].controllerSlot > maxControllerSlot)
 				maxControllerSlot = _vm->_game.controllerKeyMapping[curMapping].controllerSlot;
@@ -204,15 +197,16 @@ void GfxMenu::submit() {
 	// Atari ST SQ1 had one bad menu entry as well, we fix that too.
 	switch (_vm->getPlatform()) {
 	case Common::kPlatformApple2GS:
-	case Common::kPlatformAtariST:
+	case Common::kPlatformAtariST: {
 		// Go through all menus
-		for (menuNr = 0; menuNr < menuCount; menuNr++) {
-			menuEntry = _array[menuNr];
-			menuItemLastNr = menuEntry->firstItemNr + menuEntry->itemCount;
+		int16 menuCount = _array.size();
+		for (int16 menuNr = 0; menuNr < menuCount; menuNr++) {
+			GuiMenuEntry *menuEntry = _array[menuNr];
+			int16 menuItemLastNr = menuEntry->firstItemNr + menuEntry->itemCount;
 
 			// Go through all items of current menu
-			for (menuItemNr = menuEntry->firstItemNr; menuItemNr < menuItemLastNr; menuItemNr++) {
-				menuItemEntry = _itemArray[menuItemNr];
+			for (int16 menuItemNr = menuEntry->firstItemNr; menuItemNr < menuItemLastNr; menuItemNr++) {
+				GuiMenuItemEntry *menuItemEntry = _itemArray[menuItemNr];
 
 				if (menuItemEntry->textLen < menuEntry->maxItemTextLen) {
 					// current item text is shorter than the maximum?
@@ -270,6 +264,7 @@ void GfxMenu::submit() {
 			}
 		}
 		break;
+	}
 	default:
 		break;
 	}
@@ -284,32 +279,16 @@ void GfxMenu::itemDisable(uint16 controllerSlot) {
 }
 
 void GfxMenu::itemEnableDisable(uint16 controllerSlot, bool enabled) {
-	GuiMenuItemArray::iterator listIterator;
-	GuiMenuItemArray::iterator listEnd = _itemArray.end();
-	GuiMenuItemEntry *menuItemEntry;
-
-	listIterator = _itemArray.begin();
-	while (listIterator != listEnd) {
-		menuItemEntry = *listIterator;
-		if (menuItemEntry->controllerSlot == controllerSlot) {
-			menuItemEntry->enabled = enabled;
+	for (auto &menuItem : _itemArray) {
+		if (menuItem->controllerSlot == controllerSlot) {
+			menuItem->enabled = enabled;
 		}
-
-		listIterator++;
 	}
 }
 
 void GfxMenu::itemEnableAll() {
-	GuiMenuItemArray::iterator listIterator;
-	GuiMenuItemArray::iterator listEnd = _itemArray.end();
-	GuiMenuItemEntry *menuItemEntry;
-
-	listIterator = _itemArray.begin();
-	while (listIterator != listEnd) {
-		menuItemEntry = *listIterator;
-		menuItemEntry->enabled = true;
-
-		listIterator++;
+	for (auto &menuItem : _itemArray) {
+		menuItem->enabled = true;
 	}
 }
 
@@ -336,7 +315,7 @@ void GfxMenu::delayedExecuteViaMouse() {
 }
 
 bool GfxMenu::delayedExecuteActive() {
-	return _delayedExecuteViaKeyboard | _delayedExecuteViaMouse;
+	return _delayedExecuteViaKeyboard || _delayedExecuteViaMouse;
 }
 
 void GfxMenu::execute() {
@@ -376,6 +355,9 @@ void GfxMenu::execute() {
 
 	if (_drawnMenuNr >= 0) {
 		if (viaKeyboard) {
+#ifdef USE_TTS
+			_vm->_queueNextText = true;
+#endif
 			drawMenu(_drawnMenuNr, _array[_drawnMenuNr]->selectedItemNr);
 		}
 		if (viaMouse) {
@@ -431,6 +413,9 @@ void GfxMenu::drawMenuName(int16 menuNr, bool inverted) {
 	if (!inverted) {
 		_text->charAttrib_Set(0, _text->calculateTextBackground(15));
 	} else {
+#ifdef USE_TTS
+		_vm->sayText(menuEntry->text.c_str(), Common::TextToSpeechManager::INTERRUPT, false);
+#endif
 		_text->charAttrib_Set(15, _text->calculateTextBackground(0));
 	}
 
@@ -449,6 +434,15 @@ void GfxMenu::drawItemName(int16 itemNr, bool inverted) {
 	if (!inverted) {
 		_text->charAttrib_Set(0, _text->calculateTextBackground(15));
 	} else {
+#ifdef USE_TTS
+		if (_vm->_queueNextText) {
+			_vm->sayText(itemEntry->text.c_str(), Common::TextToSpeechManager::QUEUE, false);
+			_vm->_queueNextText = false;
+		} else {
+			_vm->sayText(itemEntry->text.c_str(), Common::TextToSpeechManager::INTERRUPT, false);
+		}
+#endif
+		
 		_text->charAttrib_Set(15, _text->calculateTextBackground(0));
 	}
 
@@ -570,6 +564,9 @@ void GfxMenu::keyPress(uint16 newKey) {
 		}
 
 		if (newMenuNr != _drawnMenuNr) {
+#ifdef USE_TTS
+			_vm->_queueNextText = true;
+#endif
 			removeActiveMenu(_drawnMenuNr);
 			_drawnMenuNr = newMenuNr;
 			drawMenu(_drawnMenuNr, _array[_drawnMenuNr]->selectedItemNr);

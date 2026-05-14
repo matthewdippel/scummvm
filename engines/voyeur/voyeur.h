@@ -65,12 +65,17 @@ namespace Voyeur {
 #define MANSION_SCROLL_INC_Y 4
 
 enum VoyeurDebugChannels {
-	kDebugScripts	= 1 << 0
+	kDebugScripts = 1,
 };
 
 enum VoyeurArea { AREA_NONE, AREA_APARTMENT, AREA_INTERFACE, AREA_ROOM, AREA_EVIDENCE };
 
 struct VoyeurGameDescription;
+
+enum VOYEURAction {
+	kActionNone,
+	kActionSkip,
+};
 
 class VoyeurEngine : public Engine {
 private:
@@ -93,6 +98,8 @@ private:
 	void playStamp();
 	void initStamp();
 	void closeStamp();
+
+	void showLogo8Intro();
 
 	/**
 	 * Shows the game ending title animation
@@ -204,13 +211,13 @@ public:
 	bool getIsDemo() const;
 
 	int getRandomNumber(int maxNumber);
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 	void loadGame(int slot);
 
-	void playRL2Video(const Common::String &filename);
+	void playRL2Video(const Common::Path &filename);
 	void doTransitionCard(const Common::String &time, const Common::String &location);
 
 	/**

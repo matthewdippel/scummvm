@@ -39,17 +39,17 @@ static const DebugChannelDef debugFlagList[] = {
 
 #include "voyeur/detection_tables.h"
 
-class VoyeurMetaEngineDetection : public AdvancedMetaEngineDetection {
+class VoyeurMetaEngineDetection : public AdvancedMetaEngineDetection<Voyeur::VoyeurGameDescription> {
 public:
-	VoyeurMetaEngineDetection() : AdvancedMetaEngineDetection(Voyeur::gameDescriptions, sizeof(Voyeur::VoyeurGameDescription), voyeurGames) {
+	VoyeurMetaEngineDetection() : AdvancedMetaEngineDetection(Voyeur::gameDescriptions, voyeurGames) {
 		_maxScanDepth = 3;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "voyeur";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Voyeur";
 	}
 

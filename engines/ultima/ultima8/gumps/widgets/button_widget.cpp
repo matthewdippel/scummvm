@@ -22,8 +22,8 @@
 #include "ultima/ultima8/gumps/widgets/button_widget.h"
 #include "ultima/ultima8/gumps/widgets/text_widget.h"
 #include "ultima/ultima8/games/game_data.h"
-#include "ultima/ultima8/graphics/shape_archive.h"
-#include "ultima/ultima8/graphics/shape.h"
+#include "ultima/ultima8/gfx/shape_archive.h"
+#include "ultima/ultima8/gfx/shape.h"
 #include "ultima/ultima8/kernel/mouse.h"
 #include "ultima/ultima8/world/get_object.h"
 
@@ -38,7 +38,7 @@ ButtonWidget::ButtonWidget() : Gump(), _shapeUp(nullptr), _shapeDown(nullptr),
 		_frameNumDown(0), _mouseOverBlendCol(0), _textWidget(0) {
 }
 
-ButtonWidget::ButtonWidget(int x, int y, Std::string txt, bool gamefont,
+ButtonWidget::ButtonWidget(int x, int y, Common::String txt, bool gamefont,
 						   int font, uint32 mouseOverBlendCol,
 						   int w, int h, int32 layer) :
 	Gump(x, y, w, h, 0, 0, layer), _shapeUp(nullptr), _shapeDown(nullptr),
@@ -71,7 +71,7 @@ void ButtonWidget::InitGump(Gump *newparent, bool take_focus) {
 		Gump *widget = getGump(_textWidget);
 		assert(widget);
 		widget->InitGump(this);
-		widget->GetDims(_dims); // transfer child dimension to self
+		_dims = widget->getDims(); // transfer child dimension to self
 		widget->Move(0, _dims.top); // move it to the correct height
 	} else {
 		assert(_shapeUp != nullptr);
@@ -110,7 +110,7 @@ Gump *ButtonWidget::onMouseDown(int button, int32 mx, int32 my) {
 	Gump *ret = Gump::onMouseDown(button, mx, my);
 	if (ret)
 		return ret;
-	if (button == Shared::BUTTON_LEFT) {
+	if (button == Mouse::BUTTON_LEFT) {
 		// CHECKME: change dimensions or not?
 		if (!_mouseOver) {
 			_shape = _shapeDown;
@@ -130,23 +130,24 @@ uint16 ButtonWidget::TraceObjId(int32 mx, int32 my) {
 
 
 void ButtonWidget::onMouseUp(int button, int32 mx, int32 my) {
-	if (button == Shared::BUTTON_LEFT) {
+	if (button == Mouse::BUTTON_LEFT) {
 		if (!_mouseOver) {
 			_shape = _shapeUp;
 			_frameNum = _frameNumUp;
 		}
-		_parent->ChildNotify(this, BUTTON_UP);
+		if (PointOnGump(mx, my))
+			_parent->ChildNotify(this, BUTTON_UP);
 	}
 }
 
 void ButtonWidget::onMouseClick(int button, int32 mx, int32 my) {
-	int gx = mx, gy = my;
-	if (PointOnGump(gx, gy))
+	if (PointOnGump(mx, my))
 		_parent->ChildNotify(this, BUTTON_CLICK);
 }
 
 void ButtonWidget::onMouseDouble(int button, int32 mx, int32 my) {
-	_parent->ChildNotify(this, BUTTON_DOUBLE);
+	if (PointOnGump(mx, my))
+		_parent->ChildNotify(this, BUTTON_DOUBLE);
 }
 
 void ButtonWidget::onMouseOver() {
@@ -244,7 +245,7 @@ bool ButtonWidget::loadData(Common::ReadStream *rs, uint32 version) {
 	// HACK ALERT
 	if (_textWidget != 0) {
 		Gump *widget = getGump(_textWidget);
-		widget->GetDims(_dims); // transfer child dimension to self
+		_dims = widget->getDims(); // transfer child dimension to self
 		widget->Move(0, _dims.top); // move it to the correct height
 	}
 

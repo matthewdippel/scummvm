@@ -37,7 +37,7 @@
 #include "sword2/screen.h"
 #include "sword2/animation.h"
 
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 
 #include "gui/message.h"
 
@@ -45,9 +45,7 @@
 #include "video/avi_decoder.h"
 #endif
 
-#ifdef USE_ZLIB
 #include "video/dxa_decoder.h"
-#endif
 
 #include "video/smk_decoder.h"
 #include "video/psx_decoder.h"
@@ -61,7 +59,7 @@ namespace Sword2 {
 ///////////////////////////////////////////////////////////////////////////////
 
 MoviePlayer::MoviePlayer(Sword2Engine *vm, OSystem *system, Video::VideoDecoder *decoder, DecoderType decoderType)
-	: _vm(vm), _system(system) {
+	: _vm(vm), _system(system), _modeChange(false) {
 	_decoderType = decoderType;
 	_decoder = decoder;
 
@@ -77,12 +75,8 @@ MoviePlayer::~MoviePlayer() {
  * Plays an animated cutscene.
  * @param id the id of the file
  */
-bool MoviePlayer::load(const char *name) {
-	// This happens when quitting during the "eye" cutscene.
-	if (_vm->shouldQuit())
-		return false;
-
-	_textSurface = NULL;
+Common::Error MoviePlayer::load(const char *name) {
+	_textSurface = nullptr;
 
 	Common::String filename;
 	switch (_decoderType) {
@@ -102,16 +96,23 @@ bool MoviePlayer::load(const char *name) {
 		break;
 	}
 
+	if (!_decoder->loadFile(Common::Path(filename))) {
+		return Common::Error(Common::kPathDoesNotExist, filename);
+	}
+
 	// Need to switch to true color for PSX/MP2 videos
-	if (_decoderType == kVideoDecoderPSX || _decoderType == kVideoDecoderMP2)
-		initGraphics(g_system->getWidth(), g_system->getHeight(), nullptr);
+	if (!_decoder->getPixelFormat().isCLUT8()) {
+		if (!_decoder->setOutputPixelFormats(g_system->getSupportedFormats()))
+			return Common::kUnsupportedColorMode;
 
-	if (!_decoder->loadFile(filename)) {
-		// Go back to 8bpp color
-		if (_decoderType == kVideoDecoderPSX || _decoderType == kVideoDecoderMP2)
-			initGraphics(g_system->getWidth(), g_system->getHeight());
+		Graphics::PixelFormat format = _decoder->getPixelFormat();
+		initGraphics(g_system->getWidth(), g_system->getHeight(), &format);
 
-		return false;
+		if (g_system->getScreenFormat() != format) {
+			return Common::kUnsupportedColorMode;
+		} else {
+			_modeChange = true;
+		}
 	}
 
 	// For DXA/MP2, also add the external sound file
@@ -119,7 +120,7 @@ bool MoviePlayer::load(const char *name) {
 		_decoder->addStreamFileTrack(name);
 
 	_decoder->start();
-	return true;
+	return Common::kNoError;
 }
 
 void MoviePlayer::play(MovieText *movieTexts, uint32 numMovieTexts, uint32 leadIn, uint32 leadOut) {
@@ -137,7 +138,7 @@ void MoviePlayer::play(MovieText *movieTexts, uint32 numMovieTexts, uint32 leadI
 
 	bool terminated = !playVideo();
 
-	closeTextObject(_currentMovieText, NULL, 0);
+	closeTextObject(_currentMovieText, nullptr, 0);
 
 	if (terminated) {
 		_vm->_sound->stopMovieSounds();
@@ -145,8 +146,10 @@ void MoviePlayer::play(MovieText *movieTexts, uint32 numMovieTexts, uint32 leadI
 	}
 
 	// Need to jump back to paletted color
-	if (_decoderType == kVideoDecoderPSX || _decoderType == kVideoDecoderMP2)
+	if (_modeChange) {
 		initGraphics(640, 480);
+		_modeChange = false;
+	}
 }
 
 void MoviePlayer::openTextObject(uint32 index) {
@@ -197,7 +200,7 @@ void MoviePlayer::closeTextObject(uint32 index, Graphics::Surface *screen, uint1
 		MovieText *text = &_movieTexts[index];
 
 		free(text->_textMem);
-		text->_textMem = NULL;
+		text->_textMem = nullptr;
 
 		if (_textSurface) {
 			if (screen) {
@@ -228,7 +231,7 @@ void MoviePlayer::closeTextObject(uint32 index, Graphics::Surface *screen, uint1
 			}
 
 			_vm->_screen->deleteSurface(_textSurface);
-			_textSurface = NULL;
+			_textSurface = nullptr;
 		}
 	}
 }
@@ -299,7 +302,7 @@ void MoviePlayer::performPostProcessing(Graphics::Surface *screen, uint16 pitch)
 	if (_currentMovieText < _numMovieTexts) {
 		text = &_movieTexts[_currentMovieText];
 	} else {
-		text = NULL;
+		text = nullptr;
 	}
 
 	if (text && frame == text->_startFrame) {
@@ -387,11 +390,11 @@ bool MoviePlayer::playVideo() {
 }
 
 uint32 MoviePlayer::getBlackColor() {
-	return (_decoderType == kVideoDecoderPSX || _decoderType == kVideoDecoderMP2) ? g_system->getScreenFormat().RGBToColor(0x00, 0x00, 0x00) : _black;
+	return _modeChange ? g_system->getScreenFormat().RGBToColor(0x00, 0x00, 0x00) : _black;
 }
 
 uint32 MoviePlayer::getWhiteColor() {
-	return (_decoderType == kVideoDecoderPSX || _decoderType == kVideoDecoderMP2) ? g_system->getScreenFormat().RGBToColor(0xFF, 0xFF, 0xFF) : _white;
+	return _modeChange ? g_system->getScreenFormat().RGBToColor(0xFF, 0xFF, 0xFF) : _white;
 }
 
 void MoviePlayer::drawFramePSX(const Graphics::Surface *frame) {
@@ -416,54 +419,46 @@ void MoviePlayer::drawFramePSX(const Graphics::Surface *frame) {
 ///////////////////////////////////////////////////////////////////////////////
 
 MoviePlayer *makeMoviePlayer(const char *name, Sword2Engine *vm, OSystem *system, uint32 frameCount) {
+	// This happens when quitting during the "eye" cutscene.
+	if (vm->shouldQuit())
+		return nullptr;
+
 	Common::String filename;
 
 	filename = Common::String::format("%s.str", name);
 
-	if (Common::File::exists(filename)) {
-#ifdef USE_RGB_COLOR
+	if (Common::File::exists(Common::Path(filename))) {
 		Video::VideoDecoder *psxDecoder = new Video::PSXStreamDecoder(Video::PSXStreamDecoder::kCD2x, frameCount);
 		return new MoviePlayer(vm, system, psxDecoder, kVideoDecoderPSX);
-#else
-		GUI::MessageDialog dialog(_("PSX cutscenes found but ScummVM has been built without RGB color support"), _("OK"));
-		dialog.runModal();
-		return NULL;
-#endif
 	}
 
 	filename = Common::String::format("%s.smk", name);
 
-	if (Common::File::exists(filename)) {
+	if (Common::File::exists(Common::Path(filename))) {
 		Video::SmackerDecoder *smkDecoder = new Video::SmackerDecoder();
 		return new MoviePlayer(vm, system, smkDecoder, kVideoDecoderSMK);
 	}
 
 	filename = Common::String::format("%s.dxa", name);
 
-	if (Common::File::exists(filename)) {
-#ifdef USE_ZLIB
+	if (Common::File::exists(Common::Path(filename))) {
 		Video::DXADecoder *dxaDecoder = new Video::DXADecoder();
 		return new MoviePlayer(vm, system, dxaDecoder, kVideoDecoderDXA);
-#else
-		GUI::MessageDialog dialog(_("DXA cutscenes found but ScummVM has been built without zlib"), _("OK"));
-		dialog.runModal();
-		return NULL;
-#endif
 	}
 
 	// Old MPEG2 cutscenes
 	filename = Common::String::format("%s.mp2", name);
 
-	if (Common::File::exists(filename)) {
+	if (Common::File::exists(Common::Path(filename))) {
 #ifdef USE_MPEG2
 		// HACK: Old ScummVM builds ignored the AVI frame rate field and forced the video
 		// to be played back at 12fps.
 		Video::AVIDecoder *aviDecoder = new Video::AVIDecoder(12);
 		return new MoviePlayer(vm, system, aviDecoder, kVideoDecoderMP2);
 #else
-		GUI::MessageDialog dialog(_("MPEG-2 cutscenes found but ScummVM has been built without MPEG-2 support"), _("OK"));
+		GUI::MessageDialog dialog(_("MPEG-2 cutscenes found but ScummVM has been built without MPEG-2 support"));
 		dialog.runModal();
-		return NULL;
+		return nullptr;
 #endif
 	}
 
@@ -471,12 +466,12 @@ MoviePlayer *makeMoviePlayer(const char *name, Sword2Engine *vm, OSystem *system
 	// In addition, some of the later re-releases of the game don't have the "eye" Virgin logo movie.
 	if (!vm->_logic->readVar(DEMO) && strcmp(name, "eye") != 0) {
 		Common::U32String buf = Common::U32String::format(_("Cutscene '%s' not found"), name);
-		GUI::MessageDialog dialog(buf, _("OK"));
+		GUI::MessageDialog dialog(buf);
 		dialog.runModal();
 	} else
 		warning("Cutscene '%s' not found", name);
 
-	return NULL;
+	return nullptr;
 }
 
 } // End of namespace Sword2

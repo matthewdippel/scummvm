@@ -29,23 +29,29 @@
 
 namespace TwinE {
 
-struct BoneFrame {
-	/**
-	 * 0 = allow global rotate
-	 * 1 = disallow global rotate
-	 * 2 = disallow global rotate and hide
-	 */
-	uint16 type = 0;
-	int16 x = 0;
-	int16 y = 0;
-	int16 z = 0;
+enum BoneType : uint16 {
+	TYPE_ROTATE = 0,
+	TYPE_TRANSLATE = 1,
+	TYPE_ZOOM = 2,
 };
+
+struct BoneFrame { // T_GROUP_INFO
+	BoneType type = BoneType::TYPE_ROTATE;
+	int16 x = 0; // alpha
+	int16 y = 0; // beta
+	int16 z = 0; // gamma
+};
+using T_GROUP_INFO = BoneFrame; // (lba2)
 
 struct KeyFrame {
 	uint16 length = 0;
 	int16 x = 0;
 	int16 y = 0;
 	int16 z = 0;
+	int16 animMasterRot = 0;
+	int16 animStepAlpha = 0;
+	int16 animStepBeta = 0;
+	int16 animStepGamma = 0;
 	Common::Array<BoneFrame> boneframes;
 };
 
@@ -53,7 +59,7 @@ class AnimData : public Parser {
 private:
 	Common::Array<KeyFrame> _keyframes;
 
-	bool loadBoneFrame(KeyFrame &keyframe, Common::SeekableReadStream &stream);
+	void loadBoneFrame(KeyFrame &keyframe, Common::SeekableReadStream &stream);
 	void loadKeyFrames(Common::SeekableReadStream &stream);
 
 	uint16 _numKeyframes;
@@ -66,14 +72,14 @@ protected:
 public:
 	bool loadFromStream(Common::SeekableReadStream &stream, bool lba1) override;
 
-	const KeyFrame* getKeyframe(uint index) const;
-	const Common::Array<KeyFrame>& getKeyframes() const;
-	uint getNumKeyframes() const;
+	const KeyFrame *getKeyframe(uint index) const;
+	const Common::Array<KeyFrame> &getKeyframes() const;
+	uint getNbFramesAnim() const;
 	uint16 getLoopFrame() const;
 	uint16 getNumBoneframes() const;
 };
 
-inline uint AnimData::getNumKeyframes() const {
+inline uint AnimData::getNbFramesAnim() const {
 	return getKeyframes().size();
 }
 

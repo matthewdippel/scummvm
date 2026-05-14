@@ -19,7 +19,7 @@
  *
  */
 
-#include "ags/lib/std/algorithm.h"
+#include "common/std/algorithm.h"
 #include "ags/lib/allegro.h" // find files
 #include "ags/engine/gui/gui_dialog.h"
 #include "ags/shared/ac/common.h"
@@ -31,6 +31,7 @@
 #include "ags/engine/gui/csci_dialog.h"
 #include "ags/shared/gfx/bitmap.h"
 #include "ags/engine/gfx/graphics_driver.h"
+#include "ags/engine/main/game_run.h"
 #include "ags/engine/debugging/debug_log.h"
 #include "ags/shared/util/path.h"
 #include "ags/ags.h"
@@ -80,6 +81,7 @@ void clear_gui_screen() {
 
 void refresh_gui_screen() {
 	_G(gfxDriver)->UpdateDDBFromBitmap(_G(dialogDDB), _G(windowBuffer), false);
+	UpdateCursorAndDrawables();
 	render_graphics(_G(dialogDDB), _G(windowPosX), _G(windowPosY));
 }
 
@@ -109,12 +111,12 @@ int loadgamedialog() {
 		if (mes.code == CM_COMMAND) {
 			if (mes.id == ctrlok) {
 				int cursel = CSCISendControlMessage(ctrllist, CLB_GETCURSEL, 0, 0);
-				if ((cursel >= _G(numsaves)) | (cursel < 0))
+				if ((cursel >= _G(numsaves)) || (cursel < 0))
 					_G(lpTemp) = nullptr;
 				else {
 					toret = _G(filenumbers)[cursel];
 					String path = get_save_game_path(toret);
-					strcpy(_G(bufTemp), path.GetCStr());
+					Common::strcpy_s(_G(bufTemp), path.GetCStr());
 					_G(lpTemp) = &_G(bufTemp)[0];
 				}
 			} else if (mes.id == ctrlcancel) {
@@ -135,9 +137,9 @@ int loadgamedialog() {
 
 int savegamedialog() {
 	char okbuttontext[50];
-	strcpy(okbuttontext, get_global_message(MSG_SAVEBUTTON));
+	Common::strcpy_s(okbuttontext, get_global_message(MSG_SAVEBUTTON));
 	char labeltext[200];
-	strcpy(labeltext, get_global_message(MSG_SAVEDIALOG));
+	Common::strcpy_s(labeltext, get_global_message(MSG_SAVEDIALOG));
 	const int wnd_width = 200;
 	const int wnd_height = 120;
 	const int boxleft = _G(myscrnwid) / 2 - wnd_width / 2;
@@ -155,8 +157,8 @@ int savegamedialog() {
 	CSCISendControlMessage(ctrllist, CLB_CLEAR, 0, 0);    // clear the list box
 	preparesavegamelist(ctrllist);
 	if (_G(toomanygames)) {
-		strcpy(okbuttontext, get_global_message(MSG_REPLACE));
-		strcpy(labeltext, get_global_message(MSG_MUSTREPLACE));
+		Common::strcpy_s(okbuttontext, get_global_message(MSG_REPLACE));
+		Common::strcpy_s(labeltext, get_global_message(MSG_MUSTREPLACE));
 		labeltop = 2;
 	} else
 		ctrltbox = CSCICreateControl(CNT_TEXTBOX, 10, 29, 120, 0, nullptr);
@@ -184,7 +186,7 @@ int savegamedialog() {
 				if (_G(numsaves) > 0)
 					CSCISendControlMessage(ctrllist, CLB_GETTEXT, cursell, &_G(bufTemp)[0]);
 				else
-					strcpy(_G(bufTemp), "_NOSAVEGAMENAME");
+					Common::strcpy_s(_G(bufTemp), "_NOSAVEGAMENAME");
 
 				if (_G(toomanygames)) {
 					int nwhand = CSCIDrawWindow(boxleft + 5, boxtop + 20, 190, 65);
@@ -234,7 +236,7 @@ int savegamedialog() {
 
 					toret = highestnum + 1;
 					String path = get_save_game_path(toret);
-					strcpy(_G(bufTemp), path.GetCStr());
+					Common::strcpy_s(_G(bufTemp), path.GetCStr());
 				} else {
 					toret = _G(filenumbers)[cursell];
 					_G(bufTemp)[0] = 0;
@@ -242,7 +244,7 @@ int savegamedialog() {
 
 				if (_G(bufTemp)[0] == 0) {
 					String path = get_save_game_path(toret);
-					strcpy(_G(bufTemp), path.GetCStr());
+					Common::strcpy_s(_G(bufTemp), path.GetCStr());
 				}
 
 				_G(lpTemp) = &_G(bufTemp)[0];
@@ -285,7 +287,7 @@ void preparesavegamelist(int ctrllist) {
 	// fill in the list box and global savegameindex[] array for backward compatibilty
 	for (_G(numsaves) = 0; _G(numsaves) < (int)saveList.size(); ++_G(numsaves)) {
 		CSCISendControlMessage(ctrllist, CLB_ADDITEM, 0,
-		                       saveList[_G(numsaves)].getDescription().encode().c_str());
+		                       saveList[_G(numsaves)].getDescription().c_str());
 		_G(filenumbers)[_G(numsaves)] = saveList[_G(numsaves)].getSaveSlot();
 		_G(filedates)[_G(numsaves)] = 0;
 		//(long int)saveList[_G(numsaves)].FileTime;
@@ -295,7 +297,7 @@ void preparesavegamelist(int ctrllist) {
 	CSCISendControlMessage(ctrllist, CLB_SETCURSEL, 0, 0);
 }
 
-void enterstringwindow(const char *prompttext, char *stouse) {
+void enterstringwindow(const char *prompttext, char *dst_buf, size_t dst_sz) {
 	const int wnd_width = 200;
 	const int wnd_height = 40;
 	const int boxleft = 60, boxtop = 80;
@@ -331,12 +333,12 @@ void enterstringwindow(const char *prompttext, char *stouse) {
 	if (wantCancel)
 		CSCIDeleteControl(ctrlcancel);
 	CSCIEraseWindow(handl);
-	strcpy(stouse, _G(buffer2));
+	snprintf(dst_buf, dst_sz, "%s", _G(buffer2));
 }
 
 int enternumberwindow(char *prompttext) {
 	char ourbuf[200];
-	enterstringwindow(prompttext, ourbuf);
+	enterstringwindow(prompttext, ourbuf, sizeof(ourbuf));
 	if (ourbuf[0] == 0)
 		return -9999;
 	return atoi(ourbuf);
@@ -345,7 +347,7 @@ int enternumberwindow(char *prompttext) {
 int roomSelectorWindow(int currentRoom, int numRooms,
 		const std::vector<int> &roomNumbers, const std::vector<String> &roomNames) {
 	char labeltext[200];
-	strcpy(labeltext, get_global_message(MSG_SAVEDIALOG));
+	Common::strcpy_s(labeltext, get_global_message(MSG_SAVEDIALOG));
 	const int wnd_width = 240;
 	const int wnd_height = 160;
 	const int boxleft = _G(myscrnwid) / 2 - wnd_width / 2;
@@ -451,8 +453,8 @@ int myscimessagebox(const char *lpprompt, char *btn1, char *btn2) {
 
 int quitdialog() {
 	char quitbut[50], playbut[50];
-	strcpy(quitbut, get_global_message(MSG_QUITBUTTON));
-	strcpy(playbut, get_global_message(MSG_PLAYBUTTON));
+	Common::strcpy_s(quitbut, get_global_message(MSG_QUITBUTTON));
+	Common::strcpy_s(playbut, get_global_message(MSG_PLAYBUTTON));
 	return myscimessagebox(get_global_message(MSG_QUITDIALOG), quitbut, playbut);
 }
 

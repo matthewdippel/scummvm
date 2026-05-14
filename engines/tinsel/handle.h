@@ -23,7 +23,7 @@
 #ifndef TINSEL_HANDLE_H
 #define TINSEL_HANDLE_H
 
-#include "common/str.h"
+#include "common/path.h"
 #include "tinsel/dw.h"			// new data types
 
 namespace Common {
@@ -50,6 +50,7 @@ public:
 	void SetupHandleTable();
 
 	FONT *GetFont(SCNHANDLE offset);
+	uint32 GetFontCharacterCount(const byte *fontData) const;
 	PALETTE *GetPalette(SCNHANDLE offset);
 	const IMAGE *GetImage(SCNHANDLE offset);
 	void SetImagePalette(SCNHANDLE offset, SCNHANDLE palHandle);
@@ -77,12 +78,19 @@ public:
 
 	int CdNumber(SCNHANDLE offset);
 
+	// Used for skipping DW1 introduction
+	SCNHANDLE GetDw1TitleSceneHandle() { return _dw1TitleSceneHandle; }
+
 	// Noir
 	SCNHANDLE FindLanguageSceneHandle(const char *fileName);
 
 #ifdef BODGE
 	bool ValidHandle(SCNHANDLE offset);
 #endif
+
+	// Used by debugger
+	int GetSceneCount();
+	Common::String GetSceneName(int index);
 
 private:
 	void LoadFile(MEMHANDLE *pH); // load a memory block as a file
@@ -100,7 +108,9 @@ private:
 	SCNHANDLE _cdBaseHandle, _cdTopHandle;
 	Common::File *_cdGraphStream;
 
-	Common::String _szCdPlayFile;
+	Common::Path _szCdPlayFile;
+
+	SCNHANDLE _dw1TitleSceneHandle;
 };
 
 } // End of namespace Tinsel

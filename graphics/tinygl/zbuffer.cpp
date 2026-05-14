@@ -29,55 +29,12 @@
 
 #include "common/scummsys.h"
 #include "common/endian.h"
+#include "common/memory.h"
 
 #include "graphics/tinygl/zbuffer.h"
 #include "graphics/tinygl/zgl.h"
 
 namespace TinyGL {
-
-// adr must be aligned on an 'int'
-static void memset_s(void *adr, int val, int count) {
-	int n, v;
-	uint *p;
-	unsigned short *q;
-
-	p = (uint *)adr;
-	v = val | (val << 16);
-
-	n = count >> 3;
-	for (int i = 0; i < n; i++) {
-		p[0] = v;
-		p[1] = v;
-		p[2] = v;
-		p[3] = v;
-		p += 4;
-	}
-
-	q = (unsigned short *) p;
-	n = count & 7;
-	for (int i = 0; i < n; i++)
-		*q++ = val;
-}
-
-static void memset_l(void *adr, int val, int count) {
-	int n, v;
-	uint *p;
-
-	p = (uint *)adr;
-	v = val;
-	n = count >> 2;
-	for (int i = 0; i < n; i++) {
-		p[0] = v;
-		p[1] = v;
-		p[2] = v;
-		p[3] = v;
-		p += 4;
-	}
-
-	n = count & 3;
-	for (int i = 0; i < n; i++)
-		*p++ = val;
-}
 
 FrameBuffer::FrameBuffer(int width, int height, const Graphics::PixelFormat &format, bool enableStencilBuffer) {
 	_pbufWidth = width;
@@ -86,21 +43,23 @@ FrameBuffer::FrameBuffer(int width, int height, const Graphics::PixelFormat &for
 	_pbufBpp = _pbufFormat.bytesPerPixel;
 	_pbufPitch = (_pbufWidth * _pbufBpp + 3) & ~3;
 
-	_pbuf.set(_pbufFormat, new byte[_pbufHeight * _pbufPitch]);
+	_pbuf = (byte *)gl_zalloc(_pbufHeight * _pbufPitch * sizeof(byte));
 	_zbuf = (uint *)gl_zalloc(_pbufWidth * _pbufHeight * sizeof(uint));
 	if (enableStencilBuffer)
 		_sbuf = (byte *)gl_zalloc(_pbufWidth * _pbufHeight * sizeof(byte));
+	else
+		_sbuf = nullptr;
 
-	_offscreenBuffer.pbuf = _pbuf.getRawBuffer();
+	_offscreenBuffer.pbuf = _pbuf;
 	_offscreenBuffer.zbuf = _zbuf;
 
 	_currentTexture = nullptr;
 
-	_enableScissor = false;
+	_clippingEnabled = false;
 }
 
 FrameBuffer::~FrameBuffer() {
-	_pbuf.free();
+	gl_free(_pbuf);
 	gl_free(_zbuf);
 	if (_sbuf)
 		gl_free(_sbuf);
@@ -121,6 +80,12 @@ void FrameBuffer::delOffscreenBuffer(Buffer *buf) {
 
 void FrameBuffer::clear(int clearZ, int z, int clearColor, int r, int g, int b,
                         bool clearStencil, int stencilValue) {
+	if (_clippingEnabled) {
+		clearRegion(_clipRectangle.left, _clipRectangle.top,
+				_clipRectangle.width(), _clipRectangle.height(),
+				clearZ, z, clearColor, r, g, b, clearStencil, stencilValue);
+		return;
+	}
 	if (clearZ) {
 		const uint8 *zc = (const uint8 *)&z;
 		uint i;
@@ -129,12 +94,12 @@ void FrameBuffer::clear(int clearZ, int z, int clearColor, int r, int g, int b,
 			// All "z" bytes are identical, use memset (fast)
 			memset(_zbuf, zc[0], sizeof(uint) * _pbufWidth * _pbufHeight);
 		} else {
-			// Cannot use memset, use a variant working on integers (slow)
-			memset_l(_zbuf, z, _pbufWidth * _pbufHeight);
+			// Cannot use memset, use a variant working on integers (possibly slower)
+			Common::memset32((uint32 *)_zbuf, z, _pbufWidth * _pbufHeight);
 		}
 	}
 	if (clearColor) {
-		byte *pp = _pbuf.getRawBuffer();
+		byte *pp = _pbuf;
 		uint32 color = _pbufFormat.RGBToColor(r, g, b);
 		const uint8 *colorc = (uint8 *)&color;
 		uint i;
@@ -143,13 +108,13 @@ void FrameBuffer::clear(int clearZ, int z, int clearColor, int r, int g, int b,
 			// All "color" bytes are identical, use memset (fast)
 			memset(pp, colorc[0], _pbufPitch * _pbufHeight);
 		} else {
-			// Cannot use memset, use a variant working on shorts/ints (slow)
+			// Cannot use memset, use a variant working on shorts/ints (possibly slower)
 			switch(_pbufBpp) {
 			case 2:
-				memset_s(pp, color, _pbufWidth * _pbufHeight);
+				Common::memset16((uint16 *)pp, color, _pbufWidth * _pbufHeight);
 				break;
 			case 4:
-				memset_l(pp, color, _pbufWidth * _pbufHeight);
+				Common::memset32((uint32 *)pp, color, _pbufWidth * _pbufHeight);
 				break;
 			default:
 				error("Unsupported pixel size %i", _pbufBpp);
@@ -165,27 +130,27 @@ void FrameBuffer::clearRegion(int x, int y, int w, int h, bool clearZ, int z,
                               bool clearColor, int r, int g, int b, bool clearStencil, int stencilValue) {
 	if (clearZ) {
 		int height = h;
-		uint *zbuf = _zbuf + (y * _pbufWidth);
+		uint *zbuf = _zbuf + (y * _pbufWidth) + x;
 		const uint8 *zc = (const uint8 *)&z;
 		uint i;
 		for (i = 1; i < sizeof(z) && zc[0] == zc[i]; i++) { ; }
 		if (i == sizeof(z)) {
 			// All "z" bytes are identical, use memset (fast)
 			while (height--) {
-				memset(zbuf + x, zc[0], sizeof(*zbuf) * w);
+				memset(zbuf, zc[0], sizeof(*zbuf) * w);
 				zbuf += _pbufWidth;
 			}
 		} else {
-			// Cannot use memset, use a variant working on integers (slow)
+			// Cannot use memset, use a variant working on integers (possibly slower)
 			while (height--) {
-				memset_l(zbuf + x, z, w);
+				Common::memset32((uint32 *)zbuf, z, w);
 				zbuf += _pbufWidth;
 			}
 		}
 	}
 	if (clearColor) {
 		int height = h;
-		byte *pp = _pbuf.getRawBuffer() + y * _pbufPitch + x * _pbufBpp;
+		byte *pp = _pbuf + y * _pbufPitch + x * _pbufBpp;
 		uint32 color = _pbufFormat.RGBToColor(r, g, b);
 		const uint8 *colorc = (uint8 *)&color;
 		uint i;
@@ -197,14 +162,14 @@ void FrameBuffer::clearRegion(int x, int y, int w, int h, bool clearZ, int z,
 				pp += _pbufPitch;
 			}
 		} else {
-			// Cannot use memset, use a variant working on shorts/ints (slow)
+			// Cannot use memset, use a variant working on shorts/ints (possibly slower)
 			while (height--) {
 				switch(_pbufBpp) {
 				case 2:
-					memset_s(pp, color, w);
+					Common::memset16((uint16 *)pp, color, w);
 					break;
 				case 4:
-					memset_l(pp, color, w);
+					Common::memset32((uint32 *)pp, color, w);
 					break;
 				default:
 					error("Unsupported pixel size %i", _pbufBpp);
@@ -236,7 +201,7 @@ void FrameBuffer::blitOffscreenBuffer(Buffer *buf) {
 	if (buf->used) {
 		const int pixel_bytes = _pbufBpp;
 		const int unrolled_pixel_bytes = pixel_bytes * UNROLL_COUNT;
-		byte *to = _pbuf.getRawBuffer();
+		byte *to = _pbuf;
 		byte *from = buf->pbuf;
 		uint *to_z = _zbuf;
 		uint *from_z = buf->zbuf;
@@ -308,10 +273,215 @@ void getSurfaceRef(Graphics::Surface &surface) {
 	c->fb->getSurfaceRef(surface);
 }
 
-Graphics::Surface *copyToBuffer(const Graphics::PixelFormat &dstFormat) {
+Graphics::Surface *copyFromFrameBuffer(const Graphics::PixelFormat &dstFormat) {
 	GLContext *c = gl_get_context();
 	assert(c->fb);
-	return c->fb->copyToBuffer(dstFormat);
+	return c->fb->copyFromFrameBuffer(dstFormat);
+}
+
+static byte satAdd(byte a, byte b) {
+	// from: https://web.archive.org/web/20190213215419/https://locklessinc.com/articles/sat_arithmetic/
+	byte r = a + b;
+	return (byte)(r | -(r < a));
+}
+
+static byte sat16_to_8(uint32 x) {
+	x = (x + 128) >> 8; // rounding 16 to 8 
+	return (byte)(x | -!!(x >> 8)); // branchfree saturation
+}
+
+static byte fpMul(byte a, byte b) {
+	// from: https://community.khronos.org/t/precision-curiosity-1-255-or-1-256/40539/11
+	// correct would be (a*b)/255 but that is slow, instead we use (a*b) * 257/256 / 256
+	// this also implicitly saturates
+	uint32 r = a * b;
+	return (byte)((r + (r >> 8) + 127) >> 8);
+}
+
+void FrameBuffer::applyTextureEnvironment(
+	int internalformat,
+	uint previousA, uint previousR, uint previousG, uint previousB,
+	byte &texA, byte &texR, byte &texG, byte &texB)
+{
+	// summary notation is used from https://registry.khronos.org/OpenGL-Refpages/gl2.1/xhtml/glTexEnv.xml
+	// previousARGB is still in 16bit fixed-point format
+	// texARGB is both input and output
+	// GL_RGB/GL_RGBA might be identical as TexelBuffer returns As=1
+
+	struct Arg {
+		byte a, r, g, b;
+	};
+	const auto getCombineArg = [&](const GLTextureEnvArgument &mode) -> Arg {
+		Arg op = {}, opColor = {};
+
+		// Source values
+		switch (mode.sourceRGB) {
+		case TGL_TEXTURE:
+			opColor.a = texA;
+			opColor.r = texR;
+			opColor.g = texG;
+			opColor.b = texB;
+			break;
+		case TGL_PRIMARY_COLOR:
+			opColor.a = sat16_to_8(previousA);
+			opColor.r = sat16_to_8(previousR);
+			opColor.g = sat16_to_8(previousG);
+			opColor.b = sat16_to_8(previousB);
+			break;
+		case TGL_CONSTANT:
+			opColor.a = _textureEnv->constA;
+			opColor.r = _textureEnv->constR;
+			opColor.g = _textureEnv->constG;
+			opColor.b = _textureEnv->constB;
+			break;
+		default:
+			assert(false && "Invalid texture environment arg color source");
+			break;
+		}
+		switch (mode.sourceAlpha) {
+		case TGL_TEXTURE:
+			op.a = texA;
+			break;
+		case TGL_PRIMARY_COLOR:
+			op.a = sat16_to_8(previousA);
+			break;
+		case TGL_CONSTANT:
+			op.a = _textureEnv->constA;
+			break;
+		default:
+			assert(false && "Invalid texture environment arg alpha source");
+			break;
+		}
+
+		// Operands
+		switch (mode.operandRGB) {
+		case TGL_SRC_COLOR:
+			op.r = opColor.r; // intermediate values were necessary for operandRGB == TGL_SRC_ALPHA 
+			op.g = opColor.g;
+			op.b = opColor.b;
+			break;
+		case TGL_ONE_MINUS_SRC_COLOR:
+			op.r = 255 - opColor.r;
+			op.g = 255 - opColor.g;
+			op.b = 255 - opColor.b;
+			break;
+		case TGL_SRC_ALPHA:
+			op.r = op.g = op.b = opColor.a;
+			break;
+		default:
+			assert(false && "Invalid texture environment arg color operand");
+			break;
+		}
+		switch (mode.operandAlpha) {
+		case TGL_SRC_ALPHA:
+			break;
+		case TGL_ONE_MINUS_SRC_ALPHA:
+			op.a = 255 - op.a;
+			break;
+		default:
+			assert(false && "Invalid texture environment arg alpha operand");
+			break;
+		}
+
+		return op;
+	};
+
+	switch (_textureEnv->envMode) {
+	case TGL_REPLACE:
+		// GL_RGB:  Cs | Ap
+		// GL_RGBA: Cs | As
+		texA = internalformat == TGL_RGBA ? texA : sat16_to_8(previousA);
+		break;
+	case TGL_MODULATE:
+	{
+		// GL_RGB:  CpCs | Ap 
+		// GL_RGBA: CpCs | ApAs
+		applyModulation(previousA, previousR, previousG, previousB, texA, texR, texG, texB);
+		break;
+	}
+	case TGL_DECAL:
+	{
+		// GL_RGB:  Cs              | Ap
+		// GL_RGBA: Cp(1-As) + CsAs | Ap
+		texR = satAdd(fpMul(sat16_to_8(previousR), 255 - texA), fpMul(texR, texA));
+		texG = satAdd(fpMul(sat16_to_8(previousG), 255 - texA), fpMul(texG, texA));
+		texB = satAdd(fpMul(sat16_to_8(previousB), 255 - texA), fpMul(texB, texA));
+		texA = sat16_to_8(previousA);
+		break;
+	}
+	case TGL_ADD:
+	{
+		// GL_RGB:  Cp + Cs | Ap
+		// GL_RGBA: Cp + Cs | ApAs
+		texA = fpMul(sat16_to_8(previousA), texA);
+		texR = satAdd(sat16_to_8(previousR), texR);
+		texG = satAdd(sat16_to_8(previousG), texG);
+		texB = satAdd(sat16_to_8(previousB), texB);
+		break;
+	}
+	case TGL_BLEND:
+	{
+		// GL_RGB:  Cp(1-Cs) + CcCs | Ap
+		// GL_RGBA: Cp(1-Cs) + CcCs | ApAs
+		texA = fpMul(sat16_to_8(previousA), texA);
+		texR = satAdd(fpMul(sat16_to_8(previousR), 255 - texR), fpMul(_textureEnv->constR, texR));
+		texG = satAdd(fpMul(sat16_to_8(previousG), 255 - texG), fpMul(_textureEnv->constG, texG));
+		texB = satAdd(fpMul(sat16_to_8(previousB), 255 - texB), fpMul(_textureEnv->constB, texB));
+		break;
+	}
+	case TGL_COMBINE:
+	{
+		Arg arg0 = getCombineArg(_textureEnv->arg0);
+		Arg arg1 = getCombineArg(_textureEnv->arg1);
+		switch (_textureEnv->combineRGB) {
+		case TGL_REPLACE:
+			texR = arg0.r;
+			texG = arg0.g;
+			texB = arg0.b;
+			break;
+		case TGL_MODULATE:
+			texR = fpMul(arg0.r, arg1.r);
+			texG = fpMul(arg0.g, arg1.g);
+			texB = fpMul(arg0.b, arg1.b);
+			break;
+		case TGL_ADD:
+			texR = satAdd(arg0.r, arg1.r);
+			texG = satAdd(arg0.g, arg1.g);
+			texB = satAdd(arg0.b, arg1.b);
+			break;
+		default:
+			assert(false && "Invalid texture environment color combine");
+			break;
+		}
+		
+		switch (_textureEnv->combineAlpha) {
+		case TGL_REPLACE:
+			texA = arg0.a;
+			break;
+		case TGL_MODULATE:
+			texA = fpMul(arg0.a, arg1.a);
+			break;
+		case TGL_ADD:
+			texA = satAdd(arg0.a, arg1.a);
+			break;
+		default:
+			assert(false && "Invalid texture environment alpha combine");
+		}
+		break;
+	}
+	default:
+		assert(false && "Invalid texture environment mode");
+		break;
+	}
+}
+
+void FrameBuffer::applyModulation(
+	uint previousA, uint previousR, uint previousG, uint previousB,
+	byte &texA, byte &texR, byte &texG, byte &texB) {
+	texA = fpMul(sat16_to_8(previousA), texA);
+	texR = fpMul(sat16_to_8(previousR), texR);
+	texG = fpMul(sat16_to_8(previousG), texG);
+	texB = fpMul(sat16_to_8(previousB), texB);
 }
 
 } // end of namespace TinyGL

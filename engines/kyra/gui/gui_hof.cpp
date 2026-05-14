@@ -404,67 +404,67 @@ int KyraEngine_HoF::bookButton(Button *button) {
 }
 
 void KyraEngine_HoF::loadBookBkgd() {
-	char filename[16];
+	Common::String filename;
 
 	if (_flags.isTalkie)
-		strcpy(filename, (_bookBkgd == 0) ? "_XBOOKD.CPS" : "_XBOOKC.CPS");
+		filename = (_bookBkgd == 0) ? "_XBOOKD.CPS" : "_XBOOKC.CPS";
 	else
-		strcpy(filename, (_bookBkgd == 0) ? "_BOOKD.CPS" : "_BOOKC.CPS");
+		filename = (_bookBkgd == 0) ? "_BOOKD.CPS" : "_BOOKC.CPS";
 
 	_bookBkgd ^= 1;
 
 	if (_flags.isTalkie) {
 		if (!_bookCurPage)
-			strcpy(filename, "_XBOOKB.CPS");
+			filename = "_XBOOKB.CPS";
 		if (_bookCurPage == _bookMaxPage)
-			strcpy(filename, "_XBOOKA.CPS");
+			filename = "_XBOOKA.CPS";
 
 		switch (_lang) {
 		case 0:
-			filename[1] = 'E';
+			filename.setChar('E', 1);
 			break;
 
 		case 1:
-			filename[1] = 'F';
+			filename.setChar('F', 1);
 			break;
 
 		case 2:
-			filename[1] = 'G';
+			filename.setChar('G', 1);
 			break;
 
 		default:
 			warning("loadBookBkgd unsupported language");
-			filename[1] = 'E';
+			filename.setChar('E', 1);
 		}
 	} else {
 		if (!_bookCurPage)
-			strcpy(filename, "_BOOKB.CPS");
+			filename = "_BOOKB.CPS";
 		if (_bookCurPage == _bookMaxPage)
-			strcpy(filename, "_BOOKA.CPS");
+			filename = "_BOOKA.CPS";
 	}
 
-	_screen->loadBitmap(filename, 3, 3, nullptr);
+	_screen->loadBitmap(filename.c_str(), 3, 3, nullptr);
 }
 
 void KyraEngine_HoF::showBookPage() {
 	char filename[16];
 
-	sprintf(filename, "PAGE%.01X.%s", _bookCurPage, _languageExtension[_lang]);
+	Common::sprintf_s(filename, "PAGE%.01X.%s", _bookCurPage, _languageExtension[_lang]);
 	uint8 *leftPage = _res->fileData(filename, nullptr);
 	if (!leftPage) {
 		// some floppy version use a TXT extension
-		sprintf(filename, "PAGE%.01X.TXT", _bookCurPage);
+		Common::sprintf_s(filename, "PAGE%.01X.TXT", _bookCurPage);
 		leftPage = _res->fileData(filename, nullptr);
 	}
 
 	int leftPageY = _bookPageYOffset[_bookCurPage];
 
-	sprintf(filename, "PAGE%.01X.%s", _bookCurPage+1, _languageExtension[_lang]);
+	Common::sprintf_s(filename, "PAGE%.01X.%s", _bookCurPage+1, _languageExtension[_lang]);
 	uint8 *rightPage = nullptr;
 	if (_bookCurPage != _bookMaxPage) {
 		rightPage = _res->fileData(filename, nullptr);
 		if (!rightPage) {
-			sprintf(filename, "PAGE%.01X.TXT", _bookCurPage);
+			Common::sprintf_s(filename, "PAGE%.01X.TXT", _bookCurPage);
 			rightPage = _res->fileData(filename, nullptr);
 		}
 	}
@@ -1021,6 +1021,9 @@ int GUI_HoF::gameOptionsTalkie(Button *caller) {
 
 int GUI_HoF::changeLanguage(Button *caller) {
 	updateMenuButton(caller);
+	// Korean fan translation: language is fixed to Korean, do not cycle.
+	if (_vm->gameFlags().fanLang == Common::KO_KOR)
+		return 0;
 	++_vm->_lang;
 	_vm->_lang %= _vm->_numLang;
 	setupOptionsButtons();
@@ -1050,6 +1053,11 @@ void GUI_HoF::setupOptionsButtons() {
 
 	case 2:
 		_gameOptions.item[1].itemId = 33;
+		break;
+
+	case 5:
+		// Korean fan translation: string 51 in OPTIONS.KOR = "한국어"
+		_gameOptions.item[1].itemId = 51;
 		break;
 
 	default:

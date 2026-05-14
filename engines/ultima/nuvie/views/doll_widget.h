@@ -36,7 +36,7 @@ class U6Shape;
 
 class DollWidget : public GUI_Widget {
 
-	Configuration *config;
+	const Configuration *config;
 	TileManager *tile_manager;
 	ObjManager *obj_manager;
 
@@ -54,7 +54,7 @@ class DollWidget : public GUI_Widget {
 	Graphics::ManagedSurface *actor_doll, *doll_bg;
 
 public:
-	DollWidget(Configuration *cfg, GUI_CallBack *callback = NULL);
+	DollWidget(const Configuration *cfg, GUI_CallBack *callback = nullptr);
 	~DollWidget() override;
 
 	bool init(Actor *a, uint16 x, uint16 y, TileManager *tm, ObjManager *om, bool in_portrat_view = false);
@@ -63,12 +63,12 @@ public:
 	void set_actor(Actor *a);
 	void Display(bool full_redraw) override;
 
-	GUI_status MouseDown(int x, int y, Shared::MouseButton button) override;
-	GUI_status MouseUp(int x, int y, Shared::MouseButton button) override;
+	GUI_status MouseDown(int x, int y, Events::MouseButton button) override;
+	GUI_status MouseUp(int x, int y, Events::MouseButton button) override;
 	GUI_status MouseMotion(int x, int y, uint8 state) override;
-	GUI_status MouseDouble(int x, int y, Shared::MouseButton button) override;
-	GUI_status MouseClick(int x, int y, Shared::MouseButton button) override;
-	GUI_status MouseDelayed(int x, int y, Shared::MouseButton button) override;
+	GUI_status MouseDouble(int x, int y, Events::MouseButton button) override;
+	GUI_status MouseClick(int x, int y, Events::MouseButton button) override;
+	GUI_status MouseDelayed(int x, int y, Events::MouseButton button) override;
 
 	void drag_drop_success(int x, int y, int message, void *data) override;
 	void drag_drop_failed(int x, int y, int message, void *data) override;
@@ -78,7 +78,7 @@ public:
 
 	void drag_draw(int x, int y, int message, void *data) override;
 
-	Common::Rect *get_item_hit_rect(uint8 location);
+	const Common::Rect *get_item_hit_rect(uint8 location) const;
 
 protected:
 

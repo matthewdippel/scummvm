@@ -99,12 +99,15 @@ MacFontFormatting::MacFontFormatting() : fontID(0), fontFlags(0), size(12) {
 MacFontFormatting::MacFontFormatting(uint16 mff_fontID, uint8 mff_fontFlags, uint16 mff_size) : fontID(mff_fontID), fontFlags(mff_fontFlags), size(mff_size) {
 }
 
+MacFormattingSpan::MacFormattingSpan() : spanStart(0) {
+}
+
 WindowParameters::WindowParameters(Runtime *wp_runtime, int32 wp_x, int32 wp_y, int16 wp_width, int16 wp_height, const Graphics::PixelFormat &wp_format)
 	: runtime(wp_runtime), x(wp_x), y(wp_y), width(wp_width), height(wp_height), format(wp_format) {
 }
 
 Window::Window(const WindowParameters &windowParams)
-	: _runtime(windowParams.runtime), _x(windowParams.x), _y(windowParams.y), _strata(0), _isMouseTransparent(false) {
+	: _runtime(windowParams.runtime), _x(windowParams.x), _y(windowParams.y), _strata(0), _isMouseTransparent(false), _isMouseVisible(true) {
 	_surface.reset(new Graphics::ManagedSurface(windowParams.width, windowParams.height, windowParams.format));
 }
 
@@ -154,6 +157,14 @@ void Window::setCursorGraphic(const Common::SharedPtr<CursorGraphic>& cursor) {
 	_cursor = cursor;
 }
 
+bool Window::getMouseVisible() const {
+	return _isMouseVisible;
+}
+
+void Window::setMouseVisible(bool visible) {
+	_isMouseVisible = visible;
+}
+
 void Window::setStrata(int strata) {
 	_strata = strata;
 }
@@ -193,6 +204,9 @@ void Window::onMouseUp(int32 x, int32 y, int mouseButton) {
 }
 
 void Window::onKeyboardEvent(const Common::EventType evtType, bool repeat, const Common::KeyState &keyEvt) {
+}
+
+void Window::onAction(Actions::Action action) {
 }
 
 namespace Render {
@@ -256,7 +270,7 @@ static void renderDirectElement(const RenderItem &item, Window *mainWindow) {
 	renderNormalElement(item, mainWindow);	// Meh
 }
 
-void renderProject(Runtime *runtime, Window *mainWindow) {
+void renderProject(Runtime *runtime, Window *mainWindow, bool *outSkipped) {
 	bool sceneChanged = runtime->isSceneGraphDirty();
 
 	Common::Array<Structural *> scenes;
@@ -293,6 +307,9 @@ void renderProject(Runtime *runtime, Window *mainWindow) {
 	}
 
 	if (sceneChanged) {
+		if (outSkipped)
+			*outSkipped = false;
+
 		for (Common::Array<RenderItem>::const_iterator it = normalBucket.begin(), itEnd = normalBucket.end(); it != itEnd; ++it)
 			renderNormalElement(*it, mainWindow);
 
@@ -301,6 +318,9 @@ void renderProject(Runtime *runtime, Window *mainWindow) {
 
 		for (const IPostEffect *postEffect : runtime->getPostEffects())
 			postEffect->renderPostEffect(*mainWindow->getSurface());
+	} else {
+		if (outSkipped)
+			*outSkipped = true;
 	}
 
 	runtime->clearSceneGraphDirty();
@@ -410,7 +430,7 @@ static void runDissolveTransition(Graphics::ManagedSurface &surface, const Graph
 	}
 }
 
-static void safeCopyRectToSurface(Graphics::ManagedSurface &surface, const Graphics::Surface &srcSurface, int destX, int destY, const Common::Rect subRect) {
+static void safeCopyRectToSurface(Graphics::ManagedSurface &surface, const Graphics::ManagedSurface &srcSurface, int destX, int destY, const Common::Rect &subRect) {
 	if (subRect.width() == 0 || subRect.height() == 0)
 		return;
 
@@ -515,7 +535,7 @@ void renderSceneTransition(Runtime *runtime, Window *mainWindow, const SceneTran
 	}
 }
 
-void convert32To16(Graphics::Surface &destSurface, const Graphics::Surface &srcSurface) {
+void convert32To16(Graphics::ManagedSurface &destSurface, const Graphics::ManagedSurface &srcSurface) {
 	const Graphics::PixelFormat srcFmt = srcSurface.format;
 	const Graphics::PixelFormat destFmt = destSurface.format;
 
@@ -555,7 +575,7 @@ void convert32To16(Graphics::Surface &destSurface, const Graphics::Surface &srcS
 	}
 }
 
-void convert16To32(Graphics::Surface &destSurface, const Graphics::Surface &srcSurface) {
+void convert16To32(Graphics::ManagedSurface &destSurface, const Graphics::ManagedSurface &srcSurface) {
 	const Graphics::PixelFormat srcFmt = srcSurface.format;
 	const Graphics::PixelFormat destFmt = destSurface.format;
 
@@ -568,8 +588,8 @@ void convert16To32(Graphics::Surface &destSurface, const Graphics::Surface &srcS
 	size_t h = srcSurface.h;
 
 	for (size_t y = 0; y < h; y++) {
-		const uint32 *srcRow = static_cast<const uint32 *>(srcSurface.getBasePtr(0, y));
-		uint16 *destRow = static_cast<uint16 *>(destSurface.getBasePtr(0, y));
+		const uint16 *srcRow = static_cast<const uint16 *>(srcSurface.getBasePtr(0, y));
+		uint32 *destRow = static_cast<uint32 *>(destSurface.getBasePtr(0, y));
 
 		for (size_t x = 0; x < w; x++) {
 			uint32 packed16 = srcRow[x];
@@ -580,7 +600,7 @@ void convert16To32(Graphics::Surface &destSurface, const Graphics::Surface &srcS
 			r = expand5To8(r);
 			g = expand5To8(g);
 			b = expand5To8(b);
-			destRow[x] = (r << destFmt.rShift) | (g << destFmt.gShift) | (b << destFmt.bShift);
+			destRow[x] = (r << destFmt.rShift) | (g << destFmt.gShift) | (b << destFmt.bShift) | (0xffu << destFmt.aShift);
 		}
 	}
 }

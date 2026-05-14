@@ -196,7 +196,7 @@ uint8 *TuckerEngine::loadFile(const char *fname, uint8 *p) {
 		}
 	}
 	Common::File f;
-	if (!f.open(filename)) {
+	if (!f.open(Common::Path(filename))) {
 		warning("Unable to open '%s'", filename.c_str());
 		return nullptr;
 	}
@@ -323,7 +323,7 @@ void TuckerEngine::loadImage(const char *fname, uint8 *dst, int type) {
 		memcpy(dst + y * 320, pcxSurface->getBasePtr(0, y), pcxSurface->w);
 
 	if (type != 0) {
-		memcpy(_currentPalette, pcx.getPalette(), 3 * 256);
+		pcx.getPalette().grab(_currentPalette, 0, pcx.getPalette().size());
 		setBlackPalette();
 	}
 }
@@ -975,7 +975,7 @@ void TuckerEngine::loadSound(Audio::Mixer::SoundType type, int num, int volume, 
 		}
 		Common::String fileName = Common::String::format(fmt, num);
 		Common::File *f = new Common::File;
-		if (f->open(fileName)) {
+		if (f->open(Common::Path(fileName))) {
 			stream = Audio::makeWAVStream(f, DisposeAfterUse::YES);
 		} else {
 			delete f;

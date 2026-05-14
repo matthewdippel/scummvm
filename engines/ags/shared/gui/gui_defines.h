@@ -52,7 +52,7 @@ namespace AGS3 {
 // 3.4.0      (118): Removed GUI limits
 // 3.5.0      (119): Game data contains GUI properties that previously
 //                   could be set only at runtime.
-//
+// Since then format value is defined as AGS version represented as NN,NN,NN,NN
 //=============================================================================
 
 enum GuiVersion {
@@ -142,7 +142,7 @@ enum GUIControlFlags {
 	kGUICtrl_Translated = 0x0080, // 3.3.0.1132
 	kGUICtrl_Deleted = 0x8000, // unused (probably remains from the old editor?)
 
-	kGUICtrl_DefFlags = kGUICtrl_Enabled | kGUICtrl_Visible | kGUICtrl_Clickable,
+	kGUICtrl_DefFlags = kGUICtrl_Enabled | kGUICtrl_Visible | kGUICtrl_Clickable | kGUICtrl_Translated,
 	// flags that had inverse meaning in old formats
 	kGUICtrl_OldFmtXorMask = kGUICtrl_Enabled | kGUICtrl_Visible | kGUICtrl_Clickable
 };
@@ -190,11 +190,13 @@ enum GuiSvgVersion {
 	kGuiSvgVersion_36025
 };
 
+// Style of GUI drawing in disabled state
 enum GuiDisableStyle {
-	kGuiDis_Greyout = 0,
-	kGuiDis_Blackout = 1,
-	kGuiDis_Unchanged = 2,
-	kGuiDis_Off = 3
+	kGuiDis_Undefined = -1, // this is for marking not-disabled state
+	kGuiDis_Greyout = 0,    // paint "gisabled" effect over controls
+	kGuiDis_Blackout = 1,   // invisible controls (but guis are shown
+	kGuiDis_Unchanged = 2,  // no change, display normally
+	kGuiDis_Off = 3         // fully invisible guis
 };
 
 // Global GUI options

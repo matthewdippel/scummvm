@@ -22,188 +22,17 @@
 #include "scumm/file.h"
 
 #include "common/memstream.h"
-#include "common/substream.h"
 
 namespace Scumm {
 
-#pragma mark -
-#pragma mark --- ScummFile ---
-#pragma mark -
+/**
+ * This file must only contain file reading classes needed for the detection code.
+ * These classes must not reference the ScummEngine class.
+ */
 
-ScummFile::ScummFile() : _subFileStart(0), _subFileLen(0), _myEos(false) {
-}
-
-void ScummFile::setSubfileRange(int32 start, int32 len) {
-	// TODO: Add sanity checks
-	const int32 fileSize = File::size();
-	assert(start <= fileSize);
-	assert(start + len <= fileSize);
-	_subFileStart = start;
-	_subFileLen = len;
-	seek(0, SEEK_SET);
-}
-
-void ScummFile::resetSubfile() {
-	_subFileStart = 0;
-	_subFileLen = 0;
-	seek(0, SEEK_SET);
-}
-
-bool ScummFile::open(const Common::Path &filename) {
-	if (File::open(filename)) {
-		resetSubfile();
-		return true;
-	} else {
-		return false;
-	}
-}
-
-bool ScummFile::openSubFile(const Common::String &filename) {
-	assert(isOpen());
-
-	// Disable the XOR encryption and reset any current subfile range
-	setEnc(0);
-	resetSubfile();
-
-	// Read in the filename table and look for the specified file
-
-	unsigned long file_off, file_len;
-	char file_name[0x20+1];
-	unsigned long i;
-
-	// Get the length of the data file to use for consistency checks
-	const uint32 data_file_len = size();
-
-	// Read offset and length to the file records */
-	const uint32 file_record_off = readUint32BE();
-	const uint32 file_record_len = readUint32BE();
-
-	// Do a quick check to make sure the offset and length are good
-	if (file_record_off + file_record_len > data_file_len) {
-		return false;
-	}
-
-	// Do a little consistancy check on file_record_length
-	if (file_record_len % 0x28) {
-		return false;
-	}
-
-	// Scan through the files
-	for (i = 0; i < file_record_len; i += 0x28) {
-		// read a file record
-		seek(file_record_off + i, SEEK_SET);
-		file_off = readUint32BE();
-		file_len = readUint32BE();
-		read(file_name, 0x20);
-		file_name[0x20] = 0;
-
-		assert(file_name[0]);
-		//debug(7, "  extracting \'%s\'", file_name);
-
-		// Consistency check. make sure the file data is in the file
-		if (file_off + file_len > data_file_len) {
-			return false;
-		}
-
-		if (scumm_stricmp(file_name, filename.c_str()) == 0) {
-			// We got a match!
-			setSubfileRange(file_off, file_len);
-			return true;
-		}
-	}
-
-	return false;
-}
-
-
-bool ScummFile::eos() const {
-	return _subFileLen ? _myEos : File::eos();
-}
-
-int64 ScummFile::pos() const {
-	return File::pos() - _subFileStart;
-}
-
-int64 ScummFile::size() const {
-	return _subFileLen ? _subFileLen : File::size();
-}
-
-bool ScummFile::seek(int64 offs, int whence) {
-	if (_subFileLen) {
-		// Constrain the seek to the subfile
-		switch (whence) {
-		case SEEK_END:
-			offs = _subFileStart + _subFileLen + offs;
-			break;
-		case SEEK_SET:
-		default:
-			offs += _subFileStart;
-			break;
-		case SEEK_CUR:
-			offs += File::pos();
-			break;
-		}
-		assert((int32)_subFileStart <= offs && offs <= (int32)(_subFileStart + _subFileLen));
-		whence = SEEK_SET;
-	}
-	bool ret = File::seek(offs, whence);
-	if (ret)
-		_myEos = false;
-	return ret;
-}
-
-uint32 ScummFile::read(void *dataPtr, uint32 dataSize) {
-	uint32 realLen;
-
-	if (_subFileLen) {
-		// Limit the amount we read by the subfile boundaries.
-		const int32 curPos = pos();
-		assert(_subFileLen >= curPos);
-		int32 newPos = curPos + dataSize;
-		if (newPos > _subFileLen) {
-			dataSize = _subFileLen - curPos;
-			_myEos = true;
-		}
-	}
-
-	realLen = File::read(dataPtr, dataSize);
-
-
-	// If an encryption byte was specified, XOR the data we just read by it.
-	// This simple kind of "encryption" was used by some of the older SCUMM
-	// games.
-	if (_encbyte) {
-		byte *p = (byte *)dataPtr;
-		byte *end = p + realLen;
-		while (p < end)
-			*p++ ^= _encbyte;
-	}
-
-	return realLen;
-}
-
-#pragma mark -
-#pragma mark --- ScummSteamFile ---
-#pragma mark -
-
-bool ScummSteamFile::open(const Common::Path &filename) {
-	if (filename.toString().equalsIgnoreCase(_indexFile.indexFileName)) {
-		return openWithSubRange(_indexFile.executableName, _indexFile.start, _indexFile.len);
-	} else {
-		// Regular non-bundled file
-		return ScummFile::open(filename);
-	}
-}
-
-bool ScummSteamFile::openWithSubRange(const Common::String &filename, int32 subFileStart, int32 subFileLen) {
-	if (ScummFile::open(filename)) {
-		_subFileStart = subFileStart;
-		_subFileLen = subFileLen;
-		seek(0, SEEK_SET);
-		return true;
-	} else {
-		return false;
-	}
+void BaseScummFile::close() {
+  _baseStream.reset();
+  _debugName.clear();
 }
 
 #pragma mark -
@@ -283,7 +112,7 @@ ScummDiskImage::ScummDiskImage(const char *disk1, const char *disk2, GameSetting
 
 byte ScummDiskImage::fileReadByte() {
 	byte b = 0;
-	File::read(&b, 1);
+	_baseStream->read(&b, 1);
 	return b;
 }
 
@@ -299,22 +128,21 @@ bool ScummDiskImage::openDisk(char num) {
 	if (num == '2')
 		num = 2;
 
-	if (_openedDisk != num || !File::isOpen()) {
-		if (File::isOpen())
-			File::close();
-
-		if (num == 1)
-			File::open(_disk1);
-		else if (num == 2)
-			File::open(_disk2);
-		else {
+	if (_openedDisk != num || !_baseStream) {
+		if (num == 1) {
+			_baseStream.reset(SearchMan.createReadStreamForMember(Common::Path(_disk1)));
+			_debugName = _disk1;
+		} else if (num == 2) {
+			_baseStream.reset(SearchMan.createReadStreamForMember(Common::Path(_disk2)));
+			_debugName = _disk2;
+		} else {
 			error("ScummDiskImage::open(): wrong disk (%c)", num);
 			return false;
 		}
 
 		_openedDisk = num;
 
-		if (!File::isOpen()) {
+		if (!_baseStream) {
 			error("ScummDiskImage::open(): cannot open disk (%d)", num);
 			return false;
 		}
@@ -329,9 +157,9 @@ bool ScummDiskImage::open(const Common::Path &filename) {
 	openDisk(1);
 
 	if (_game.platform == Common::kPlatformApple2GS) {
-		File::seek(142080);
+		_baseStream->seek(142080);
 	} else {
-		File::seek(0);
+		_baseStream->seek(0);
 	}
 
 	signature = fileReadUint16LE();
@@ -348,12 +176,12 @@ bool ScummDiskImage::open(const Common::Path &filename) {
 	openDisk(2);
 
 	if (_game.platform == Common::kPlatformApple2GS) {
-		File::seek(143104);
+		_baseStream->seek(143104);
 		signature = fileReadUint16LE();
 		if (signature != 0x0032)
 			error("Error: signature not found in disk 2");
 	} else {
-		File::seek(0);
+		_baseStream->seek(0);
 		signature = fileReadUint16LE();
 		if (signature != 0x0132)
 			error("Error: signature not found in disk 2");
@@ -371,9 +199,9 @@ uint16 ScummDiskImage::extractIndex(Common::WriteStream *out) {
 	openDisk(1);
 
 	if (_game.platform == Common::kPlatformApple2GS) {
-		File::seek(142080);
+		_baseStream->seek(142080);
 	} else {
-		File::seek(0);
+		_baseStream->seek(0);
 	}
 
 	// skip signature
@@ -457,9 +285,9 @@ uint16 ScummDiskImage::extractResource(Common::WriteStream *out, int res) {
 	openDisk(_roomDisks[res]);
 
 	if (_game.platform == Common::kPlatformApple2GS) {
-		File::seek((AppleSectorOffset[_roomTracks[res]] + _roomSectors[res]) * 256);
+		_baseStream->seek((AppleSectorOffset[_roomTracks[res]] + _roomSectors[res]) * 256);
 	} else {
-		File::seek((C64SectorOffset[_roomTracks[res]] + _roomSectors[res]) * 256);
+		_baseStream->seek((C64SectorOffset[_roomTracks[res]] + _roomSectors[res]) * 256);
 	}
 
 	for (i = 0; i < _resourcesPerFile[res]; i++) {
@@ -505,13 +333,15 @@ void ScummDiskImage::close() {
 	free(_buf);
 	_buf = nullptr;
 
-	File::close();
+	_baseStream.reset();
+	_debugName.clear();
 }
 
-bool ScummDiskImage::openSubFile(const Common::String &filename) {
-	assert(isOpen());
+bool ScummDiskImage::openSubFile(const Common::Path &filename) {
+	assert(_baseStream);
 
-	const char *ext = strrchr(filename.c_str(), '.');
+	Common::String basename = filename.baseName();
+	const char *ext = strrchr(basename.c_str(), '.');
 	char resNum[3];
 	int res;
 

@@ -194,7 +194,7 @@ bool AIScriptBulletBob::GoalChanged(int currentGoalNumber, int newGoalNumber) {
 		Actor_Force_Stop_Walking(kActorMcCoy);
 		Ambient_Sounds_Play_Speech_Sound(kActorMcCoy, 9900, 100, 0, 0, 0);
 		Actor_Change_Animation_Mode(kActorMcCoy, kAnimationModeDie);
-		Actor_Retired_Here(kActorMcCoy, 6, 6, 1, -1);
+		Actor_Retired_Here(kActorMcCoy, 6, 6, true, -1);
 		Scene_Exits_Enable();
 		return true;
 	}
@@ -438,6 +438,7 @@ bool AIScriptBulletBob::UpdateAnimation(int *animation, int *frame) {
 		break;
 
 	default:
+		debugC(6, kDebugAnimation, "AIScriptBulletBob::UpdateAnimation() - Current _animationState (%d) is not supported", _animationState);
 		break;
 	}
 	*frame = _animationFrame;
@@ -564,6 +565,7 @@ bool AIScriptBulletBob::ChangeAnimationMode(int mode) {
 	default:
 		_animationState = 0;
 		_animationFrame = 0;
+		debugC(6, kDebugAnimation, "AIScriptBulletBob::ChangeAnimationMode(%d) - Target mode is treated as default, state and frame are set to 0", mode);
 		break;
 	}
 	return true;

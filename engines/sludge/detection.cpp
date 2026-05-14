@@ -36,25 +36,6 @@ static const DebugChannelDef debugFlagList[] = {
 	{Sludge::kSludgeDebugSound, "sound", "Sound debug level"},
 	DEBUG_CHANNEL_END
 };
-static const PlainGameDescriptor sludgeGames[] = {
-	{ "sludge",			"Sludge Game" },
-	{ "welcome",		"Welcome Example" },
-	{ "verbcoin",		"Verb Coin" },
-	{ "robinsrescue",	"Robin's Rescue" },
-	{ "outoforder",		"Out Of Order" },
-	{ "frasse",			"Frasse and the Peas of Kejick" },
-	{ "interview",		"The Interview" },
-	{ "life",			"Life Flashes By" },
-	{ "tgttpoacs",		"The Game That Takes Place on a Cruise Ship" },
-	{ "mandy",			"Mandy Christmas Adventure" },
-	{ "cubert",			"Cubert Badbone, P.I." },
-	{ "gjgagsas",		"The Game Jam Game About Games, Secrets and Stuff" },
-	{ "tsotc",			"The Secret of Tremendous Corporation" },
-	{ "nsc",			"Nathan's Second Chance" },
-	{ "atw",			"Above The Waves" },
-	{ "leptonsquest",	"Lepton's Quest" },
-	{ 0, 0 }
-};
 
 #include "sludge/detection_tables.h"
 
@@ -74,17 +55,17 @@ static Sludge::SludgeGameDescription s_fallbackDesc =
 
 static char s_fallbackFileNameBuffer[51];
 
-class SludgeMetaEngineDetection : public AdvancedMetaEngineDetection {
+class SludgeMetaEngineDetection : public AdvancedMetaEngineDetection<Sludge::SludgeGameDescription> {
 public:
-	SludgeMetaEngineDetection() : AdvancedMetaEngineDetection(Sludge::gameDescriptions, sizeof(Sludge::SludgeGameDescription), sludgeGames) {
+	SludgeMetaEngineDetection() : AdvancedMetaEngineDetection(Sludge::gameDescriptions, Sludge::sludgeGames) {
 		_maxScanDepth = 1;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "sludge";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Sludge";
 	}
 
@@ -114,9 +95,9 @@ ADDetectedGame SludgeMetaEngineDetection::fallbackDetect(const FileMap &allFiles
 		if (file->isDirectory())
 			continue;
 
-		Common::String fileName = file->getName();
+		Common::Path fileName = file->getPathInArchive();
 		fileName.toLowercase();
-		if (!(fileName.hasSuffix(".slg") || fileName == "gamedata"))
+		if (!(fileName.baseName().hasSuffix(".slg") || fileName == "gamedata"))
 			continue;
 
 		Common::File f;
@@ -140,7 +121,7 @@ ADDetectedGame SludgeMetaEngineDetection::fallbackDetect(const FileMap &allFiles
 			continue;
 		}
 
-		strncpy(s_fallbackFileNameBuffer, fileName.c_str(), 50);
+		strncpy(s_fallbackFileNameBuffer, fileName.toString('/').c_str(), 50);
 		s_fallbackFileNameBuffer[50] = '\0';
 		s_fallbackDesc.desc.filesDescriptions[0].fileName = s_fallbackFileNameBuffer;
 
@@ -148,7 +129,7 @@ ADDetectedGame SludgeMetaEngineDetection::fallbackDetect(const FileMap &allFiles
 		game.desc = &s_fallbackDesc.desc;
 
 		FileProperties tmp;
-		if (getFileProperties(allFiles, s_fallbackDesc.desc, fileName, tmp)) {
+		if (getFileProperties(allFiles, kMD5Head, fileName, tmp)) {
 			game.hasUnknownFiles = true;
 			game.matchedFiles[fileName] = tmp;
 		}

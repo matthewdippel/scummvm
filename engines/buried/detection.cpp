@@ -26,9 +26,9 @@
 #include "common/file.h"
 #include "common/savefile.h"
 #include "common/system.h"
-#include "common/translation.h"
 
 #include "buried/buried.h"
+#include "buried/detection.h"
 
 static const PlainGameDescriptor buriedGames[] = {
 	{"buried", "The Journeyman Project 2: Buried in Time"},
@@ -39,47 +39,31 @@ static const PlainGameDescriptor buriedGames[] = {
 
 namespace Buried {
 
-static const char *directoryGlobs[] = {
+static const char *const directoryGlobs[] = {
 	"win31",
 	"manual",
 	nullptr
 };
 
-static const ADExtraGuiOptionsMap optionsList[] = {
-	{
-		GAMEOPTION_ALLOW_SKIP,
-		{
-			// I18N: This option allows the user to skip cutscenes.
-			_s("Skip support"),
-			_s("Allow cutscenes to be skipped"),
-			"skip_support",
-			true,
-			0,
-			0
-		}
-	},
-	AD_EXTRA_GUI_OPTIONS_TERMINATOR
-};
 } // End of namespace Buried
 
 
-class BuriedMetaEngineDetection : public AdvancedMetaEngineDetection {
+class BuriedMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
 	BuriedMetaEngineDetection() : AdvancedMetaEngineDetection(
 		Buried::gameDescriptions,
-		sizeof(ADGameDescription),
-		buriedGames,
-		Buried::optionsList) {
+		buriedGames) {
+		_guiOptions = GUIO2(GUIO_NOMIDI, GAMEOPTION_ALLOW_SKIP);
 		_flags = kADFlagUseExtraAsHint;
 		_maxScanDepth = 3;
 		_directoryGlobs = Buried::directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "buried";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "The Journeyman Project 2: Buried in Time";
 	}
 

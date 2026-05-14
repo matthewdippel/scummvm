@@ -25,6 +25,8 @@
 #include "engines/stark/ui/menu/locationscreen.h"
 #include "engines/stark/visual/text.h"
 
+#include "common/path.h"
+
 namespace Stark {
 
 class FMVWidget;
@@ -90,19 +92,19 @@ public:
 
 	void onClick();
 
-	void setTextColor(const Color &color) { _title.setColor(color); }
+	void setTextColor(const Gfx::Color &color) { _title.setColor(color); }
 
-	void onScreenChanged() { _title.resetTexture(); }
+	void onScreenChanged() { _title.reset(); }
 
 private:
-	const Color _textColorHovered = Color(0x1E, 0x1E, 0x96);
-	const Color _textColorDefault = Color(0x00, 0x00, 0x00);
+	const Gfx::Color _textColorHovered = Gfx::Color(0x1E, 0x1E, 0x96);
+	const Gfx::Color _textColorDefault = Gfx::Color(0x00, 0x00, 0x00);
 
 	Common::Point _formatRectPos;
 	int _fontHeight;
 	uint _fmvPerPage;
 
-	const Common::String &_filename;
+	const Common::Path &_filename;
 	VisualText _title;
 
 	int _width;

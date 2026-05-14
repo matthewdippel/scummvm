@@ -36,11 +36,11 @@ namespace Wintermute {
 
 //////////////////////////////////////////////////////////////////////
 BaseActiveRect::BaseActiveRect(BaseGame *inGame) : BaseClass(inGame) {
-	_rect.setEmpty();
+	BasePlatform::setRectEmpty(&_rect);
 	_owner = nullptr;
 	_frame = nullptr;
 #ifdef ENABLE_WME3D
-	_modelX = nullptr;
+	_xmodel = nullptr;
 #endif
 	_region = nullptr;
 	_zoomX = 100;
@@ -54,12 +54,12 @@ BaseActiveRect::BaseActiveRect(BaseGame *inGame) : BaseClass(inGame) {
 BaseActiveRect::BaseActiveRect(BaseGame *inGame, BaseObject *owner, BaseSubFrame *frame, int x, int y, int width, int height, float zoomX, float zoomY, bool precise) : BaseClass(inGame) {
 	_owner = owner;
 	_frame = frame;
-	_rect.setRect(x, y, x + width, y + height);
+	BasePlatform::setRect(&_rect, x, y, x + width, y + height);
 	_zoomX = zoomX;
 	_zoomY = zoomY;
 	_precise = precise;
 #ifdef ENABLE_WME3D
-	_modelX = nullptr;
+	_xmodel = nullptr;
 #endif
 	_region = nullptr;
 	_offsetX = _offsetY = 0;
@@ -68,10 +68,10 @@ BaseActiveRect::BaseActiveRect(BaseGame *inGame, BaseObject *owner, BaseSubFrame
 
 //////////////////////////////////////////////////////////////////////
 #ifdef ENABLE_WME3D
-BaseActiveRect::BaseActiveRect(BaseGame *inGame, BaseObject *owner, ModelX *model, int x, int y, int width, int height, bool precise) : BaseClass(inGame) {
+BaseActiveRect::BaseActiveRect(BaseGame *inGame, BaseObject *owner, XModel *model, int x, int y, int width, int height, bool precise) : BaseClass(inGame) {
 	_owner = owner;
-	_modelX = model;
-	_rect.setRect(x, y, x + width, y + height);
+	_xmodel = model;
+	BasePlatform::setRect(&_rect, x, y, x + width, y + height);
 	_zoomX = 100;
 	_zoomY = 100;
 	_precise = precise;
@@ -87,13 +87,13 @@ BaseActiveRect::BaseActiveRect(BaseGame *inGame, BaseObject *owner, BaseRegion *
 	_owner = owner;
 	_region = region;
 	BasePlatform::copyRect(&_rect, &region->_rect);
-	_rect.offsetRect(-offsetX, -offsetY);
+	BasePlatform::offsetRect(&_rect, -offsetX, -offsetY);
 	_zoomX = 100;
 	_zoomY = 100;
 	_precise = true;
 	_frame = nullptr;
 #ifdef ENABLE_WME3D
-	_modelX = nullptr;
+	_xmodel = nullptr;
 #endif
 	clipRect();
 	_offsetX = offsetX;
@@ -105,7 +105,7 @@ BaseActiveRect::~BaseActiveRect() {
 	_owner = nullptr;
 	_frame = nullptr;
 #ifdef ENABLE_WME3D
-	_modelX = nullptr;
+	_xmodel = nullptr;
 #endif
 	_region = nullptr;
 }
@@ -113,23 +113,23 @@ BaseActiveRect::~BaseActiveRect() {
 
 //////////////////////////////////////////////////////////////////////////
 void BaseActiveRect::clipRect() {
-	Rect32 rc;
+	Common::Rect32 rc;
 	bool customViewport;
-	_gameRef->getCurrentViewportRect(&rc, &customViewport);
-	BaseRenderer *Rend = BaseEngine::getRenderer();
+	_game->getCurrentViewportRect(&rc, &customViewport);
+	BaseRenderer *rend = _game->_renderer;
 
 	if (!customViewport) {
-		rc.left -= Rend->_drawOffsetX;
-		rc.right -= Rend->_drawOffsetX;
-		rc.top -= Rend->_drawOffsetY;
-		rc.bottom -= Rend->_drawOffsetY;
+		rc.left -= rend->_drawOffsetX;
+		rc.right -= rend->_drawOffsetX;
+		rc.top -= rend->_drawOffsetY;
+		rc.bottom -= rend->_drawOffsetY;
 	}
 
 	if (rc.left > _rect.left) {
 		_offsetX = rc.left - _rect.left;
 	}
-	if (rc.top  > _rect.top) {
-		_offsetY = rc.top  - _rect.top;
+	if (rc.top > _rect.top) {
+		_offsetY = rc.top - _rect.top;
 	}
 
 	BasePlatform::intersectRect(&_rect, &_rect, &rc);

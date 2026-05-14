@@ -29,7 +29,7 @@ LuaFileProxy *LuaFileProxy::create(const Common::String &filename, const Common:
 	if (filename.contains("config.lua"))
 		return new LuaFileConfig(filename, mode);
 
-	return new LuaFileRead(filename, mode);
+	return new LuaFileRead(Common::Path(filename, '/'), mode);
 }
 
 LuaFileConfig::LuaFileConfig(const Common::String &filename, const Common::String &mode) : _readPos(0) {
@@ -196,6 +196,8 @@ Common::String LuaFileConfig::getLanguage() {
 		return "pt";
 	case Common::RU_RUS:
 		return "ru";
+	case Common::HE_ISR:
+		return "he";
 	default:
 		error("Unknown language '%s' encountered", ConfMan.get("language").c_str());
 		break;
@@ -226,15 +228,17 @@ void LuaFileConfig::setLanguage(const Common::String &lang) {
 		ConfMan.set("language", Common::getLanguageCode(Common::PT_BRA));
 	else if (lang == "ru")
 		ConfMan.set("language", Common::getLanguageCode(Common::RU_RUS));
+	else if (lang == "he")
+		ConfMan.set("language", Common::getLanguageCode(Common::HE_ISR));
 	else
 		error("Unknown language encountered: %s", lang.c_str());
 }
 
 
-LuaFileRead::LuaFileRead(const Common::String &filename, const Common::String &mode) {
+LuaFileRead::LuaFileRead(const Common::Path &filename, const Common::String &mode) {
 	assert(mode == "r");
 	if (!_file.open(filename))
-		error("Could not open file %s", filename.c_str());
+		error("Could not open file %s", filename.toString().c_str());
 
 	_size = _file.size();
 }

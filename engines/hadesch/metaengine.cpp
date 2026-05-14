@@ -26,19 +26,12 @@
 #include "hadesch/hadesch.h"
 #include "engines/advancedDetector.h"
 
-class HadeschMetaEngine : public AdvancedMetaEngine {
+class HadeschMetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 public:
 	bool hasFeature(MetaEngineFeature f) const override {
 		return
-			(f == kSupportsListSaves) ||
 			(f == kSupportsLoadingDuringStartup) ||
-			(f == kSupportsDeleteSave) ||
-			(f == kSavesSupportMetaInfo) ||
-			(f == kSavesSupportThumbnail) ||
-			(f == kSavesSupportCreationDate) ||
-			(f == kSavesSupportPlayTime) ||
-			(f == kSimpleSavesNames) ||
-			(f == kSavesUseExtendedFormat);
+			checkExtendedSaves(f);
 	}
 
 	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override {

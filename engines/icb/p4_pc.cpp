@@ -37,6 +37,7 @@
 #include "engines/icb/mission.h"
 #include "engines/icb/cluster_manager_pc.h"
 #include "engines/icb/configfile.h"
+#include "engines/icb/icb.h"
 
 #include "common/str.h"
 #include "common/config-manager.h"
@@ -99,7 +100,12 @@ void ReadConfigFromIniFile() {
 	char configFile[1024];
 	uint32 temp;
 
-	sprintf(configFile, CONFIG_INI_FILENAME);
+	if (g_icb->getGameType() == GType_ICB)
+		Common::sprintf_s(configFile, "engine\\icb.ini");
+	else if (g_icb->getGameType() == GType_ELDORADO)
+		Common::sprintf_s(configFile, "engine\\eldorado.ini");
+	else
+		assert(false);
 
 	ConfigFile config;
 	pxString filename = configFile;
@@ -165,7 +171,7 @@ void Save_config_file() {
 		// Only write a setting when it's been achieved
 		if (g_movieLibrary[i].visible) {
 			char temp[1024];
-			sprintf(temp, "%X", HashString(g_movieLibrary[i].filename));
+			Common::sprintf_s(temp, "%X", HashString(g_movieLibrary[i].filename));
 			Common::String movie = Common::String("movie_") + temp;
 			ConfMan.setBool(movie, true);
 		}
@@ -237,7 +243,7 @@ void InitEngine(const char *lpCmdLine) {
 	// if so set the stub mode to GameScript mode
 	if (gs.Init_game_script() && strstr(lpCmdLine, "mission") == nullptr) {
 		// GameScript mode
-		// unless there is a console.icb file we dont allow debugging
+		// unless there is a console.icb file we don't allow debugging
 
 		// set base mode of stub to gameScript processor
 		g_stub->Set_current_stub_mode(__game_script);
@@ -355,9 +361,9 @@ void Mission_and_console() {
 		// the mission has terminated of its own accord - as apposed to a user quit
 
 		// if the player died then we bring up a restart/continue menu here
-		c_game_object *ob = (c_game_object *)MS->objects->Fetch_item_by_number(MS->player.Fetch_player_id());
-		int32 ret = ob->GetVariable("state");
-		if (ob->GetIntegerVariable(ret)) {
+		CGame *ob = (CGame *)LinkedDataObject::Fetch_item_by_number(MS->objects, MS->player.Fetch_player_id());
+		int32 ret = CGameObject::GetVariable(ob, "state");
+		if (CGameObject::GetIntegerVariable(ob, ret)) {
 			// Return to avoid deleting the mission
 			g_stub->Push_stub_mode(__gameover_menu);
 			return;

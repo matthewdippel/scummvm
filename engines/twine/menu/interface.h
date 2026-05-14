@@ -36,12 +36,13 @@ class TwinEEngine;
 class Interface {
 private:
 	TwinEEngine *_engine;
-	int32 checkClipping(int32 x, int32 y) const;
-	Common::Rect _savedClip;
+	Common::Rect _memoClip;
 
 public:
 	Interface(TwinEEngine *engine);
+	// ClipXmin, ClipXmax, ClipYmin, ClipYmax
 	Common::Rect _clip { 0, 0, 0, 0 };
+	bool _animateTexture = false; // lba2: AnimateTexture
 
 	/**
 	 * Draw button line
@@ -63,14 +64,14 @@ public:
 	 * Draws inside buttons transparent area
 	 * @param colorAdj index to adjust the transparent box color
 	 */
-	void drawTransparentBox(const Common::Rect &rect, int32 colorAdj);
+	void shadeBox(const Common::Rect &rect, int32 colorAdj);
 
-	void drawFilledRect(const Common::Rect &rect, uint8 colorIndex);
+	void box(const Common::Rect &rect, uint8 colorIndex);
 
 	bool setClip(const Common::Rect &rect);
-	void saveClip(); // saveTextWindow
-	void loadClip(); // loadSavedTextWindow
-	void resetClip();
+	void memoClip(); // saveTextWindow
+	void restoreClip(); // loadSavedTextWindow
+	void unsetClip();
 };
 
 } // namespace TwinE

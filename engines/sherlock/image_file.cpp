@@ -24,6 +24,7 @@
 #include "sherlock/sherlock.h"
 #include "common/debug.h"
 #include "common/memstream.h"
+#include "graphics/palette.h"
 
 namespace Sherlock {
 
@@ -37,7 +38,7 @@ ImageFile::ImageFile() {
 	_stream = nullptr;
 }
 
-ImageFile::ImageFile(const Common::String &name, bool skipPal, bool animImages) {
+ImageFile::ImageFile(const Common::Path &name, bool skipPal, bool animImages) {
 	// When we have a filename, the ImageFile class is responsible for
 	// decoding frames on demand, not all at once. But we don't want to
 	// recreate the stream every time since in the case where resources
@@ -48,13 +49,13 @@ ImageFile::ImageFile(const Common::String &name, bool skipPal, bool animImages) 
 	_name = name;
 	_stream = _vm->_res->load(name);
 
-	Common::fill(&_palette[0], &_palette[PALETTE_SIZE], 0);
+	Common::fill(&_palette[0], &_palette[Graphics::PALETTE_SIZE], 0);
 	load(*_stream, skipPal, animImages);
 }
 
 ImageFile::ImageFile(Common::SeekableReadStream &stream, bool skipPal) {
 	_stream = nullptr;
-	Common::fill(&_palette[0], &_palette[PALETTE_SIZE], 0);
+	Common::fill(&_palette[0], &_palette[Graphics::PALETTE_SIZE], 0);
 	load(stream, skipPal, false);
 }
 
@@ -97,9 +98,24 @@ void ImageFile::load(Common::SeekableReadStream &stream, bool skipPalette, bool 
 	int streamSize = stream.size();
 	while (stream.pos() < streamSize) {
 		ImageFrame frame;
+		bool invalid = false;
+
 		frame._width = stream.readUint16LE() + 1;
 		frame._height = stream.readUint16LE() + 1;
 		frame._paletteBase = stream.readByte();
+
+		// Exact purpose of the image with size (-320)x(-200) in
+		// the titles is unclear but skipping it seems to have no ill effect.
+		// Just skip it.
+		if (frame._width > 32768) {
+			frame._width = -(int16)frame._width;
+			invalid = true;
+		}
+
+		if (frame._height > 32768) {
+			frame._height = -(int16)frame._height;
+			invalid = true;
+		}
 
 		if (animImages) {
 			// Animation cutscene image files use a 16-bit x offset
@@ -129,7 +145,12 @@ void ImageFile::load(Common::SeekableReadStream &stream, bool skipPalette, bool 
 
 		frame._pos = stream.pos();
 
-		if (_name.empty()) {
+		if (invalid) {
+			frame._decoded = true;
+			frame._frame.create(frame._width, frame._height, Graphics::PixelFormat::createFormatCLUT8());
+			frame._frame.fillRect(Common::Rect(0, 0, frame._width, frame._height), 0xff);
+			stream.seek(MIN(stream.pos() + frame._size, stream.size()));
+		} else if (_name.empty()) {
 			// Load data for frame and decompress it
 			frame._decoded = true;
 			byte *data1 = new byte[frame._size + 4];
@@ -171,8 +192,8 @@ void ImageFile::loadPalette(Common::SeekableReadStream &stream) {
 		}
 		// Found palette, so read it in
 		stream.seek(8, SEEK_CUR); // Skip over the rest of the signature text "VGA palette"
-		for (int idx = 0; idx < PALETTE_SIZE; ++idx)
-			_palette[idx] = VGA_COLOR_TRANS(stream.readByte());
+		for (int idx = 0; idx < Graphics::PALETTE_SIZE; ++idx)
+			_palette[idx] = PALETTE_6BIT_TO_8BIT(stream.readByte());
 	} else {
 		// Not a palette, so rewind to start of frame data for normal frame processing
 		stream.seek(-8, SEEK_CUR);
@@ -306,12 +327,12 @@ void ImageFile3DO::setVm(SherlockEngine *vm) {
 	_vm = vm;
 }
 
-ImageFile3DO::ImageFile3DO(const Common::String &name, ImageFile3DOType imageFile3DOType) {
+ImageFile3DO::ImageFile3DO(const Common::Path &name, ImageFile3DOType imageFile3DOType) {
 #if 0
 	Common::File *dataStream = new Common::File();
 
 	if (!dataStream->open(name)) {
-		error("unable to open %s\n", name.c_str());
+		error("unable to open %s\n", name.toString().c_str());
 	}
 #endif
 	Common::SeekableReadStream *dataStream = _vm->_res->load(name);

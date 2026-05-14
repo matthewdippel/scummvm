@@ -24,6 +24,7 @@
 
 #include "ultima/ultima8/gumps/gump.h"
 #include "ultima/ultima8/misc/classtype.h"
+#include "ultima/ultima8/misc/point3.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -47,14 +48,13 @@ public:
 
 	void        PaintThis(RenderSurface *surf, int32 lerp_factor, bool scaled) override;
 
-	void                GetCameraLocation(int32 &x, int32 &y, int32 &z,
-	                                      int lerp_factor = 256);
+	Point3 GetCameraLocation(int lerp_factor = 256);
 
 	// Trace a click, and return ObjId (_parent coord space)
 	uint16      TraceObjId(int32 mx, int32 my) override;
 
 	// Trace a click, return ObjId, and the coordinates of the mouse click (gump coord space)
-	virtual uint16      TraceCoordinates(int mx, int my, int32 coords[3],
+	virtual uint16      TraceCoordinates(int mx, int my, Point3 &coords,
 	                                     int offsetx = 0, int offsety = 0,
 	                                     Item *item = 0);
 
@@ -85,6 +85,18 @@ public:
 	static bool is_highlightItems() {
 		return _highlightItems;
 	}
+	static bool getShowFootpads() {
+		return _showFootpads;
+	}
+	static void setShowFootpads(bool value) {
+		_showFootpads = value;
+	}
+	static int getGridlines() {
+		return _gridlines;
+	}
+	static void setGridlines(int gridlines) {
+		_gridlines = gridlines;
+	}
 
 	void        RenderSurfaceChanged() override;
 
@@ -93,9 +105,11 @@ protected:
 	uint32 _draggingShape;
 	uint32 _draggingFrame;
 	uint32 _draggingFlags;
-	int32 _draggingPos[3];
+	Point3 _draggingPos;
 
 	static bool _highlightItems;
+	static bool _showFootpads;
+	static int _gridlines;
 };
 
 } // End of namespace Ultima8

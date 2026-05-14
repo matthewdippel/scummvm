@@ -42,7 +42,7 @@ ImuseDigiSndMgr::ImuseDigiSndMgr(ScummEngine *scumm) {
 	}
 	_vm = scumm;
 	_disk = 0;
-	_cacheBundleDir = new BundleDirCache();
+	_cacheBundleDir = new BundleDirCache(scumm);
 	assert(_cacheBundleDir);
 	BundleCodecs::initializeImcTables();
 }
@@ -72,7 +72,7 @@ bool ImuseDigiSndMgr::openMusicBundle(SoundDesc *sound, int &disk) {
 	bool result = false;
 	bool compressed = false;
 
-	sound->bundle = new BundleMgr(_cacheBundleDir);
+	sound->bundle = new BundleMgr(_vm, _cacheBundleDir);
 	assert(sound->bundle);
 	if (_vm->_game.id == GID_CMI) {
 		if (_vm->_game.features & GF_DEMO) {
@@ -81,7 +81,7 @@ bool ImuseDigiSndMgr::openMusicBundle(SoundDesc *sound, int &disk) {
 			char musicfile[20];
 			if (disk == -1)
 				disk = _vm->VAR(_vm->VAR_CURRENTDISK);
-			sprintf(musicfile, "musdisk%d.bun", disk);
+			Common::sprintf_s(musicfile, "musdisk%d.bun", disk);
 //			if (_disk != _vm->VAR(_vm->VAR_CURRENTDISK)) {
 //				_vm->_DiMUSE_v1->parseScriptCmds(0x1000, 0, 0, 0, 0, 0, 0, 0);
 //				_vm->_DiMUSE_v1->parseScriptCmds(0x2000, 0, 0, 0, 0, 0, 0, 0);
@@ -108,7 +108,7 @@ bool ImuseDigiSndMgr::openVoiceBundle(SoundDesc *sound, int &disk) {
 	bool result = false;
 	bool compressed = false;
 
-	sound->bundle = new BundleMgr(_cacheBundleDir);
+	sound->bundle = new BundleMgr(_vm, _cacheBundleDir);
 	assert(sound->bundle);
 	if (_vm->_game.id == GID_CMI) {
 		if (_vm->_game.features & GF_DEMO) {
@@ -117,7 +117,7 @@ bool ImuseDigiSndMgr::openVoiceBundle(SoundDesc *sound, int &disk) {
 			char voxfile[20];
 			if (disk == -1)
 				disk = _vm->VAR(_vm->VAR_CURRENTDISK);
-			sprintf(voxfile, "voxdisk%d.bun", disk);
+			Common::sprintf_s(voxfile, "voxdisk%d.bun", disk);
 //			if (_disk != _vm->VAR(_vm->VAR_CURRENTDISK)) {
 //				_vm->_DiMUSE_v1->parseScriptCmds(0x1000, 0, 0, 0, 0, 0, 0, 0);
 //				_vm->_DiMUSE_v1->parseScriptCmds(0x2000, 0, 0, 0, 0, 0, 0, 0);
@@ -192,7 +192,7 @@ ImuseDigiSndMgr::SoundDesc *ImuseDigiSndMgr::openSound(int32 soundId, const char
 		error("ImuseDigiSndMgr::openSound() Unknown soundType %d (trying to load sound %d)", soundType, soundId);
 	}
 
-	strcpy(sound->name, soundName);
+	Common::strlcpy(sound->name, soundName, sizeof(sound->name));
 	sound->soundId = soundId;
 
 	if (soundType == IMUSE_BUNDLE) {
@@ -202,7 +202,9 @@ ImuseDigiSndMgr::SoundDesc *ImuseDigiSndMgr::openSound(int32 soundId, const char
 }
 
 void ImuseDigiSndMgr::closeSound(SoundDesc *soundDesc) {
-	assert(checkForProperHandle(soundDesc));
+	// Check if there's an actual sound to close...
+	if (!checkForProperHandle(soundDesc))
+		return;
 
 	if (soundDesc->resPtr) {
 		bool found = false;
@@ -242,7 +244,9 @@ void ImuseDigiSndMgr::scheduleSoundForDeallocation(int soundId) {
 		}
 	}
 
-	assert(checkForProperHandle(soundDesc));
+	// Check if there's an actual sound to deallocate...
+	if (!checkForProperHandle(soundDesc))
+		return;
 
 	soundDesc->scheduledForDealloc = true;
 }

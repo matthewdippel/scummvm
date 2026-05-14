@@ -22,6 +22,7 @@
 #ifndef ULTIMA8_GUMPS_BOOKGUMP_H
 #define ULTIMA8_GUMPS_BOOKGUMP_H
 
+#include "common/str.h"
 #include "ultima/ultima8/gumps/modal_gump.h"
 #include "ultima/ultima8/usecode/intrinsics.h"
 #include "ultima/ultima8/misc/classtype.h"
@@ -33,14 +34,14 @@ namespace Ultima8 {
 * The gump to display the text of a book
 */
 class BookGump : public ModalGump {
-	Std::string _text;
+	Common::String _text;
 	ObjId _textWidgetL;
 	ObjId _textWidgetR;
 public:
 	ENABLE_RUNTIME_CLASSTYPE()
 
 	BookGump();
-	BookGump(ObjId owner, const Std::string &msg);
+	BookGump(ObjId owner, const Common::String &msg);
 	~BookGump() override;
 
 	// Go to the next page on mouse click
@@ -48,6 +49,8 @@ public:
 
 	// Close on double click
 	void onMouseDouble(int button, int32 mx, int32 my) override;
+
+	bool OnKeyDown(int key, int mod) override;
 
 	// Init the gump, call after construction
 	void InitGump(Gump *newparent, bool take_focus = true) override;

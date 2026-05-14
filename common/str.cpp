@@ -28,15 +28,6 @@
 
 namespace Common {
 
-String::String(char c)
-	: BaseString<char>() {
-
-	_storage[0] = c;
-	_storage[1] = 0;
-
-	_size = (c == 0) ? 0 : 1;
-}
-
 #ifndef SCUMMVM_UTIL
 String::String(const U32String &str, Common::CodePage page)
 	: BaseString<char>() {
@@ -55,23 +46,28 @@ String &String::operator=(const String &str) {
 	return *this;
 }
 
+String &String::operator=(String &&str) {
+	assign(static_cast<String &&>(str));
+	return *this;
+}
+
 String &String::operator=(char c) {
-	assign(c);
+	assign(1, c);
 	return *this;
 }
 
 String &String::operator+=(const char *str) {
-	assignAppend(str);
+	append(str);
 	return *this;
 }
 
 String &String::operator+=(const String &str) {
-	assignAppend(str);
+	append(str);
 	return *this;
 }
 
 String &String::operator+=(char c) {
-	assignAppend(c);
+	push_back(c);
 	return *this;
 }
 
@@ -116,7 +112,7 @@ bool String::hasSuffix(const String &x) const {
 bool String::hasSuffix(const char *x) const {
 	assert(x != nullptr);
 	// Compare x with the end of _str.
-	const uint32 x_size = strlen(x);
+	const uint32 x_size = cStrLen(x);
 	if (x_size > _size)
 		return false;
 	const char *y = c_str() + _size - x_size;
@@ -136,7 +132,7 @@ bool String::hasSuffixIgnoreCase(const String &x) const {
 bool String::hasSuffixIgnoreCase(const char *x) const {
 	assert(x != nullptr);
 	// Compare x with the end of _str.
-	const uint32 x_size = strlen(x);
+	const uint32 x_size = cStrLen(x);
 	if (x_size > _size)
 		return false;
 	const char *y = c_str() + _size - x_size;
@@ -158,23 +154,6 @@ bool String::contains(const char *x) const {
 	return strstr(c_str(), x) != nullptr;
 }
 
-bool String::contains(char x) const {
-	return strchr(c_str(), x) != nullptr;
-}
-
-bool String::contains(uint32 x) const {
-	for (String::const_iterator itr = begin(); itr != end(); itr++) {
-		if (uint32(*itr) == x) {
-			return true;
-		}
-	}
-	return false;
-}
-
-bool String::contains(char32_t x) const {
-	return contains((uint32)x);
-}
-
 #ifndef SCUMMVM_UTIL
 
 bool String::matchString(const char *pat, bool ignoreCase, const char *wildcardExclusions) const {
@@ -186,63 +165,6 @@ bool String::matchString(const String &pat, bool ignoreCase, const char *wildcar
 }
 
 #endif
-
-void String::replace(uint32 pos, uint32 count, const String &str) {
-	replace(pos, count, str, 0, str._size);
-}
-
-void String::replace(uint32 pos, uint32 count, const char *str) {
-	replace(pos, count, str, 0, strlen(str));
-}
-
-void String::replace(iterator begin_, iterator end_, const String &str) {
-	replace(begin_ - _str, end_ - begin_, str._str, 0, str._size);
-}
-
-void String::replace(iterator begin_, iterator end_, const char *str) {
-	replace(begin_ - _str, end_ - begin_, str, 0, strlen(str));
-}
-
-void String::replace(uint32 posOri, uint32 countOri, const String &str,
-					 uint32 posDest, uint32 countDest) {
-	replace(posOri, countOri, str._str, posDest, countDest);
-}
-
-void String::replace(uint32 posOri, uint32 countOri, const char *str,
-					 uint32 posDest, uint32 countDest) {
-
-	// Prepare string for the replaced text.
-	if (countOri < countDest) {
-		uint32 offset = countDest - countOri; ///< Offset to copy the characters
-		uint32 newSize = _size + offset;
-
-		ensureCapacity(newSize, true);
-
-		_size = newSize;
-
-		// Push the old characters to the end of the string
-		for (uint32 i = _size; i >= posOri + countDest; i--)
-			_str[i] = _str[i - offset];
-
-	} else if (countOri > countDest){
-		uint32 offset = countOri - countDest; ///< Number of positions that we have to pull back
-
-		makeUnique();
-
-		// Pull the remainder string back
-		for (uint32 i = posOri + countDest; i + offset <= _size; i++)
-			_str[i] = _str[i + offset];
-
-		_size -= offset;
-	} else {
-		makeUnique();
-	}
-
-	// Copy the replaced part of the string
-	for (uint32 i = 0; i < countDest; i++)
-		_str[posOri + i] = str[posDest + i];
-
-}
 
 // static
 String String::format(const char *fmt, ...) {
@@ -308,96 +230,6 @@ String String::vformat(const char *fmt, va_list args) {
 	return output;
 }
 
-size_t String::rfind(const char *s) const {
-	int sLen = strlen(s);
-
-	for (int idx = (int)_size - sLen; idx >= 0; --idx) {
-		if (!strncmp(_str + idx, s, sLen))
-			return idx;
-	}
-
-	return npos;
-}
-
-size_t String::rfind(char c, size_t pos) const {
-	for (int idx = MIN((int)_size - 1, (int)pos); idx >= 0; --idx) {
-		if ((*this)[idx] == c)
-			return idx;
-	}
-
-	return npos;
-}
-
-size_t String::findFirstOf(char c, size_t pos) const {
-	const char *strP = (pos >= _size) ? nullptr : strchr(_str + pos, c);
-	return strP ? strP - _str : npos;
-}
-
-size_t String::findFirstOf(const char *chars, size_t pos) const {
-	for (uint idx = pos; idx < _size; ++idx) {
-		if (strchr(chars, (*this)[idx]))
-			return idx;
-	}
-
-	return npos;
-}
-
-size_t String::findLastOf(char c, size_t pos) const {
-	int start = (pos == npos) ? (int)_size - 1 : MIN((int)_size - 1, (int)pos);
-	for (int idx = start; idx >= 0; --idx) {
-		if ((*this)[idx] == c)
-			return idx;
-	}
-
-	return npos;
-}
-
-size_t String::findLastOf(const char *chars, size_t pos) const {
-	int start = (pos == npos) ? (int)_size - 1 : MIN((int)_size - 1, (int)pos);
-	for (int idx = start; idx >= 0; --idx) {
-		if (strchr(chars, (*this)[idx]))
-			return idx;
-	}
-
-	return npos;
-}
-
-size_t String::findFirstNotOf(char c, size_t pos) const {
-	for (uint idx = pos; idx < _size; ++idx) {
-		if ((*this)[idx] != c)
-			return idx;
-	}
-
-	return npos;
-}
-
-size_t String::findFirstNotOf(const char *chars, size_t pos) const {
-	for (uint idx = pos; idx < _size; ++idx) {
-		if (!strchr(chars, (*this)[idx]))
-			return idx;
-	}
-
-	return npos;
-}
-
-size_t String::findLastNotOf(char c) const {
-	for (int idx = (int)_size - 1; idx >= 0; --idx) {
-		if ((*this)[idx] != c)
-			return idx;
-	}
-
-	return npos;
-}
-
-size_t String::findLastNotOf(const char *chars) const {
-	for (int idx = (int)_size - 1; idx >= 0; --idx) {
-		if (!strchr(chars, (*this)[idx]))
-			return idx;
-	}
-
-	return npos;
-}
-
 String String::substr(size_t pos, size_t len) const {
 	if (pos >= _size)
 		return String();
@@ -414,11 +246,16 @@ String String::forEachLine(String(*func)(const String, va_list args), ...) const
 	va_list args;
 	va_start(args, func);
 	while (index != npos) {
+		va_list args_;
+		scumm_va_copy(args_, args);
+
 		String textLine = substr(prev_index, index - prev_index);
-		textLine = (*func)(textLine, args);
+		textLine = (*func)(textLine, args_);
 		result = result + textLine + '\n';
 		prev_index = index + 1;
 		index = findFirstOf('\n', index + 1);
+
+		va_end(args_);
 	}
 
 	String textLine = substr(prev_index);
@@ -627,6 +464,7 @@ bool matchString(const char *str, const char *pat, bool ignoreCase, const char *
 	const char *p = nullptr;
 	const char *q = nullptr;
 	bool escaped = false;
+	bool noExclusions = (wildcardExclusions == nullptr || !*wildcardExclusions);
 
 	for (;;) {
 		if (wildcardExclusions && strchr(wildcardExclusions, *str)) {
@@ -651,8 +489,8 @@ bool matchString(const char *str, const char *pat, bool ignoreCase, const char *
 				p = nullptr;
 				q = nullptr;
 			}
-			// If pattern ended with * -> match
-			if (!*pat)
+			// If pattern ended with * and there are no exclusions -> match
+			if (!*pat && noExclusions)
 				return true;
 			break;
 
@@ -731,10 +569,134 @@ String tag2string(uint32 tag, bool nonPrintable) {
 
 #endif
 
+// When str.cpp is used in devtools warning is not defined
+#ifdef SCUMMVM_UTIL
+#define warning(msg, ...)
+#endif
+
+// Our simple implementation of strcpy_s and strcat_s
+// We don't check for overlapping strings and we issue warnings instead of erroring out
+void strcpy_s(char *dst, size_t size, const char *src) {
+	if (!dst) {
+		warning("%s: dst is nullptr", __func__);
+		return;
+	}
+	if (!src) {
+		warning("%s: src is nullptr", __func__);
+		return;
+	}
+	if (!size) {
+		warning("%s: size is zero", __func__);
+		return;
+	}
+
+	if (dst == src) {
+		// Nothing to do
+		return;
+	}
+
+	// Copy over (size - 1) bytes at max.
+	while (size != 0) {
+		*dst = *src;
+		if (*dst == '\0') {
+			return;
+		}
+		++dst;
+		++src;
+		--size;
+	}
+
+	warning("%s: truncating string", __func__);
+	dst[-1] = '\0';
+}
+
+void strcat_s(char *dst, size_t size, const char *src) {
+	if (!dst) {
+		warning("%s: dst is nullptr", __func__);
+		return;
+	}
+	if (!src) {
+		warning("%s: src is nullptr", __func__);
+		return;
+	}
+	if (!size) {
+		warning("%s: size is zero", __func__);
+		return;
+	}
+
+	// Search the end of the destination, but do not
+	// move past the terminating zero.
+	while(*dst != '\0') {
+		++dst;
+		--size;
+		if (!size) {
+			warning("%s: dst is unterminated", __func__);
+			return;
+		}
+	}
+
+	// Copy over all of the source that fits
+	// the destination buffer.
+	while (size != 0) {
+		*dst = *src;
+		if (*dst == '\0') {
+			return;
+		}
+		++dst;
+		++src;
+		--size;
+	}
+
+	warning("%s: truncating string", __func__);
+	dst[-1] = '\0';
+}
+
+int vsprintf_s(char *dst, size_t size, const char *format, va_list ap) {
+	if (!dst) {
+		warning("%s: dst is nullptr", __func__);
+		return 0;
+	}
+	if (!size) {
+		warning("%s: size is zero", __func__);
+		return 0;
+	}
+	if (!format) {
+		warning("%s: format is nullptr", __func__);
+		dst[0] = '\0';
+		return 0;
+	}
+
+	int ret = vsnprintf(dst, size, format, ap);
+
+	if ((size_t)ret < size) {
+		// Nominal case: no truncation
+		return ret;
+	}
+
+	warning("%s: truncating string", __func__);
+	dst[size - 1] = '\0';
+	return size - 1;
+}
+
+int sprintf_s(char *dst, size_t size, const char *format, ...) {
+	int ret;
+	va_list ap;
+	va_start(ap, format);
+	ret = vsprintf_s(dst, size, format, ap);
+	va_end(ap);
+	return ret;
+}
+
 size_t strlcpy(char *dst, const char *src, size_t size) {
 	// Our backup of the source's start, we need this
 	// to calculate the source's length.
 	const char * const srcStart = src;
+
+	// If no src was specified, treat it as an empty string
+	if (!src) {
+		*dst = '\0';
+		return 0;
+	}
 
 	// In case a non-empty size was specified we
 	// copy over (size - 1) bytes at max.
@@ -857,39 +819,58 @@ String toPrintable(const String &in, bool keepNewLines) {
 	return res;
 }
 
+String percentEncodeString(const String &src) {
+	String res;
+
+	for (uint i = 0; i < src.size(); i++) {
+		char c = src[i];
+		if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+			c == '~' || c == '-' || c == '.' || c == '_')
+			res += c;
+		else
+			res += Common::String::format("%%%02X", (unsigned char)c);
+	}
+
+	return res;
+}
+
 } // End of namespace Common
 
 // Portable implementation of stricmp / strcasecmp / strcmpi.
 // TODO: Rename this to Common::strcasecmp
 int scumm_stricmp(const char *s1, const char *s2) {
 	byte l1, l2;
+	int result;
 	do {
-		// Don't use ++ inside tolower, in case the macro uses its
-		// arguments more than once.
 		l1 = (byte)*s1++;
-		l1 = tolower(l1);
 		l2 = (byte)*s2++;
-		l2 = tolower(l2);
-	} while (l1 == l2 && l1 != 0);
-	return l1 - l2;
+
+		result = l1 - l2;
+		if (result) {
+			result = tolower(l1) - tolower(l2);
+		}
+	} while (!result && l1 != 0);
+	return result;
 }
 
 // Portable implementation of strnicmp / strncasecmp / strncmpi.
 // TODO: Rename this to Common::strncasecmp
 int scumm_strnicmp(const char *s1, const char *s2, uint n) {
 	byte l1, l2;
+	int result;
 	do {
 		if (n-- == 0)
 			return 0; // no difference found so far -> signal equality
 
-		// Don't use ++ inside tolower, in case the macro uses its
-		// arguments more than once.
 		l1 = (byte)*s1++;
-		l1 = tolower(l1);
 		l2 = (byte)*s2++;
-		l2 = tolower(l2);
-	} while (l1 == l2 && l1 != 0);
-	return l1 - l2;
+
+		result = l1 - l2;
+		if (result) {
+			result = tolower(l1) - tolower(l2);
+		}
+	} while (!result && l1 != 0);
+	return result;
 }
 
 const char *scumm_skipArticle(const char *s1) {
@@ -910,10 +891,11 @@ int scumm_compareDictionary(const char *s1, const char *s2) {
 
 //  Portable implementation of strdup.
 char *scumm_strdup(const char *in) {
-	const size_t len = strlen(in) + 1;
-	char *out = (char *)malloc(len);
+	const size_t len = strlen(in);
+	char *out = (char *)malloc(len + 1);
 	if (out) {
-		strcpy(out, in);
+		memcpy(out, in, len);
+		out[len] = 0;
 	}
 	return out;
 }

@@ -33,6 +33,8 @@
 #include "engines/wintermute/base/scriptables/script_stack.h"
 #include "engines/wintermute/base/gfx/base_renderer.h"
 #include "engines/wintermute/ext/externals.h"
+#include "engines/wintermute/dcgf.h"
+
 #include "common/memstream.h"
 
 #ifdef ENABLE_FOXTAIL
@@ -107,6 +109,10 @@ ScScript::ScScript(BaseGame *inGame, ScEngine *engine) : BaseClass(inGame) {
 #ifdef ENABLE_FOXTAIL
 	initOpcodesType();
 #endif
+	// W/A for 'Face Noir' game. See comment in script_value.cpp
+	if (BaseEngine::instance().getGameId() == "facenoir") {
+		_enableFloatCompareWA = true;
+	}
 }
 
 
@@ -138,13 +144,13 @@ bool ScScript::initScript() {
 	readHeader();
 
 	if (_header.magic != SCRIPT_MAGIC) {
-		_gameRef->LOG(0, "File '%s' is not a valid compiled script", _filename);
+		_game->LOG(0, "File '%s' is not a valid compiled script", _filename);
 		cleanup();
 		return STATUS_FAILED;
 	}
 
 	if (_header.version > SCRIPT_VERSION) {
-		_gameRef->LOG(0, "Script '%s' has a wrong version %d.%d (expected %d.%d)", _filename, _header.version / 256, _header.version % 256, SCRIPT_VERSION / 256, SCRIPT_VERSION % 256);
+		_game->LOG(0, "Script '%s' has a wrong version %d.%d (expected %d.%d)", _filename, _header.version / 256, _header.version % 256, SCRIPT_VERSION / 256, SCRIPT_VERSION % 256);
 		cleanup();
 		return STATUS_FAILED;
 	}
@@ -152,13 +158,13 @@ bool ScScript::initScript() {
 	initTables();
 
 	// init stacks
-	_scopeStack = new ScStack(_gameRef);
-	_callStack  = new ScStack(_gameRef);
-	_thisStack  = new ScStack(_gameRef);
-	_stack      = new ScStack(_gameRef);
+	_scopeStack = new ScStack(_game);
+	_callStack  = new ScStack(_game);
+	_thisStack  = new ScStack(_game);
+	_stack      = new ScStack(_game);
 
-	_operand    = new ScValue(_gameRef);
-	_reg1       = new ScValue(_gameRef);
+	_operand    = new ScValue(_game);
+	_reg1       = new ScValue(_game);
 
 
 	// skip to the beginning
@@ -221,10 +227,10 @@ bool ScScript::initTables() {
 			_externals[i].name = getString();
 			_externals[i].call_type = (TCallType)getDWORD();
 			_externals[i].returns = (TExternalType)getDWORD();
-			_externals[i].nu_params = getDWORD();
-			if (_externals[i].nu_params > 0) {
-				_externals[i].params = new TExternalType[_externals[i].nu_params];
-				for (int j = 0; j < _externals[i].nu_params; j++) {
+			_externals[i].numParams = getDWORD();
+			if (_externals[i].numParams > 0) {
+				_externals[i].params = new TExternalType[_externals[i].numParams];
+				for (int j = 0; j < _externals[i].numParams; j++) {
 					_externals[i].params[j] = (TExternalType)getDWORD();
 				}
 			}
@@ -254,16 +260,13 @@ bool ScScript::create(const char *filename, byte *buffer, uint32 size, BaseScrip
 
 	_thread = false;
 	_methodThread = false;
+	SAFE_DELETE_ARRAY(_threadEvent);
 
-	delete[] _threadEvent;
-	_threadEvent = nullptr;
+	size_t filenameSize = strlen(filename) + 1;
+	_filename = new char[filenameSize];
+	Common::strcpy_s(_filename, filenameSize, filename);
 
-	_filename = new char[strlen(filename) + 1];
-	if (_filename) {
-		strcpy(_filename, filename);
-	}
-
-	_buffer = new byte [size];
+	_buffer = new byte[size];
 	if (!_buffer) {
 		return STATUS_FAILED;
 	}
@@ -278,7 +281,7 @@ bool ScScript::create(const char *filename, byte *buffer, uint32 size, BaseScrip
 	}
 
 	// establish global variables table
-	_globals = new ScValue(_gameRef);
+	_globals = new ScValue(_game);
 
 	_owner = owner;
 
@@ -287,27 +290,22 @@ bool ScScript::create(const char *filename, byte *buffer, uint32 size, BaseScrip
 
 
 //////////////////////////////////////////////////////////////////////////
-bool ScScript::createThread(ScScript *original, uint32 initIP, const Common::String &eventName) {
+bool ScScript::createThread(ScScript *original, uint32 initIP, const char *eventName) {
 	cleanup();
 
 	_thread = true;
 	_methodThread = false;
-	_threadEvent = new char[eventName.size() + 1];
-	if (_threadEvent) {
-		strcpy(_threadEvent, eventName.c_str());
-	}
+	size_t eventNameSize = strlen(eventName) + 1;
+	_threadEvent = new char[eventNameSize];
+	Common::strcpy_s(_threadEvent, eventNameSize, eventName);
 
 	// copy filename
-	_filename = new char[strlen(original->_filename) + 1];
-	if (_filename) {
-		strcpy(_filename, original->_filename);
-	}
+	size_t filenameSize = strlen(original->_filename) + 1;
+	_filename = new char[filenameSize];
+	Common::strcpy_s(_filename, filenameSize, original->_filename);
 
 	// copy buffer
 	_buffer = new byte [original->_bufferSize];
-	if (!_buffer) {
-		return STATUS_FAILED;
-	}
 
 	memcpy(_buffer, original->_buffer, original->_bufferSize);
 	_bufferSize = original->_bufferSize;
@@ -335,11 +333,8 @@ bool ScScript::createThread(ScScript *original, uint32 initIP, const Common::Str
 	return STATUS_OK;
 }
 
-
-
-
 //////////////////////////////////////////////////////////////////////////
-bool ScScript::createMethodThread(ScScript *original, const Common::String &methodName) {
+bool ScScript::createMethodThread(ScScript *original, const char *methodName) {
 	uint32 ip = original->getMethodPos(methodName);
 	if (ip == 0) {
 		return STATUS_FAILED;
@@ -349,22 +344,17 @@ bool ScScript::createMethodThread(ScScript *original, const Common::String &meth
 
 	_thread = true;
 	_methodThread = true;
-	_threadEvent = new char[methodName.size() + 1];
-	if (_threadEvent) {
-		strcpy(_threadEvent, methodName.c_str());
-	}
+	size_t eventNameSize = strlen(methodName) + 1;
+	_threadEvent = new char[eventNameSize];
+	Common::strcpy_s(_threadEvent, eventNameSize, methodName);
 
 	// copy filename
-	_filename = new char[strlen(original->_filename) + 1];
-	if (_filename) {
-		strcpy(_filename, original->_filename);
-	}
+	size_t filenameSize = strlen(original->_filename) + 1;
+	_filename = new char[filenameSize];
+	Common::strcpy_s(_filename, filenameSize, original->_filename);
 
 	// copy buffer
 	_buffer = new byte [original->_bufferSize];
-	if (!_buffer) {
-		return STATUS_FAILED;
-	}
 
 	memcpy(_buffer, original->_buffer, original->_bufferSize);
 	_bufferSize = original->_bufferSize;
@@ -448,7 +438,7 @@ void ScScript::cleanup() {
 
 	if (_externals) {
 		for (uint32 i = 0; i < _numExternals; i++) {
-			if (_externals[i].nu_params > 0) {
+			if (_externals[i].numParams > 0) {
 				delete[] _externals[i].params;
 			}
 		}
@@ -457,13 +447,10 @@ void ScScript::cleanup() {
 	_externals = nullptr;
 	_numExternals = 0;
 
-	delete _operand;
-	delete _reg1;
-	_operand = nullptr;
-	_reg1 = nullptr;
+	SAFE_DELETE(_operand);
+	SAFE_DELETE(_reg1);
 
-	delete[] _threadEvent;
-	_threadEvent = nullptr;
+	SAFE_DELETE_ARRAY(_threadEvent);
 
 	_state = SCRIPT_FINISHED;
 
@@ -474,8 +461,7 @@ void ScScript::cleanup() {
 
 	_parentScript = nullptr; // ref only
 
-	delete _scriptStream;
-	_scriptStream = nullptr;
+	SAFE_DELETE(_scriptStream);
 }
 
 
@@ -484,26 +470,14 @@ uint32 ScScript::getDWORD() {
 	_scriptStream->seek((int32)_iP);
 	uint32 ret = _scriptStream->readUint32LE();
 	_iP += sizeof(uint32);
-//	assert(oldRet == ret);
+
 	return ret;
 }
 
 //////////////////////////////////////////////////////////////////////////
 double ScScript::getFloat() {
 	_scriptStream->seek((int32)_iP);
-	byte buffer[8];
-	_scriptStream->read(buffer, 8);
-
-#ifdef SCUMM_BIG_ENDIAN
-	// TODO: For lack of a READ_LE_UINT64
-	SWAP(buffer[0], buffer[7]);
-	SWAP(buffer[1], buffer[6]);
-	SWAP(buffer[2], buffer[5]);
-	SWAP(buffer[3], buffer[4]);
-#endif
-
-	double ret;
-	memcpy(&ret, buffer, sizeof(double));
+	double ret = _scriptStream->readDoubleLE();
 	_iP += 8; // Hardcode the double-size used originally.
 	return ret;
 }
@@ -562,7 +536,7 @@ bool ScScript::executeInstruction() {
 	uint32 dw;
 	const char *str = nullptr;
 
-	//ScValue* op = new ScValue(_gameRef);
+	//ScValue* op = new ScValue(_game);
 	_operand->cleanup();
 
 	ScValue *op1;
@@ -594,7 +568,6 @@ bool ScScript::executeInstruction() {
 	case II_DEF_GLOB_VAR:
 	case II_DEF_CONST_VAR: {
 		dw = getDWORD();
-		/*      char *temp = _symbols[dw]; // TODO delete */
 		// only create global var if it doesn't exist
 		if (!_engine->_globals->propExists(_symbols[dw])) {
 			_operand->setNULL();
@@ -640,8 +613,9 @@ bool ScScript::executeInstruction() {
 		// push var
 		// push string
 		str = _stack->pop()->getString();
-		char *methodName = new char[strlen(str) + 1];
-		strcpy(methodName, str);
+		size_t methodNameSize = strlen(str) + 1;
+		char *methodName = new char[methodNameSize];
+		Common::strcpy_s(methodName, methodNameSize, str);
 
 		ScValue *var = _stack->pop();
 		if (var->_type == VAL_VARIABLE_REF) {
@@ -658,6 +632,21 @@ bool ScScript::executeInstruction() {
 		}
 
 		if (DID_FAIL(res)) {
+
+			// W/A: The Sprite class instance is released earlier,
+			// but a native variable still holds a reference to it,
+			// leading to call on a non-existent (freed) instance.
+			if (var->isNative() &&
+			        strcmp(methodName, "Reset") == 0 &&
+			        BaseEngine::instance().getGameId() == "alphapolaris" &&
+			        strcmp(_filename, "scenes\\Out_door\\scr\\barrel.script") == 0) {
+
+				_stack->correctParams(0);
+				_stack->pushNULL();
+				delete[] methodName;
+				break;
+			}
+
 			if (var->isNative() && var->getNative()->canHandleMethod(methodName)) {
 				if (!_unbreakable) {
 					_waitScript = var->getNative()->invokeMethodThread(methodName);
@@ -672,7 +661,7 @@ bool ScScript::executeInstruction() {
 #ifdef ENABLE_FOXTAIL
 				} else if (BaseEngine::instance().isFoxTail() && strcmp(methodName, "LoadItems") == 0 && strcmp(_threadEvent,"AfterLoad") == 0) {
 					_stack->correctParams(0);
-					_gameRef->LOG(0, "Method '%s' is called in unbreakable mode of '%s' event and was ignored", methodName, _threadEvent);
+					_game->LOG(0, "Method '%s' is called in unbreakable mode of '%s' event and was ignored", methodName, _threadEvent);
 					_stack->pushNULL();
 #endif
 				} else {
@@ -695,7 +684,7 @@ bool ScScript::executeInstruction() {
 			        }
 			        else{
 			            // not an internal nor external, try for native function
-			            _gameRef->ExternalCall(this, _stack, _thisStack, val->getString());
+			            _game->ExternalCall(this, _stack, _thisStack, val->getString());
 			        }
 			    }
 			    else{
@@ -729,7 +718,7 @@ bool ScScript::executeInstruction() {
 		if (f) {
 			externalCall(_stack, _thisStack, f);
 		} else {
-			_gameRef->externalCall(this, _stack, _thisStack, _symbols[symbolIndex]);
+			_game->externalCall(this, _stack, _thisStack, _symbols[symbolIndex]);
 		}
 
 		break;
@@ -893,9 +882,10 @@ bool ScScript::executeInstruction() {
 		if (op1->isNULL() || op2->isNULL()) {
 			_operand->setNULL();
 		} else if (op1->getType() == VAL_STRING || op2->getType() == VAL_STRING) {
-			char *tempStr = new char [strlen(op1->getString()) + strlen(op2->getString()) + 1];
-			strcpy(tempStr, op1->getString());
-			strcat(tempStr, op2->getString());
+			size_t tempStrSize = strlen(op1->getString()) + strlen(op2->getString()) + 1;
+			char *tempStr = new char[tempStrSize];
+			Common::strcpy_s(tempStr, tempStrSize, op1->getString());
+			Common::strcat_s(tempStr, tempStrSize, op2->getString());
 			_operand->setString(tempStr);
 			delete[] tempStr;
 		} else if (op1->getType() == VAL_INT && op2->getType() == VAL_INT) {
@@ -1032,7 +1022,7 @@ bool ScScript::executeInstruction() {
 		}
 		*/
 
-		_operand->setBool(ScValue::compare(op1, op2) == 0);
+		_operand->setBool(ScValue::compare(op1, op2, _enableFloatCompareWA) == 0);
 		_stack->push(_operand);
 		break;
 
@@ -1056,7 +1046,7 @@ bool ScScript::executeInstruction() {
 		}
 		*/
 
-		_operand->setBool(ScValue::compare(op1, op2) != 0);
+		_operand->setBool(ScValue::compare(op1, op2, _enableFloatCompareWA) != 0);
 		_stack->push(_operand);
 		break;
 
@@ -1071,7 +1061,7 @@ bool ScScript::executeInstruction() {
 		else _operand->setBool(op1->getInt() < op2->getInt());
 		*/
 
-		_operand->setBool(ScValue::compare(op1, op2) < 0);
+		_operand->setBool(ScValue::compare(op1, op2, _enableFloatCompareWA) < 0);
 		_stack->push(_operand);
 		break;
 
@@ -1086,7 +1076,7 @@ bool ScScript::executeInstruction() {
 		else _operand->setBool(op1->getInt() > op2->getInt());
 		*/
 
-		_operand->setBool(ScValue::compare(op1, op2) > 0);
+		_operand->setBool(ScValue::compare(op1, op2, _enableFloatCompareWA) > 0);
 		_stack->push(_operand);
 		break;
 
@@ -1101,7 +1091,7 @@ bool ScScript::executeInstruction() {
 		else _operand->setBool(op1->getInt() <= op2->getInt());
 		*/
 
-		_operand->setBool(ScValue::compare(op1, op2) <= 0);
+		_operand->setBool(ScValue::compare(op1, op2, _enableFloatCompareWA) <= 0);
 		_stack->push(_operand);
 		break;
 
@@ -1116,7 +1106,7 @@ bool ScScript::executeInstruction() {
 		else _operand->setBool(op1->getInt() >= op2->getInt());
 		*/
 
-		_operand->setBool(ScValue::compare(op1, op2) >= 0);
+		_operand->setBool(ScValue::compare(op1, op2, _enableFloatCompareWA) >= 0);
 		_stack->push(_operand);
 		break;
 
@@ -1125,7 +1115,7 @@ bool ScScript::executeInstruction() {
 		op1 = _stack->pop();
 
 		//_operand->setBool(op1->getType()==op2->getType() && op1->getFloat()==op2->getFloat());
-		_operand->setBool(ScValue::compareStrict(op1, op2) == 0);
+		_operand->setBool(ScValue::compareStrict(op1, op2, _enableFloatCompareWA) == 0);
 		_stack->push(_operand);
 
 		break;
@@ -1135,7 +1125,7 @@ bool ScScript::executeInstruction() {
 		op1 = _stack->pop();
 
 		//_operand->setBool(op1->getType()!=op2->getType() || op1->getFloat()!=op2->getFloat());
-		_operand->setBool(ScValue::compareStrict(op1, op2) != 0);
+		_operand->setBool(ScValue::compareStrict(op1, op2, _enableFloatCompareWA) != 0);
 		_stack->push(_operand);
 		break;
 
@@ -1148,7 +1138,7 @@ bool ScScript::executeInstruction() {
 
 	}
 	default:
-		_gameRef->LOG(0, "Fatal: Invalid instruction %d ('%s', line %d, IP:0x%lx)\n", inst, _filename, _currentLine, _iP - sizeof(uint32));
+		_game->LOG(0, "Fatal: Invalid instruction %d ('%s', line %d, IP:0x%lx)\n", inst, _filename, _currentLine, _iP - sizeof(uint32));
 		_state = SCRIPT_FINISHED;
 		ret = STATUS_FAILED;
 	} // switch(instruction)
@@ -1161,9 +1151,9 @@ bool ScScript::executeInstruction() {
 
 
 //////////////////////////////////////////////////////////////////////////
-uint32 ScScript::getFuncPos(const Common::String &name) {
+uint32 ScScript::getFuncPos(const char *name) {
 	for (uint32 i = 0; i < _numFunctions; i++) {
-		if (name == _functions[i].name) {
+		if (strcmp(name, _functions[i].name) == 0) {
 			return _functions[i].pos;
 		}
 	}
@@ -1172,9 +1162,9 @@ uint32 ScScript::getFuncPos(const Common::String &name) {
 
 
 //////////////////////////////////////////////////////////////////////////
-uint32 ScScript::getMethodPos(const Common::String &name) const {
+uint32 ScScript::getMethodPos(const char *name) {
 	for (uint32 i = 0; i < _numMethods; i++) {
-		if (name == _methods[i].name) {
+		if (strcmp(name, _methods[i].name) == 0) {
 			return _methods[i].pos;
 		}
 	}
@@ -1208,9 +1198,9 @@ ScValue *ScScript::getVar(char *name) {
 	}
 
 	if (ret == nullptr) {
-		//RuntimeError("Variable '%s' is inaccessible in the current block. Consider changing the script.", name);
-		_gameRef->LOG(0, "Warning: variable '%s' is inaccessible in the current block. Consider changing the script (script:%s, line:%d)", name, _filename, _currentLine);
-		ScValue *val = new ScValue(_gameRef);
+		//runtimeError("Variable '%s' is inaccessible in the current block. Consider changing the script.", name);
+		_game->LOG(0, "Warning: variable '%s' is inaccessible in the current block. Consider changing the script (script:%s, line:%d)", name, _filename, _currentLine);
+		ScValue *val = new ScValue(_game);
 		ScValue *scope = _scopeStack->getTop();
 		if (scope) {
 			scope->setProp(name, val);
@@ -1254,11 +1244,11 @@ bool ScScript::sleep(uint32 duration) {
 	}
 
 	_state = SCRIPT_SLEEPING;
-	if (_gameRef->_state == GAME_FROZEN) {
-		_waitTime = g_system->getMillis() + duration;
+	if (_game->_state == GAME_FROZEN) {
+		_waitTime = BasePlatform::getTime() + duration;
 		_waitFrozen = true;
 	} else {
-		_waitTime = _gameRef->getTimer()->getTime() + duration;
+		_waitTime = _game->_timer + duration;
 		_waitFrozen = false;
 	}
 	return STATUS_OK;
@@ -1298,8 +1288,8 @@ void ScScript::runtimeError(const char *fmt, ...) {
 	warning("Runtime error. Script '%s', line %d", _filename, _currentLine);
 	warning("  %s", buff);
 
-	if (!_gameRef->_suppressScriptErrors) {
-		_gameRef->quickMessage("Script runtime error. View log for details.");
+	if (!_game->_suppressScriptErrors) {
+		_game->quickMessage("Script runtime error. View log for details.");
 	}
 }
 
@@ -1307,7 +1297,7 @@ void ScScript::runtimeError(const char *fmt, ...) {
 //////////////////////////////////////////////////////////////////////////
 bool ScScript::persist(BasePersistenceManager *persistMgr) {
 
-	persistMgr->transferPtr(TMEMBER_PTR(_gameRef));
+	persistMgr->transferPtr(TMEMBER_PTR(_game));
 
 	// buffer
 	if (persistMgr->getIsSaving()) {
@@ -1356,7 +1346,7 @@ bool ScScript::persist(BasePersistenceManager *persistMgr) {
 	persistMgr->transferBool(TMEMBER(_waitFrozen));
 
 	persistMgr->transferBool(TMEMBER(_methodThread));
-	persistMgr->transferBool(TMEMBER(_methodThread)); // TODO-SAVE: Deduplicate.
+	persistMgr->transferBool(TMEMBER(_methodThread));
 	persistMgr->transferBool(TMEMBER(_unbreakable));
 	persistMgr->transferPtr(TMEMBER_PTR(_parentScript));
 
@@ -1365,35 +1355,19 @@ bool ScScript::persist(BasePersistenceManager *persistMgr) {
 #ifdef ENABLE_FOXTAIL
 		initOpcodesType();
 #endif
+		// W/A for 'Face Noir' game. See comment in script_value.cpp
+		if (BaseEngine::instance().getGameId() == "facenoir") {
+			_enableFloatCompareWA = true;
+		} else {
+			_enableFloatCompareWA = false;
+		}
 	}
 
 	return STATUS_OK;
 }
 
-
 //////////////////////////////////////////////////////////////////////////
-void ScScript::afterLoad() {
-	if (_buffer == nullptr) {
-		byte *buffer = _engine->getCompiledScript(_filename, &_bufferSize);
-		if (!buffer) {
-			_gameRef->LOG(0, "Error reinitializing script '%s' after load. Script will be terminated.", _filename);
-			_state = SCRIPT_ERROR;
-			return;
-		}
-
-		_buffer = new byte [_bufferSize];
-		memcpy(_buffer, buffer, _bufferSize);
-
-		delete _scriptStream;
-		_scriptStream = new Common::MemoryReadStream(_buffer, _bufferSize);
-
-		initTables();
-	}
-}
-
-
-//////////////////////////////////////////////////////////////////////////
-ScScript *ScScript::invokeEventHandler(const Common::String &eventName, bool unbreakable) {
+ScScript *ScScript::invokeEventHandler(const char *eventName, bool unbreakable) {
 	//if (_state!=SCRIPT_PERSISTENT) return nullptr;
 
 	uint32 pos = getEventPos(eventName);
@@ -1405,9 +1379,9 @@ ScScript *ScScript::invokeEventHandler(const Common::String &eventName, bool unb
 	DebuggableScEngine* debuggableEngine;
 	debuggableEngine = dynamic_cast<DebuggableScEngine*>(_engine);
 	assert(debuggableEngine);
-	ScScript *thread = new DebuggableScript(_gameRef,  debuggableEngine);
+	ScScript *thread = new DebuggableScript(_game, debuggableEngine);
 #else
-	ScScript *thread = new ScScript(_gameRef,  _engine);
+	ScScript *thread = new ScScript(_game, _engine);
 #endif
 	if (thread) {
 		bool ret = thread->createThread(this, pos, eventName);
@@ -1427,9 +1401,9 @@ ScScript *ScScript::invokeEventHandler(const Common::String &eventName, bool unb
 
 
 //////////////////////////////////////////////////////////////////////////
-uint32 ScScript::getEventPos(const Common::String &name) const {
+uint32 ScScript::getEventPos(const char *name) {
 	for (int i = _numEvents - 1; i >= 0; i--) {
-		if (scumm_stricmp(name.c_str(), _events[i].name) == 0) {
+		if (scumm_stricmp(name, _events[i].name) == 0) {
 			return _events[i].pos;
 		}
 	}
@@ -1438,13 +1412,13 @@ uint32 ScScript::getEventPos(const Common::String &name) const {
 
 
 //////////////////////////////////////////////////////////////////////////
-bool ScScript::canHandleEvent(const Common::String &eventName) const {
+bool ScScript::canHandleEvent(const char *eventName) {
 	return getEventPos(eventName) != 0;
 }
 
 
 //////////////////////////////////////////////////////////////////////////
-bool ScScript::canHandleMethod(const Common::String &methodName) const {
+bool ScScript::canHandleMethod(const char *methodName) {
 	return getMethodPos(methodName) != 0;
 }
 
@@ -1452,7 +1426,7 @@ bool ScScript::canHandleMethod(const Common::String &methodName) const {
 //////////////////////////////////////////////////////////////////////////
 bool ScScript::pause() {
 	if (_state == SCRIPT_PAUSED) {
-		_gameRef->LOG(0, "Attempting to pause a paused script ('%s', line %d)", _filename, _currentLine);
+		_game->LOG(0, "Attempting to pause a paused script ('%s', line %d)", _filename, _currentLine);
 		return STATUS_FAILED;
 	}
 
@@ -1494,7 +1468,7 @@ bool ScScript::externalCall(ScStack *stack, ScStack *thisStack, ScScript::TExter
 	//////////////////////////////////////////////////////////////////////////
 	// Externals: emulate external functions used in known games
 	//////////////////////////////////////////////////////////////////////////
-	if (!DID_FAIL(EmulateExternalCall(_gameRef, stack, thisStack, function))) {
+	if (!DID_FAIL(EmulateExternalCall(_game, stack, thisStack, function))) {
 		return STATUS_OK;
 	}
 
@@ -1523,7 +1497,7 @@ bool ScScript::copyParameters(ScStack *stack) {
 
 //////////////////////////////////////////////////////////////////////////
 bool ScScript::finishThreads() {
-	for (uint32 i = 0; i < _engine->_scripts.size(); i++) {
+	for (int32 i = 0; i < _engine->_scripts.getSize(); i++) {
 		ScScript *scr = _engine->_scripts[i];
 		if (scr->_thread && scr->_state != SCRIPT_FINISHED && scr->_owner == _owner && scumm_stricmp(scr->_filename, _filename) == 0) {
 			scr->finish(true);
@@ -1532,6 +1506,26 @@ bool ScScript::finishThreads() {
 	return STATUS_OK;
 }
 
+
+//////////////////////////////////////////////////////////////////////////
+void ScScript::afterLoad() {
+	if (_buffer == nullptr) {
+		byte *buffer = _engine->getCompiledScript(_filename, &_bufferSize);
+		if (!buffer) {
+			_game->LOG(0, "Error reinitializing script '%s' after load. Script will be terminated.", _filename);
+			_state = SCRIPT_ERROR;
+			return;
+		}
+
+		_buffer = new byte[_bufferSize];
+		memcpy(_buffer, buffer, _bufferSize);
+
+		delete _scriptStream;
+		_scriptStream = new Common::MemoryReadStream(_buffer, _bufferSize);
+
+		initTables();
+	}
+}
 
 void ScScript::preInstHook(uint32 inst) {}
 

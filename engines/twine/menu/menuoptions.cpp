@@ -48,62 +48,68 @@ void MenuOptions::newGame() {
 	_engine->_music->stopMusic();
 	_engine->_sound->stopSamples();
 
-	int32 tmpFlagDisplayText = _engine->_cfgfile.FlagDisplayText;
-	_engine->_cfgfile.FlagDisplayText = true;
+	if (_engine->isLBA1()) {
+		int32 tmpFlagDisplayText = _engine->_cfgfile.FlagDisplayText;
+		_engine->_cfgfile.FlagDisplayText = true;
 
-	// intro screen 1 - twinsun
-	_engine->_screens->loadImage(TwineImage(Resources::HQR_RESS_FILE, 15, 16));
+		// intro screen 1 - twinsun
+		_engine->_screens->loadImage(TwineImage(Resources::HQR_RESS_FILE, 15, 16));
 
-	_engine->_text->_drawTextBoxBackground = false;
-	_engine->_text->_renderTextTriangle = true;
+		_engine->_text->_flagMessageShade = false;
+		_engine->_text->_renderTextTriangle = true;
 
-	_engine->_text->initTextBank(TextBankId::Inventory_Intro_and_Holomap);
-	_engine->_text->textClipFull();
-	_engine->_text->setFontCrossColor(COLOR_WHITE);
+		_engine->_text->initDial(TextBankId::Inventory_Intro_and_Holomap);
+		_engine->_text->bigWinDial();
+		_engine->_text->setFontCrossColor(COLOR_WHITE);
 
-	bool aborted = _engine->_text->drawTextProgressive(TextId::kIntroText1);
+		bool aborted = _engine->_text->drawTextProgressive(TextId::kIntroText1);
 
-	// intro screen 2
-	if (!aborted) {
-		_engine->_screens->loadImage(TwineImage(Resources::HQR_RESS_FILE, 17, 18));
-		aborted |= _engine->_text->drawTextProgressive(TextId::kIntroText2);
+		// intro screen 2
+		if (!aborted) {
+			_engine->_screens->loadImage(TwineImage(Resources::HQR_RESS_FILE, 17, 18));
+			aborted |= _engine->_text->drawTextProgressive(TextId::kIntroText2);
+
+			if (!aborted) {
+				_engine->_screens->loadImage(TwineImage(Resources::HQR_RESS_FILE, 19, 20));
+				aborted |= _engine->_text->drawTextProgressive(TextId::kIntroText3);
+			}
+		}
+		_engine->_cfgfile.FlagDisplayText = tmpFlagDisplayText;
+
+		_engine->_screens->fadeToBlack(_engine->_screens->_palettePcx);
+		_engine->_screens->clearScreen();
 
 		if (!aborted) {
-			_engine->_screens->loadImage(TwineImage(Resources::HQR_RESS_FILE, 19, 20));
-			aborted |= _engine->_text->drawTextProgressive(TextId::kIntroText3);
+			_engine->_music->playMidiFile(1);
+			_engine->_movie->playMovie(FLA_INTROD);
 		}
-	}
-	_engine->_cfgfile.FlagDisplayText = tmpFlagDisplayText;
 
-	_engine->_screens->fadeToBlack(_engine->_screens->_paletteRGBACustom);
+		_engine->_text->normalWinDial();
+	} else {
+		_engine->_movie->playMovie(ACF_INTRO);
+	}
 	_engine->_screens->clearScreen();
 
-	if (!aborted) {
-		_engine->_music->playMidiMusic(1);
-		_engine->_movie->playMovie(FLA_INTROD);
-	}
-
-	_engine->_text->textClipSmall();
-	_engine->_screens->clearScreen();
-
-	_engine->_text->_drawTextBoxBackground = true;
+	_engine->_text->_flagMessageShade = true;
 	_engine->_text->_renderTextTriangle = false;
 
 	// set main palette back
-	_engine->setPalette(_engine->_screens->_paletteRGBA);
+	_engine->setPalette(_engine->_screens->_ptrPal);
 }
 
+// TODO: dotemu has credits_<lang>.txt files
 void MenuOptions::showCredits() {
 	const int32 tmpShadowMode = _engine->_cfgfile.ShadowMode;
 	_engine->_cfgfile.ShadowMode = 0;
 	_engine->_gameState->initEngineVars();
-	_engine->_scene->_currentSceneIdx = LBA1SceneId::Credits_List_Sequence;
-	_engine->_scene->_needChangeScene = LBA1SceneId::Credits_List_Sequence;
+	_engine->_scene->_numCube = LBA1SceneId::Credits_List_Sequence;
+	_engine->_scene->_newCube = LBA1SceneId::Credits_List_Sequence;
+	_engine->_screens->clearScreen();
 
-	canShowCredits = true;
-	_engine->gameEngineLoop();
+	flagCredits = true;
+	_engine->mainLoop();
 	_engine->_scene->stopRunningGame();
-	canShowCredits = false;
+	flagCredits = false;
 
 	_engine->_cfgfile.ShadowMode = tmpShadowMode;
 
@@ -116,7 +122,7 @@ void MenuOptions::showEndSequence() {
 	_engine->_movie->playMovie(FLA_THEEND);
 
 	_engine->_screens->clearScreen();
-	_engine->setPalette(_engine->_screens->_paletteRGBA);
+	_engine->setPalette(_engine->_screens->_ptrPal);
 }
 
 void MenuOptions::drawSelectableCharacter(int32 x, int32 y) {
@@ -145,10 +151,10 @@ void MenuOptions::drawSelectableCharacter(int32 x, int32 y) {
 
 	const bool selected = _onScreenKeyboardX == x && _onScreenKeyboardY == y;
 	if (selected) {
-		_engine->_interface->drawFilledRect(rect, COLOR_91);
+		_engine->_interface->box(rect, COLOR_91);
 	} else {
 		_engine->blitWorkToFront(rect);
-		_engine->_interface->drawTransparentBox(rect, 4);
+		_engine->_interface->shadeBox(rect, 4);
 	}
 
 	_engine->_menu->drawRectBorders(rect);
@@ -206,9 +212,9 @@ void MenuOptions::drawInputText(int32 centerx, int32 top, int32 type, const char
 	Common::Rect rectBox(rect);
 	rectBox.grow(-1);
 	_engine->_menu->drawRectBorders(rect);
-	_engine->_interface->drawTransparentBox(rectBox, 3);
+	_engine->_interface->shadeBox(rectBox, 3);
 
-	_engine->_text->drawText(centerx - _engine->_text->getTextSize(text) / 2, top + 6, text);
+	_engine->_text->drawText(centerx - _engine->_text->sizeFont(text) / 2, top + 6, text);
 	_engine->copyBlockPhys(rect);
 }
 
@@ -233,12 +239,12 @@ public:
 };
 
 bool MenuOptions::enterText(TextId textIdx, char *textTargetBuf, size_t bufSize) {
-	_engine->_text->initTextBank(TextBankId::Options_and_menus);
+	_engine->_text->initDial(TextBankId::Options_and_menus);
 	char buffer[256];
 	_engine->_text->getMenuText(textIdx, buffer, sizeof(buffer));
 	_engine->_text->setFontColor(COLOR_WHITE);
 	const int halfScreenWidth = (_engine->width() / 2);
-	_engine->_text->drawText(halfScreenWidth - (_engine->_text->getTextSize(buffer) / 2), 20, buffer);
+	_engine->_text->drawText(halfScreenWidth - (_engine->_text->sizeFont(buffer) / 2), 20, buffer);
 	_engine->copyBlockPhys(0, 0, _engine->width() - 1, 99);
 
 	Common::fill(&_onScreenKeyboardDirty[0], &_onScreenKeyboardDirty[ARRAYSIZE(_onScreenKeyboardDirty)], 1);
@@ -350,7 +356,7 @@ int MenuOptions::chooseSave(TextId textIdx, bool showEmptySlots) {
 		return -1;
 	}
 
-	_engine->_text->initTextBank(TextBankId::Options_and_menus);
+	_engine->_text->initDial(TextBankId::Options_and_menus);
 
 	MenuSettings saveFiles;
 	saveFiles.addButton(TextId::kReturnMenu);
@@ -363,7 +369,7 @@ int MenuOptions::chooseSave(TextId textIdx, bool showEmptySlots) {
 			if (savegame.getSaveSlot() == i - 1) {
 				// manually creating a savegame should not overwrite the autosave slot
 				if (textIdx != TextId::kCreateSaveGame || i > 1) {
-					saveFiles.addButton(savegame.getDescription().encode().c_str(), i);
+					saveFiles.addButton(savegame.getDescription().c_str(), i);
 				}
 				++savesIndex;
 			} else if (showEmptySlots) {
@@ -374,17 +380,15 @@ int MenuOptions::chooseSave(TextId textIdx, bool showEmptySlots) {
 		}
 	}
 
-	for (;;) {
-		const int32 id = _engine->_menu->processMenu(&saveFiles);
-		switch (id) {
-		case kQuitEngine:
-		case (int32)TextId::kReturnMenu:
-			return -1;
-		default:
-			const int16 slot = saveFiles.getButtonState(id) - 1;
-			debug("Selected savegame slot %d", slot);
-			return slot;
-		}
+	const int32 id = _engine->_menu->doGameMenu(&saveFiles);
+	switch (id) {
+	case kQuitEngine:
+	case (int32)TextId::kReturnMenu:
+		return -1;
+	default:
+		const int slot = saveFiles.getButtonState(id) - 1;
+		debug("Selected savegame slot %d", slot);
+		return slot;
 	}
 
 	return -1;

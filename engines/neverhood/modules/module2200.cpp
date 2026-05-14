@@ -46,14 +46,18 @@ Module2200::~Module2200() {
 	_vm->_soundMan->deleteGroup(0x11391412);
 }
 
+bool Module2200::shouldSkipHall() {
+	return ConfMan.getBool("skiphallofrecordsscenes") || _vm->getLanguage() == Common::Language::JA_JPN;
+}
+
 void Module2200::createScene(int sceneNum, int which) {
-	if (sceneNum == 46 && ConfMan.getBool("skiphallofrecordsscenes")) {
+	if (sceneNum == 46 && shouldSkipHall()) {
 		// Skip the whole Hall of Records storyboard scenes,
 		// and teleport to the last scene
 		sceneNum = 41;
 	}
 
-	if (sceneNum == 40 && ConfMan.getBool("skiphallofrecordsscenes")) {
+	if (sceneNum == 40 && shouldSkipHall()) {
 		// Skip the whole Hall of Records storyboard scenes,
 		// and teleport back to the first scene
 		sceneNum = 5;
@@ -655,7 +659,7 @@ void Scene2202::update() {
 	if (_ssDoneMovingCube) {
 		setSurfacePriority(_ssDoneMovingCube->getSurface(), _surfacePriority);
 		_ssDoneMovingCube = nullptr;
-		if (testIsSolved()) {
+		if (!_isCubeMoving && testIsSolved()) {
 			playSound(0);
 			setGlobalVar(V_TILE_PUZZLE_SOLVED, 1);
 			_isSolved = true;
@@ -1451,7 +1455,11 @@ void Scene2208::drawRow(int16 rowIndex) {
 		_background->getSurface()->copyFrom(_backgroundSurface->getSurface(), 0, y, sourceRect);
 		if (rowIndex < (int)_strings.size()) {
 			const char *text = _strings[rowIndex];
-			_fontSurface->drawString(_background->getSurface(), 95, y, (const byte*)text);
+			int16 x = 95;
+			if (_vm->shouldOffsetFontNhc()) {
+				x += 15;
+			}
+			_fontSurface->drawString(_background->getSurface(), x, y, (const byte*)text);
 		}
 	}
 }

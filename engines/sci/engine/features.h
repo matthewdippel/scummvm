@@ -19,8 +19,8 @@
  *
  */
 
-#ifndef SCI_INCLUDE_FEATURES_H
-#define SCI_INCLUDE_FEATURES_H
+#ifndef SCI_ENGINE_FEATURES_H
+#define SCI_ENGINE_FEATURES_H
 
 #include "sci/resource/resource.h"
 #include "sci/engine/seg_manager.h"
@@ -47,6 +47,10 @@ enum MessageTypeSyncStrategy {
 	kMessageTypeSyncStrategyLSL6Hires,
 	kMessageTypeSyncStrategyShivers
 #endif
+};
+
+enum {
+	kSpeedThrottleDefaultDelay = 30 // kGameIsRestarting default max delay in ms
 };
 
 class GameFeatures {
@@ -94,11 +98,14 @@ public:
 
 	inline bool usesModifiedAudioAttenuation() const {
 		switch (g_sci->getGameId()) {
-		// Assuming MGDX uses modified attenuation since SQ6 does and it was
-		// released earlier, but not verified (Phar Lap Windows-only release)
-		case GID_MOTHERGOOSEHIRES:
 		case GID_PQ4:
+		case GID_QFG4:
+			return g_sci->isCD();
+		case GID_MOTHERGOOSEHIRES:
 		case GID_SQ6:
+			// SQ6 1.0 uses modified attenuation, 1.11 does not.
+			// The interpreters are different even though they both have the
+			// same date and version string. ("May 24 1995", "2.100.002")
 			return true;
 		case GID_KQ7:
 			// KQ7 1.51 (SCI2.1early) uses the non-standard attenuation, but
@@ -265,6 +272,8 @@ public:
 	 */
 	PseudoMouseAbilityType detectPseudoMouseAbility();
 
+	bool useAudioPopfix() const { return _useAudioPopfix; }
+
 	bool useEarlyGetLongestTextCalculations() const;
 
 	/**
@@ -290,10 +299,17 @@ public:
 	 */
 	uint16 getGameFlagsGlobal() const;
 
+	/**
+	 * Returns the bit order in which game flags are stored.
+	 *
+	 * @return true if bit order is normal or false if reversed.
+	 */
+	bool isGameFlagBitOrderNormal() const;
+
 private:
 	reg_t getDetectionAddr(const Common::String &objName, Selector slc, int methodNum = -1);
 
-	bool autoDetectLofsType(Common::String gameSuperClassName, int methodNum);
+	bool autoDetectLofsType(const Common::String& gameSuperClassName, int methodNum);
 	bool autoDetectGfxFunctionsType(int methodNum = -1);
 	bool autoDetectSoundType();
 	bool autoDetectMoveCountType();
@@ -313,10 +329,12 @@ private:
 
 	PseudoMouseAbilityType _pseudoMouseAbility;
 
+	bool _useAudioPopfix;
+
 	SegManager *_segMan;
 	Kernel *_kernel;
 };
 
 } // End of namespace Sci
 
-#endif // SCI_INCLUDE_ENGINE_H
+#endif // SCI_ENGINE_FEATURES_H

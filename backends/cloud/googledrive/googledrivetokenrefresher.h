@@ -23,26 +23,22 @@
 #define BACKENDS_CLOUD_GOOGLEDRIVE_GOOGLEDRIVETOKENREFRESHER_H
 
 #include "backends/cloud/storage.h"
-#include "backends/networking/curl/curljsonrequest.h"
+#include "backends/networking/http/httpjsonrequest.h"
 
 namespace Cloud {
 namespace GoogleDrive {
 
 class GoogleDriveStorage;
 
-class GoogleDriveTokenRefresher: public Networking::CurlJsonRequest {
+class GoogleDriveTokenRefresher: public Networking::HttpJsonRequest {
 	GoogleDriveStorage *_parentStorage;
-	Common::Array<Common::String> _headers;
 
-	void tokenRefreshed(Storage::BoolResponse response);
+	void tokenRefreshed(const Storage::BoolResponse &response);
 
-	virtual void finishJson(Common::JSONValue *json);
+	void finishJson(const Common::JSONValue *json) override;
 public:
 	GoogleDriveTokenRefresher(GoogleDriveStorage *parent, Networking::JsonCallback callback, Networking::ErrorCallback ecb, const char *url);
-	virtual ~GoogleDriveTokenRefresher();
-
-	virtual void setHeaders(Common::Array<Common::String> &headers);
-	virtual void addHeader(Common::String header);
+	~GoogleDriveTokenRefresher() override;
 };
 
 } // End of namespace GoogleDrive

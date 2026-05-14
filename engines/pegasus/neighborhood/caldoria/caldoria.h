@@ -415,10 +415,10 @@ public:
 
 	GameInteraction *makeInteraction(const InteractionID) override;
 
-	Common::String getBriefingMovie() override;
-	Common::String getEnvScanMovie() override;
+	Common::Path getBriefingMovie() override;
+	Common::Path getEnvScanMovie() override;
 	uint getNumHints() override;
-	Common::String getHintMovie(uint) override;
+	Common::Path getHintMovie(uint) override;
 	void loadAmbientLoops() override;
 	bool wantsCursor() override;
 	void flushGameState() override;
@@ -511,7 +511,7 @@ protected:
 	CanOpenDoorReason canOpenDoor(DoorTable::Entry &) override;
 	void doorOpened() override;
 
-	void updateCursor(const Common::Point, const Hotspot *) override;
+	void updateCursor(const Common::Point &, const Hotspot *) override;
 
 	FlagsArray<uint16, kNumCaldoriaPrivateFlags> _privateFlags;
 
@@ -535,8 +535,8 @@ protected:
 
 	SinclairCallBack _sinclairInterrupt;
 
-	Common::String getSoundSpotsName() override;
-	Common::String getNavMovieName() override;
+	Common::Path getSoundSpotsName() override;
+	Common::Path getNavMovieName() override;
 };
 
 } // End of namespace Pegasus

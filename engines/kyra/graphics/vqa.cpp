@@ -20,7 +20,7 @@
  */
 
 // Player for Kyrandia 3 VQA movies, based on the information found at
-// http://multimedia.cx/VQA_INFO.TXT
+// https://multimedia.cx/VQA_INFO.TXT
 //
 // The benchl.vqa movie (or whatever it is) is not supported. It does not have
 // a FINF chunk.
@@ -37,7 +37,7 @@
 #include "common/system.h"
 #include "common/events.h"
 
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/surface.h"
 
 namespace Kyra {
@@ -58,7 +58,7 @@ static uint32 readTag(Common::SeekableReadStream *stream) {
 	return tag;
 }
 
-VQADecoder::VQADecoder() {
+VQADecoder::VQADecoder() : _fileStream(nullptr), _frameInfo(nullptr) {
 	memset(&_header, 0, sizeof(_header));
 }
 

@@ -24,10 +24,9 @@
 #include "engines/advancedDetector.h"
 
 #include "common/file.h"
-#include "common/config-manager.h"
+#include "common/translation.h"
 
 #include "director/director.h"
-#include "director/detection.h"
 
 namespace Director {
 
@@ -41,6 +40,10 @@ const char *DirectorEngine::getGameId() const {
 
 Common::Platform DirectorEngine::getPlatform() const {
 	return _gameDescription->desc.platform;
+}
+
+uint32 DirectorEngine::getGameFlags() const {
+	return _gameDescription->desc.flags;
 }
 
 uint16 DirectorEngine::getDescriptionVersion() const {
@@ -60,25 +63,46 @@ bool DirectorEngine::hasFeature(EngineFeature f) const {
 		//(f == kSupportsReturnToLauncher);
 }
 
+static const ADExtraGuiOptionsMap optionsList[] = {
+	{
+		GAMEOPTION_GAMMA_CORRECTION,
+		{
+			_s("Enable gamma correction"),
+			_s("Brighten the graphics to simulate a Macintosh monitor"),
+			"gamma_correction",
+			true,
+			0,
+			0
+		}
+	},
+	{
+		GAMEOPTION_TRUE_COLOR,
+		{
+			_s("Force true color (32bpp) mode"),
+			_s("Use true color graphics mode (32 bits per pixel), even if the game is not designed for it"),
+			"true_color",
+			false,
+			0,
+			0
+		}
+	},
+	AD_EXTRA_GUI_OPTIONS_TERMINATOR
+};
+
 } // End of Namespace Director
 
-class DirectorMetaEngine : public AdvancedMetaEngine {
+class DirectorMetaEngine : public AdvancedMetaEngine<Director::DirectorGameDescription> {
 public:
 	const char *getName() const override {
 		return "director";
 	}
 
-	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override;
+	Common::Error createInstance(OSystem *syst, Engine **engine, const Director::DirectorGameDescription *desc) const override;
+	virtual const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override { return Director::optionsList; }
 };
 
-Common::Error DirectorMetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const {
-	Common::StringArray dirs = AdvancedMetaEngineDetection::getPathsFromEntry(desc);
-	Common::FSNode gameDataDir = Common::FSNode(ConfMan.get("path"));
-
-	for (auto dir = dirs.begin(); dir != dirs.end(); ++dir)
-		SearchMan.addSubDirectoryMatching(gameDataDir, *dir);
-
-	*engine = new Director::DirectorEngine(syst, (const Director::DirectorGameDescription *)desc);
+Common::Error DirectorMetaEngine::createInstance(OSystem *syst, Engine **engine, const Director::DirectorGameDescription *desc) const {
+	*engine = new Director::DirectorEngine(syst,desc);
 	return Common::kNoError;
 }
 

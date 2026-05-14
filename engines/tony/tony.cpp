@@ -25,7 +25,7 @@
 #include "common/debug-channels.h"
 #include "common/events.h"
 #include "common/file.h"
-#include "common/installshield_cab.h"
+#include "common/compression/installshield_cab.h"
 #include "common/translation.h"
 #include "tony/tony.h"
 #include "tony/custom.h"
@@ -46,7 +46,7 @@ TonyEngine::TonyEngine(OSystem *syst, const TonyGameDescription *gameDesc) : Eng
 	setDebugger(new Debugger());
 
 	// Add folders to the search directory list
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 	SearchMan.addSubDirectoryMatching(gameDataDir, "Voices");
 	SearchMan.addSubDirectoryMatching(gameDataDir, "Roasted");
 	SearchMan.addSubDirectoryMatching(gameDataDir, "Music");
@@ -736,11 +736,11 @@ uint32 TonyEngine::getTime() {
 	return g_system->getMillis();
 }
 
-bool TonyEngine::canLoadGameStateCurrently() {
+bool TonyEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	return GLOBALS._gfxEngine != NULL && GLOBALS._gfxEngine->canLoadSave();
 }
 
-bool TonyEngine::canSaveGameStateCurrently() {
+bool TonyEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	return GLOBALS._gfxEngine != NULL && GLOBALS._gfxEngine->canLoadSave();
 }
 

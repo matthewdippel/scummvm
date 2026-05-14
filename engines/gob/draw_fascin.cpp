@@ -17,11 +17,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "gob/draw.h"
 #include "gob/game.h"
 #include "gob/global.h"
+#include "gob/hotspots.h"
 #include "gob/inter.h"
 #include "gob/resources.h"
 
@@ -30,7 +37,7 @@ namespace Gob {
 Draw_Fascination::Draw_Fascination(GobEngine *vm) : Draw_v2(vm) {
 }
 
-void Draw_Fascination::spriteOperation(int16 operation) {
+void Draw_Fascination::spriteOperation(int16 operation, bool ttsAddHotspotText) {
 	int16 len;
 	int16 x, y;
 	SurfacePtr sourceSurf, destSurf;
@@ -250,6 +257,13 @@ void Draw_Fascination::spriteOperation(int16 operation) {
 				_destSpriteX += _fontToSprite[_fontIndex].width;
 			}
 		}
+
+#ifdef USE_TTS
+		if (ttsAddHotspotText) {
+			_vm->_game->_hotspots->addHotspotTTSText(_textToPrint, left, _destSpriteY,
+											_destSpriteX - 1, _destSpriteY + _fonts[_fontIndex]->getCharHeight() - 1, _destSurface);
+		}
+#endif
 
 		dirtiedRect(_destSurface, left, _destSpriteY,
 				_destSpriteX - 1, _destSpriteY + _fonts[_fontIndex]->getCharHeight() - 1);
@@ -536,6 +550,12 @@ void Draw_Fascination::drawWin(int16 fct) {
 				_fonts[_fontIndex]->drawLetter(*tempSrf, _textToPrint[j],
 						j * _fonts[_fontIndex]->getCharWidth(), 0, _frontColor, _backColor, _transparency);
 			_destSpriteX += len * _fonts[_fontIndex]->getCharWidth();
+
+#ifdef USE_TTS
+			_vm->_game->_hotspots->addHotspotTTSText(_textToPrint, left, _destSpriteY,
+											_destSpriteX - 1, _destSpriteY + _fonts[_fontIndex]->getCharHeight() - 1, _destSurface);
+#endif
+
 			break;
 
 		case DRAW_DRAWBAR:     // 7 - draw border
@@ -654,6 +674,12 @@ void Draw_Fascination::drawWin(int16 fct) {
 						_destSpriteX + j * _fonts[_fontIndex]->getCharWidth(), _destSpriteY,
 						_frontColor, _backColor, _transparency);
 			_destSpriteX += len * _fonts[_fontIndex]->getCharWidth();
+
+#ifdef USE_TTS
+			_vm->_game->_hotspots->addHotspotTTSText(_textToPrint, left, _destSpriteY,
+											_destSpriteX - 1, _destSpriteY + _fonts[_fontIndex]->getCharHeight() - 1, _destSurface);
+#endif
+
 			break;
 
 		case DRAW_DRAWBAR:     // 7 - draw border
@@ -1028,7 +1054,7 @@ void Draw_Fascination::drawWinTrace(int16 left, int16 top, int16 width, int16 he
 
 	Pixel pixelTop = _frontSurface->get(left, top);
 	Pixel pixelBottom = _frontSurface->get(left, bottom);
-	for (int16 i = 0; i < width; i++, pixelTop++, pixelBottom++) {
+	for (int16 i = 0; i < width; i++, ++pixelTop, ++pixelBottom) {
 		pixelTop.set((pixelTop.get() + 128) & 0xFF);
 		pixelBottom.set((pixelBottom.get() + 128) & 0xFF);
 	}

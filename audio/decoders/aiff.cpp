@@ -21,7 +21,7 @@
 
 /*
  * The code in this file is based on information found at
- * https://www.co-bw.com/Audio_AIFF.htm
+ * https://web.archive.org/web/20070409184854/http://www.borg.com/~jglatt/tech/aiff.htm
  *
  * Also partially based on libav's aiffdec.c
  */
@@ -34,6 +34,7 @@
 
 #include "audio/audiostream.h"
 #include "audio/decoders/aiff.h"
+#include "audio/decoders/adpcm.h"
 #include "audio/decoders/raw.h"
 #include "audio/decoders/3do.h"
 
@@ -149,6 +150,7 @@ AIFFHeader *AIFFHeader::readAIFFHeader(Common::SeekableReadStream *stream, Dispo
 				delete stream;
 
 			delete aiffHeader->_dataStream;
+			delete aiffHeader;
 			return nullptr;
 		default:
 			debug(1, "Skipping AIFF '%s' chunk", tag2str(tag));
@@ -210,12 +212,11 @@ RewindableAudioStream *AIFFHeader::makeAIFFStream(Common::SeekableReadStream *st
 		if (_codec == MKTAG('s', 'o', 'w', 't'))
 			rawFlags |= Audio::FLAG_LITTLE_ENDIAN;
 
-		return makeRawStream(_dataStream, _rate, rawFlags);
+		return makeRawStream(_dataStream, _rate, rawFlags, disposeAfterUse);
 	}
 	case MKTAG('i', 'm', 'a', '4'):
-		// TODO: Use QT IMA ADPCM
-		warning("Unhandled AIFF-C QT IMA ADPCM compression");
-		break;
+		// Apple QuickTime IMA ADPCM
+		return makeADPCMStream(_dataStream, disposeAfterUse, 0, kADPCMApple, _rate, _channels, 34);
 	case MKTAG('Q', 'D', 'M', '2'):
 		// TODO: Need to figure out how to integrate this
 		// (But hopefully never needed)
@@ -223,10 +224,10 @@ RewindableAudioStream *AIFFHeader::makeAIFFStream(Common::SeekableReadStream *st
 		break;
 	case MKTAG('A', 'D', 'P', '4'):
 		// ADP4 on 3DO
-		return make3DO_ADP4AudioStream(_dataStream, _rate, _channels == 2);
+		return make3DO_ADP4AudioStream(_dataStream, _rate, _channels == 2, NULL, disposeAfterUse);
 	case MKTAG('S', 'D', 'X', '2'):
 		// SDX2 on 3DO
-		return make3DO_SDX2AudioStream(_dataStream, _rate, _channels == 2);
+		return make3DO_SDX2AudioStream(_dataStream, _rate, _channels == 2, NULL, disposeAfterUse);
 	default:
 		warning("Unhandled AIFF-C compression tag '%s'", tag2str(_codec));
 	}
@@ -235,16 +236,15 @@ RewindableAudioStream *AIFFHeader::makeAIFFStream(Common::SeekableReadStream *st
 	return nullptr;
 }
 
-AIFFHeader::~AIFFHeader() {
-	delete _dataStream;
-}
-
 RewindableAudioStream *makeAIFFStream(Common::SeekableReadStream *stream, DisposeAfterUse::Flag disposeAfterUse) {
 	AIFFHeader *aiffHeader = AIFFHeader::readAIFFHeader(stream, disposeAfterUse);
 	if (aiffHeader == nullptr) {
 		return nullptr;
 	}
-	return aiffHeader->makeAIFFStream(stream, disposeAfterUse);
+
+	auto res = aiffHeader->makeAIFFStream(stream, disposeAfterUse);
+	delete aiffHeader;
+	return res;
 }
 
 } // End of namespace Audio

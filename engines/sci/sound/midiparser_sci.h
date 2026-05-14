@@ -19,8 +19,8 @@
  *
  */
 
-#ifndef SCI_MIDIPARSER_H
-#define SCI_MIDIPARSER_H
+#ifndef SCI_SOUND_MIDIPARSER_H
+#define SCI_SOUND_MIDIPARSER_H
 
 #include "sci/resource/resource.h"
 #include "sci/sound/music.h"
@@ -56,7 +56,7 @@ public:
 	void mainThreadEnd();
 
 	bool loadMusic(SoundResource::Track *track, MusicEntry *psnd, int channelFilterMask, SciVersion soundVersion);
-	bool loadMusic(byte *, uint32) override {
+	bool loadMusic(const byte *, uint32) override {
 		return false;
 	}
 	void initTrack();
@@ -127,9 +127,8 @@ protected:
 	};
 
 	ChannelState _channelState[16];
-
 };
 
 } // End of namespace Sci
 
-#endif
+#endif // SCI_SOUND_MIDIPARSER_H

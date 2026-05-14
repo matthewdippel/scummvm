@@ -22,6 +22,7 @@ MODULE_OBJS := \
 	spider/talk.o \
 	video.o \
 	wet/arcade.o \
+	wet/cursors.o \
 	wet/hard.o \
 	wet/wet.o
 
@@ -29,7 +30,7 @@ MODULE_DIRS += \
 	engines/hypno
 
 # HACK: Skip this when including the file for detection objects.
-ifeq "$(USE_RULES)" "1"
+ifeq "$(LOAD_RULES_MK)" "1"
 hypno-grammar:
 	flex engines/hypno/lexer_arc.l
 	bison engines/hypno/grammar_arc.y

@@ -34,8 +34,9 @@ namespace Testbed {
 class TestbedConfigManager;
 
 enum {
-	kTestbedLogOutput = 1 << 0,
-	kTestbedEngineDebug = 1 << 2,
+	kTestbedLogOutput = 1,
+	kTestbedEngineDebug,
+	kViewLogCmd = 'vwlg',
 	kCmdRerunTestbed = 'crtb'
 };
 
@@ -60,7 +61,6 @@ public:
 
 private:
 	void checkForAllAchievements();
-	void videoTest();
 
 	Common::Array<Testsuite *> _testsuiteList;
 };

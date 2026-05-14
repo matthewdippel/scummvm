@@ -25,6 +25,7 @@
 #include "gui/debugger.h"
 
 #include "common/hashmap.h"
+#include "common/path.h"
 
 namespace Common {
 class String;
@@ -60,7 +61,7 @@ private:
 
 	void printItem(const Item &item);
 	void printWordMap(const Common::HashMap<Common::String, uint> &wordMap);
-	void dumpScripts(const Common::String &prefix = Common::String());
+	void dumpScripts(const Common::Path &prefix = Common::Path());
 	void prepareGame();
 
 	AdlEngine *_engine;

@@ -82,7 +82,7 @@ MassAddDialog::MassAddDialog(const Common::FSNode &startDir)
 	_dirProgressText->setAlign(Graphics::kTextAlignCenter);
 	_gameProgressText->setAlign(Graphics::kTextAlignCenter);
 
-	_list = new ListWidget(this, "MassAdd.GameList");
+	_list = new MassAddListWidget(this, "MassAdd.GameList");
 	_list->setEditable(false);
 	_list->setNumberingMode(kListNumberingOff);
 	_list->setList(l);
@@ -96,15 +96,16 @@ MassAddDialog::MassAddDialog(const Common::FSNode &startDir)
 	const Common::ConfigManager::DomainMap &domains = ConfMan.getGameDomains();
 	Common::ConfigManager::DomainMap::const_iterator iter;
 	for (iter = domains.begin(); iter != domains.end(); ++iter) {
-		Common::String path(iter->_value.getVal("path"));
+		Common::Path path(Common::Path::fromConfig(iter->_value.getVal("path")));
+
 		// Remove trailing slash, so that "/foo" and "/foo/" match.
 		// This works around a bug in the POSIX FS code (and others?)
-		// where paths are not normalized (so FSNodes refering to identical
+		// where paths are not normalized (so FSNodes referring to identical
 		// FS objects may return different values in path()).
-		while (path != "/" && path.lastChar() == '/')
-			path.deleteLastChar();
-		if (!path.empty())
+		path.removeTrailingSeparators();
+		if (!path.empty()) {
 			_pathToTargets[path].push_back(iter->_key);
+		}
 	}
 }
 
@@ -134,11 +135,14 @@ void MassAddDialog::handleCommand(CommandSender *sender, uint32 cmd, uint32 data
 		// people who want to edit their config file by hand after a mass add.
 		Common::sort(_games.begin(), _games.end(), GameTargetLess());
 		// Add all the detected games to the config
-		for (DetectedGames::iterator iter = _games.begin(); iter != _games.end(); ++iter) {
-			debug(1, "  Added gameid '%s', desc '%s'\n",
-				iter->gameId.c_str(),
-				iter->description.c_str());
-			iter->gameId = EngineMan.createTargetForGame(*iter);
+		for (auto &game : _games) {
+			// Make sure the game is selected
+			if (game.isSelected) {
+				debug(1, "  Added gameid '%s', desc '%s'",
+					game.gameId.c_str(),
+					game.description.c_str());
+				game.gameId = EngineMan.createTargetForGame(game);
+			}
 		}
 
 		// Write everything to disk
@@ -155,8 +159,27 @@ void MassAddDialog::handleCommand(CommandSender *sender, uint32 cmd, uint32 data
 		// User cancelled, so we don't do anything and just leave.
 		_games.clear();
 		close();
+	} else if (cmd == kListSelectionChangedCmd) {
+		// Select / unselect game from list
+		int curretScrollPos = _list->getCurrentScrollPos();
+		_games[_list->getSelected()].isSelected = !_games[_list->getSelected()].isSelected;
+		updateGameList();
+		_list->scrollTo(curretScrollPos);
 	} else {
 		Dialog::handleCommand(sender, cmd, data);
+	}
+}
+
+void MassAddDialog::updateGameList() {
+	// Update list to correctly display selected / unselected games
+	Common::U32StringArray l;
+	_list->setList(l);
+	_list->clearSelectedList();
+
+	for (const auto &game : _games) {
+		Common::U32String displayString = game.isSelected ? Common::String("[x] ") + game.description : Common::String("[\u2000] ") + game.description;
+		_list->append(displayString);
+		_list->appendToSelectedList(game.isSelected);
 	}
 }
 
@@ -176,7 +199,7 @@ void MassAddDialog::handleTickle() {
 		}
 
 		// Run the detector on the dir
-		DetectionResults detectionResults = EngineMan.detectGames(files, (ADGF_WARNING | ADGF_UNSUPPORTED), true);
+		DetectionResults detectionResults = EngineMan.detectGames(files, (ADGF_WARNING | ADGF_UNSUPPORTED | ADGF_ADDON), true);
 
 		if (detectionResults.foundUnknownGames()) {
 			Common::U32String report = detectionResults.generateUnknownGameReport(false, 80);
@@ -190,14 +213,11 @@ void MassAddDialog::handleTickle() {
 		//
 		// However, we only add games which are not already in the config file.
 		DetectedGames candidates = detectionResults.listRecognizedGames();
-		for (DetectedGames::const_iterator cand = candidates.begin(); cand != candidates.end(); ++cand) {
-			const DetectedGame &result = *cand;
+		for (const auto &cand : candidates) {
+			const DetectedGame &result = cand;
 
-			Common::String path = dir.getPath();
-
-			// Remove trailing slashes
-			while (path != "/" && path.lastChar() == '/')
-				path.deleteLastChar();
+			Common::Path path = dir.getPath();
+			path.removeTrailingSeparators();
 
 			// Check for existing config entries for this path/engineid/gameid/lang/platform combination
 			if (_pathToTargets.contains(path)) {
@@ -206,12 +226,12 @@ void MassAddDialog::handleTickle() {
 
 				bool duplicate = false;
 				const Common::StringArray &targets = _pathToTargets[path];
-				for (Common::StringArray::const_iterator iter = targets.begin(); iter != targets.end(); ++iter) {
+				for (const auto &target : targets) {
 					// If the engineid, gameid, platform and language match -> skip it
-					Common::ConfigManager::Domain *dom = ConfMan.getDomain(*iter);
+					Common::ConfigManager::Domain *dom = ConfMan.getDomain(target);
 					assert(dom);
-					
-					if ((*dom)["engineid"] == result.engineId &&
+
+					if ((!dom->contains("engineid") || (*dom)["engineid"] == result.engineId) &&
 						(*dom)["gameid"] == result.gameId &&
 					    dom->getValOrDefault("platform") == resultPlatformCode &&
 						parseLanguage(dom->getValOrDefault("language")) == parseLanguage(resultLanguageCode)) {
@@ -229,11 +249,16 @@ void MassAddDialog::handleTickle() {
 			_list->append(result.description);
 		}
 
+		for (DetectedGame &game : _games) {
+			game.isSelected = true;
+		}
+
+		updateGameList();
 
 		// Recurse into all subdirs
-		for (Common::FSList::const_iterator file = files.begin(); file != files.end(); ++file) {
-			if (file->isDirectory()) {
-				_scanStack.push(*file);
+		for (const auto &file : files) {
+			if (file.isDirectory()) {
+				_scanStack.push(file);
 
 				_dirTotal++;
 			}

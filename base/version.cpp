@@ -68,6 +68,9 @@ const char gScummVMCompiler[] = ""
 #elif defined(__INTEL_COMPILER)
 	"ICC " STR(__INTEL_COMPILER) "." STR(__INTEL_COMPILER_UPDATE)
 #elif defined(__clang__)
+#  if defined(__apple_build_version__)
+	"Apple "
+#  endif
 	"Clang " STR(__clang_major__) "." STR(__clang_minor__) "." STR(__clang_patchlevel__)
 #elif defined(__GNUC__)
 	"GCC " STR(__GNUC__) "." STR(__GNUC_MINOR__) "." STR(__GNUC_PATCHLEVEL__)
@@ -77,7 +80,13 @@ const char gScummVMCompiler[] = ""
 #undef STR
 #undef STR_HELPER
 	;
-const char gScummVMFullVersion[] = "ScummVM " SCUMMVM_VERSION SCUMMVM_REVISION " (" __DATE__ " " __TIME__ ")";
+
+#ifdef RELEASE_BUILD
+	const char gScummVMFullVersion[] = "ScummVM " SCUMMVM_VERSION;
+#else
+	const char gScummVMFullVersion[] = "ScummVM " SCUMMVM_VERSION SCUMMVM_REVISION " (" __DATE__ " " __TIME__ ")";
+#endif
+
 const char gScummVMFeatures[] = ""
 #ifdef TAINTED_BUILD
 	// TAINTED means the build contains engines/subengines not enabled by default
@@ -85,16 +94,9 @@ const char gScummVMFeatures[] = ""
 #endif
 
 #ifdef USE_TREMOR
-#ifdef USE_TREMOLO
-	// libTremolo is used on WinCE for better ogg performance
-	"Tremolo "
-#else
 	"Tremor "
-#endif
-#else
-#ifdef USE_VORBIS
+#elif defined(USE_VORBIS)
 	"Vorbis "
-#endif
 #endif
 
 #ifdef USE_FLAC
@@ -139,8 +141,24 @@ const char gScummVMFeatures[] = ""
 	"FluidSynth "
 #endif
 
+#ifdef USE_SONIVOX
+	"EAS "
+#endif
+
+#ifdef USE_MIKMOD
+	"MikMod "
+#endif
+
+#ifdef USE_OPENMPT
+	"OpenMPT "
+#endif
+
 #ifdef USE_THEORADEC
 	"Theora "
+#endif
+
+#ifdef USE_VPX
+	"VPX "
 #endif
 
 #ifdef USE_FAAD
@@ -188,43 +206,50 @@ const char gScummVMFeatures[] = ""
 #endif
 
 #ifdef USE_CLOUD
-	"cloud ("
-#ifdef USE_LIBCURL
-	"servers"
-#ifdef USE_SDL_NET
-	", "
+	"cloud "
 #endif
-#endif
-#ifdef USE_SDL_NET
-	"local"
-#endif
-	") "
-#else
 #ifdef USE_LIBCURL
 	"libcurl "
 #endif
 #ifdef USE_SDL_NET
 	"SDL_net "
 #endif
+
+#ifdef USE_ENET
+	"ENet "
 #endif
+
+#ifdef SDL_BACKEND
+#  ifdef USE_SDL3
+	"SDL3 "
+#  elif USE_SDL2
+	"SDL2 "
+#  else
+	"SDL1.2 "
+#  endif
+#endif
+
 #ifdef USE_TINYGL
 	"TinyGL "
 #endif
+
 #ifdef USE_OPENGL
 	"OpenGL "
-#ifdef USE_OPENGL_SHADERS
+#  ifdef USE_OPENGL_SHADERS
 	"(with shaders) "
+#  endif
 #endif
-#endif
+
 #ifdef USE_GLES_MODE
-#if USE_GLES_MODE == 0
+#  if USE_GLES_MODE == 0
 	"OpenGL desktop only "
-#elif USE_GLES_MODE == 1
+#  elif USE_GLES_MODE == 1
 	"OpenGL ES 1 only "
-#elif USE_GLES_MODE == 2
+#  elif USE_GLES_MODE == 2
 	"OpenGL ES 2 only "
+#  endif
 #endif
-#endif
+
 #ifdef USE_RETROWAVE
 	"RetroWave "
 #endif

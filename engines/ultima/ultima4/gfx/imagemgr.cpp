@@ -20,12 +20,15 @@
  */
 
 #include "ultima/ultima4/gfx/image.h"
-#include "ultima/ultima4/gfx/imageloader.h"
+#include "ultima/ultima4/gfx/imageloader_u4.h"
+#include "ultima/ultima4/gfx/imageloader_fmtowns.h"
 #include "ultima/ultima4/gfx/imagemgr.h"
 #include "ultima/ultima4/controllers/intro_controller.h"
 #include "ultima/ultima4/core/config.h"
 #include "ultima/ultima4/core/settings.h"
 #include "ultima/ultima4/ultima4.h"
+
+#include "image/png.h"
 
 namespace Ultima {
 namespace Ultima4 {
@@ -42,7 +45,7 @@ public:
 	Common::String _name;
 	Common::String _location;
 	Common::String _extends;
-	Std::map<Common::String, ImageInfo *> _info;
+	Common::HashMap<Common::String, ImageInfo *> _info;
 };
 
 ImageMgr *ImageMgr::_instance = nullptr;
@@ -69,8 +72,8 @@ ImageMgr::ImageMgr() : _baseSet(nullptr), _abyssData(nullptr) {
 ImageMgr::~ImageMgr() {
 	settings.deleteObserver(this);
 
-	for (Std::map<Common::String, ImageSet *>::iterator i = _imageSets.begin(); i != _imageSets.end(); i++)
-		delete i->_value;
+	for (auto &i : _imageSets)
+		delete i._value;
 
 	delete[] _abyssData;
 }
@@ -99,10 +102,10 @@ void ImageMgr::init() {
 	 * register all the images declared in the config files
 	 */
 	const Config *config = Config::getInstance();
-	Std::vector<ConfigElement> graphicsConf = config->getElement("graphics").getChildren();
-	for (Std::vector<ConfigElement>::iterator conf = graphicsConf.begin(); conf != graphicsConf.end(); conf++) {
-		if (conf->getName() == "imageset") {
-			ImageSet *set = loadImageSetFromConf(*conf);
+	Common::Array<ConfigElement> graphicsConf = config->getElement("graphics").getChildren();
+	for (const auto &conf : graphicsConf) {
+		if (conf.getName() == "imageset") {
+			ImageSet *set = loadImageSetFromConf(conf);
 			_imageSets[set->_name] = set;
 
 			// all image sets include the "screen" image
@@ -111,8 +114,8 @@ void ImageMgr::init() {
 	}
 
 	_imageSetNames.clear();
-	for (Std::map<Common::String, ImageSet *>::const_iterator set = _imageSets.begin(); set != _imageSets.end(); set++)
-		_imageSetNames.push_back(set->_key);
+	for (const auto &set : _imageSets)
+		_imageSetNames.push_back(set._key);
 
 	update(&settings);
 }
@@ -125,10 +128,10 @@ ImageSet *ImageMgr::loadImageSetFromConf(const ConfigElement &conf) {
 	set->_location = conf.getString("location");
 	set->_extends = conf.getString("extends");
 
-	Std::vector<ConfigElement> children = conf.getChildren();
-	for (Std::vector<ConfigElement>::iterator i = children.begin(); i != children.end(); i++) {
-		if (i->getName() == "image") {
-			ImageInfo *info = loadImageInfoFromConf(*i);
+	Common::Array<ConfigElement> children = conf.getChildren();
+	for (const auto &i : children) {
+		if (i.getName() == "image") {
+			ImageInfo *info = loadImageInfoFromConf(i);
 			if (set->_info.contains(info->_name))
 				delete set->_info[info->_name];
 			set->_info[info->_name] = info;
@@ -140,7 +143,7 @@ ImageSet *ImageMgr::loadImageSetFromConf(const ConfigElement &conf) {
 
 ImageInfo *ImageMgr::loadImageInfoFromConf(const ConfigElement &conf) {
 	ImageInfo *info;
-	static const char *fixupEnumStrings[] = { "none", "intro", "abyss", "abacus", "dungns", "blackTransparencyHack", "fmtownsscreen", nullptr };
+	static const char *const fixupEnumStrings[] = { "none", "intro", "abyss", "abacus", "dungns", "blackTransparencyHack", "fmtownsscreen", nullptr };
 
 	info = new ImageInfo();
 	info->_name = conf.getString("name");
@@ -158,10 +161,10 @@ ImageInfo *ImageMgr::loadImageInfoFromConf(const ConfigElement &conf) {
 	info->_fixup = static_cast<ImageFixup>(conf.getEnum("fixup", fixupEnumStrings));
 	info->_image = nullptr;
 
-	Std::vector<ConfigElement> children = conf.getChildren();
-	for (Std::vector<ConfigElement>::iterator i = children.begin(); i != children.end(); i++) {
-		if (i->getName() == "subimage") {
-			SubImage *subimage = loadSubImageFromConf(info, *i);
+	Common::Array<ConfigElement> children = conf.getChildren();
+	for (const auto &i : children) {
+		if (i.getName() == "subimage") {
+			SubImage *subimage = loadSubImageFromConf(info, i);
 			info->_subImages[subimage->_name] = subimage;
 		}
 	}
@@ -331,10 +334,10 @@ void ImageMgr::fixupIntro(Image *im, int prescale) {
 		im->setPaletteFromImage(borderInfo->_image);
 
 		// update the color of "and" and "present"
-		(void)im->setPaletteIndex(15, im->setColor(226, 226, 255));
+		(void)im->setPaletteIndex(15, 226, 226, 255);
 
 		// update the color of "Origin Systems, Inc."
-		(void)im->setPaletteIndex(9, im->setColor(129, 129, 255));
+		(void)im->setPaletteIndex(9, 129, 129, 255);
 
 #ifdef TODO
 		borderInfo->_image->save("border.png");
@@ -465,7 +468,7 @@ void ImageMgr::fixupFMTowns(Image *im, int prescale) {
 }
 
 ImageSet *ImageMgr::getSet(const Common::String &setname) {
-	Std::map<Common::String, ImageSet *>::iterator i = _imageSets.find(setname);
+	Common::HashMap<Common::String, ImageSet *>::iterator i = _imageSets.find(setname);
 	if (i != _imageSets.end())
 		return i->_value;
 	else
@@ -481,7 +484,7 @@ ImageInfo *ImageMgr::getInfoFromSet(const Common::String &name, ImageSet *images
 		return nullptr;
 
 	/* if the image set contains the image we want, AND IT EXISTS we are done */
-	Std::map<Common::String, ImageInfo *>::iterator i = imageset->_info.find(name);
+	Common::HashMap<Common::String, ImageInfo *>::iterator i = imageset->_info.find(name);
 	if (i != imageset->_info.end())
 		if (imageExists(i->_value))
 			return i->_value;
@@ -505,7 +508,7 @@ Common::String ImageMgr::guessFileType(const Common::String &filename) {
 }
 
 bool ImageMgr::imageExists(ImageInfo *info) {
-	if (info->_filename == "") //If it is an abstract image like "screen"
+	if (info->_filename.empty()) //If it is an abstract image like "screen"
 		return true;
 	Common::File *file = getImageFile(info);
 	if (file) {
@@ -525,11 +528,11 @@ Common::File *ImageMgr::getImageFile(ImageInfo *info) {
 	Common::File *file = new Common::File();
 	if (!info->_xu4Graphic) {
 		// It's a file in the game folder
-		if (file->open(filename))
+		if (file->open(Common::Path(filename)))
 			return file;
 	}
 
-	if (file->open("data/graphics/" + filename))
+	if (file->open(Common::Path("data/graphics/").joinInPlace(filename)))
 		return file;
 
 	delete file;
@@ -551,17 +554,31 @@ ImageInfo *ImageMgr::get(const Common::String &name, bool returnUnscaled) {
 		if (info->_filetype.empty())
 			info->_filetype = guessFileType(info->_filename);
 		Common::String filetype = info->_filetype;
-		ImageLoader *loader = g_ultima->_imageLoaders->getLoader(filetype);
-		if (loader == nullptr) {
+		::Image::ImageDecoder *decoder = createDecoder(filetype, info->_width, info->_height, info->_depth);
+		if (decoder == nullptr) {
 			warning("can't find loader to load image \"%s\" with type \"%s\"", info->_filename.c_str(), filetype.c_str());
 		} else {
-			unscaled = loader->load(*file, info->_width, info->_height, info->_depth);
-			if (info->_width == -1) {
-				// Write in the values for later use.
-				info->_width = unscaled->width();
-				info->_height = unscaled->height();
-				// ###            info->depth = ???
+			if (!decoder->loadStream(*file)) {
+				warning("can't load image \"%s\" with type \"%s\"", info->_filename.c_str(), filetype.c_str());
+			} else {
+				const Graphics::Surface *surface = decoder->getSurface();
+				unscaled = Image::create(surface->w, surface->h, surface->format);
+				unscaled->blitFrom(*surface);
+
+				const Graphics::Palette &pal = decoder->getPalette();
+				if (!pal.empty()) {
+					unscaled->setPalette(pal.data(), pal.size());
+				}
+
+				if (info->_width == -1) {
+					// Write in the values for later use.
+					info->_width = unscaled->width();
+					info->_height = unscaled->height();
+					// ###            info->depth = ???
+				}
 			}
+
+			delete decoder;
 		}
 
 		delete file;
@@ -602,10 +619,12 @@ ImageInfo *ImageMgr::get(const Common::String &name, bool returnUnscaled) {
 		break;
 	case FIXUP_BLACKTRANSPARENCYHACK:
 		//Apply transparency shadow hack to ultima4 ega and vga upgrade classic graphics.
-		Image *unscaled_original = unscaled;
-		unscaled = Image::duplicate(unscaled);
-		delete unscaled_original;
 		if (Settings::getInstance()._enhancements && Settings::getInstance()._enhancementsOptions._u4TileTransparencyHack) {
+			// TODO: Pick a more optimal pixel format?
+			Image *unscaled_original = unscaled;
+			unscaled = Image::duplicate(unscaled, Graphics::PixelFormat(4, 8, 8, 8, 8, 24, 16, 8, 0));
+			delete unscaled_original;
+
 			int transparency_shadow_size = Settings::getInstance()._enhancementsOptions._u4TrileTransparencyHackShadowBreadth;
 			int black_index = 0;
 			int opacity = Settings::getInstance()._enhancementsOptions._u4TileTransparencyHackPixelShadowOpacity;
@@ -643,9 +662,9 @@ SubImage *ImageMgr::getSubImage(const Common::String &name) {
 	ImageSet *set = _baseSet;
 
 	while (set != nullptr) {
-		for (Std::map<Common::String, ImageInfo *>::iterator i = set->_info.begin(); i != set->_info.end(); i++) {
-			ImageInfo *info = (ImageInfo *) i->_value;
-			Std::map<Common::String, SubImage *>::iterator j = info->_subImages.find(name);
+		for (auto &i : set->_info) {
+			ImageInfo *info = (ImageInfo *) i._value;
+			Common::HashMap<Common::String, SubImage *>::iterator j = info->_subImages.find(name);
 			if (j != info->_subImages.end())
 				return j->_value;
 		}
@@ -657,10 +676,10 @@ SubImage *ImageMgr::getSubImage(const Common::String &name) {
 }
 
 void ImageMgr::freeIntroBackgrounds() {
-	for (Std::map<Common::String, ImageSet *>::iterator i = _imageSets.begin(); i != _imageSets.end(); i++) {
-		ImageSet *set = i->_value;
-		for (Std::map<Common::String, ImageInfo *>::iterator j = set->_info.begin(); j != set->_info.end(); j++) {
-			ImageInfo *info = j->_value;
+	for (const auto &i : _imageSets) {
+		ImageSet *set = i._value;
+		for (auto &j : set->_info) {
+			ImageInfo *info = j._value;
 			if (info->_image != nullptr && info->_introOnly) {
 				delete info->_image;
 				info->_image = nullptr;
@@ -669,7 +688,7 @@ void ImageMgr::freeIntroBackgrounds() {
 	}
 }
 
-const Std::vector<Common::String> &ImageMgr::getSetNames() {
+const Common::Array<Common::String> &ImageMgr::getSetNames() {
 	return _imageSetNames;
 }
 
@@ -681,17 +700,31 @@ void ImageMgr::update(Settings *newSettings) {
 	_baseSet = getSet(setname);
 }
 
+::Image::ImageDecoder *ImageMgr::createDecoder(const Common::String &fileType, int width, int height, int bpp) {
+	if (fileType == "image/png")
+		return new ::Image::PNGDecoder();
+	if (fileType == "image/x-u4raw")
+		return new U4RawImageDecoder(width, height, bpp);
+	if (fileType == "image/x-u4rle")
+		return new U4RleImageDecoder(width, height, bpp);
+	if (fileType == "image/x-u4lzw")
+		return new U4LzwImageDecoder(width, height, bpp);
+	if (fileType == "image/fmtowns-tif")
+		return new FMTOWNSImageDecoder(width, height, bpp, 510);
+	return nullptr;
+}
+
 ImageSet::~ImageSet() {
-	for (Std::map<Common::String, ImageInfo *>::iterator i = _info.begin(); i != _info.end(); i++) {
-		ImageInfo *imageInfo = i->_value;
+	for (const auto &i : _info) {
+		ImageInfo *imageInfo = i._value;
 		if (imageInfo->_name != "screen")
 			delete imageInfo;
 	}
 }
 
 ImageInfo::~ImageInfo() {
-	for (Std::map<Common::String, SubImage *>::iterator i = _subImages.begin(); i != _subImages.end(); i++)
-		delete i->_value;
+	for (auto &i : _subImages)
+		delete i._value;
 	if (_image != nullptr)
 		delete _image;
 }

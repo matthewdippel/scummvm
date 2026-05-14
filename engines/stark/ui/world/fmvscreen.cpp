@@ -24,7 +24,7 @@
 #include "engines/stark/ui/world/fmvscreen.h"
 #include "engines/stark/gfx/driver.h"
 #include "engines/stark/gfx/surfacerenderer.h"
-#include "engines/stark/gfx/texture.h"
+#include "engines/stark/gfx/bitmap.h"
 #include "engines/stark/services/archiveloader.h"
 #include "engines/stark/services/services.h"
 #include "engines/stark/services/userinterface.h"
@@ -37,34 +37,35 @@ FMVScreen::FMVScreen(Gfx::Driver *gfx, Cursor *cursor) :
 	_position = Common::Rect(Gfx::Driver::kOriginalWidth, Gfx::Driver::kOriginalHeight);
 	_visible = true;
 
-	_decoder = new Video::BinkDecoder();
-	_decoder->setDefaultHighColorFormat(Gfx::Driver::getRGBAPixelFormat());
-	_decoder->setSoundType(Audio::Mixer::kSFXSoundType);
+	_bitmap = _gfx->createBitmap();
+	_bitmap->setSamplingFilter(StarkSettings->getImageSamplingFilter());
 
-	_texture = _gfx->createBitmap();
-	_texture->setSamplingFilter(StarkSettings->getImageSamplingFilter());
+	_decoder = new Video::BinkDecoder();
+	_decoder->setSoundType(Audio::Mixer::kSFXSoundType);
 
 	_surfaceRenderer = _gfx->createSurfaceRenderer();
 }
 
 FMVScreen::~FMVScreen() {
 	delete _decoder;
-	delete _texture;
+	delete _bitmap;
 	delete _surfaceRenderer;
 }
 
-void FMVScreen::play(const Common::String &name) {
+void FMVScreen::play(const Common::Path &name) {
 	Common::SeekableReadStream *stream = nullptr;
 
 	// Play the low-resolution video, if possible
 	if (!StarkSettings->getBoolSetting(Settings::kHighFMV) && StarkSettings->hasLowResFMV()) {
-		Common::String lowResName = name;
-		lowResName.erase(lowResName.size() - 4);
-		lowResName += "_lo_res.bbb";
+		Common::String lowResBaseName = name.baseName();
+		lowResBaseName.erase(lowResBaseName.size() - 4);
+		lowResBaseName += "_lo_res.bbb";
+
+		Common::Path lowResName(name.getParent().appendComponent(lowResBaseName));
 
 		stream = StarkArchiveLoader->getExternalFile(lowResName, "Global/");
 		if (!stream) {
-			debug("Could not open %s", lowResName.c_str());
+			debug("Could not open %s", lowResName.toString().c_str());
 		}
 	}
 
@@ -74,14 +75,15 @@ void FMVScreen::play(const Common::String &name) {
 	}
 
 	if (!stream) {
-		warning("Could not open %s", name.c_str());
+		warning("Could not open %s", name.toString().c_str());
 		return;
 	}
 
 	_decoder->loadStream(stream);
 	if (!_decoder->isVideoLoaded()) {
-		error("Could not open %s", name.c_str());
+		error("Could not open %s", name.toString().c_str());
 	}
+	_decoder->setOutputPixelFormat(_bitmap->getBestPixelFormat());
 	_decoder->start();
 }
 
@@ -89,7 +91,7 @@ void FMVScreen::onGameLoop() {
 	if (isPlaying()) {
 		if (_decoder->needsUpdate()) {
 			const Graphics::Surface *decodedSurface = _decoder->decodeNextFrame();
-			_texture->update(decodedSurface);
+			_bitmap->update(decodedSurface);
 		}
 	} else {
 		stop();
@@ -97,7 +99,7 @@ void FMVScreen::onGameLoop() {
 }
 
 void FMVScreen::onRender() {
-	_surfaceRenderer->render(_texture, Common::Point(0, Gfx::Driver::kTopBorderHeight),
+	_surfaceRenderer->render(_bitmap, Common::Point(0, Gfx::Driver::kTopBorderHeight),
 			Gfx::Driver::kGameViewportWidth, Gfx::Driver::kGameViewportHeight);
 }
 

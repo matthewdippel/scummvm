@@ -50,17 +50,30 @@ public:
 	void notifyVideoExpose() override;
 	void notifyResize(const int width, const int height) override;
 
+#if defined(USE_IMGUI) && SDL_VERSION_ATLEAST(2, 0, 0)
+	void *getImGuiTexture(const Graphics::Surface &image, const byte *palette, int palCount) override;
+	void freeImGuiTexture(void *texture) override;
+#endif
+
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+	void destroyingWindow() override;
+#endif
+
 protected:
-	bool loadVideoMode(uint requestedWidth, uint requestedHeight, const Graphics::PixelFormat &format) override;
+	bool loadVideoMode(uint requestedWidth, uint requestedHeight, bool resizable, int antialiasing) override;
 
 	void refreshScreen() override;
 
 	void handleResizeImpl(const int width, const int height) override;
 
-	bool saveScreenshot(const Common::String &filename) const override;
+	bool saveScreenshot(const Common::Path &filename) const override;
+
+	bool canSwitchFullscreen() const override;
 
 private:
 	bool setupMode(uint width, uint height);
+
+	void deinitOpenGLContext();
 
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 	int _glContextProfileMask, _glContextMajor, _glContextMinor;
@@ -69,17 +82,33 @@ private:
 #else
 	uint32 _lastVideoModeLoad;
 #endif
-	OpenGL::ContextType _glContextType;
 
+#ifdef EMSCRIPTEN
+	/** 
+	 * See https://registry.khronos.org/webgl/specs/latest/1.0/#2 :
+	 * " By default, after compositing the contents of the drawing buffer shall be cleared to their default values [...]
+	 *   Techniques like synchronous drawing buffer access (e.g., calling readPixels or toDataURL in the same function
+	 *   that renders to the drawing buffer) can be used to get the contents of the drawing buffer "
+	 * 
+	 * This means we need to take the screenshot at the correct time, which we do by queueing taking the screenshot
+	 * for the next frame instead of taking it right away.
+	 */
+	bool _queuedScreenshot = false;
+	void saveScreenshot() override;
+#endif
+
+	OpenGL::ContextType _glContextType;
+	bool _resizable;
+	int _requestedAntialiasing;
+	int _effectiveAntialiasing;
+
+	uint _forceFrameUpdate = 0;
 	uint _lastRequestedWidth;
 	uint _lastRequestedHeight;
 	uint _graphicsScale;
-	bool _ignoreLoadVideoMode;
 	bool _gotResize;
 
-#if SDL_VERSION_ATLEAST(2, 0, 0)
 	bool _vsync;
-#endif
 	bool _wantsFullScreen;
 	uint _ignoreResizeEvents;
 

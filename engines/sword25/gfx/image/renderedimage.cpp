@@ -99,7 +99,7 @@ static byte *readSavegameThumbnail(const Common::String &filename, uint &fileSiz
 }
 
 RenderedImage::RenderedImage(const Common::String &filename, bool &result) :
-	_isTransparent(true) {
+	_alphaType(Graphics::ALPHA_FULL) {
 	result = false;
 
 	PackageManager *pPackage = Kernel::getInstance()->getPackage();
@@ -126,9 +126,9 @@ RenderedImage::RenderedImage(const Common::String &filename, bool &result) :
 
 	// Uncompress the image
 	if (isPNG)
-		result = ImgLoader::decodePNGImage(pFileData, fileSize, &_surface);
+		result = ImgLoader::decodePNGImage(pFileData, fileSize, _surface.surfacePtr());
 	else
-		result = ImgLoader::decodeThumbnailImage(pFileData, fileSize, &_surface);
+		result = ImgLoader::decodeThumbnailImage(pFileData, fileSize, _surface.surfacePtr());
 
 	if (!result) {
 		error("Could not decode image.");
@@ -140,11 +140,7 @@ RenderedImage::RenderedImage(const Common::String &filename, bool &result) :
 	delete[] pFileData;
 
 	_doCleanup = true;
-
-#if defined(SCUMM_LITTLE_ENDIAN)
-	// Makes sense for LE only at the moment
-	checkForTransparency();
-#endif
+	_alphaType = _surface.detectAlpha();
 
 	return;
 }
@@ -152,7 +148,7 @@ RenderedImage::RenderedImage(const Common::String &filename, bool &result) :
 // -----------------------------------------------------------------------------
 
 RenderedImage::RenderedImage(uint width, uint height, bool &result) :
-	_isTransparent(true) {
+	_alphaType(Graphics::ALPHA_FULL) {
 
 	_surface.create(width, height, Graphics::PixelFormat(4, 8, 8, 8, 8, 24, 16, 8, 0));
 
@@ -164,7 +160,7 @@ RenderedImage::RenderedImage(uint width, uint height, bool &result) :
 	return;
 }
 
-RenderedImage::RenderedImage() : _isTransparent(true) {
+RenderedImage::RenderedImage() : _alphaType(Graphics::ALPHA_FULL) {
 	_backSurface = Kernel::getInstance()->getGfx()->getSurface();
 
 	_surface.format = Graphics::PixelFormat(4, 8, 8, 8, 8, 24, 16, 8, 0);
@@ -233,7 +229,12 @@ bool RenderedImage::blit(int posX, int posY, int flipping, Common::Rect *pPartRe
 	int cg = (color >> BS_GSHIFT) & 0xff;
 	int cb = (color >> BS_BSHIFT) & 0xff;
 
-	_surface.blit(*_backSurface, posX, posY, newFlipping, pPartRect, _surface.format.ARGBToColor(ca, cr, cg, cb), width, height);
+	Common::Rect srcRect = pPartRect ? *pPartRect : Common::Rect(_surface.w, _surface.h);
+	if (width == -1) width = srcRect.width();
+	if (height == -1) height = srcRect.height();
+
+	_backSurface->blendBlitFrom(_surface, srcRect, Common::Rect(posX, posY, posX + width, posY + height),
+		newFlipping, _surface.format.ARGBToColor(ca, cr, cg, cb), Graphics::BLEND_NORMAL, _alphaType);
 
 	return true;
 }
@@ -260,20 +261,6 @@ void RenderedImage::copyDirectly(int posX, int posY) {
 	h = CLIP((int)h, 0, (int)MAX((int)_backSurface->h - posY, 0));
 
 	g_system->copyRectToScreen(data, _backSurface->pitch, posX, posY, w, h);
-}
-
-void RenderedImage::checkForTransparency() {
-	// Check if the source bitmap has any transparent pixels at all
-	_isTransparent = false;
-	byte *data = (byte *)_surface.getPixels();
-	for (int i = 0; i < _surface.h; i++) {
-		for (int j = 0; j < _surface.w; j++) {
-			_isTransparent = data[3] != 0xff;
-			if (_isTransparent)
-				return;
-			data += 4;
-		}
-	}
 }
 
 } // End of namespace Sword25

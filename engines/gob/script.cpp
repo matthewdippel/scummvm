@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/util.h"
@@ -156,6 +162,7 @@ byte Script::readByte() {
 
 	n = read(&v, 1);
 	assert(n == 1);
+	(void)n;
 
 	return v;
 }
@@ -174,6 +181,7 @@ uint16 Script::readUint16() {
 
 	n = read(v, 2);
 	assert(n == 2);
+	(void)n;
 
 	return READ_LE_UINT16(v);
 }
@@ -184,6 +192,7 @@ uint32 Script::readUint32() {
 
 	n = read(v, 4);
 	assert(n == 4);
+	(void)n;
 
 	return READ_LE_UINT32(v);
 }
@@ -261,7 +270,11 @@ char *Script::peekString(int32 offset) {
 	return (char *)(_totPtr + offset);
 }
 
-int16 Script::readVarIndex(uint16 *size, uint16 *type) {
+void Script::writeByte(int32 offset, byte v) {
+	_totPtr[offset] = v;
+}
+
+uint16 Script::readVarIndex(uint16 *size, uint16 *type) {
 	return _expression->parseVarIndex(size, type);
 }
 
@@ -277,7 +290,7 @@ void Script::skipExpr(char stopToken) {
 	_expression->skipExpr(stopToken);
 }
 
-char Script::evalExpr(int16 *pRes) {
+char Script::evalExpr(int32 *pRes) {
 	byte type;
 
 	_expression->printExpr(99);

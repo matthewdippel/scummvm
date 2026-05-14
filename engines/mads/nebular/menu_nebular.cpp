@@ -21,12 +21,12 @@
 
 #include "common/scummsys.h"
 #include "common/config-manager.h"
-#include "mads/game.h"
-#include "mads/mads.h"
-#include "mads/menu_views.h"
-#include "mads/resources.h"
-#include "mads/scene.h"
-#include "mads/screen.h"
+#include "mads/nebular/core/game.h"
+#include "mads/nebular/nebular.h"
+#include "mads/nebular/core/menu_views.h"
+#include "mads/nebular/core/resources.h"
+#include "mads/nebular/core/scene.h"
+#include "mads/nebular/core/screen.h"
 #include "mads/nebular/menu_nebular.h"
 
 namespace MADS {
@@ -37,7 +37,7 @@ namespace Nebular {
 #define MADS_MENU_Y ((MADS_SCREEN_HEIGHT - MADS_SCENE_HEIGHT) / 2)
 #define MADS_MENU_ANIM_DELAY 70
 
-MainMenu::MainMenu(MADSEngine *vm): MenuView(vm) {
+MainMenu::MainMenu(RexNebularEngine *vm): MenuView(vm) {
 	Common::fill(&_menuItems[0], &_menuItems[7], (SpriteAsset *)nullptr);
 	Common::fill(&_menuItemIndexes[0], &_menuItemIndexes[7], -1);
 	_delayTimeout = 0;
@@ -75,7 +75,7 @@ void MainMenu::display() {
 
 	// Load each of the menu item assets and add to the scene sprites list
 	for (int i = 0; i < 7; ++i) {
-		Common::String spritesName = Resources::formatName(NEBULAR_MENUSCREEN,
+		Common::Path spritesName = Resources::formatName(NEBULAR_MENUSCREEN,
 			'A', i + 1, EXT_SS, "");
 		_menuItems[i] = new SpriteAsset(_vm, spritesName, 0);
 		_menuItemIndexes[i] = scene._sprites.add(_menuItems[i]);
@@ -199,34 +199,33 @@ bool MainMenu::onEvent(Common::Event &event) {
 		return false;
 
 	// Handle keypresses - these can be done at any time, even when the menu items are being drawn
-	if (event.type == Common::EVENT_KEYDOWN) {
-		switch (event.kbd.keycode) {
-		case Common::KEYCODE_ESCAPE:
-		case Common::KEYCODE_F6:
+	if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START) {
+		switch (event.customType) {
+		case kActionEscape:
 			handleAction(EXIT);
 			break;
 
-		case Common::KEYCODE_F1:
+		case kActionStartGame:
 			handleAction(START_GAME);
 			break;
 
-		case Common::KEYCODE_F2:
+		case kActionResumeGame:
 			handleAction(RESUME_GAME);
 			break;
 
-		case Common::KEYCODE_F3:
+		case kActionShowIntro:
 			handleAction(SHOW_INTRO);
 			break;
 
-		case Common::KEYCODE_F4:
+		case kActionCredits:
 			handleAction(CREDITS);
 			break;
 
-		case Common::KEYCODE_F5:
+		case kActionQuotes:
 			handleAction(QUOTES);
 			break;
 
-		case Common::KEYCODE_s: {
+		case kActionRestartAnimation: {
 			// Goodness knows why, but Rex has a key to restart the menuitem animations
 			// Restart the animation
 			_menuItemIndex = -1;
@@ -239,12 +238,15 @@ bool MainMenu::onEvent(Common::Event &event) {
 		}
 
 		default:
-			// Any other key skips the menu animation
 			_skipFlag = true;
 			return false;
 		}
 
 		return true;
+	} else if (event.type == Common::EVENT_KEYDOWN) {
+		// Any other key skips the menu animation
+		_skipFlag = true;
+		return false;
 	}
 
 	switch (event.type) {
@@ -369,7 +371,7 @@ void MainMenu::handleAction(MADSGameAction action) {
 
 /*------------------------------------------------------------------------*/
 
-AdvertView::AdvertView(MADSEngine *vm): EventTarget(), _vm(vm) {
+AdvertView::AdvertView(RexNebularEngine *vm): EventTarget(), _vm(vm) {
 	_breakFlag = false;
 }
 
@@ -406,7 +408,8 @@ void AdvertView::show() {
 }
 
 bool AdvertView::onEvent(Common::Event &event) {
-	if (event.type == Common::EVENT_KEYDOWN || event.type == Common::EVENT_LBUTTONDOWN) {
+	if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START || event.type == Common::EVENT_KEYDOWN
+			|| event.type == Common::EVENT_JOYBUTTON_DOWN || event.type == Common::EVENT_LBUTTONDOWN) {
 		_breakFlag = true;
 		return true;
 	}
@@ -429,6 +432,6 @@ void RexAnimationView::scriptDone() {
 	}
 }
 
-} // End of namespace Nebular
+} // namespace Nebular
 
-} // End of namespace MADS
+} // namespace MADS

@@ -31,7 +31,7 @@
 #include "common/translation.h"
 
 #include "graphics/cursorman.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/surface.h"
 
 #include "agos/animation.h"
@@ -102,11 +102,11 @@ void MoviePlayer::handleNextFrame() {
 	Common::EventManager *eventMan = _vm->_system->getEventManager();
 	while (eventMan->pollEvent(event)) {
 		switch (event.type) {
-		case Common::EVENT_KEYDOWN:
-			if (event.kbd.keycode == Common::KEYCODE_ESCAPE) {
+		case Common::EVENT_CUSTOM_ENGINE_ACTION_START:
+			if (event.customType == kActionExitCutscene) {
 				_leftButtonDown = true;
 				_rightButtonDown = true;
-			} else if (event.kbd.keycode == Common::KEYCODE_PAUSE) {
+			} else if (event.customType == kActionPause) {
 				_vm->pause();
 			}
 			break;
@@ -250,14 +250,14 @@ bool MoviePlayerDXA::load() {
 		}
 	}
 
-	Common::String videoName = Common::String::format("%s.dxa", baseName);
+	Common::Path videoName(Common::String::format("%s.dxa", baseName));
 	Common::File *videoStream = new Common::File();
 	if (!videoStream->open(videoName))
-		error("Failed to load video file %s", videoName.c_str());
+		error("Failed to load video file %s", videoName.toString(Common::Path::kNativeSeparator).c_str());
 	if (!loadStream(videoStream))
-		error("Failed to load video stream from file %s", videoName.c_str());
+		error("Failed to load video stream from file %s", videoName.toString(Common::Path::kNativeSeparator).c_str());
 
-	debug(0, "Playing video %s", videoName.c_str());
+	debug(0, "Playing video %s", videoName.toString(Common::Path::kNativeSeparator).c_str());
 
 	CursorMan.showMouse(false);
 	return true;
@@ -416,20 +416,29 @@ MoviePlayerSMK::MoviePlayerSMK(AGOSEngine_Feeble *vm, const char *name)
 
 	memset(baseName, 0, sizeof(baseName));
 	memcpy(baseName, name, strlen(name));
+
+	int16 h = g_system->getOverlayHeight();
+
+	_subtitles.setBBox(Common::Rect(20, h - 120, g_system->getOverlayWidth() - 20, h - 20));
+	_subtitles.setColor(0xff, 0xff, 0xff);
+	_subtitles.setFont("LiberationSans-Regular.ttf");
 }
 
 bool MoviePlayerSMK::load() {
-	Common::String videoName = Common::String::format("%s.smk", baseName);
+	Common::Path videoName(Common::String::format("%s.smk", baseName));
 
 	Common::File *videoStream = new Common::File();
 	if (!videoStream->open(videoName))
-		error("Failed to load video file %s", videoName.c_str());
+		error("Failed to load video file %s", videoName.toString(Common::Path::kNativeSeparator).c_str());
 	if (!loadStream(videoStream))
-		error("Failed to load video stream from file %s", videoName.c_str());
+		error("Failed to load video stream from file %s", videoName.toString(Common::Path::kNativeSeparator).c_str());
 
-	debug(0, "Playing video %s", videoName.c_str());
+	debug(0, "Playing video %s", videoName.toString(Common::Path::kNativeSeparator).c_str());
 
 	CursorMan.showMouse(false);
+
+	Common::String subtitlesName = Common::String::format("%s.srt", baseName);
+	_subtitles.loadSRTFile(subtitlesName.c_str());
 
 	return true;
 }
@@ -457,11 +466,19 @@ void MoviePlayerSMK::copyFrameToBuffer(byte *dst, uint x, uint y, uint pitch) {
 }
 
 void MoviePlayerSMK::playVideo() {
-	while (!endOfVideo() && !_skipMovie && !_vm->shouldQuit())
+	if (_subtitles.isLoaded()) {
+		g_system->clearOverlay();
+		g_system->showOverlay(false);
+	}
+	while (!endOfVideo() && !_skipMovie && !_vm->shouldQuit()) {
 		handleNextFrame();
+	}
 }
 
 void MoviePlayerSMK::stopVideo() {
+	if (_subtitles.isLoaded()) {
+		g_system->hideOverlay();
+	}
 	close();
 }
 
@@ -505,6 +522,8 @@ bool MoviePlayerSMK::processFrame() {
 		return false;
 	}
 
+	_subtitles.drawSubtitle(getTime(), false);
+
 	_vm->_system->updateScreen();
 
 	// Wait before showing the next frame
@@ -531,31 +550,31 @@ MoviePlayer *makeMoviePlayer(AGOSEngine_Feeble *vm, const char *name) {
 		memset(shortName, 0, sizeof(shortName));
 		memcpy(shortName, baseName, 6);
 
-		sprintf(filename, "%s~1.dxa", shortName);
+		Common::sprintf_s(filename, "%s~1.dxa", shortName);
 		if (Common::File::exists(filename)) {
 			memset(baseName, 0, sizeof(baseName));
 			memcpy(baseName, filename, 8);
 		}
 
-		sprintf(filename, "%s~1.smk", shortName);
+		Common::sprintf_s(filename, "%s~1.smk", shortName);
 		if (Common::File::exists(filename)) {
 			memset(baseName, 0, sizeof(baseName));
 			memcpy(baseName, filename, 8);
 		}
 	}
 
-	sprintf(filename, "%s.dxa", baseName);
+	Common::sprintf_s(filename, "%s.dxa", baseName);
 	if (Common::File::exists(filename)) {
 		return new MoviePlayerDXA(vm, baseName);
 	}
 
-	sprintf(filename, "%s.smk", baseName);
+	Common::sprintf_s(filename, "%s.smk", baseName);
 	if (Common::File::exists(filename)) {
 		return new MoviePlayerSMK(vm, baseName);
 	}
 
 	Common::U32String buf = Common::U32String::format(_("Cutscene file '%s' not found!"), baseName);
-	GUI::MessageDialog dialog(buf, _("OK"));
+	GUI::MessageDialog dialog(buf);
 	dialog.runModal();
 
 	return NULL;

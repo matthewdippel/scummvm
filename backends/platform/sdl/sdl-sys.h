@@ -64,6 +64,26 @@
 #define mkdir FAKE_mkdir
 #endif
 
+#if !defined(FORBIDDEN_SYMBOL_ALLOW_ALL) && !defined(FORBIDDEN_SYMBOL_EXCEPTION_strcpy)
+#undef strcpy
+#define strcpy FAKE_strcpy
+#endif
+
+#if !defined(FORBIDDEN_SYMBOL_ALLOW_ALL) && !defined(FORBIDDEN_SYMBOL_EXCEPTION_strcat)
+#undef strcat
+#define strcat FAKE_strcat
+#endif
+
+#if !defined(FORBIDDEN_SYMBOL_ALLOW_ALL) && !defined(FORBIDDEN_SYMBOL_EXCEPTION_vsprintf)
+#undef vsprintf
+#define vsprintf FAKE_vsprintf
+#endif
+
+#if !defined(FORBIDDEN_SYMBOL_ALLOW_ALL) && !defined(FORBIDDEN_SYMBOL_EXCEPTION_sprintf)
+#undef sprintf
+#define sprintf FAKE_sprintf
+#endif
+
 // Fix compilation with MacPorts SDL 2
 // It needs various (usually forbidden) symbols from time.h
 #ifndef FORBIDDEN_SYMBOL_EXCEPTION_time_h
@@ -153,9 +173,8 @@
 // In SDL 2.0, intrin.h is now included in SDL_cpuinfo.h, which includes
 // setjmp.h. SDL_cpuinfo.h is included from SDL.h and SDL_syswm.h.
 // Thus, we remove the exceptions for setjmp and longjmp before these two
-// includes. Unfortunately, we can't use SDL_VERSION_ATLEAST here, as SDL.h
-// hasn't been included yet at this point.
-#if !defined(FORBIDDEN_SYMBOL_ALLOW_ALL) && defined(_MSC_VER)
+// includes.
+#if !defined(FORBIDDEN_SYMBOL_ALLOW_ALL) && defined(_MSC_VER) && defined(USE_SDL2)
 // We unset any fake definitions of setjmp/longjmp here
 
 #ifndef FORBIDDEN_SYMBOL_EXCEPTION_setjmp
@@ -168,12 +187,18 @@
 
 #endif
 
+#ifdef USE_SDL3
+#include <SDL3/SDL.h>
+#else
 #include <SDL.h>
+#endif
 
 // Ignore warnings from system headers pulled by SDL
 #pragma warning(push)
 #pragma warning(disable:4121) // alignment of a member was sensitive to packing
+#if !SDL_VERSION_ATLEAST(3, 0, 0)
 #include <SDL_syswm.h>
+#endif
 #pragma warning(pop)
 
 // Restore the forbidden exceptions from the hack above
@@ -219,6 +244,10 @@
 #undef False
 #endif
 
+#ifdef Complex
+#undef Complex
+#endif
+
 // Finally forbid FILE again (if it was forbidden to start with)
 #if !defined(FORBIDDEN_SYMBOL_ALLOW_ALL) && !defined(FORBIDDEN_SYMBOL_EXCEPTION_FILE)
 #undef FILE
@@ -253,6 +282,26 @@
 #if !defined(FORBIDDEN_SYMBOL_ALLOW_ALL) && !defined(FORBIDDEN_SYMBOL_EXCEPTION_mkdir)
 #undef mkdir
 #define mkdir(a,b) FORBIDDEN_look_at_common_forbidden_h_for_more_info SYMBOL !%*
+#endif
+
+#if !defined(FORBIDDEN_SYMBOL_ALLOW_ALL) && !defined(FORBIDDEN_SYMBOL_EXCEPTION_strcpy)
+#undef strcpy
+#define strcpy(a,b)    FORBIDDEN_look_at_common_forbidden_h_for_more_info SYMBOL !%*
+#endif
+
+#if !defined(FORBIDDEN_SYMBOL_ALLOW_ALL) && !defined(FORBIDDEN_SYMBOL_EXCEPTION_strcat)
+#undef strcat
+#define strcat(a,b)    FORBIDDEN_look_at_common_forbidden_h_for_more_info SYMBOL !%*
+#endif
+
+#if !defined(FORBIDDEN_SYMBOL_ALLOW_ALL) && !defined(FORBIDDEN_SYMBOL_EXCEPTION_vsprintf)
+#undef vsprintf
+#define vsprintf(a,b,c)    FORBIDDEN_look_at_common_forbidden_h_for_more_info SYMBOL !%*
+#endif
+
+#if !defined(FORBIDDEN_SYMBOL_ALLOW_ALL) && !defined(FORBIDDEN_SYMBOL_EXCEPTION_sprintf)
+#undef sprintf
+#define sprintf(a,b,...)    FORBIDDEN_look_at_common_forbidden_h_for_more_info SYMBOL !%*
 #endif
 
 // re-forbid all those time.h symbols again (if they were forbidden)

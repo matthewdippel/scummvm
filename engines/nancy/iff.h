@@ -31,21 +31,14 @@ class SeekableReadStream;
 
 namespace Nancy {
 
-class NancyEngine;
-
-#define ID_DATA     MKTAG('D', 'A', 'T', 'A')
-#define ID_PCAL     MKTAG('P', 'C', 'A', 'L')
-
 class IFF {
 public:
-	IFF(const Common::String &name) : _name(name) { };
+	IFF(Common::SeekableReadStream *stream);
 	~IFF();
 
-	bool load();
 	const byte *getChunk(uint32 id, uint &size, uint index = 0) const;
 	Common::SeekableReadStream *getChunkStream(const Common::String &id, uint index = 0) const;
 
-	// Debugger functions
 	void list(Common::Array<Common::String> &nameList) const;
 
 private:
@@ -60,8 +53,9 @@ private:
 		uint32 size;
 	};
 
+	const Common::SeekableReadStream *_stream;
 	Common::Array<Chunk> _chunks;
-	const Common::String _name;
+	uint32 _nextDATAChunk;
 };
 
 } // End of namespace Nancy

@@ -38,7 +38,7 @@ Bitmap *CreateBitmap(int width, int height, int color_depth) {
 	return bitmap;
 }
 
-Bitmap *CreateClearBitmap(int width, int height, int clear_color, int color_depth) {
+Bitmap *CreateClearBitmap(int width, int height, int color_depth, int clear_color) {
 	Bitmap *bitmap = new Bitmap();
 	if (!bitmap->Create(width, height, color_depth)) {
 		delete bitmap;
@@ -100,6 +100,44 @@ Bitmap *AdjustBitmapSize(Bitmap *src, int width, int height) {
 	Bitmap *bmp = BitmapHelper::CreateBitmap(width, height, src->GetColorDepth());
 	bmp->StretchBlt(src, RectWH(0, 0, oldw, oldh), RectWH(0, 0, width, height));
 	return bmp;
+}
+
+void MakeOpaque(Bitmap *bmp) {
+	if (bmp->GetColorDepth() < 32)
+		return; // no alpha channel
+
+	for (int i = 0; i < bmp->GetHeight(); ++i) {
+		uint32_t *line = reinterpret_cast<uint32_t *>(bmp->GetScanLineForWriting(i));
+		uint32_t *line_end = line + bmp->GetWidth();
+		for (uint32_t *px = line; px != line_end; ++px)
+			*px = makeacol32(getr32(*px), getg32(*px), getb32(*px), 255);
+	}
+}
+
+void MakeOpaqueSkipMask(Bitmap *bmp) {
+	if (bmp->GetColorDepth() < 32)
+		return; // no alpha channel
+
+	for (int i = 0; i < bmp->GetHeight(); ++i) {
+		uint32_t *line = reinterpret_cast<uint32_t *>(bmp->GetScanLineForWriting(i));
+		uint32_t *line_end = line + bmp->GetWidth();
+		for (uint32_t *px = line; px != line_end; ++px)
+			if (*px != MASK_COLOR_32)
+				*px = makeacol32(getr32(*px), getg32(*px), getb32(*px), 255);
+	}
+}
+
+void ReplaceAlphaWithRGBMask(Bitmap *bmp) {
+	if (bmp->GetColorDepth() < 32)
+		return; // no alpha channel
+
+	for (int i = 0; i < bmp->GetHeight(); ++i) {
+		uint32_t *line = reinterpret_cast<uint32_t *>(bmp->GetScanLineForWriting(i));
+		uint32_t *line_end = line + bmp->GetWidth();
+		for (uint32_t *px = line; px != line_end; ++px)
+			if (geta32(*px) == 0)
+				*px = MASK_COLOR_32;
+	}
 }
 
 // Functor that copies the "mask color" pixels from source to dest

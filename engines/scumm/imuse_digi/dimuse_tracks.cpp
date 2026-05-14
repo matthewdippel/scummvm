@@ -24,12 +24,11 @@
 namespace Scumm {
 
 int IMuseDigital::tracksInit() {
-	_trackCount = 6;
+	_trackCount = _lowLatencyMode ? DIMUSE_MAX_TRACKS : 6;
 	_tracksPauseTimer = 0;
 	_trackList = nullptr;
-	_tracksPrefSampleRate = DIMUSE_SAMPLERATE;
 
-	if (waveOutInit(DIMUSE_SAMPLERATE, &waveOutSettings))
+	if (waveOutInit(&waveOutSettings))
 		return -1;
 
 	if (_internalMixer->init(waveOutSettings.bytesPerSample,
@@ -44,11 +43,23 @@ int IMuseDigital::tracksInit() {
 	}
 
 	for (int l = 0; l < _trackCount; l++) {
+		_tracks[l].index = l;
 		_tracks[l].prev = nullptr;
 		_tracks[l].next = nullptr;
 		_tracks[l].dispatchPtr = dispatchGetDispatchByTrackId(l);
 		_tracks[l].dispatchPtr->trackPtr = &_tracks[l];
 		_tracks[l].soundId = 0;
+		_tracks[l].group = 0;
+		_tracks[l].marker = 0;
+		_tracks[l].priority = 0;
+		_tracks[l].vol = 0;
+		_tracks[l].effVol = 0;
+		_tracks[l].pan = 0;
+		_tracks[l].detune = 0;
+		_tracks[l].transpose = 0;
+		_tracks[l].pitchShift = 0;
+		_tracks[l].mailbox = 0;
+		_tracks[l].jumpHook = 0;
 		_tracks[l].syncSize_0 = 0;
 		_tracks[l].syncSize_1 = 0;
 		_tracks[l].syncSize_2 = 0;
@@ -71,7 +82,7 @@ void IMuseDigital::tracksResume() {
 }
 
 void IMuseDigital::tracksSaveLoad(Common::Serializer &ser) {
-	Common::StackLock lock(_mutex);
+	Common::StackLock lock(*_mutex);
 	dispatchSaveLoad(ser);
 
 	for (int l = 0; l < _trackCount; l++) {
@@ -150,7 +161,22 @@ void IMuseDigital::tracksCallback() {
 		_tracksPauseTimer = 3;
 	}
 
-	Common::StackLock lock(_mutex);
+	// This piece of code is responsible for adaptive buffer overrun correction:
+	// it checks whether a buffer underrun has occurred within our output stream
+	// and then it increments the buffer count.
+	//
+	// This is not part of the original implementation, but it's used to yield
+	// smooth audio hopefully on every device.
+	if (_internalMixer->_stream->endOfData() && _checkForUnderrun) {
+		debug(5, "IMuseDigital::tracksCallback(): WARNING: audio buffer underrun, adapting the buffer queue count...");
+
+		adaptBufferCount();
+
+		// Allow the routine to cooldown: i.e. wait until the engine manages to
+		// refill the stream with the most recent maximum number of queueable buffers.
+		_underrunCooldown = _maxQueuedStreams;
+		_checkForUnderrun = false;
+	}
 
 	// If we leave the number of queued streams unbounded, we fill the queue with streams faster than
 	// we can play them: this leads to a very noticeable audio latency and desync with the graphics.
@@ -161,6 +187,15 @@ void IMuseDigital::tracksCallback() {
 		waveOutWrite(&_outputAudioBuffer, _outputFeedSize, _outputSampleRate);
 
 		if (_outputFeedSize != 0) {
+			// Let's see if we should check for buffer underruns...
+			if (!_checkForUnderrun) {
+				if (_underrunCooldown == 0) {
+					_checkForUnderrun = true;
+				} else {
+					_underrunCooldown--;
+				}
+			}
+
 			_internalMixer->clearMixerBuffer();
 			if (_isEarlyDiMUSE && _splayer && _splayer->isAudioCallbackEnabled()) {
 				_splayer->processDispatches(_outputFeedSize);
@@ -187,6 +222,113 @@ void IMuseDigital::tracksCallback() {
 				waveOutWrite(&_outputAudioBuffer, _outputFeedSize, _outputSampleRate);
 			}
 		}
+	}
+}
+
+void IMuseDigital::tracksLowLatencyCallback() {
+	// Why do we need a low latency mode?
+	//
+	// For every audio callback, this engine works by collecting all the sound
+	// data for every track and by mixing it up in a single output stream.
+	// This is exactly how the original executables worked, so our implementation
+	// provides a very faithful recreation of that experience. And it comes with
+	// a compromise that e.g. The Dig and Full Throttle didn't have to front:
+	//
+	// in order to provide glitchless audio, an appropriate stream queue size
+	// has to be enforced: a longer queue yields a lower probability of audio glitches
+	// but a higher latency, and viceversa. In our case, this depends on the audio backend
+	// configuration. As such: some configurations might encounter audible latency (#13462).
+	//
+	// We solve this issue by offering this alternate low latency mode which, instead
+	// of keeping a single stream for everything, creates (and disposes) streams on the fly
+	// for every different sound. This means that whenever the new sound data is ready,
+	// a new stream is initialized and played immediately, without having to wait for all
+	// the other sounds to be processed and mixed in the same sample pool.
+
+	if (_tracksPauseTimer) {
+		if (++_tracksPauseTimer < 3)
+			return;
+		_tracksPauseTimer = 3;
+	}
+
+	// The callback path is heavily inspired from the original one (see tracksCallback()),
+	// but it handles each track separatedly, with the exception of SMUSH audio for Full
+	// Throttle: this is why we operate on two parallel paths...
+
+	if (!_isEarlyDiMUSE)
+		dispatchPredictFirstStream();
+
+	IMuseDigiTrack *track = _trackList;
+
+	// This flag ensures that, even when no track is available,
+	// FT SMUSH audio can still be played. At least, and AT MOST once :-)
+	bool runSMUSHAudio = _isEarlyDiMUSE;
+
+	while (track || runSMUSHAudio) {
+
+		IMuseDigiTrack *next = track ? track->next : nullptr;
+		int idx = track ? track->index : -1;
+
+		// We use a separate queue cardinality handling, since SMUSH audio and iMUSE audio can overlap...
+		bool canQueueBufs = (int)_internalMixer->getStream(idx)->numQueuedStreams() < (_maxQueuedStreams + 1);
+		bool canQueueFtSmush = _internalMixer->getStream(-1) != nullptr;
+
+		if (canQueueFtSmush) {
+			canQueueFtSmush &= (int)_internalMixer->getStream(-1)->numQueuedStreams() < (_maxQueuedStreams + 1);
+		}
+
+		if (canQueueBufs) {
+			if (track)
+				waveOutLowLatencyWrite(&_outputLowLatencyAudioBuffers[idx], _outputFeedSize, _outputSampleRate, idx);
+
+			// Notice how SMUSH audio for Full Throttle uses the original single-stream mode:
+			// this is necessary both for code cleanliness and for correct audio sync.
+			if (runSMUSHAudio && canQueueFtSmush)
+				waveOutWrite(&_outputAudioBuffer, _outputFeedSize, _outputSampleRate);
+
+			if (_outputFeedSize != 0) {
+				// FT SMUSH dispatch processing...
+				if (runSMUSHAudio && canQueueFtSmush && _isEarlyDiMUSE && _splayer && _splayer->isAudioCallbackEnabled()) {
+					_internalMixer->setCurrentMixerBuffer(_outputAudioBuffer);
+					_internalMixer->clearMixerBuffer();
+
+					_splayer->processDispatches(_outputFeedSize);
+					_internalMixer->loop(&_outputAudioBuffer, _outputFeedSize);
+				}
+
+				// Ordinary audio tracks handling...
+				if (track) {
+					_internalMixer->setCurrentMixerBuffer(_outputLowLatencyAudioBuffers[idx]);
+					_internalMixer->clearMixerBuffer();
+
+					if (!_tracksPauseTimer) {
+						if (_isEarlyDiMUSE) {
+							dispatchProcessDispatches(track, _outputFeedSize);
+						} else {
+							dispatchProcessDispatches(track, _outputFeedSize, _outputSampleRate);
+						}
+					}
+
+					_internalMixer->loop(&_outputLowLatencyAudioBuffers[idx], _outputFeedSize);
+
+					// The Dig tries to write a second time
+					if (!_isEarlyDiMUSE && _vm->_game.id == GID_DIG) {
+						waveOutLowLatencyWrite(&_outputLowLatencyAudioBuffers[idx], _outputFeedSize, _outputSampleRate, idx);
+					}
+
+					// If, after processing the track dispatch, the sound is set to zero
+					// it means that it has reached the end: let's notify its stream...
+					if (track->soundId == 0) {
+						_internalMixer->endStream(idx);
+					}
+				}
+			}
+		}
+
+		if (track)
+			track = next;
+
+		runSMUSHAudio = false;
 	}
 }
 
@@ -228,9 +370,9 @@ int IMuseDigital::tracksStartSound(int soundId, int tryPriority, int group) {
 		return -1;
 	}
 
-	Common::StackLock lock(_mutex);
+	_mutex->lock();
 	addTrackToList(&_trackList, allocatedTrack);
-	Common::StackLock unlock(_mutex);
+	_mutex->unlock();
 
 	return 0;
 }
@@ -254,7 +396,7 @@ int IMuseDigital::tracksStopSound(int soundId) {
 }
 
 int IMuseDigital::tracksStopAllSounds() {
-	Common::StackLock lock(_mutex);
+	Common::StackLock lock(*_mutex);
 	IMuseDigiTrack *nextTrack = _trackList;
 	IMuseDigiTrack *curTrack;
 
@@ -284,22 +426,42 @@ int IMuseDigital::tracksGetNextSound(int soundId) {
 	return foundSoundId;
 }
 
-void IMuseDigital::tracksQueryStream(int soundId, int32 &bufSize, int32 &criticalSize, int32 &freeSpace, int &paused) {
-	if (!_trackList)
+int IMuseDigital::tracksQueryStream(int soundId, int32 &bufSize, int32 &criticalSize, int32 &freeSpace, int &paused) {
+	if (!_trackList) {
 		debug(5, "IMuseDigital::tracksQueryStream(): WARNING: empty trackList, ignoring call...");
+		return isFTSoundEngine() ? 0 : -1;
+	}
 
 	IMuseDigiTrack *track = _trackList;
-	do {
-		if (track->soundId) {
-			if (soundId == track->soundId && track->dispatchPtr->streamPtr) {
-				streamerQueryStream(track->dispatchPtr->streamPtr, bufSize, criticalSize, freeSpace, paused);
-				return;
-			}
-		}
-		track = track->next;
-	} while (track);
+	if (isFTSoundEngine()) {
+		IMuseDigiTrack *chosenTrack = nullptr;
 
-	debug(5, "IMuseDigital::tracksQueryStream(): WARNING: couldn't find sound %d in trackList, ignoring call...", soundId);
+		do {
+			if (track->soundId > soundId && (!chosenTrack || track->soundId < chosenTrack->soundId)) {
+				if (track->dispatchPtr->streamPtr)
+					chosenTrack = track;
+			}
+			track = track->next;
+		} while (track);
+
+		if (!chosenTrack)
+			return 0;
+		streamerQueryStream(chosenTrack->dispatchPtr->streamPtr, bufSize, criticalSize, freeSpace, paused);
+		return chosenTrack->soundId;
+	} else {
+		do {
+			if (track->soundId) {
+				if (soundId == track->soundId && track->dispatchPtr->streamPtr) {
+					streamerQueryStream(track->dispatchPtr->streamPtr, bufSize, criticalSize, freeSpace, paused);
+					return 0;
+				}
+			}
+			track = track->next;
+		} while (track);
+
+		debug(5, "IMuseDigital::tracksQueryStream(): WARNING: couldn't find sound %d in trackList, ignoring call...", soundId);
+		return -1;
+	}
 }
 
 int IMuseDigital::tracksFeedStream(int soundId, uint8 *srcBuf, int32 sizeToFeed, int paused) {
@@ -321,6 +483,8 @@ int IMuseDigital::tracksFeedStream(int soundId, uint8 *srcBuf, int32 sizeToFeed,
 }
 
 void IMuseDigital::tracksClear(IMuseDigiTrack *trackPtr) {
+	Common::StackLock lock(*_mutex);
+
 	if (_vm->_game.id == GID_CMI) {
 		if (trackPtr->syncPtr_0) {
 			trackPtr->syncSize_0 = 0;
@@ -356,6 +520,9 @@ void IMuseDigital::tracksClear(IMuseDigiTrack *trackPtr) {
 	if (trackPtr->soundId < 1000 && trackPtr->soundId) {
 		_vm->_res->unlock(rtSound, trackPtr->soundId);
 	}
+
+	if (_lowLatencyMode)
+		waveOutEmptyBuffer(trackPtr->index);
 
 	trackPtr->soundId = 0;
 }
@@ -491,23 +658,21 @@ int IMuseDigital::tracksGetParam(int soundId, int opcode) {
 }
 
 int IMuseDigital::tracksLipSync(int soundId, int syncId, int msPos, int32 &width, int32 &height) {
-	int32 h, w;
+	int32 w, h;
 
 	byte *syncPtr = nullptr;
 	int32 syncSize = 0;
 
 	IMuseDigiTrack *curTrack;
-	uint16 msPosDiv;
-	uint16 *tmpPtr;
-	int32 loopIndex;
 	int16 val;
 
-	h = 0;
 	w = 0;
+	h = 0;
 	curTrack = _trackList;
 
 	if (msPos >= 0) {
-		msPosDiv = msPos >> 4;
+		// Check for an invalid timestamp:
+		// this has to be a suitable 2-bytes word...
 		if (((msPos >> 4) & 0xFFFF0000) != 0) {
 			return -5;
 		} else {
@@ -536,20 +701,36 @@ int IMuseDigital::tracksLipSync(int soundId, int syncId, int msPos, int32 &width
 					}
 
 					if (syncSize && syncPtr) {
-						tmpPtr = (uint16 *)(syncPtr + 2);
-						loopIndex = (syncSize >> 2) - 1;
-						if (syncSize >> 2) {
-							do {
-								if (*tmpPtr >= msPosDiv)
-									break;
-								tmpPtr += 2;
-							} while (loopIndex--);
+						// SYNC data is packed in a number of 4-bytes entries, in the following order:
+						// - Width and height values, packed as one byte each, next to each other;
+						// - The time position of said values, packed as an unsigned word (2-bytes).
+
+						// Given an input timestamp (in ms), we're going to get its representation as 60Hz
+						// increments by dividing it by 16, then we're going to search the SYNC data from
+						// the beginning to find the first entry with a timestamp being equal or greater
+						// our 60Hz timestamp.
+						uint16 inputTs = msPos >> 4;
+						int32 numOfEntries = (syncSize >> 2);
+						uint16 *syncDataWordPtr = (uint16 *)syncPtr;
+						uint16 curEntryTs = 0;
+						int idx;
+						for (idx = 0; idx < numOfEntries; idx++) {
+							curEntryTs = READ_LE_UINT16(&syncDataWordPtr[idx * 2 + 1]);
+							if (curEntryTs >= inputTs) {
+								break;
+							}
 						}
 
-						if (loopIndex < 0 || *tmpPtr > msPosDiv)
-							tmpPtr -= 2;
+						// If no relevant entry is found, or if the found entry timestamp is strictly greater
+						// than ours, then we get the previous entry. If no entry was found, this will get the
+						// last entry in our data block.
+						if (idx == numOfEntries || curEntryTs > inputTs) {
+							idx--;
+						}
 
-						val = *(tmpPtr - 1);
+						// Finally, extract width and height values and remove
+						// their signs by performing AND operations with 0x7F...
+						val = READ_LE_INT16(&syncDataWordPtr[idx * 2]);
 						w = (val >> 8) & 0x7F;
 						h = val & 0x7F;
 					}

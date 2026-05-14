@@ -357,7 +357,7 @@ bool AIScriptTransient::UpdateAnimation(int *animation, int *frame) {
 			_animationState = 15;
 			_animationFrame = Slice_Animation_Query_Number_Of_Frames(kModelAnimationTransientShotDeadCollapseInPlace) - 1;
 			Actor_Set_Targetable(kActorTransient, false);
-			Actor_Retired_Here(kActorTransient, 120, 24, 1, -1);
+			Actor_Retired_Here(kActorTransient, 120, 24, true, -1);
 		}
 		break;
 
@@ -407,6 +407,7 @@ bool AIScriptTransient::UpdateAnimation(int *animation, int *frame) {
 	default:
 		// Dummy placeholder, kModelAnimationZubenWalking (399) is a Zuben animation
 		*animation = kModelAnimationZubenWalking;
+		debugC(6, kDebugAnimation, "AIScriptTransient::UpdateAnimation() - Current _animationState (%d) is a placeholder", _animationState);
 		break;
 	}
 	*frame = _animationFrame;
@@ -544,6 +545,10 @@ bool AIScriptTransient::ChangeAnimationMode(int mode) {
 	case 89:
 		_animationState = 12;
 		_animationFrame = Slice_Animation_Query_Number_Of_Frames(kModelAnimationTransientLayingShotDead) - 1;
+		break;
+
+	default:
+		debugC(6, kDebugAnimation, "AIScriptTransient::ChangeAnimationMode(%d) - Target mode is not supported", mode);
 		break;
 	}
 

@@ -22,6 +22,7 @@
 #ifndef COMMON_SUBSTREAM_H
 #define COMMON_SUBSTREAM_H
 
+#include "common/mutex.h"
 #include "common/ptr.h"
 #include "common/stream.h"
 #include "common/types.h"
@@ -60,7 +61,7 @@ public:
 		assert(parentStream);
 	}
 
-	virtual bool eos() const { return _eos | _parentStream->eos(); }
+	virtual bool eos() const { return _eos || _parentStream->eos(); }
 	virtual bool err() const { return _parentStream->err(); }
 	virtual void clearErr() { _eos = false; _parentStream->clearErr(); }
 	virtual uint32 read(void *dataPtr, uint32 dataSize);
@@ -88,29 +89,6 @@ public:
 };
 
 /**
- * This is a SeekableSubReadStream subclass which adds non-endian
- * read methods whose endianness is set on the stream creation.
- *
- * Manipulating the parent stream directly /will/ mess up a substream.
- * @see SubReadStream
- */
-class SeekableSubReadStreamEndian :  virtual public SeekableSubReadStream, virtual public SeekableReadStreamEndian {
-public:
-	SeekableSubReadStreamEndian(SeekableReadStream *parentStream, uint32 begin, uint32 end, bool bigEndian, DisposeAfterUse::Flag disposeParentStream = DisposeAfterUse::NO)
-		: SeekableSubReadStream(parentStream, begin, end, disposeParentStream),
-		  SeekableReadStreamEndian(bigEndian),
-		  ReadStreamEndian(bigEndian) {
-	}
-
-	int64 pos() const override { return SeekableSubReadStream::pos(); }
-	int64 size() const override { return SeekableSubReadStream::size(); }
-
-	bool seek(int64 offset, int whence = SEEK_SET) override { return SeekableSubReadStream::seek(offset, whence); }
-	void hexdump(int len, int bytesPerLine = 16, int startOffset = 0) { SeekableSubReadStream::hexdump(len, bytesPerLine, startOffset); }
-	bool skip(uint32 offset) override { return SeekableSubReadStream::seek(offset, SEEK_CUR); }
-};
-
-/**
  * A seekable substream that removes the exclusivity demand required by the
  * normal SeekableSubReadStream, at the cost of seek()ing the parent stream
  * before each read().
@@ -130,6 +108,24 @@ public:
 	}
 
 	virtual uint32 read(void *dataPtr, uint32 dataSize);
+};
+
+/**
+ * A special variant of SafeSeekableSubReadStream which locks a mutex during each read.
+ * This is necessary if the music is streamed from disk and it could happen
+ * that a sound effect or another music track is played from the same read stream
+ * while the first music track is updated/read.
+ */
+
+class SafeMutexedSeekableSubReadStream : public Common::SafeSeekableSubReadStream {
+public:
+	SafeMutexedSeekableSubReadStream(SeekableReadStream *parentStream, uint32 begin, uint32 end, DisposeAfterUse::Flag disposeParentStream,
+		Common::Mutex &mutex)
+		: SafeSeekableSubReadStream(parentStream, begin, end, disposeParentStream), _mutex(mutex) {
+	}
+	uint32 read(void *dataPtr, uint32 dataSize) override;
+protected:
+	Common::Mutex &_mutex;
 };
 
 /** @} */

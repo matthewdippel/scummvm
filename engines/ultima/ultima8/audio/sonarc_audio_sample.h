@@ -22,6 +22,7 @@
 #ifndef ULTIMA8_AUDIO_SONARCAUDIOSAMPLE_H
 #define ULTIMA8_AUDIO_SONARCAUDIOSAMPLE_H
 
+#include "common/scummsys.h"
 #include "ultima/ultima8/audio/audio_sample.h"
 
 namespace Ultima {
@@ -45,15 +46,17 @@ class SonarcAudioSample : public AudioSample {
 						   uint8 *dest, const uint8 *factors);
 	static int audio_decode(const uint8 *source, uint8 *dest);
 
-	uint32      _srcOffset;
+	int _frameSize;
+	uint32 _srcOffset;
 
 public:
 	SonarcAudioSample(const uint8 *buffer, uint32 size);
 	~SonarcAudioSample(void) override;
 
-	void initDecompressor(void *DecompData) const override;
-	uint32 decompressFrame(void *DecompData, void *samples) const override;
-	void rewind(void *DecompData) const override;
+	Audio::SeekableAudioStream *makeStream() const override;
+
+private:
+	uint32 decompressFrame(SonarcDecompData *decompData, uint8 *samples) const;
 };
 
 } // End of namespace Ultima8

@@ -19,7 +19,7 @@
  *
  */
 
-#include "ags/lib/std/thread.h"
+#include "common/std/thread.h"
 #include "ags/engine/ac/timer.h"
 #include "ags/shared/core/platform.h"
 #include "ags/engine/ac/sys_events.h"
@@ -41,6 +41,9 @@ std::chrono::microseconds GetFrameDuration() {
 }
 
 int setTimerFps(int new_fps) {
+	assert(new_fps >= 0);
+	if (new_fps <= 0)
+		return _G(framerate);
 	int old_fps = _G(framerate);
 	_G(tick_duration) = std::chrono::microseconds(1000000LL / new_fps);
 	_G(framerate) = new_fps;

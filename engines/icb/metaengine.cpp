@@ -27,20 +27,20 @@
 
 namespace ICB {
 
-class IcbMetaEngine : public AdvancedMetaEngine {
+class IcbMetaEngine : public AdvancedMetaEngine<IcbGameDescription> {
 public:
 	const char *getName() const override {
 		return "icb";
 	}
 	bool hasFeature(MetaEngineFeature f) const override { return false; }
 
-	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override;
+	Common::Error createInstance(OSystem *syst, Engine **engine, const IcbGameDescription *desc) const override;
 
 	Common::KeymapArray initKeymaps(const char *target) const override;
 };
 
-Common::Error IcbMetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const {
-	*engine = new IcbEngine(syst, desc);
+Common::Error IcbMetaEngine::createInstance(OSystem *syst, Engine **engine, const IcbGameDescription *gd) const {
+	*engine = new IcbEngine(syst, gd);
 	return Common::kNoError;
 }
 
@@ -49,6 +49,8 @@ Common::KeymapArray IcbMetaEngine::initKeymaps(const char *target) const {
 
 	if (gameId == "icb") {
 		return ICB::IcbEngine::initKeymapsIcb(target);
+	} else if (gameId == "eldorado") {
+		return ICB::IcbEngine::initKeymapsEldorado(target);
 	}
 
 	return AdvancedMetaEngine::initKeymaps(target);

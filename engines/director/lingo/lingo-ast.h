@@ -44,6 +44,7 @@ struct RepeatWithInNode;
 struct NextRepeatNode;
 struct ExitRepeatNode;
 struct ExitNode;
+struct ReturnNode;
 struct TellNode;
 struct WhenNode;
 struct DeleteNode;
@@ -109,6 +110,7 @@ enum NodeType {
 	kNextRepeatNode,
 	kExitRepeatNode,
 	kExitNode,
+	kReturnNode,
 	kTellNode,
 	kWhenNode,
 	kDeleteNode,
@@ -147,7 +149,10 @@ enum NumberOfType {
 	kNumberOfWords,
 	kNumberOfItems,
 	kNumberOfLines,
-	kNumberOfMenuItems
+	kNumberOfMenuItems,
+	kNumberOfMenus,
+	kNumberOfXtras,
+	kNumberOfCastlibs,
 };
 
 /* NodeVisitor */
@@ -176,6 +181,7 @@ public:
 	virtual bool visitNextRepeatNode(NextRepeatNode *node) = 0;
 	virtual bool visitExitRepeatNode(ExitRepeatNode *node) = 0;
 	virtual bool visitExitNode(ExitNode *node) = 0;
+	virtual bool visitReturnNode(ReturnNode *node) = 0;
 	virtual bool visitTellNode(TellNode *node) = 0;
 	virtual bool visitWhenNode(WhenNode *node) = 0;
 	virtual bool visitDeleteNode(DeleteNode *node) = 0;
@@ -216,8 +222,10 @@ struct Node {
 	bool isExpression;
 	bool isStatement;
 	bool isLoop;
+	uint32 startOffset;
+	uint32 endOffset;
 
-	Node(NodeType t) : type(t), isExpression(false), isStatement(false), isLoop(false) {}
+	Node(NodeType t) : type(t), isExpression(false), isStatement(false), isLoop(false), startOffset(0), endOffset(0) {}
 	virtual ~Node() {}
 	virtual bool accept(NodeVisitor *visitor) = 0;
 };
@@ -553,6 +561,21 @@ struct ExitNode : StmtNode {
 		return visitor->visitExitNode(this);
 	}
 };
+
+/* ReturnNode */
+
+struct ReturnNode : StmtNode {
+	Node *expr;
+	ReturnNode(Node *exprIn) : StmtNode(kReturnNode), expr(exprIn) {}
+	virtual ~ReturnNode() {
+		if (expr)
+			delete expr;
+	}
+	virtual bool accept(NodeVisitor *visitor) {
+		return visitor->visitReturnNode(this);
+	}
+};
+
 
 /* TellNode */
 

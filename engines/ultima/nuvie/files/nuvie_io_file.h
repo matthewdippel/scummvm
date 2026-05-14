@@ -22,7 +22,7 @@
 #ifndef NUVIE_FILES_NUVIE_IO_FILE_H
 #define NUVIE_FILES_NUVIE_IO_FILE_H
 
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 #include "ultima/nuvie/files/nuvie_io.h"
 #include "common/file.h"
 #include "common/memstream.h"
@@ -36,7 +36,7 @@ public:
 	NuvieIOFile() {}
 	~NuvieIOFile() override {}
 
-	virtual bool open(const Common::String &filename) {
+	virtual bool open(const Common::Path &filename) {
 		return false;
 	};
 };
@@ -49,7 +49,7 @@ public:
 	NuvieIOFileRead() : NuvieIOFile(), _file(nullptr) {}
 	~NuvieIOFileRead() override;
 
-	bool open(const Common::String &filename) override;
+	bool open(const Common::Path &filename) override;
 	virtual bool open(Common::InSaveFile *saveFile);
 	void close() override;
 	void seek(uint32 new_pos) override;
@@ -87,7 +87,7 @@ protected:
 public:
 	NuvieIOFileWrite();
 	~NuvieIOFileWrite() override;
-	bool open(const Common::String &filename) override;
+	bool open(const Common::Path &filename) override;
 	bool open(const Common::String &filename, bool isAutosave);
 	void close() override;
 	void seek(uint32 new_pos) override;

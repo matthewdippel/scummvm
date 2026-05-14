@@ -19,10 +19,11 @@
  *
  */
 
+#include "common/keyboard.h"
 #include "ultima/ultima8/gumps/book_gump.h"
 #include "ultima/ultima8/gumps/widgets/text_widget.h"
 #include "ultima/ultima8/games/game_data.h"
-#include "ultima/ultima8/graphics/gump_shape_archive.h"
+#include "ultima/ultima8/gfx/gump_shape_archive.h"
 #include "ultima/ultima8/usecode/uc_machine.h"
 #include "ultima/ultima8/gumps/gump_notify_process.h"
 #include "ultima/ultima8/world/item.h"
@@ -38,7 +39,7 @@ BookGump::BookGump()
 
 }
 
-BookGump::BookGump(ObjId owner, const Std::string &msg) :
+BookGump::BookGump(ObjId owner, const Common::String &msg) :
 	ModalGump(0, 0, 100, 100, owner), _text(msg),
 	_textWidgetL(0), _textWidgetR(0) {
 }
@@ -58,18 +59,18 @@ void BookGump::InitGump(Gump *newparent, bool take_focus) {
 	//
 	Item *item = getItem(_owner);
 	if (item && item->getShape() == 0x120 && item->getQuality() == 0x66) {
-		const Std::string placeholder = "spell of resurrection";
-		const Std::string replacement = _TL_(placeholder);
+		const Common::String placeholder = "spell of resurrection";
+		const Common::String replacement = _TL_(placeholder);
 		if (replacement != placeholder)
 			_text = replacement;
 	}
 
 	// Create the TextWidgets (NOTE: they _must_ have exactly the same _dims)
-	TextWidget *widget = new TextWidget(9, 5, _text, true, 9, 123, 129); //!! constants
+	TextWidget *widget = new TextWidget(9, 5, _text, true, 9, 123, 129, Font::TEXT_LEFT, true); //!! constants
 	widget->InitGump(this);
 	_textWidgetL = widget->getObjId();
 
-	widget = new TextWidget(150, 5, _text, true, 9, 123, 129); //!! constants
+	widget = new TextWidget(150, 5, _text, true, 9, 123, 129, Font::TEXT_LEFT, true); //!! constants
 	widget->InitGump(this);
 	_textWidgetR = widget->getObjId();
 	widget->setupNextText();
@@ -105,6 +106,21 @@ void BookGump::onMouseDouble(int button, int32 mx, int32 my) {
 	Close();
 }
 
+bool BookGump::OnKeyDown(int key, int mod) {
+	switch (key) {
+	case Common::KEYCODE_ESCAPE:
+		Close();
+		break;
+	case Common::KEYCODE_SPACE:
+		NextText();
+		break;
+	default:
+		break;
+	}
+
+	return true;
+}
+
 uint32 BookGump::I_readBook(const uint8 *args, unsigned int /*argsize*/) {
 	ARG_ITEM_FROM_PTR(item);
 	ARG_STRING(str);
@@ -118,11 +134,11 @@ uint32 BookGump::I_readBook(const uint8 *args, unsigned int /*argsize*/) {
 }
 
 void BookGump::saveData(Common::WriteStream *ws) {
-	CANT_HAPPEN_MSG("Trying to save ModalGump");
+	warning("Trying to save ModalGump");
 }
 
 bool BookGump::loadData(Common::ReadStream *rs, uint32 version) {
-	CANT_HAPPEN_MSG("Trying to load ModalGump");
+	warning("Trying to load ModalGump");
 
 	return false;
 }

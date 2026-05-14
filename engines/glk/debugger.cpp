@@ -55,9 +55,9 @@ bool Debugger::cmdDumpPic(int argc, const char **argv) {
 		Common::File f;
 		int picNum = strToInt(argv[1]);
 
-		Common::String filename = Common::String::format("pic%d.png", picNum);
+		Common::Path filename(Common::String::format("pic%d.png", picNum));
 		if (!f.exists(filename))
-			filename = Common::String::format("pic%d.jpg", picNum);
+			filename = Common::Path(Common::String::format("pic%d.jpg", picNum));
 
 		if (f.open(filename)) {
 			// png or jpeg file
@@ -74,15 +74,15 @@ bool Debugger::cmdDumpPic(int argc, const char **argv) {
 			} else {
 				debugPrintf("Could not find specified picture\n");
 			}
-		} else if (f.exists(Common::String::format("pic%d.rect", picNum))) {
+		} else if (f.exists(Common::Path(Common::String::format("pic%d.rect", picNum)))) {
 			debugPrintf("Picture is only a placeholder rectangle\n");
-		} else if (f.open(Common::String::format("pic%d.raw", picNum))) {
+		} else if (f.open(Common::Path(Common::String::format("pic%d.raw", picNum)))) {
 			// Raw picture
 #ifdef USE_PNG
 			Common::DumpFile df;
 			RawDecoder rd;
 
-			if (rd.loadStream(f) && df.open(Common::String::format("pic%d.png", picNum))) {
+			if (rd.loadStream(f) && df.open(Common::Path(Common::String::format("pic%d.png", picNum)))) {
 				saveRawPicture(rd, df);
 				debugPrintf("Dumped picture\n");
 			} else {
@@ -102,13 +102,13 @@ bool Debugger::cmdDumpPic(int argc, const char **argv) {
 void Debugger::saveRawPicture(const RawDecoder &rd, Common::WriteStream &ws) {
 #ifdef USE_PNG
 	const Graphics::Surface *surface = rd.getSurface();
-	const byte *palette = rd.getPalette();
-	int paletteCount = rd.getPaletteColorCount();
-	int palStart = rd.getPaletteStartIndex();
-	int transColor = rd.getTransparentColor();
+	const Graphics::Palette &palette = rd.getPalette();
+	int palStart = 0;
+	bool hasTransColor = rd.hasTransparentColor();
+	uint32 transColor = rd.getTransparentColor();
 
 	// If the image doesn't have a palette, we can directly write out the image
-	if (!palette) {
+	if (palette.empty()) {
 		Image::writePNG(ws, *surface);
 		return;
 	}
@@ -122,12 +122,13 @@ void Debugger::saveRawPicture(const RawDecoder &rd, Common::WriteStream &ws) {
 		uint32 *destP = (uint32 *)destSurface.getBasePtr(0, y);
 
 		for (int x = 0; x < surface->w; ++x, ++srcP, ++destP) {
-			if ((int)*srcP == transColor || (int)*srcP < palStart) {
+			if ((hasTransColor && (uint32)*srcP == transColor) || (int)*srcP < palStart) {
 				*destP = format.ARGBToColor(0, 0, 0, 0);
 			} else {
-				assert(*srcP < paletteCount);
-				const byte *palP = &palette[*srcP * 3];
-				*destP = format.ARGBToColor(255, palP[0], palP[1], palP[2]);
+				assert(*srcP < palette.size());
+				byte r, g, b;
+				palette.get(*srcP, r, g, b);
+				*destP = format.ARGBToColor(255, r, g, b);
 			}
 		}
 	}

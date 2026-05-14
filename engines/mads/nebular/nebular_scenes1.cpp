@@ -20,9 +20,9 @@
  */
 
 #include "common/scummsys.h"
-#include "common/math.h"
-#include "mads/mads.h"
-#include "mads/scene.h"
+#include "math/utils.h"
+#include "mads/nebular/nebular.h"
+#include "mads/nebular/core/scene.h"
 #include "mads/nebular/nebular_scenes.h"
 #include "mads/nebular/nebular_scenes1.h"
 
@@ -99,7 +99,7 @@ void Scene1xx::setPlayerSpritesPrefix() {
 
 /*------------------------------------------------------------------------*/
 
-Scene101::Scene101(MADSEngine *vm) : Scene1xx(vm) {
+Scene101::Scene101(RexNebularEngine *vm) : Scene1xx(vm) {
 	_sittingFl = false;
 	_panelOpened = false;
 	_messageNum = 0;
@@ -643,7 +643,7 @@ void Scene101::actions() {
 
 /*------------------------------------------------------------------------*/
 
-Scene102::Scene102(MADSEngine *vm) : Scene1xx(vm) {
+Scene102::Scene102(RexNebularEngine *vm) : Scene1xx(vm) {
 	_fridgeOpenedFl = false;
 	_fridgeOpenedDescr = false;
 	_fridgeFirstOpenFl = false;
@@ -1278,7 +1278,7 @@ void Scene102::postActions() {
 
 /*------------------------------------------------------------------------*/
 
-Scene103::Scene103(MADSEngine *vm) : Scene1xx(vm) {
+Scene103::Scene103(RexNebularEngine *vm) : Scene1xx(vm) {
 	_updateClock = 0;
 }
 
@@ -1375,14 +1375,14 @@ void Scene103::step() {
 
 	case 72: {
 		Common::Point pt = _vm->_game->_player._playerPos;
-		int dist = Common::hypotenuse(pt.x - 58, pt.y - 93);
+		int dist = Math::hypotenuse(pt.x - 58, pt.y - 93);
 		_vm->_sound->command(27, (dist * -128 / 378) + 127);
 		}
 		break;
 
 	case 73: {
 		Common::Point pt = _vm->_game->_player._playerPos;
-		int dist = Common::hypotenuse(pt.x - 266, pt.y - 81);
+		int dist = Math::hypotenuse(pt.x - 266, pt.y - 81);
 		_vm->_sound->command(27, (dist * -127 / 378) + 127);
 		}
 		break;
@@ -1393,15 +1393,15 @@ void Scene103::step() {
 
 	if (_scene->_frameStartTime >= _updateClock) {
 		Common::Point pt = _vm->_game->_player._playerPos;
-		int dist = Common::hypotenuse(pt.x - 79, pt.y - 137);
+		int dist = Math::hypotenuse(pt.x - 79, pt.y - 137);
 		_vm->_sound->command(29, (dist * -127 / 378) + 127);
 
 		pt = _vm->_game->_player._playerPos;
-		dist = Common::hypotenuse(pt.x - 69, pt.y - 80);
+		dist = Math::hypotenuse(pt.x - 69, pt.y - 80);
 		_vm->_sound->command(30, (dist * -127 / 378) + 127);
 
 		pt = _vm->_game->_player._playerPos;
-		dist = Common::hypotenuse(pt.x - 266, pt.y - 138);
+		dist = Math::hypotenuse(pt.x - 266, pt.y - 138);
 		_vm->_sound->command(32, (dist * -127 / 378) + 127);
 
 		_updateClock = _scene->_frameStartTime + _vm->_game->_player._ticksAmount;
@@ -1599,7 +1599,7 @@ void Scene103::postActions() {
 
 /*------------------------------------------------------------------------*/
 
-Scene104::Scene104(MADSEngine *vm) : Scene1xx(vm) {
+Scene104::Scene104(RexNebularEngine *vm) : Scene1xx(vm) {
 	_kargShootingFl = false;
 	_loseFl = false;
 }
@@ -1815,7 +1815,7 @@ void Scene104::actions() {
 
 /*------------------------------------------------------------------------*/
 
-Scene105::Scene105(MADSEngine *vm) : Scene1xx(vm) {
+Scene105::Scene105(RexNebularEngine *vm) : Scene1xx(vm) {
 	_explosionFl = false;
 }
 
@@ -1974,7 +1974,7 @@ void Scene105::actions() {
 
 /*------------------------------------------------------------------------*/
 
-Scene106::Scene106(MADSEngine *vm) : Scene1xx(vm) {
+Scene106::Scene106(RexNebularEngine *vm) : Scene1xx(vm) {
 	_backToShipFl = false;
 	_shadowFl = false;
 	_firstEmergingFl = false;
@@ -2197,7 +2197,7 @@ void Scene106::actions() {
 
 /*------------------------------------------------------------------------*/
 
-Scene107::Scene107(MADSEngine *vm) : Scene1xx(vm) {
+Scene107::Scene107(RexNebularEngine *vm) : Scene1xx(vm) {
 	_shootingFl = false;
 }
 
@@ -2407,7 +2407,7 @@ void Scene108::actions() {
 
 /*------------------------------------------------------------------------*/
 
-Scene109::Scene109(MADSEngine *vm) : Scene1xx(vm) {
+Scene109::Scene109(RexNebularEngine *vm) : Scene1xx(vm) {
 	_rexThrowingObject = false;
 	_hoovicDifficultFl = false;
 	_beforeEatingRex = false;
@@ -2832,7 +2832,7 @@ void Scene109::actions() {
 
 /*------------------------------------------------------------------------*/
 
-Scene110::Scene110(MADSEngine *vm) : Scene1xx(vm) {
+Scene110::Scene110(RexNebularEngine *vm) : Scene1xx(vm) {
 	_crabsFl = false;
 }
 
@@ -2966,7 +2966,7 @@ void Scene110::actions() {
 
 /*------------------------------------------------------------------------*/
 
-Scene111::Scene111(MADSEngine *vm) : Scene1xx(vm) {
+Scene111::Scene111(RexNebularEngine *vm) : Scene1xx(vm) {
 	_stampedFl = false;
 	_launch1Fl = false;
 	_launched2Fl = false;
@@ -3176,5 +3176,5 @@ void Scene112::step() {
 
 /*------------------------------------------------------------------------*/
 
-} // End of namespace Nebular
-} // End of namespace MADS
+} // namespace Nebular
+} // namespace MADS

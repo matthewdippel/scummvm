@@ -31,7 +31,7 @@
 #include "agos/agos.h"
 #include "agos/intern.h"
 
-#include "common/zlib.h"
+#include "common/compression/deflate.h"
 
 namespace AGOS {
 
@@ -62,7 +62,6 @@ uint32 AGOSEngine::readUint32Wrapper(const void *src) {
 }
 
 void AGOSEngine::decompressData(const char *srcName, byte *dst, uint32 offset, uint32 srcSize, uint32 dstSize) {
-#ifdef USE_ZLIB
 		Common::File in;
 		in.open(srcName);
 		if (in.isOpen() == false)
@@ -76,7 +75,7 @@ void AGOSEngine::decompressData(const char *srcName, byte *dst, uint32 offset, u
 				error("decompressData: Read failed");
 
 			unsigned long decompressedSize = dstSize;
-			if (!Common::uncompress(dst, &decompressedSize, srcBuffer, srcSize))
+			if (!Common::inflateZlib(dst, &decompressedSize, srcBuffer, srcSize))
 				error("decompressData: Zlib uncompress error");
 			free(srcBuffer);
 		} else {
@@ -84,9 +83,6 @@ void AGOSEngine::decompressData(const char *srcName, byte *dst, uint32 offset, u
 				error("decompressData: Read failed");
 		}
 		in.close();
-#else
-	error("Zlib support is required for Amiga and Macintosh versions");
-#endif
 }
 
 void AGOSEngine::loadOffsets(const char *filename, int number, uint32 &file, uint32 &offset, uint32 &srcSize, uint32 &dstSize) {
@@ -777,11 +773,13 @@ void AGOSEngine::loadVGABeardFile(uint16 id) {
 
 		if (getPlatform() == Common::kPlatformAmiga) {
 			if (getFeatures() & GF_TALKIE)
-				sprintf(filename, "0%d.out", id);
+				Common::sprintf_s(filename, "0%d.out", id);
 			else
-				sprintf(filename, "0%d.pkd", id);
+				Common::sprintf_s(filename, "0%d.pkd", id);
+		} else if (getPlatform() == Common::kPlatformAcorn) {
+			Common::sprintf_s(filename, "%.2d/0%d", id / 100, id);
 		} else {
-			sprintf(filename, "0%d.VGA", id);
+			Common::sprintf_s(filename, "0%d.VGA", id);
 		}
 
 		if (!in.open(filename))
@@ -924,39 +922,39 @@ void AGOSEngine::loadVGAVideoFile(uint16 id, uint8 type, bool useError) {
 		loadOffsets(getFileName(GAME_GFXIDXFILE), id * 3 + type, file, offs, srcSize, dstSize);
 
 		if (getPlatform() == Common::kPlatformAmiga)
-			sprintf(filename, "GFX%d.VGA", file);
+			Common::sprintf_s(filename, "GFX%d.VGA", file);
 		else
-			sprintf(filename, "graphics.vga");
+			Common::sprintf_s(filename, "graphics.vga");
 
 		dst = allocBlock(dstSize + extraBuffer);
 		decompressData(filename, dst, offs, srcSize, dstSize);
 	} else if (getFeatures() & GF_OLD_BUNDLE) {
 		if (getPlatform() == Common::kPlatformAcorn) {
-			sprintf(filename, "%.3d%d.DAT", id, type);
+			Common::sprintf_s(filename, "%.2d/%.3d%d", id / 10, id, type);
 		} else if (getPlatform() == Common::kPlatformAmiga || getPlatform() == Common::kPlatformAtariST) {
 			if (getFeatures() & GF_TALKIE) {
-				sprintf(filename, "%.3d%d.out", id, type);
+				Common::sprintf_s(filename, "%.3d%d.out", id, type);
 			} else if (getGameType() == GType_ELVIRA1 && getFeatures() & GF_DEMO) {
 				if (getPlatform() == Common::kPlatformAtariST)
-					sprintf(filename, "%.2d%d.out", id, type);
+					Common::sprintf_s(filename, "%.2d%d.out", id, type);
 				else
-					sprintf(filename, "%c%d.out", 48 + id, type);
+					Common::sprintf_s(filename, "%c%d.out", 48 + id, type);
 			} else if (getGameType() == GType_ELVIRA1 || getGameType() == GType_ELVIRA2) {
-				sprintf(filename, "%.2d%d.pkd", id, type);
+				Common::sprintf_s(filename, "%.2d%d.pkd", id, type);
 			} else if (getGameType() == GType_PN) {
-				sprintf(filename, "%c%d.in", id + 48, type);
+				Common::sprintf_s(filename, "%c%d.in", id + 48, type);
 			} else {
-				sprintf(filename, "%.3d%d.pkd", id, type);
+				Common::sprintf_s(filename, "%.3d%d.pkd", id, type);
 			}
 		} else {
 			if (getGameType() == GType_ELVIRA1 && getPlatform() == Common::kPlatformPC98) {
-				sprintf(filename, "%.2d.GR2", id);
+				Common::sprintf_s(filename, "%.2d.GR2", id);
 			} else if (getGameType() == GType_ELVIRA1 || getGameType() == GType_ELVIRA2 || getGameType() == GType_WW) {
-				sprintf(filename, "%.2d%d.VGA", id, type);
+				Common::sprintf_s(filename, "%.2d%d.VGA", id, type);
 			} else if (getGameType() == GType_PN) {
-				sprintf(filename, "%c%d.out", id + 48, type);
+				Common::sprintf_s(filename, "%c%d.out", id + 48, type);
 			} else {
-				sprintf(filename, "%.3d%d.VGA", id, type);
+				Common::sprintf_s(filename, "%.3d%d.VGA", id, type);
 			}
 		}
 
@@ -1136,6 +1134,31 @@ void AGOSEngine::convertPC98Image(VC10_state &state) {
 	if (state.flags & kDFCompressedFlip)
 		state.flags |= kDFFlip;
 	state.flags &= ~(kDFCompressedFlip | kDFCompressed);
+}
+
+// Simon 1 Acorn Floppy Demo: loads Simon's sprite palette from VGA 01/0191
+bool AGOSEngine_Simon1::loadSimonAcornFloppyDemoPalette(Common::Array<byte> &outPalette) {
+	Common::File f;
+	if (!f.open("01/0191")) {
+		warning("Acorn demo: could not open 01/0191");
+		return false;
+	}
+
+	byte raw[96];
+	f.seek(489);
+	if (f.read(raw, 96) != 96) {
+		warning("Acorn demo: 0191 block 5 read failed");
+		f.close();
+		return false;
+	}
+	f.close();
+
+	outPalette.resize(48);
+	memset(outPalette.data(), 0, 48);
+	for (uint32 i = 0; i < 45; ++i)
+		outPalette[i + 3] = raw[i] * 4;
+
+	return true;
 }
 
 } // End of namespace AGOS

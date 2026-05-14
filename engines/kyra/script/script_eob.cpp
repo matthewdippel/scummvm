@@ -212,7 +212,7 @@ bool EoBInfProcessor::preventRest() const {
 	return _preventRest ? true : false;
 }
 
-void EoBInfProcessor::loadState(Common::SeekableSubReadStreamEndian &in, bool origFile) {
+void EoBInfProcessor::loadState(Common::SeekableReadStreamEndian &in, bool origFile) {
 	_preventRest = (_vm->game() == GI_EOB1 && origFile) ? 0 : in.readByte();
 	int numFlags = (_vm->game() == GI_EOB1 && origFile) ? 12 : 18;
 	for (int i = 0; i < numFlags; i++)
@@ -390,7 +390,7 @@ int EoBInfProcessor::oeob_movePartyOrObject(int8 *data) {
 		for (int i = 0; i < 30; i++) {
 			if (_vm->_monsters[i].block != c)
 				continue;
-			_vm->placeMonster(&_vm->_monsters[i], d, _vm->_monsters[i].pos);
+			_vm->placeMonster(&_vm->_monsters[i], d, _vm->_monsters[i].dir);
 		}
 		debugC(5, kDebugLevelScript, "         - move monsters on block '0x%.04X' to block '0x%.04X'", c, d);
 
@@ -455,7 +455,7 @@ int EoBInfProcessor::oeob_movePartyOrObject(int8 *data) {
 			}
 
 		} else {
-			for (int i = 0; i < 600; i++) {
+			for (uint i = 0; i < _vm->_items.size(); i++) {
 				if (_vm->_items[i].level != e || _vm->_items[i].block != c)
 					continue;
 				_vm->_items[i].level = f;
@@ -520,7 +520,7 @@ int EoBInfProcessor::oeob_printMessage_v1(int8 *data) {
 	char col[5];
 	int8 *pos = data;
 
-	strcpy(col, colorConfig);
+	Common::strlcpy(col, colorConfig, sizeof(col));
 	const char *str = (const char *)pos;
 	pos += (strlen(str) + 1);
 	bool lineBreak = true;
@@ -540,18 +540,11 @@ int EoBInfProcessor::oeob_printMessage_v1(int8 *data) {
 		col[3] = *pos++;
 	}
 
-	if (_vm->gameFlags().platform == Common::kPlatformAmiga) {
-		assert((uint8)col[1] < 16);
-		assert((uint8)col[3] < 16);
-		col[1] = _amigaColorMap[(uint8)col[1]];
-		col[3] = _amigaColorMap[(uint8)col[3]];
-	}
-
 	_vm->txt()->printMessage(col);
 	_vm->txt()->printMessage(str);
 
-	col[1] = _vm->gameFlags().platform == Common::kPlatformSegaCD ? 0xFF : _vm->txt()->colorMap()[_screen->_curDim->unk8];
-	col[3] = _vm->txt()->colorMap()[_screen->_curDim->unkA];
+	col[1] = _vm->gameFlags().platform == Common::kPlatformSegaCD ? 0xFF : _screen->_curDim->col1;
+	col[3] = _screen->_curDim->col2;
 	_vm->txt()->printMessage(col);
 
 	if (lineBreak)
@@ -570,10 +563,6 @@ int EoBInfProcessor::oeob_printMessage_v2(int8 *data) {
 
 	int c = 0;
 	_vm->_dialogueFieldAmiga = true;
-	if (_vm->gameFlags().platform == Common::kPlatformAmiga) {
-		assert(col < 16);
-		col = _amigaColorMap[col];
-	}
 
 	if (_activeCharacter == -1) {
 		c = _vm->rollDice(1, 6, -1);
@@ -766,7 +755,7 @@ int EoBInfProcessor::oeob_eval_v1(int8 *data) {
 	int a = 0;
 	int b = 0;
 	int i = 0;
-	EoBItem *itm = &_vm->_items[_vm->_itemInHand];
+	const EoBItem *itm = &_vm->_items[_vm->_itemInHand];
 	Common::String tempString1;
 	Common::String tempString2;
 
@@ -986,7 +975,7 @@ int EoBInfProcessor::oeob_eval_v2(int8 *data) {
 	int a = 0;
 	int b = 0;
 	int i = 0;
-	EoBItem *itm = (_vm->_itemInHand != -1) ? &_vm->_items[_vm->_itemInHand] : 0;
+	const EoBItem *itm = (_vm->_itemInHand != -1) ? &_vm->_items[_vm->_itemInHand] : 0;
 	Common::String tempString1;
 	Common::String tempString2;
 
@@ -1472,7 +1461,7 @@ int EoBInfProcessor::oeob_changeDirection(int8 *data) {
 
 	} else if (cmd == -11) {
 		for (int i = 0; i < 10; i++) {
-			if (_vm->_flyingObjects[i].enable)
+			if (_vm->_flyingObjects[i].enable && _vm->_flyingObjects[i].curBlock == _lastScriptFunc)
 				_vm->_flyingObjects[i].direction = (_vm->_flyingObjects[i].direction + dir) & 3;
 		}
 	}
@@ -1542,7 +1531,9 @@ int EoBInfProcessor::oeob_sequence(int8 *data) {
 		_vm->npcSequence(cmd);
 		break;
 	}
+
 	_vm->screen()->setScreenDim(7);
+
 	return pos - data;
 }
 
@@ -1657,10 +1648,6 @@ int EoBInfProcessor::oeob_specialEvent(int8 *data) {
 
 	return pos - data;
 }
-
-const uint8 EoBInfProcessor::_amigaColorMap[16] = {
-	0x00, 0x06, 0x1d, 0x1b, 0x1a, 0x17, 0x18, 0x0e, 0x19, 0x1c, 0x1c, 0x1e, 0x13, 0x0a, 0x11, 0x1f
-};
 
 const uint8 EoBInfProcessor::_segaCDColorMap[16] = {
 	0x00, 0xFF, 0x99, 0x55, 0xFF, 0x99, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF

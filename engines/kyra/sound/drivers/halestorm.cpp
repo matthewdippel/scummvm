@@ -19,14 +19,19 @@
  *
  */
 
-#include "kyra/kyra_v1.h"
-#include "kyra/sound/sound_mac_res.h"
 #include "kyra/sound/drivers/halestorm.h"
 
 #include "audio/audiostream.h"
+#include "audio/mixer.h"
 
+#include "common/array.h"
+#include "common/endian.h"
 #include "common/func.h"
+#include "common/mutex.h"
 #include "common/queue.h"
+#include "common/stream.h"
+#include "common/textconsole.h"
+#include "common/util.h"
 
 #define ASC_DEVICE_RATE		22254
 
@@ -85,18 +90,22 @@ static int DEBUG_BUFFERS_COUNT = 0;
 class ShStBuffer {
 public:
 	ShStBuffer(const ShStBuffer &buff) : ptr(buff.ptr), len(buff.len), lifes(buff.lifes) { if (lifes) (*lifes)++; }
+	ShStBuffer(ShStBuffer &&buff) noexcept : ptr(buff.ptr), len(buff.len), lifes(buff.lifes) { buff.lifes = nullptr; }
 	ShStBuffer(const void *p, uint32 cb, bool allocate = false) : ptr((const uint8*)p), len(cb), lifes(nullptr) { if (allocate) memcpy(crtbuf(), p, cb); }
 	ShStBuffer() : ShStBuffer(nullptr, 0) {}
-	ShStBuffer(Common::SeekableReadStream *s) : len(s ? s->size() : 0), lifes(nullptr) { s->read(crtbuf(), len); }
+	ShStBuffer(Common::SeekableReadStream *s) : len(s ? s->size() : 0), lifes(nullptr), ptr(nullptr) { if (s) s->read(crtbuf(), len); }
 	~ShStBuffer() { dcrlif(); }
-	void operator=(Common::SeekableReadStream *s) { operator=(ShStBuffer(s)); }
-	void operator=(const ShStBuffer &buff) {
-		dcrlif();
-		ptr = buff.ptr;
-		len = buff.len;
-		lifes = buff.lifes;
+	ShStBuffer &operator=(Common::SeekableReadStream *s) { return operator=(ShStBuffer(s)); }
+	ShStBuffer &operator=(ShStBuffer &&buff) noexcept {
+		trans(buff);
+		buff.lifes = nullptr;
+		return *this;
+	}
+	ShStBuffer &operator=(const ShStBuffer &buff) {
+		trans(buff);
 		if (lifes)
 			(*lifes)++;
+		return *this;
 	}
 	const uint8 *ptr;
 	uint32 len;
@@ -110,12 +119,19 @@ private:
 		}
 	}
 	uint8 *crtbuf() {
-		uint8 *tptr = new uint8[len + sizeof(int)];
-		lifes = (int*)(tptr + len);
+		uint32 uplen = (len + sizeof(int) - 1) & ~(sizeof(int) - 1);
+		uint8 *tptr = new uint8[uplen + sizeof(int)];
+		lifes = (int*)(tptr + uplen);
 		ptr = tptr;
 		*lifes = 1;
 		DEBUG_BUFFERS_COUNT++;
 		return tptr;
+	}
+	void trans(const ShStBuffer &buff) {
+		dcrlif();
+		ptr = buff.ptr;
+		len = buff.len;
+		lifes = buff.lifes;
 	}
 	int *lifes;
 };
@@ -171,7 +187,7 @@ public:
 	void setTempo(uint32 tempo);
 	void setTicksPerSecond(uint32 tps);
 
-	uint16 tempo() const { return _internalTempo; }
+	uint16 getTempo() const { return _internalTempo; }
 
 public:
 	int _numChanMusic;
@@ -225,6 +241,7 @@ private:
 	bool parseEvent(HSSong &song, TrackState *s);
 	void noteOnOff(HSSong &song, TrackState *s, uint8 chan, uint8 note, uint8 velo);
 
+	uint8 _partVolume[16];
 	uint8 _partPrograms[16];
 	uint8 _curCmd;
 
@@ -237,7 +254,7 @@ private:
 class HSLowLevelDriver {
 	friend class HSMidiParser;
 public:
-	HSLowLevelDriver(SoundMacRes *res, Common::Mutex &mutex);
+	HSLowLevelDriver(HalestormLoader *res, Common::Mutex &mutex);
 	~HSLowLevelDriver();
 
 	HSAudioStream *init(uint32 scummVMOutputrate, bool output16bit);
@@ -274,7 +291,7 @@ private:
 	int cmd_25(va_list&);
 	template<int res> int cmd_void(va_list&);
 
-	SoundMacRes *_res;
+	HalestormLoader *_res;
 	HSAudioStream *_vcstr;
 	Common::Mutex &_mutex;
 
@@ -400,14 +417,14 @@ private:
 
 class HSSoundSystem {
 private:
-	HSSoundSystem(SoundMacRes *res, Audio::Mixer *mixer);
+	HSSoundSystem(HalestormLoader *res, Audio::Mixer *mixer);
 public:
 	~HSSoundSystem();
 
-	static HSSoundSystem *open(SoundMacRes *res, Audio::Mixer *mixer);
+	static HSSoundSystem *open(HalestormLoader *res, Audio::Mixer *mixer);
 	static void close();
 
-	bool init(bool hiQuality, uint8 interpolationMode, bool output16bit);
+	bool init(bool hiQuality, uint8 interpolationMode, uint8 numChanSfx, bool output16bit);
 	void registerSamples(const uint16 *resList, bool registerOnly);
 	void releaseSamples();
 	int changeSystemVoices(int numChanMusicTotal, int numChanMusicPoly, int numChanSfx);
@@ -501,7 +518,7 @@ private:
 
 	Audio::Mixer *_mixer;
 	Audio::SoundHandle _soundHandle;
-	SoundMacRes *_res;
+	HalestormLoader *_res;
 	HSAudioStream *_voicestr;
 	HSLowLevelDriver *_driver;
 	HSAudioStream::CallbackProc *_vblTask;
@@ -671,6 +688,7 @@ void HSSong::updateTempo() {
 HSMidiParser::HSMidiParser(HSLowLevelDriver *driver) : _driver(driver), _trackState(nullptr), _tracks(), _data(), _curCmd(0) {
 	_trackState = new TrackState[24]();
 	memset(_partPrograms, 0, sizeof(_partPrograms));
+	memset(_partVolume, 0, sizeof(_partVolume));
 }
 
 HSMidiParser::~HSMidiParser() {
@@ -678,12 +696,13 @@ HSMidiParser::~HSMidiParser() {
 }
 
 bool HSMidiParser::loadTracks(HSSong &song) {
+	memset(_partVolume, 0x7f, sizeof(_partVolume));
 	for (int i = 0; i < ARRAYSIZE(_partPrograms); ++i)
 		_partPrograms[i] = i;
 
-	Common::SeekableReadStream *midi = _driver->_res->getResource(song._midiResId, 'MIDI');
+	Common::SeekableReadStream *midi = _driver->_res->getResource(song._midiResId, MKTAG('M', 'I', 'D', 'I'));
 	if (!midi)
-		midi = _driver->_res->getResource(song._midiResId, 'Midi');
+		midi = _driver->_res->getResource(song._midiResId, MKTAG('M', 'i', 'd', 'i'));
 	assert(midi);
 
 	_data = midi;
@@ -692,19 +711,19 @@ bool HSMidiParser::loadTracks(HSSong &song) {
 	_tracks.clear();
 
 	while (in < end) {
-		if (READ_BE_UINT32(in) == 'MThd')
+		if (READ_BE_UINT32(in) == MKTAG('M', 'T', 'h', 'd'))
 			break;
 		in += 2;
 	}
 	if (in >= end)
 		return false;
 
-	int tps = READ_BE_UINT16(in + 12);
+	int tps = READ_BE_INT16(in + 12);
 	if (tps >= 0)
 		song.setTicksPerSecond(tps);
 
 	while (in < end) {
-		if (READ_BE_UINT32(in) == 'MTrk')
+		if (READ_BE_UINT32(in) == MKTAG('M', 'T', 'r', 'k'))
 			break;
 		++in;
 	}
@@ -715,7 +734,7 @@ bool HSMidiParser::loadTracks(HSSong &song) {
 		ShStBuffer track(in + 8, READ_BE_UINT32(in + 4));
 		_tracks.push_back(track);
 		in += (track.len + 8);
-	} while (in < end && READ_BE_UINT32(in) == 'MTrk');
+	} while (in < end && READ_BE_UINT32(in) == MKTAG('M', 'T', 'r', 'k'));
 
 	uint8 prg = 0;
 	for (Common::Array<ShStBuffer>::const_iterator i = _tracks.begin(); i != _tracks.end(); ++i) {
@@ -760,7 +779,7 @@ bool HSMidiParser::nextTick(HSSong &song) {
 			s->status = 'R';
 			checkPos = false;
 		} else {
-			s->ticker -= song.tempo();
+			s->ticker -= song.getTempo();
 			if (s->ticker >= 0)
 				continue;
 		}
@@ -846,6 +865,8 @@ bool HSMidiParser::parseEvent(HSSong &song, TrackState *s) {
 
 	if (evt < 0xa0)
 		noteOnOff(song, s, chan, arg1, evt == 0x90 ? arg2 : 0);
+	else if (evt == 0xb0 && arg1 == 7)
+		_partVolume[chan] = arg2;
 	else if (evt == 0xc0 && (song._flags & 0x400))
 		s->program = _partPrograms[chan] = arg1;
 
@@ -866,12 +887,12 @@ void HSMidiParser::noteOnOff(HSSong &song, TrackState *s, uint8 chan, uint8 note
 		note += song._transpose;
 
 	if (velo)
-		_driver->noteOn(chan, prg, note, velo, 10000, s);
+		_driver->noteOn(chan, prg, note, _partVolume[chan] * velo / 0x7f, 10000, s);
 	else
 		_driver->noteOff(chan, note, s);
 }
 
-HSLowLevelDriver::HSLowLevelDriver(SoundMacRes *res, Common::Mutex &mutex) : _res(res), _vcstr(nullptr), _mutex(mutex), _sampleConvertBuffer(nullptr), _interpolationTable(nullptr),
+HSLowLevelDriver::HSLowLevelDriver(HalestormLoader *res, Common::Mutex &mutex) : _res(res), _vcstr(nullptr), _mutex(mutex), _sampleConvertBuffer(nullptr), _interpolationTable(nullptr),
 _transCycleLenDef(0), _interpolationTable2(nullptr), _amplitudeScaleBuffer(nullptr), _interpolationMode(kNone), _wtable(nullptr), _wtableCount(0), _midi(nullptr),
 _convertBufferNumUnits(0), _chan(nullptr), _samplesPerTick(0), _smpTransLen(0), _transCycleLenInter(0), _updateTypeHq(0), _instruments(nullptr), _pcmDstBufferSize(370),
 _transBuffer(nullptr), _convertUnitSizeLast(0), _numChanSfxLast(0), _wtableCount2(0), _pmDataTrm(0x8000) {
@@ -979,12 +1000,12 @@ template<typename T> void HSLowLevelDriver::generateData(T *dst, uint32 len, Aud
 }
 
 int HSLowLevelDriver::cmd_startSong(va_list &arg) {
-	Common::SeekableReadStream *song = _res->getResource(va_arg(arg, int), 'SONG');
+	Common::SeekableReadStream *song = _res->getResource(va_arg(arg, int), MKTAG('S', 'O', 'N', 'G'));
 	Common::SeekableReadStream *midi = nullptr;
 	if (song) {
 		uint16 idm = song->readUint16BE();
-		if (!(midi = _res->getResource(idm, 'MIDI')))
-			midi = _res->getResource(idm, 'Midi');
+		if (!(midi = _res->getResource(idm, MKTAG('M', 'I', 'D', 'I'))))
+			midi = _res->getResource(idm, MKTAG('M', 'i', 'd', 'i'));
 	}
 	if (!song || !midi)
 		error("HSLowLevelDriver::cmd_startSong(): Error encountered while loading song.");
@@ -1109,12 +1130,14 @@ int HSLowLevelDriver::cmd_playSoundEffect(va_list &arg) {
 	if (!vc || !vc->dataPtr || !_song._numChanSfx)
 		return 0;
 
-	HSSoundChannel *chan = &_chan[_song._numChanMusic];
+	HSSoundChannel *chan = nullptr;
 	int16 lowest = 32767;
 	for (int i = _song._numChanMusic; i < _song._numChanMusic + _song._numChanSfx; ++i) {
 		HSSoundChannel *c = &_chan[i];
-		if (c->status < 0)
+		if (c->status < 0) {
+			chan = c;
 			break;
+		}
 		if (c->status < lowest) {
 			chan = c;
 			lowest = c->status;
@@ -1295,16 +1318,18 @@ void HSLowLevelDriver::createTables() {
 	for (int i = 0; i < 16; ++i)
 		_chan[i].status = -1;
 
+	int sfxChanMult = 1;
+
 	// sample convert buffer
 	if (_sampleConvertBuffer) {
-		if (_song._convertUnitSize != _convertUnitSizeLast || _song._numChanSfx != _numChanSfxLast || _convertBufferNumUnits - _song._numChanSfx != _song._numChanMusic) {
+		if (_song._convertUnitSize != _convertUnitSizeLast || _song._numChanSfx != _numChanSfxLast || _convertBufferNumUnits - _song._numChanSfx * sfxChanMult != _song._numChanMusic) {
 			delete[] _sampleConvertBuffer;
 			_sampleConvertBuffer = nullptr;
 		}
 	}
 
-	if (!_sampleConvertBuffer || _convertBufferNumUnits - _song._numChanSfx != _song._numChanMusic) {
-		_convertBufferNumUnits = _song._numChanMusic + _song._numChanSfx;
+	if (!_sampleConvertBuffer || _convertBufferNumUnits - _song._numChanSfx * sfxChanMult != _song._numChanMusic) {
+		_convertBufferNumUnits = _song._numChanMusic + _song._numChanSfx * sfxChanMult;
 		_convertUnitSizeLast = _song._convertUnitSize;
 		_numChanSfxLast = _song._numChanSfx;
 		_sampleConvertBuffer = new uint8[(_convertBufferNumUnits << 8) + 64];
@@ -1813,7 +1838,7 @@ void HSLowLevelDriver::noteOn(uint8 part, uint8 prg, uint8 note, uint8 velo, uin
 		}
 	}
 
-	uint16 type = snd ? READ_BE_UINT16(snd) : 0;
+	uint16 type = READ_BE_UINT16(snd);
 	uint16 n = 0;
 	if (type == 1 || type == 2) {
 		uint16 numTypes = (type == 1) ? READ_BE_UINT16(snd + 2) : 0;
@@ -1893,7 +1918,7 @@ void HSLowLevelDriver::loadInstrument(int id) {
 	if (_instruments[id].status == InstrumentEntry::kUnusable)
 		return;
 
-	Common::SeekableReadStream *inst = _res->getResource(id, 'INST');
+	Common::SeekableReadStream *inst = _res->getResource(id, MKTAG('I', 'N', 'S', 'T'));
 	if (!inst && _instruments[id].status != InstrumentEntry::kReady)
 		error("HSLowLevelDriver::loadInstrument(): Failed to load INST resource '0x02%x'", id);
 
@@ -1956,7 +1981,7 @@ ShStBuffer HSLowLevelDriver::loadInstrumentSamples(int id, bool sharedBuffer) {
 		}
 	}
 
-	Common::SeekableReadStream *snd = _res->getResource(id, 'snd ');
+	Common::SeekableReadStream *snd = _res->getResource(id, MKTAG('s', 'n', 'd', ' '));
 	if (!snd) {
 		// This happens from time to time, but apparently not with resources that are actually
 		// meant to be used. So I don't see any value in throwing a warning here...
@@ -2015,7 +2040,7 @@ const uint32 HSLowLevelDriver::_periods[156] = {
 HSSoundSystem *HSSoundSystem::_refInstance = nullptr;
 int HSSoundSystem::_refCount = 0;
 
-HSSoundSystem::HSSoundSystem(SoundMacRes *res, Audio::Mixer *mixer) : _res(res), _mixer(mixer), _driver(nullptr), _voicestr(nullptr), _vblTask(nullptr), _sampleSlots(nullptr), _voices(nullptr), _sync(0),
+HSSoundSystem::HSSoundSystem(HalestormLoader *res, Audio::Mixer *mixer) : _res(res), _mixer(mixer), _driver(nullptr), _voicestr(nullptr), _vblTask(nullptr), _sampleSlots(nullptr), _voices(nullptr), _sync(0),
 _numChanSfx(0), _numSampleSlots(0), _currentSong(-1), _ready(false), _isFading(false), _sfxDuration(0), _fadeState(0), _fadeStep(0), _fadeStepTicksCounter(0), _fadeDirection(false),
 _fadeComplete(false), _fadeStepTicks(0), _volumeMusic(Audio::Mixer::kMaxMixerVolume), _volumeSfx(Audio::Mixer::kMaxMixerVolume), _mutex(mixer->mutex()) {
 	DEBUG_BUFFERS_COUNT = 0;
@@ -2031,7 +2056,7 @@ HSSoundSystem::~HSSoundSystem() {
 	releaseSamples();
 }
 
-HSSoundSystem *HSSoundSystem::open(SoundMacRes *res, Audio::Mixer *mixer) {
+HSSoundSystem *HSSoundSystem::open(HalestormLoader *res, Audio::Mixer *mixer) {
 	_refCount++;
 
 	if (_refCount == 1 && _refInstance == nullptr)
@@ -2054,7 +2079,7 @@ void HSSoundSystem::close() {
 	}
 }
 
-bool HSSoundSystem::init(bool hiQuality, uint8 interpolationMode, bool output16bit) {
+bool HSSoundSystem::init(bool hiQuality, uint8 interpolationMode, uint8 numChanSfx, bool output16bit) {
 	if (_ready)
 		return true;
 
@@ -2069,15 +2094,13 @@ bool HSSoundSystem::init(bool hiQuality, uint8 interpolationMode, bool output16b
 	_vblTask = new HSAudioStream::CallbackProc(this, &HSSoundSystem::vblTaskProc);
 	_voicestr->setVblCallback(_vblTask);
 
-	int numChanSfx = 1;
-
 	assert(interpolationMode < 3);
 
 	if (hiQuality) {
-		_driver->send(21, 7, 4, numChanSfx);
+		_driver->send(21, 8 - numChanSfx, 4, numChanSfx);
 		_driver->send(24, (interpolationMode << 8) + 22);
 	} else {
-		_driver->send(21, 4, 3, numChanSfx);
+		_driver->send(21, 4, 2 + numChanSfx, numChanSfx);
 		_driver->send(24, (interpolationMode << 8) + 11);
 	}
 
@@ -2425,7 +2448,7 @@ bool HSSoundSystem::loadSamplesIntoSlot(uint16 id, SampleSlot &slot, bool regist
 
 	slot.reverse = false;
 
-	Common::SeekableReadStream *in = _res->getResource(id, 'csnd');
+	Common::SeekableReadStream *in = _res->getResource(id, MKTAG('c', 's', 'n', 'd'));
 	if (in) {
 		uint32 inSize = (uint32)in->size() - 4;
 		uint32 outSize = in->readUint32BE();
@@ -2435,7 +2458,7 @@ bool HSSoundSystem::loadSamplesIntoSlot(uint16 id, SampleSlot &slot, bool regist
 		memset(data, 0, outSize);
 		deltaDecompress(data, tmp, outSize, inSize);
 		delete[] tmp;
-	} else if ((in = _res->getResource(id, 'snd '))) {
+	} else if ((in = _res->getResource(id, MKTAG('s', 'n', 'd', ' ')))) {
 		uint32 inSize = (uint32)in->size();
 		data = new uint8[inSize];
 		in->read(data, inSize);
@@ -2529,14 +2552,14 @@ uint32 HSSoundSystem::calculatePlaybackDuration(uint32 numSamples, uint32 sampli
 }
 
 int HSSoundSystem::startSong(int id, int loop) {
-	Common::SeekableReadStream *song = _res->getResource(id, 'SONG');
+	Common::SeekableReadStream *song = _res->getResource(id, MKTAG('S', 'O', 'N', 'G'));
 	if (!song)
 		return -192;
 	uint16 idm = song->readUint16BE();
 	delete song;
 
-	Common::SeekableReadStream *midi = _res->getResource(idm, 'MIDI');
-	if (!midi && !(midi = _res->getResource(idm, 'Midi')))
+	Common::SeekableReadStream *midi = _res->getResource(idm, MKTAG('M', 'I', 'D', 'I'));
+	if (!midi && !(midi = _res->getResource(idm, MKTAG('M', 'i', 'd', 'i'))))
 		return -1300;
 	delete midi;
 
@@ -2623,18 +2646,18 @@ bool HSVolumeScaler::process(const ShStBuffer &src, uint8 *dst, uint16 para1, ui
 		para1 = 1;
 	if (!para2)
 		para2 = 1;
-	int f = 1 << para2;
 
 	const uint8 *s = src.ptr;
 	uint32 len = src.len - copySndHeader(s, dst);
 
 	for (uint32 i = 0; i < len; ++i) {
-		int16 a = ((int16)i - 128) * para1;
+		int16 a = (int16)*s++;
+		a = (a - 128) * para1;
 		if (a > 0)
-			a += f;
+			a += (para2 << 1);
 		else
-			a -= f;
-		a = CLIP<int16>(a / para2, -128, 127) - 128;
+			a -= (para2 << 1);
+		a = CLIP<int16>(a / para2, -128, 127) + 128;
 		*dst++ = (a & 0xff);
 	}
 
@@ -2745,7 +2768,7 @@ bool HSTriangulizer::process(const ShStBuffer &src, uint8 *dst, uint16, uint16) 
 	return true;
 }
 
-HalestormDriver::HalestormDriver(SoundMacRes *res, Audio::Mixer *mixer) : _hs(nullptr) {
+HalestormDriver::HalestormDriver(HalestormLoader *res, Audio::Mixer *mixer) : _hs(nullptr) {
 	_hs = HSSoundSystem::open(res, mixer);
 }
 
@@ -2754,8 +2777,8 @@ HalestormDriver::~HalestormDriver() {
 	_hs = nullptr;
 }
 
-bool HalestormDriver::init(bool hiQuality, InterpolationMode imode, bool output16bit) {
-	return _hs->init(hiQuality, (uint8)imode, output16bit);
+bool HalestormDriver::init(bool hiQuality, InterpolationMode imode, int numChanSfx, bool output16bit) {
+	return _hs->init(hiQuality, (uint8)imode, numChanSfx, output16bit);
 }
 
 void HalestormDriver::registerSamples(const uint16 *resList, bool registerOnly) {

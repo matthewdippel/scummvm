@@ -56,6 +56,8 @@ struct TopEntry {
 	int breakpointInfo;
 };
 
+#if EXTENDED_DEBUGGER_ENABLED
+
 class DebuggerController : public ScriptMonitor {
 	SourceListingProvider *_sourceListingProvider;
 	const WintermuteEngine *_engine;
@@ -96,13 +98,13 @@ public:
 	/**
 	 * @brief read value for a variable accessible from within the current scope.
 	 */
-	Common::String readValue(const Common::String &name, Error *error);
+	Common::String readValue(const Common::String &name, Error **error);
 	/**
 	 * @brief set value for a variable accessible from within the current scope.
 	 */
 	Error setValue(const Common::String &name, const Common::String &value, ScValue*&var);
-	Error setSourcePath(const Common::String &sourcePath);
-	Common::String getSourcePath() const;
+	Error setSourcePath(const Common::Path &sourcePath);
+	Common::Path getSourcePath() const;
 	Listing *getListing(Error* &err);
 	void showFps(bool show);
 	/**
@@ -112,6 +114,9 @@ public:
 	void onWatch(const Watch *watch, DebuggableScript *script) override;
 	void notifyStep(DebuggableScript *script) override;
 };
+
+#endif
+
 }
 
 #endif // WINTERMUTE_DEBUGGER_H

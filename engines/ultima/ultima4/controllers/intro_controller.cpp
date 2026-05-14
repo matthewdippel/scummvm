@@ -108,8 +108,9 @@ IntroBinData::~IntroBinData() {
 	_introGypsy.clear();
 }
 
-void IntroBinData::openFile(Shared::File &f, const Common::String &name) {
-	f.open(Common::String::format("data/intro/%s.dat", name.c_str()));
+void IntroBinData::openFile(Common::File &f, const Common::String &name) {
+	if (!f.open(Common::Path(Common::String::format("data/intro/%s.dat", name.c_str()))))
+		error("Could not load '%s'", name.c_str());
 }
 
 bool IntroBinData::load() {
@@ -127,20 +128,23 @@ bool IntroBinData::load() {
 		delete _sigData;
 	_sigData = new byte[533];
 
-	Shared::File f;
+	Common::File f;
 	openFile(f, "intro_sig");
 	f.read(_sigData, 533);
+	f.close();
 
 	openFile(f, "intro_map");
 	_introMap.clear();
 	_introMap.resize(INTRO_MAP_WIDTH * INTRO_MAP_HEIGHT);
 	for (i = 0; i < INTRO_MAP_HEIGHT * INTRO_MAP_WIDTH; i++)
 		_introMap[i] = g_tileMaps->get("base")->translate(f.readByte());
+	f.close();
 
 	openFile(f, "intro_script");
 	_scriptTable = new byte[INTRO_SCRIPT_TABLE_SIZE];
 	for (i = 0; i < INTRO_SCRIPT_TABLE_SIZE; i++)
 		_scriptTable[i] = f.readByte();
+	f.close();
 
 	openFile(f, "intro_base_tile");
 	_baseTileTable = new Tile*[INTRO_BASETILE_TABLE_SIZE];
@@ -148,6 +152,7 @@ bool IntroBinData::load() {
 		MapTile tile = g_tileMaps->get("base")->translate(f.readByte());
 		_baseTileTable[i] = g_tileSets->get("base")->get(tile._id);
 	}
+	f.close();
 
 	/* --------------------------
 	   load beastie frame table 1
@@ -157,6 +162,7 @@ bool IntroBinData::load() {
 	for (i = 0; i < BEASTIE1_FRAMES; i++) {
 		_beastie1FrameTable[i] = f.readByte();
 	}
+	f.close();
 
 	/* --------------------------
 	   load beastie frame table 2
@@ -166,6 +172,7 @@ bool IntroBinData::load() {
 	for (i = 0; i < BEASTIE2_FRAMES; i++) {
 		_beastie2FrameTable[i] = f.readByte();
 	}
+	f.close();
 
 	return true;
 }
@@ -189,7 +196,7 @@ IntroController::IntroController() : Controller(1),
 	Common::fill(&_questionTree[0], &_questionTree[15], -1);
 
 	// Setup a separate image surface for rendering the animated map on
-	_mapScreen = Image::create(g_screen->w, g_screen->h, false, Image::HARDWARE);
+	_mapScreen = Image::create(g_screen->w, g_screen->h, g_screen->format);
 	_mapArea.setDest(_mapScreen);
 
 	// initialize menus
@@ -564,7 +571,7 @@ void IntroController::drawMapAnimated() {
 	// draw animated objects
 	for (i = 0; i < INTRO_BASETILE_TABLE_SIZE; i++)
 		if (_objectStateTable[i].tile != 0) {
-			Std::vector<MapTile> tiles;
+			Common::Array<MapTile> tiles;
 			tiles.push_back(_objectStateTable[i].tile);
 			tiles.push_back(_binData->_introMap[_objectStateTable[i].x + (_objectStateTable[i].y * INTRO_MAP_WIDTH)]);
 			_mapArea.drawTile(tiles, false, _objectStateTable[i].x, _objectStateTable[i].y);
@@ -584,7 +591,7 @@ void IntroController::drawBeastie(int beast, int vertoffset, int frame) {
 
 	assertMsg(beast == 0 || beast == 1, "invalid beast: %d", beast);
 
-	sprintf(buffer, "beast%dframe%02d", beast, frame);
+	Common::sprintf_s(buffer, "beast%dframe%02d", beast, frame);
 
 	destx = beast ? (320 - 48) : 0;
 	_backgroundArea.draw(buffer, destx, vertoffset);
@@ -763,7 +770,7 @@ void IntroController::finishInitiateGame(const Common::String &nameBuffer, SexTy
 
 		_justInitiatedNewGame = true;
 
-		// show the text thats segues into the main game
+		// show the text that's segues into the main game
 		showText(_binData->_introGypsy[GYP_SEGUE1]);
 #ifdef IOS_ULTIMA4
 		U4IOS::switchU4IntroControllerToContinueButton();
@@ -1452,7 +1459,7 @@ void IntroController::addTitle(int x, int y, int w, int h, AnimType method, uint
 		duration,           // total animation time
 		nullptr,               // storage for the source image
 		nullptr,               // storage for the animation frame
-		Std::vector<AnimPlot>(),
+		Common::Array<AnimPlot>(),
 		false
 	};             // prescaled
 	_titles.push_back(data);
@@ -1493,8 +1500,7 @@ void IntroController::getTitleSourceData() {
 			_titles[i]._srcImage = Image::create(
 				_titles[i]._rw * info->_prescale,
 				_titles[i]._rh * info->_prescale,
-			    info->_image->isIndexed() && _titles[i]._method != MAP,
-				Image::HARDWARE);
+				_titles[i]._method == MAP ? _mapScreen->format() : info->_image->format());
 			if (_titles[i]._srcImage->isIndexed())
 				_titles[i]._srcImage->setPaletteFromImage(info->_image);
 
@@ -1590,14 +1596,12 @@ void IntroController::getTitleSourceData() {
 		if (_titles[i]._srcImage)
 			_titles[i]._srcImage->alphaOff();
 
-		bool indexed = info->_image->isIndexed() && _titles[i]._method != MAP;
 		// create the initial animation frame
 		_titles[i]._destImage = Image::create(
 			2 + (_titles[i]._prescaled ? SCALED(_titles[i]._rw) : _titles[i]._rw) * info->_prescale ,
-		    2 + (_titles[i]._prescaled ? SCALED(_titles[i]._rh) : _titles[i]._rh) * info->_prescale,
-		    indexed,
-			Image::HARDWARE);
-		if (indexed)
+			2 + (_titles[i]._prescaled ? SCALED(_titles[i]._rh) : _titles[i]._rh) * info->_prescale,
+			_titles[i]._method == MAP ? _mapScreen->format() : info->_image->format());
+		if (_titles[i]._destImage->isIndexed())
 			_titles[i]._destImage->setPaletteFromImage(info->_image);
 	}
 

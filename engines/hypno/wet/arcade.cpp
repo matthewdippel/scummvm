@@ -26,6 +26,8 @@
 #include "gui/message.h"
 #include "graphics/cursorman.h"
 
+#include "backends/keymapper/keymapper.h"
+
 namespace Hypno {
 
 void WetEngine::initSegment(ArcadeShooting *arc) {
@@ -216,7 +218,19 @@ void WetEngine::findNextSegment(ArcadeShooting *arc) {
 						_segmentOffset = 8;
 						_segmentRepetition = 0;
 						_segmentShootSequenceOffset = 8;
-					}
+
+						MVideo video(arc->hitBoss1Video, Common::Point(0, 0), false, true, false);
+						disableCursor();
+						runIntro(video);
+						loadPalette(_currentPalette);
+						_background->decoder->pauseVideo(false);
+						drawPlayer();
+						updateScreen(*_background);
+						drawScreen();
+						// TODO: there is still a annoying delay here that shows a screen with light blue background
+
+					} else if (_arcadeMode == "Y3")
+						_skipLevel = true;
 				} else {
 					_loseLevel = true;
 					return;
@@ -376,8 +390,6 @@ bool WetEngine::checkTransition(ArcadeTransitions &transitions, ArcadeShooting *
 			updateScreen(*_background);
 			drawScreen();
 			drawCursorArcade(g_system->getEventManager()->getMousePos());
-			if (!_music.empty())
-				playSound(_music, 0, _musicRate); // restore music
 		} else
 			error ("Invalid transition at %d", ttime);
 
@@ -408,12 +420,13 @@ void WetEngine::runAfterArcade(ArcadeShooting *arc) {
 		}
 	}
 
-	if (isDemo() && _variant != "Demo" && _restoredContentEnabled) {
+	if (isDemo() && _variant != "Demo" && _variant != "M&MCD" && _restoredContentEnabled) {
 		showDemoScore();
-	} else if (!isDemo() || _variant == "Demo" || _variant == "Gen4") {
+	} else if (!isDemo() || _variant == "Demo" || _variant == "M&MCD" || _variant == "Gen4") {
 		byte *palette;
 		Graphics::Surface *frame = decodeFrame("c_misc/zones.smk", 12, &palette);
 		loadPalette(palette, 0, 256);
+		free(palette);
 		uint32 c = kHypnoColorGreen; // green
 		int bonusCounter = 0;
 		int scoreCounter = _score - _bonus;
@@ -441,6 +454,7 @@ void WetEngine::runAfterArcade(ArcadeShooting *arc) {
 				case Common::EVENT_RETURN_TO_LAUNCHER:
 					break;
 
+				case Common::EVENT_LBUTTONDOWN:
 				case Common::EVENT_KEYDOWN:
 					bonusCounter = _bonus;
 					drawString("scifi08.fgx", Common::String::format("%-20s = %3d pts", "BONUS", _bonus), 60, 116, 0, c);
@@ -555,12 +569,13 @@ void WetEngine::runBeforeArcade(ArcadeShooting *arc) {
 	resetStatistics();
 	_checkpoint = _currentLevel;
 	MVideo *video;
-	if (!isDemo()) {
+	if (!isDemo() || ((_variant == "Demo" || _variant == "M&MCD") && _restoredContentEnabled)) {
 
 		saveProfile(_name, int(arc->id));
 		byte *palette;
 		Graphics::Surface *frame = decodeFrame("c_misc/zones.smk", (arc->id / 10 - 1) * 2, &palette);
 		loadPalette(palette, 0, 256);
+		free(palette);
 		byte red[3] = {0xff, 0x00, 0x00};
 		for (int i = 0; i < 5; i++)
 			loadPalette((byte *) &red, 237 + i, 1);
@@ -591,6 +606,7 @@ void WetEngine::runBeforeArcade(ArcadeShooting *arc) {
 				case Common::EVENT_RETURN_TO_LAUNCHER:
 					break;
 
+				case Common::EVENT_LBUTTONDOWN:
 				case Common::EVENT_KEYDOWN:
 					if (showedBriefing) {
 						endedBriefing = true;
@@ -599,6 +615,7 @@ void WetEngine::runBeforeArcade(ArcadeShooting *arc) {
 					if (!arc->briefingVideo.empty()) {
 						Graphics::Surface *bframe = decodeFrame(arc->briefingVideo, 1, &palette);
 						loadPalette(palette, 0, 256);
+						free(palette);
 						video = new MVideo(arc->briefingVideo, Common::Point(44, 22), false, false, false);
 						runIntro(*video);
 						delete video;
@@ -624,9 +641,33 @@ void WetEngine::runBeforeArcade(ArcadeShooting *arc) {
 		delete video;
 	}
 
+	if (arc->mode == "Y2" && !arc->additionalVideo.empty()) {
+		video = new MVideo(arc->additionalVideo, Common::Point(0, 0), false, true, false);
+		runIntro(*video);
+		delete video;
+	}
+
 	if (!arc->player.empty()) {
 		_playerFrames = decodeFrames(arc->player);
 	}
+
+	if (_variant == "EarlyDemo" && (arc->id == 31 || arc->id == 41)) {
+		int cutX = 36;
+		for (int i = 0; i < int(_playerFrames.size()); i++) {
+			Graphics::Surface *frame = _playerFrames[i];
+			Graphics::Surface *newFrame = new Graphics::Surface();
+			newFrame->create(320, 200, frame->format);
+			newFrame->fillRect(Common::Rect(0, 0, 320, 200), frame->format.ARGBToColor(0, 0, 0, 0));
+			newFrame->copyRectToSurfaceWithKey(*frame, 0, 0, Common::Rect(0, 0, 320, cutX), 0);
+			newFrame->copyRectToSurfaceWithKey(*frame, 0, 200 - (frame->h - cutX - 1), Common::Rect(0, cutX, 320, frame->h - 1), 0);
+
+			frame->free();
+			delete frame;
+			_playerFrames[i] = newFrame;
+		}
+
+	}
+
 
 	if (arc->mode == "Y4" || arc->mode == "Y5")  { // These images are flipped, for some reason
 		for (Frames::iterator it = _playerFrames.begin(); it != _playerFrames.end(); ++it) {
@@ -689,7 +730,7 @@ void WetEngine::runBeforeArcade(ArcadeShooting *arc) {
 }
 
 void WetEngine::pressedKey(const int keycode) {
-	if (keycode == Common::KEYCODE_c) {
+	if (keycode == kActionCredits) {
 		_background->decoder->pauseVideo(true);
 		showCredits();
 		loadPalette(_currentPalette);
@@ -697,35 +738,31 @@ void WetEngine::pressedKey(const int keycode) {
 		_background->decoder->pauseVideo(false);
 		updateScreen(*_background);
 		drawScreen();
-		if (!_music.empty())
-			playSound(_music, 0, _musicRate); // restore music
-	} else if (keycode == Common::KEYCODE_s) { // Added for testing
-		if (_cheatsEnabled) {
-			_skipLevel = true;
-		}
-	} else if (keycode == Common::KEYCODE_k) { // Added for testing
+	} else if (keycode == kActionSkipLevel) { // Added for testing
+		_skipLevel = true;
+	} else if (keycode == kActionKillPlayer) { // Added for testing
 		_health = 0;
-	} else if (keycode == Common::KEYCODE_ESCAPE) {
+	} else if (keycode == kActionPause) {
 		openMainMenuDialog();
-	} else if (keycode == Common::KEYCODE_LEFT) {
+	} else if (keycode == kActionLeft) {
 		if (_arcadeMode == "YT" && _c33PlayerPosition.x > 0) {
 			_c33UseMouse = false;
 			if (_c33PlayerDirection.size() < 3)
 				_c33PlayerDirection.push_back(kPlayerLeft);
 		}
-	} else if (keycode == Common::KEYCODE_DOWN) {
+	} else if (keycode == kActionDown) {
 		if (_arcadeMode == "YT" && _c33PlayerPosition.y < 130) { // Viewport value minus 30
 			_c33UseMouse = false;
 			if (_c33PlayerDirection.size() < 3)
 				_c33PlayerDirection.push_back(kPlayerBottom);
 		}
-	} else if (keycode == Common::KEYCODE_RIGHT) {
+	} else if (keycode == kActionRight) {
 		if (_arcadeMode == "YT" && _c33PlayerPosition.x < _screenW) {
 			_c33UseMouse = false;
 			if (_c33PlayerDirection.size() < 3)
 				_c33PlayerDirection.push_back(kPlayerRight);
 		}
-	} else if (keycode == Common::KEYCODE_UP) {
+	} else if (keycode == kActionUp) {
 		if (_arcadeMode == "YT" && _c33PlayerPosition.y > 0) {
 			_c33UseMouse = false;
 			if (_c33PlayerDirection.size() < 3)
@@ -863,8 +900,6 @@ void WetEngine::missNoTarget(ArcadeShooting *arc) {
 			_background->decoder->pauseVideo(false);
 			updateScreen(*_background);
 			drawScreen();
-			if (!_music.empty())
-				playSound(_music, 0, _musicRate); // restore music
 			break;
 		} else if (it->name == "SP_BOSS2" && !arc->missBoss2Video.empty()) {
 			_background->decoder->pauseVideo(true);
@@ -876,8 +911,6 @@ void WetEngine::missNoTarget(ArcadeShooting *arc) {
 			_background->decoder->pauseVideo(false);
 			updateScreen(*_background);
 			drawScreen();
-			if (!_music.empty())
-				playSound(_music, 0, _musicRate); // restore music
 			break;
 		}
 	}
@@ -1041,7 +1074,7 @@ void WetEngine::drawPlayer() {
 
 	int offset = 0;
 	// Ugly, but seems to be necessary
-	if (_levelId == 31)
+	if (_levelId == 31 && _variant != "EarlyDemo")
 		offset = 2;
 	else if (_levelId == 52)
 		offset = 2;
@@ -1078,6 +1111,11 @@ void WetEngine::drawHealth() {
 
 			scoreFormat = _scoreString + " %04d";
 			moFormat = _objString + "   %d/%d";
+		}
+
+		if (_language == Common::KO_KOR) {
+			sp.y -= 1;
+			op.y -= 1;
 		}
 
 		drawString("block05.fgx", Common::String::format(scoreFormat.c_str(), s), sp.x, sp.y, 72, c);
@@ -1133,6 +1171,28 @@ byte *WetEngine::getTargetColor(Common::String name, int levelId) {
 	if (entry->targetColor < 0)
 		error ("No target color specified for level %d", levelId);
 	return getPalette(entry->targetColor);
+}
+
+bool WetEngine::checkRButtonUp() {
+	return _rButtonUp;
+}
+
+void WetEngine::setRButtonUp(const bool val) {
+	_rButtonUp = val;
+}
+
+void WetEngine::disableGameKeymaps() {
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->getKeymap("game-shortcuts")->setEnabled(false);
+	keymapper->getKeymap("pause")->setEnabled(false);
+	keymapper->getKeymap("direction")->setEnabled(false);
+}
+
+void WetEngine::enableGameKeymaps() {
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->getKeymap("game-shortcuts")->setEnabled(true);
+	keymapper->getKeymap("pause")->setEnabled(true);
+	keymapper->getKeymap("direction")->setEnabled(true);
 }
 
 } // End of namespace Hypno

@@ -27,11 +27,13 @@
 #include "common/config-manager.h"
 #include "common/system.h"
 #include "common/textconsole.h"
-#include "common/installshield_cab.h"
-#include "common/translation.h"
+#include "common/compression/installshield_cab.h"
+#include "common/fs.h"
+#include "common/language.h"
 
 #include "agos/detection.h"
 #include "agos/intern_detection.h"
+#include "agos/detection_fallback.h"
 #include "agos/obsolete.h" // Obsolete ID table.
 #include "agos/agos.h"
 
@@ -51,16 +53,16 @@ static const DebugChannelDef debugFlagList[] = {
 
 static const PlainGameDescriptor agosGames[] = {
 	{"pn", "Personal Nightmare"},
-	{"elvira1", "Elvira - Mistress of the Dark"},
-	{"elvira2", "Elvira II - The Jaws of Cerberus"},
+	{"elvira1", "Elvira: Mistress of the Dark"},
+	{"elvira2", "Elvira II: The Jaws of Cerberus"},
 	{"waxworks", "Waxworks"},
-	{"simon1", "Simon the Sorcerer 1"},
-	{"simon2", "Simon the Sorcerer 2"},
+	{"simon1", "Simon the Sorcerer"},
+	{"simon2", "Simon the Sorcerer II: The Lion, the Wizard and the Wardrobe"},
 	{"feeble", "The Feeble Files"},
-	{"dimp", "Demon in my Pocket"},
-	{"jumble", "Jumble"},
-	{"puzzle", "NoPatience"},
-	{"swampy", "Swampy Adventures"},
+	{"dimp", "Simon the Sorcerer's Puzzle Pack: Demon in my Pocket"},
+	{"jumble", "Simon the Sorcerer's Puzzle Pack: Jumble"},
+	{"puzzle", "Simon the Sorcerer's Puzzle Pack: NoPatience"},
+	{"swampy", "Simon the Sorcerer's Puzzle Pack: Swampy Adventures"},
 	{nullptr, nullptr}
 };
 
@@ -71,74 +73,76 @@ static const char *const directoryGlobs[] = {
 	nullptr
 };
 
+
+static bool hasSimon2LangFile(const Common::FSNode &gameDir, const char *filename) {
+	Common::FSNode rootFile = gameDir.getChild(filename);
+	if (rootFile.exists())
+		return true;
+
+	Common::FSNode dataDir = gameDir.getChild("data");
+	if (dataDir.exists() && dataDir.isDirectory()) {
+		Common::FSNode dataFile = dataDir.getChild(filename);
+		if (dataFile.exists())
+			return true;
+	}
+
+	return false;
+}
+
+static Common::String stripLanguageGUIOptions(const Common::String &guiOptions) {
+	Common::String filtered;
+	const char *p = guiOptions.c_str();
+
+	while (*p) {
+		while (*p == ' ')
+			++p;
+		if (!*p)
+			break;
+
+		const char *start = p;
+		while (*p && *p != ' ')
+			++p;
+
+		Common::String token(start, p);
+		if (!token.hasPrefix("lang_")) {
+			if (!filtered.empty())
+				filtered += " ";
+			filtered += token;
+		}
+	}
+
+	return filtered;
+}
+
+static void applySimon2LanguageGUIOptions(DetectedGame &game, const Common::FSNode &gameDir) {
+	if (game.gameId != "simon2" || !gameDir.exists() || !gameDir.isDirectory())
+		return;
+
+	const bool hasEnglish = hasSimon2LangFile(gameDir, "simon2.english");
+	const bool hasGerman = hasSimon2LangFile(gameDir, "simon2.german");
+	const bool hasItalian = hasSimon2LangFile(gameDir, "simon2.italian");
+	const bool hasFrench = hasSimon2LangFile(gameDir, "simon2.french");
+
+	if (!hasEnglish && !hasGerman && !hasItalian && !hasFrench)
+		return;
+
+	game.setGUIOptions(stripLanguageGUIOptions(game.getGUIOptions()));
+
+	if (hasEnglish)
+		game.appendGUIOptions(Common::getGameGUIOptionsDescriptionLanguage(Common::EN_ANY));
+	if (hasGerman)
+		game.appendGUIOptions(Common::getGameGUIOptionsDescriptionLanguage(Common::DE_DEU));
+	if (hasItalian)
+		game.appendGUIOptions(Common::getGameGUIOptionsDescriptionLanguage(Common::IT_ITA));
+	if (hasFrench)
+		game.appendGUIOptions(Common::getGameGUIOptionsDescriptionLanguage(Common::FR_FRA));
+}
+
 using namespace AGOS;
 
-namespace AGOS {
-
-static const ADExtraGuiOptionsMap optionsList[] = {
-	{
-		GAMEOPTION_OPL3_MODE,
-		{
-			_s("AdLib OPL3 mode"),
-			_s("When AdLib is selected, OPL3 features will be used. Depending on the game, this will prevent cut-off notes, add extra notes or instruments and/or add stereo."),
-			"opl3_mode",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_DOS_TEMPOS,
-		{
-			_s("Use DOS version music tempos"),
-			_s("Selecting this option will play the music using the tempos used by the DOS version of the game. Otherwise, the faster tempos of the Windows version will be used."),
-			"dos_music_tempos",
-			true,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_WINDOWS_TEMPOS,
-		{
-			_s("Use DOS version music tempos"),
-			_s("Selecting this option will play the music using the tempos used by the DOS version of the game. Otherwise, the faster tempos of the Windows version will be used."),
-			"dos_music_tempos",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_PREFER_DIGITAL_SFX,
-		{
-			_s("Prefer digital sound effects"),
-			_s("Prefer digital sound effects instead of synthesized ones"),
-			"prefer_digitalsfx",
-			true,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_DISABLE_FADE_EFFECTS,
-		{
-			_s("Disable fade-out effects"),
-			_s("Don't fade every screen to black when leaving a room."),
-			"disable_fade_effects",
-			false,
-			0,
-			0
-		}
-	},
-	AD_EXTRA_GUI_OPTIONS_TERMINATOR
-};
-
-} // End of namespace AGOS
-
-class AgosMetaEngineDetection : public AdvancedMetaEngineDetection {
+class AgosMetaEngineDetection : public AdvancedMetaEngineDetection<AGOS::AGOSGameDescription> {
 public:
-	AgosMetaEngineDetection() : AdvancedMetaEngineDetection(AGOS::gameDescriptions, sizeof(AGOS::AGOSGameDescription), agosGames, AGOS::optionsList) {
+	AgosMetaEngineDetection() : AdvancedMetaEngineDetection(AGOS::gameDescriptions, agosGames) {
 		_guiOptions = GUIO1(GUIO_NOLAUNCHLOAD);
 		_maxScanDepth = 2;
 		_directoryGlobs = directoryGlobs;
@@ -148,11 +152,50 @@ public:
 		return Engines::findGameID(gameId, _gameIds, obsoleteGameIDsTable);
 	}
 
-	const char *getEngineId() const override {
-		return "agos";
+	Common::Error identifyGame(DetectedGame &game, const void **descriptor) override {
+		Engines::upgradeTargetIfNecessary(obsoleteGameIDsTable);
+
+		const bool isSimon2Target = ConfMan.hasKey("gameid") && ConfMan.get("gameid") == "simon2";
+		const bool hadLanguage = ConfMan.hasKey("language");
+		const Common::String originalLanguage = hadLanguage ? ConfMan.get("language") : Common::String();
+
+		if (isSimon2Target && hadLanguage)
+			ConfMan.set("language", Common::getLanguageCode(Common::EN_ANY));
+
+		Common::Error err = AdvancedMetaEngineDetection::identifyGame(game, descriptor);
+
+		if (isSimon2Target && hadLanguage)
+			ConfMan.set("language", originalLanguage);
+
+		if (err.getCode() == Common::kNoError && game.gameId == "simon2" && ConfMan.hasKey("path")) {
+			Common::FSNode gameDir(ConfMan.getPath("path"));
+			applySimon2LanguageGUIOptions(game, gameDir);
+		}
+
+		return err;
+	}
+
+	DetectedGames detectGames(const Common::FSList &fslist, uint32 skipADFlags, bool skipIncomplete) override {
+		DetectedGames games = AdvancedMetaEngineDetection::detectGames(fslist, skipADFlags, skipIncomplete);
+
+		if (fslist.empty())
+			return games;
+
+		Common::FSNode gameDir = fslist.begin()->getParent();
+
+		for (DetectedGame &game : games) {
+			if (game.gameId == "simon2")
+				applySimon2LanguageGUIOptions(game, gameDir);
+		}
+
+		return games;
 	}
 
 	const char *getName() const override {
+		return "agos";
+	}
+
+	const char *getEngineName() const override {
 		return "AGOS";
 	}
 
@@ -163,6 +206,16 @@ public:
 	const DebugChannelDef *getDebugChannels() const override {
 		return debugFlagList;
 	}
+
+	ADDetectedGame fallbackDetect(const FileMap &allFiles, const Common::FSList &fslist, ADDetectedGameExtraInfo **extra) const override {
+		ADDetectedGame detectedGame = detectGameFilebased(allFiles, AGOS::fileBased);
+		if (!detectedGame.desc) {
+			return ADDetectedGame();
+		}
+
+		return detectedGame;
+	}
+
 };
 
 REGISTER_PLUGIN_STATIC(AGOS_DETECTION, PLUGIN_TYPE_ENGINE_DETECTION, AgosMetaEngineDetection);

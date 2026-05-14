@@ -30,6 +30,7 @@
 #include "common/ptr.h"
 #include "common/rational.h"
 #include "graphics/pixelformat.h"
+#include "video/subtitles.h"
 
 namespace Video {
 class VideoDecoder;
@@ -50,7 +51,7 @@ private:
 	// Hide the destructor/constructor
 	// Only VideoManager should be allowed
 	VideoEntry();
-	VideoEntry(Video::VideoDecoder *video, const Common::String &fileName);
+	VideoEntry(Video::VideoDecoder *video, const Common::Path &fileName);
 	VideoEntry(Video::VideoDecoder *video, int id);
 
 public:
@@ -104,7 +105,7 @@ public:
 	/**
 	 * Get the file name of the video, or empty if by ID
 	 */
-	const Common::String &getFileName() const { return _fileName; }
+	const Common::Path &getFileName() const { return _fileName; }
 
 	/**
 	 * Get the ID of the video, or -1 if by file name
@@ -218,10 +219,14 @@ public:
 	 */
 	void setVolume(int volume);
 
+	/**
+	 * Load the subtitles
+	 */
+	void loadSubtitles(const Common::Path &fname) { _subtitles.loadSRTFile(fname); }
 private:
 	// Non-changing variables
 	Video::VideoDecoder *_video;
-	Common::String _fileName; // External video files
+	Common::Path _fileName;   // External video files
 	int _id;                  // Internal Mohawk files
 
 	// Playback variables
@@ -230,6 +235,8 @@ private:
 	bool _loop;
 	bool _enabled;
 	Audio::Timestamp _start;
+
+	Video::Subtitles _subtitles;
 };
 
 typedef Common::SharedPtr<VideoEntry> VideoEntryPtr;
@@ -240,7 +247,7 @@ public:
 	virtual ~VideoManager();
 
 	// Generic movie functions
-	VideoEntryPtr playMovie(const Common::String &filename, Audio::Mixer::SoundType soundType = Audio::Mixer::kPlainSoundType);
+	VideoEntryPtr playMovie(const Common::Path &filename, Audio::Mixer::SoundType soundType = Audio::Mixer::kPlainSoundType);
 	VideoEntryPtr playMovie(uint16 id);
 	bool updateMovies();
 	void pauseVideos();
@@ -250,7 +257,7 @@ public:
 
 	// Handle functions
 	VideoEntryPtr findVideo(uint16 id);
-	VideoEntryPtr findVideo(const Common::String &fileName);
+	VideoEntryPtr findVideo(const Common::Path &fileName);
 	void drawVideoFrame(const VideoEntryPtr &video, const Audio::Timestamp &time);
 	void removeEntry(const VideoEntryPtr &video);
 
@@ -263,7 +270,7 @@ protected:
 
 	// Utility functions for managing entries
 	VideoEntryPtr open(uint16 id);
-	VideoEntryPtr open(const Common::String &fileName, Audio::Mixer::SoundType soundType);
+	VideoEntryPtr open(const Common::Path &fileName, Audio::Mixer::SoundType soundType);
 
 	VideoList::iterator findEntry(VideoEntryPtr ptr);
 

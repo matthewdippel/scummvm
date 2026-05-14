@@ -24,7 +24,6 @@
 #include "ags/engine/ac/room_status.h"
 #include "ags/shared/game/custom_properties.h"
 #include "ags/engine/game/savegame_components.h"
-#include "ags/shared/util/aligned_stream.h"
 #include "ags/shared/util/string_utils.h"
 #include "ags/globals.h"
 
@@ -35,7 +34,7 @@ using namespace AGS::Engine;
 
 void HotspotState::ReadFromSavegame(Shared::Stream *in, int save_ver) {
 	Enabled = in->ReadInt8() != 0;
-	if (save_ver > 0) {
+	if (save_ver >= kRoomStatSvgVersion_36016) {
 		Name = StrUtil::ReadString(in);
 	}
 }
@@ -46,25 +45,20 @@ void HotspotState::WriteToSavegame(Shared::Stream *out) const {
 }
 
 RoomStatus::RoomStatus() {
+	contentFormat = kRoomStatSvgVersion_Current; // set current to avoid fixups
 	beenhere = 0;
 	numobj = 0;
 	tsdatasize = 0;
-	tsdata = nullptr;
 
 	memset(&region_enabled, 0, sizeof(region_enabled));
 	memset(&walkbehind_base, 0, sizeof(walkbehind_base));
 	memset(&interactionVariableValues, 0, sizeof(interactionVariableValues));
 }
 
-RoomStatus::~RoomStatus() {
-	if (tsdata)
-		delete[] tsdata;
-}
+RoomStatus::~RoomStatus() {}
 
 void RoomStatus::FreeScriptData() {
-	if (tsdata)
-		delete[] tsdata;
-	tsdata = nullptr;
+	tsdata.clear();
 	tsdatasize = 0;
 }
 
@@ -76,19 +70,25 @@ void RoomStatus::FreeProperties() {
 	objProps.clear();
 }
 
-void RoomStatus::ReadFromFile_v321(Stream *in) {
+void RoomStatus::ReadFromSavegame_v321(Stream *in, GameDataVersion data_ver) {
 	FreeScriptData();
 	FreeProperties();
 
+	contentFormat = kRoomStatSvgVersion_Initial;
+	obj.resize(MAX_ROOM_OBJECTS_v300);
+	objProps.resize(MAX_ROOM_OBJECTS_v300);
+	intrObject.resize(MAX_ROOM_OBJECTS_v300);
+
 	beenhere = in->ReadInt32();
 	numobj = in->ReadInt32();
-	obj.resize(numobj);
-	objProps.resize(numobj);
-	intrObject.resize(numobj);
-	ReadRoomObjects_Aligned(in);
+	// NOTE: legacy format always contained max object slots
+	for (auto &o : obj) {
+		o.ReadFromSavegame(in, -1 /* legacy save with padding */);
+	}
 
 	in->Seek(MAX_LEGACY_ROOM_FLAGS * sizeof(int16_t)); // flagstates (OBSOLETE)
-	tsdatasize = in->ReadInt32();
+	in->ReadInt16(); // alignment padding to int32
+	tsdatasize = static_cast<uint32_t>(in->ReadInt32());
 	in->ReadInt32(); // tsdata
 	for (int i = 0; i < MAX_ROOM_HOTSPOTS; ++i) {
 		intrHotspot[i].ReadFromSavedgame_v321(in);
@@ -104,28 +104,21 @@ void RoomStatus::ReadFromFile_v321(Stream *in) {
 		hotspot[i].Enabled = in->ReadInt8() != 0;
 	in->ReadArrayOfInt8((int8_t *)region_enabled, MAX_ROOM_REGIONS);
 	in->ReadArrayOfInt16(walkbehind_base, MAX_WALK_BEHINDS);
+	in->ReadInt16(); // alignment padding to int32 (66 int8 + 16 int16 = 49 int16 -> 50)
 	in->ReadArrayOfInt32(interactionVariableValues, MAX_GLOBAL_VARIABLES);
 
-	if (_G(loaded_game_file_version) >= kGameVersion_340_4) {
-		Properties::ReadValues(roomProps, in);
+	if (data_ver >= kGameVersion_340_4) {
+		Properties::ReadValues(roomProps, in, true /* aligned */);
 		for (int i = 0; i < MAX_ROOM_HOTSPOTS; ++i) {
-			Properties::ReadValues(hsProps[i], in);
+			Properties::ReadValues(hsProps[i], in, true /* aligned */);
 		}
 		for (auto &props : objProps) {
-			Properties::ReadValues(props, in);
+			Properties::ReadValues(props, in, true /* aligned */);
 		}
 	}
 }
 
-void RoomStatus::ReadRoomObjects_Aligned(Shared::Stream *in) {
-	AlignedStream align_s(in, Shared::kAligned_Read);
-	for (auto &o : obj) {
-		o.ReadFromSavegame(&align_s, 0);
-		align_s.Reset();
-	}
-}
-
-void RoomStatus::ReadFromSavegame(Stream *in, int save_ver) {
+void RoomStatus::ReadFromSavegame(Stream *in, GameDataVersion data_ver, RoomStatSvgVersion save_ver) {
 	FreeScriptData();
 	FreeProperties();
 
@@ -137,18 +130,18 @@ void RoomStatus::ReadFromSavegame(Stream *in, int save_ver) {
 	for (uint32_t i = 0; i < numobj; ++i) {
 		obj[i].ReadFromSavegame(in, save_ver);
 		Properties::ReadValues(objProps[i], in);
-		if (_G(loaded_game_file_version) <= kGameVersion_272)
+		if (data_ver <= kGameVersion_272)
 			SavegameComponents::ReadInteraction272(intrObject[i], in);
 	}
 	for (int i = 0; i < MAX_ROOM_HOTSPOTS; ++i) {
 		hotspot[i].ReadFromSavegame(in, save_ver);
 		Properties::ReadValues(hsProps[i], in);
-		if (_G(loaded_game_file_version) <= kGameVersion_272)
+		if (data_ver <= kGameVersion_272)
 			SavegameComponents::ReadInteraction272(intrHotspot[i], in);
 	}
 	for (int i = 0; i < MAX_ROOM_REGIONS; ++i) {
 		region_enabled[i] = in->ReadInt8();
-		if (_G(loaded_game_file_version) <= kGameVersion_272)
+		if (data_ver <= kGameVersion_272)
 			SavegameComponents::ReadInteraction272(intrRegion[i], in);
 	}
 	for (int i = 0; i < MAX_WALK_BEHINDS; ++i) {
@@ -156,36 +149,44 @@ void RoomStatus::ReadFromSavegame(Stream *in, int save_ver) {
 	}
 
 	Properties::ReadValues(roomProps, in);
-	if (_G(loaded_game_file_version) <= kGameVersion_272) {
+	if (data_ver <= kGameVersion_272) {
 		SavegameComponents::ReadInteraction272(intrRoom, in);
 		in->ReadArrayOfInt32(interactionVariableValues, MAX_GLOBAL_VARIABLES);
 	}
 
-	tsdatasize = in->ReadInt32();
+	tsdatasize = static_cast<uint32_t>(in->ReadInt32());
 	if (tsdatasize) {
-		tsdata = new char[tsdatasize];
-		in->Read(tsdata, tsdatasize);
+		tsdata.resize(tsdatasize);
+		in->Read(tsdata.data(), tsdatasize);
+	}
+
+	contentFormat = save_ver;
+	if (save_ver >= kRoomStatSvgVersion_36041) {
+		contentFormat = (RoomStatSvgVersion)in->ReadInt32();
+		in->ReadInt32(); // reserved
+		in->ReadInt32();
+		in->ReadInt32();
 	}
 }
 
-void RoomStatus::WriteToSavegame(Stream *out) const {
+void RoomStatus::WriteToSavegame(Stream *out, GameDataVersion data_ver) const {
 	out->WriteInt8(beenhere);
 	out->WriteInt32(numobj);
 	for (uint32_t i = 0; i < numobj; ++i) {
 		obj[i].WriteToSavegame(out);
 		Properties::WriteValues(objProps[i], out);
-		if (_G(loaded_game_file_version) <= kGameVersion_272)
+		if (data_ver <= kGameVersion_272)
 			SavegameComponents::WriteInteraction272(intrObject[i], out);
 	}
 	for (int i = 0; i < MAX_ROOM_HOTSPOTS; ++i) {
 		hotspot[i].WriteToSavegame(out);
 		Properties::WriteValues(hsProps[i], out);
-		if (_G(loaded_game_file_version) <= kGameVersion_272)
+		if (data_ver <= kGameVersion_272)
 			SavegameComponents::WriteInteraction272(intrHotspot[i], out);
 	}
 	for (int i = 0; i < MAX_ROOM_REGIONS; ++i) {
 		out->WriteInt8(region_enabled[i]);
-		if (_G(loaded_game_file_version) <= kGameVersion_272)
+		if (data_ver <= kGameVersion_272)
 			SavegameComponents::WriteInteraction272(intrRegion[i], out);
 	}
 	for (int i = 0; i < MAX_WALK_BEHINDS; ++i) {
@@ -193,27 +194,29 @@ void RoomStatus::WriteToSavegame(Stream *out) const {
 	}
 
 	Properties::WriteValues(roomProps, out);
-	if (_G(loaded_game_file_version) <= kGameVersion_272) {
+	if (data_ver <= kGameVersion_272) {
 		SavegameComponents::WriteInteraction272(intrRoom, out);
 		out->WriteArrayOfInt32(interactionVariableValues, MAX_GLOBAL_VARIABLES);
 	}
 
-	out->WriteInt32(tsdatasize);
+	out->WriteInt32(static_cast<int32_t>(tsdatasize));
 	if (tsdatasize)
-		out->Write(tsdata, tsdatasize);
+		out->Write(tsdata.data(), tsdatasize);
+
+	// kRoomStatSvgVersion_36041
+	out->WriteInt32(contentFormat);
+	out->WriteInt32(0); // reserved
+	out->WriteInt32(0);
+	out->WriteInt32(0);
 }
-
-// JJS: Replacement for the global roomstats array in the original engine.
-
-RoomStatus *room_statuses[MAX_ROOMS];
 
 // Replaces all accesses to the roomstats array
 RoomStatus *getRoomStatus(int room) {
-	if (room_statuses[room] == nullptr) {
+	if (!_G(room_statuses)[room]) {
 		// First access, allocate and initialise the status
-		room_statuses[room] = new RoomStatus();
+		_G(room_statuses)[room].reset(new RoomStatus());
 	}
-	return room_statuses[room];
+	return _G(room_statuses)[room].get();
 }
 
 // Used in places where it is only important to know whether the player
@@ -221,15 +224,12 @@ RoomStatus *getRoomStatus(int room) {
 // to initialise the status because a player can only have been in
 // a room if the status is already initialised.
 bool isRoomStatusValid(int room) {
-	return (room_statuses[room] != nullptr);
+	return (_G(room_statuses)[room] != nullptr);
 }
 
 void resetRoomStatuses() {
 	for (int i = 0; i < MAX_ROOMS; i++) {
-		if (room_statuses[i] != nullptr) {
-			delete room_statuses[i];
-			room_statuses[i] = nullptr;
-		}
+		_G(room_statuses)[i].reset();
 	}
 }
 

@@ -18,7 +18,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
-
 #include "common/events.h"
 
 #include "common/system.h"
@@ -53,34 +52,35 @@ EventDispatcher::EventDispatcher() {
 }
 
 EventDispatcher::~EventDispatcher() {
-	for (List<MapperEntry>::iterator i = _mappers.begin(); i != _mappers.end(); ++i) {
-		if (i->autoFree)
-			delete i->mapper;
+	for (auto &mapper : _mappers) {
+		if (mapper.autoFree)
+			delete mapper.mapper;
 	}
 
-	for (List<SourceEntry>::iterator i = _sources.begin(); i != _sources.end(); ++i) {
-		if (i->autoFree)
-			delete i->source;
+	for (auto &source : _sources) {
+		if (source.autoFree)
+			delete source.source;
 	}
 
-	for (List<ObserverEntry>::iterator i = _observers.begin(); i != _observers.end(); ++i) {
-		if (i->autoFree)
-			delete i->observer;
+	for (auto &observer : _observers) {
+		if (observer.autoFree)
+			delete observer.observer;
 	}
 }
 
 void EventDispatcher::dispatch() {
 	Event event;
+	List<Event> mappedEvents;
 
 	dispatchPoll();
 
-	for (List<SourceEntry>::iterator i = _sources.begin(); i != _sources.end(); ++i) {
-		if (i->ignore)
+	for (auto &source : _sources) {
+		if (source.ignore)
 			continue;
-		while (i->source->pollEvent(event)) {
+		while (source.source->pollEvent(event)) {
 			// We only try to process the events via the setup event mapper, when
 			// we have a setup mapper and when the event source allows mapping.
-			if (i->source->allowMapping()) {
+			if (source.source->allowMapping()) {
 				bool matchedAction = false;
 
 				// Backends may not produce directly action event types, those are meant
@@ -90,13 +90,14 @@ void EventDispatcher::dispatch() {
 				assert(event.type != EVENT_CUSTOM_ENGINE_ACTION_START);
 				assert(event.type != EVENT_CUSTOM_ENGINE_ACTION_END);
 
-				for (List<MapperEntry>::iterator m = _mappers.begin(); m != _mappers.end(); ++m) {
-					List<Event> mappedEvents;
-					if (!m->mapper->mapEvent(event, mappedEvents))
+				for (auto &m : _mappers) {
+					if (!mappedEvents.empty())
+						mappedEvents.clear();
+
+					if (!m.mapper->mapEvent(event, mappedEvents))
 						continue;
 
-					for (List<Event>::iterator j = mappedEvents.begin(); j != mappedEvents.end(); ++j) {
-						const Event mappedEvent = *j;
+					for (auto &mappedEvent : mappedEvents) {
 						dispatchEvent(mappedEvent);
 					}
 
@@ -115,10 +116,10 @@ void EventDispatcher::dispatch() {
 void EventDispatcher::clearEvents() {
 	Event event;
 
-	for (List<SourceEntry>::iterator i = _sources.begin(); i != _sources.end(); ++i) {
-		if (i->ignore)
+	for (auto &source : _sources) {
+		if (source.ignore)
 			continue;
-		while (i->source->pollEvent(event)) {}
+		while (source.source->pollEvent(event)) {}
 	}
 }
 
@@ -167,14 +168,15 @@ void EventDispatcher::unregisterSource(EventSource *source) {
 }
 
 void EventDispatcher::ignoreSources(bool ignore) {
-	for (List<SourceEntry>::iterator i = _sources.begin(); i != _sources.end(); ++i) {
-		i->ignore = ignore;
+	for (auto &source : _sources) {
+		source.ignore = ignore;
 	}
 }
 
 void EventDispatcher::registerObserver(EventObserver *obs, uint priority, bool autoFree, bool notifyPoll) {
 	ObserverEntry newEntry;
 
+	newEntry.ignore = false;
 	newEntry.observer = obs;
 	newEntry.priority = priority;
 	newEntry.autoFree = autoFree;
@@ -203,16 +205,16 @@ void EventDispatcher::unregisterObserver(EventObserver *obs) {
 }
 
 void EventDispatcher::dispatchEvent(const Event &event) {
-	for (List<ObserverEntry>::iterator i = _observers.begin(); i != _observers.end(); ++i) {
-		if (i->observer->notifyEvent(event))
+	for (auto &observer : _observers) {
+		if (observer.observer->notifyEvent(event))
 			break;
 	}
 }
 
 void EventDispatcher::dispatchPoll() {
-	for (List<ObserverEntry>::iterator i = _observers.begin(); i != _observers.end(); ++i) {
-		if (i->poll)
-			i->observer->notifyPoll();
+	for (auto &observer : _observers) {
+		if (observer.poll)
+			observer.observer->notifyPoll();
 	}
 }
 

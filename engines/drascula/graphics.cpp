@@ -24,6 +24,9 @@
 
 #include "common/stream.h"
 #include "common/textconsole.h"
+#include "common/text-to-speech.h"
+
+#include "backends/keymapper/keymapper.h"
 
 namespace Drascula {
 
@@ -80,8 +83,13 @@ void DrasculaEngine::moveCursor() {
 			color_abc(kColorRed);
 	} else if (!_menuScreen && _color != kColorLightGreen)
 		color_abc(kColorLightGreen);
-	if (_hasName && !_menuScreen)
+	if (_hasName && !_menuScreen) {
+		sayText(textName, Common::TextToSpeechManager::INTERRUPT);
+
 		centerText(textName, _mouseX, _mouseY);
+	} else if (!_menuBar && !_menuScreen)
+		_previousSaid.clear();
+
 	if (_menuScreen)
 		showMenu();
 	else if (_menuBar)
@@ -406,7 +414,7 @@ void DrasculaEngine::centerText(const char *message, int textX, int textY) {
 		Common::strlcat(tmpMessageCurLine, curWord, 50);
 		if (textFitsCentered(tmpMessageCurLine, textX)) {
 			// Line fits, so add the word to the current message line
-			strcpy(messageCurLine, tmpMessageCurLine);
+			Common::strcpy_s(messageCurLine, tmpMessageCurLine);
 		} else {
 			// Line does't fit. Store the current line and start a new line.
 			Common::strlcpy(messageLines[curLine++], messageCurLine, 41);
@@ -424,7 +432,7 @@ void DrasculaEngine::centerText(const char *message, int textX, int textY) {
 			if (!textFitsCentered(messageCurLine, textX)) {
 				messageCurLine[strlen(messageCurLine) - 1] = '\0';
 				Common::strlcpy(messageLines[curLine++], messageCurLine, 41);
-				strcpy(messageLines[curLine++], " ");
+				Common::strcpy_s(messageLines[curLine++], " ");
 			} else
 				Common::strlcpy(messageLines[curLine++], messageCurLine, 41);
 		}
@@ -551,12 +559,24 @@ void DrasculaEngine::playFLI(const char *filefli, int vel) {
 	globalSpeed = 1000 / vel;
 	FrameSSN = 0;
 	Common::SeekableReadStream *stream = _archives.open(filefli);
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+
+	if (!stream) {
+		warning("playFLI: Failed to load file '%s'", filefli);
+		return;
+	}
 	LastFrame = _system->getMillis();
 
+	keymapper->getKeymap("game-shortcuts")->setEnabled(false);
+	keymapper->getKeymap("animation")->setEnabled(true);
+
 	while (playFrameSSN(stream) && (!term_int) && !shouldQuit()) {
-		if (getScan() == Common::KEYCODE_ESCAPE)
+		if (getAction() == kActionSkip)
 			term_int = 1;
 	}
+
+	keymapper->getKeymap("animation")->setEnabled(false);
+	keymapper->getKeymap("game-shortcuts")->setEnabled(true);
 
 	delete stream;
 }
@@ -588,16 +608,15 @@ int DrasculaEngine::playFrameSSN(Common::SeekableReadStream *stream) {
 			free(BufferSSN);
 			waitFrameSSN();
 
-			Graphics::Surface *screenSurf = _system->lockScreen();
-			byte *screenBuffer = (byte *)screenSurf->getPixels();
-			uint16 screenPitch = screenSurf->pitch;
-			if (FrameSSN)
+			if (FrameSSN) {
+				Graphics::Surface *screenSurf = _system->lockScreen();
+				byte *screenBuffer = (byte *)screenSurf->getPixels();
+				uint16 screenPitch = screenSurf->pitch;
 				mixVideo(screenBuffer, screenSurface, screenPitch);
-			else
-				for (int y = 0; y < 200; y++)
-					memcpy(screenBuffer+y*screenPitch, screenSurface+y*320, 320);
+				_system->unlockScreen();
+			} else
+				_system->copyRectToScreen(screenSurface, 320, 0, 0, 320, 200);
 
-			_system->unlockScreen();
 			_system->updateScreen();
 			FrameSSN++;
 		} else {
@@ -607,16 +626,15 @@ int DrasculaEngine::playFrameSSN(Common::SeekableReadStream *stream) {
 				decodeOffset(BufferSSN, screenSurface, length);
 				free(BufferSSN);
 				waitFrameSSN();
-				Graphics::Surface *screenSurf = _system->lockScreen();
-				byte *screenBuffer = (byte *)screenSurf->getPixels();
-				uint16 screenPitch = screenSurf->pitch;
-				if (FrameSSN)
+				if (FrameSSN) {
+					Graphics::Surface *screenSurf = _system->lockScreen();
+					byte *screenBuffer = (byte *)screenSurf->getPixels();
+					uint16 screenPitch = screenSurf->pitch;
 					mixVideo(screenBuffer, screenSurface, screenPitch);
-				else
-					for (int y = 0; y < 200; y++)
-						memcpy(screenBuffer+y*screenPitch, screenSurface+y*320, 320);
+					_system->unlockScreen();
+				} else
+					_system->copyRectToScreen(screenSurface, 320, 0, 0, 320, 200);
 
-				_system->unlockScreen();
 				_system->updateScreen();
 				FrameSSN++;
 			}
@@ -700,26 +718,37 @@ bool DrasculaEngine::animate(const char *animationFile, int FPS) {
 
 	Common::SeekableReadStream *stream = _archives.open(animationFile);
 
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+
 	if (!stream) {
-		error("Animation file %s not found", animationFile);
+		warning("Animation file %s not found", animationFile);
+		return true;
 	}
 
 	NFrames = stream->readSint32LE();
 	showFrame(stream, true);
 	_system->delayMillis(1000 / FPS);
+
+	keymapper->getKeymap("game-shortcuts")->setEnabled(false);
+	keymapper->getKeymap("animation")->setEnabled(true);
+
 	while (cnt < NFrames) {
 		showFrame(stream);
 		_system->delayMillis(1000 / FPS);
 		cnt++;
 		byte key = getScan();
-		if (key == Common::KEYCODE_ESCAPE)
+		Common::CustomEventType action = getAction();
+		if (action == kActionSkip)
 			term_int = 1;
-		if (key != 0)
+		if (key != 0 || action != kActionNone)
 			break;
 	}
 	delete stream;
 
-	return ((term_int == 1) || (getScan() == Common::KEYCODE_ESCAPE) || shouldQuit());
+	keymapper->getKeymap("animation")->setEnabled(false);
+	keymapper->getKeymap("game-shortcuts")->setEnabled(true);
+
+	return ((term_int == 1) || (getAction() == kActionSkip) || shouldQuit());
 }
 
 } // End of namespace Drascula

@@ -40,19 +40,11 @@ namespace Internal {
 	// Documentation for those is the same as the one before, only those function are the one that actually execute the correct code path.
 	void tglBlit(BlitImage *blitImage, const BlitTransform &transform);
 
-	// Disables blending explicitly.
-	void tglBlitNoBlend(BlitImage *blitImage, const BlitTransform &transform);
-
 	// Disables blending, transforms and tinting.
 	void tglBlitFast(BlitImage *blitImage, int x, int y);
 
 	void tglBlitZBuffer(BlitImage *blitImage, int x, int y);
 
-	/**
-	@brief Sets up a scissor rectangle for blit calls: every blit call is affected by this rectangle.
-	*/
-	void tglBlitSetScissorRect(const Common::Rect &rect);
-	void tglBlitResetScissorRect();
 } // end of namespace Internal
 
 } // end of namespace TinyGL

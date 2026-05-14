@@ -20,6 +20,7 @@
  */
 
 #include "ultima/ultima8/world/actors/quick_avatar_mover_process.h"
+#include "ultima/ultima8/misc/direction_util.h"
 #include "ultima/ultima8/world/actors/main_actor.h"
 #include "ultima/ultima8/world/world.h"
 #include "ultima/ultima8/world/current_map.h"
@@ -34,96 +35,182 @@ namespace Ultima8 {
 
 DEFINE_RUNTIME_CLASSTYPE_CODE(QuickAvatarMoverProcess)
 
-ProcId QuickAvatarMoverProcess::_amp[6] = { 0, 0, 0, 0, 0, 0 };
+ProcId QuickAvatarMoverProcess::_amp = 0;
+bool QuickAvatarMoverProcess::_enabled = false;
 bool QuickAvatarMoverProcess::_clipping = false;
-bool QuickAvatarMoverProcess::_quarter = false;
 
-QuickAvatarMoverProcess::QuickAvatarMoverProcess() : Process(1), _dx(0), _dy(0), _dz(0), _dir(0) {
-}
-
-QuickAvatarMoverProcess::QuickAvatarMoverProcess(int x, int y, int z, int dir) : Process(1),
-		_dx(x), _dy(y), _dz(z), _dir(dir) {
-	QuickAvatarMoverProcess::terminateMover(dir);
-	assert(_dir < 6);
-	_amp[_dir] = getPid();
+QuickAvatarMoverProcess::QuickAvatarMoverProcess() : Process(1), _movementFlags(0) {
+	_amp = getPid();
 }
 
 QuickAvatarMoverProcess::~QuickAvatarMoverProcess() {
 }
 
 void QuickAvatarMoverProcess::run() {
-	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
+	if (!isEnabled()) {
 		terminate();
 		return;
 	}
 
 	MainActor *avatar = getMainActor();
-	int32 x, y, z;
-	avatar->getLocation(x, y, z);
+	Direction direction = avatar->getDir();
+	DirectionMode mode = GAME_IS_U8 ? dirmode_8dirs : dirmode_16dirs;
+
+	int32 dx = 0;
+	int32 dy = 0;
+	int32 dz = 0;
+
+	if (hasMovementFlags(MOVE_UP)) {
+		dx -= 64;
+		dy -= 64;
+	}
+
+	if (hasMovementFlags(MOVE_DOWN)) {
+		dx += 64;
+		dy += 64;
+	}
+
+	if (hasMovementFlags(MOVE_LEFT)) {
+		dx -= 64;
+		dy += 64;
+	}
+
+	if (hasMovementFlags(MOVE_RIGHT)) {
+		dx += 64;
+		dy -= 64;
+	}
+
+	if (hasMovementFlags(MOVE_ASCEND)) {
+		dz += 8;
+	}
+
+	if (hasMovementFlags(MOVE_DESCEND)) {
+		dz -= 8;
+	}
+
+	// Limit speed of turning by checking
+	uint32 frameNum = Kernel::get_instance()->getFrameNum();
+	if (frameNum % 4 == 0) {
+		if (hasMovementFlags(MOVE_TURN_LEFT)) {
+			direction = Direction_OneLeft(direction, mode);
+		}
+
+		if (hasMovementFlags(MOVE_TURN_RIGHT)) {
+			direction = Direction_OneRight(direction, mode);
+		}
+	}
+
+	if (hasMovementFlags(MOVE_FORWARD)) {
+		int xoff = 32 * Direction_XFactor(direction);
+		int yoff = 32 * Direction_YFactor(direction);
+		if (dirmode_8dirs) {
+			xoff *= 2;
+			yoff *= 2;
+		}
+
+		dx += xoff;
+		dy += yoff;
+	}
+
+	if (hasMovementFlags(MOVE_BACK)) {
+		int xoff = 32 * Direction_XFactor(direction);
+		int yoff = 32 * Direction_YFactor(direction);
+		if (dirmode_8dirs) {
+			xoff *= 2;
+			yoff *= 2;
+		}
+
+		dx -= xoff;
+		dy -= yoff;
+	}
+
+	if (direction != avatar->getDir()) {
+		avatar->setDir(direction);
+		avatar->setToStartOfAnim(Animation::stand);
+	}
+
+	if (!dx && !dy && !dz) {
+		return;
+	}
+
+	if (hasMovementFlags(MOVE_SLOW)) {
+		dx /= 4;
+		dy /= 4;
+		dz /= 4;
+	} else if (hasMovementFlags(MOVE_FAST)) {
+		dx *= 4;
+		dy *= 4;
+		dz *= 4;
+	}
+
+	Point3 pt = avatar->getLocation();
 	int32 ixd, iyd, izd;
 	avatar->getFootpadWorld(ixd, iyd, izd);
 
 	CurrentMap *cm = World::get_instance()->getCurrentMap();
+	int32 dxv = dx;
+	int32 dyv = dy;
+	int32 dzv = dz;
 
-	int32 dxv = this->_dx;
-	int32 dyv = this->_dy;
-	int32 dzv = this->_dz;
+	if (_clipping) {
+		for (int j = 0; j < 3; j++) {
+			dxv = dx;
+			dyv = dy;
+			dzv = dz;
 
-	for (int j = 0; j < 3; j++) {
-		dxv = this->_dx;
-		dyv = this->_dy;
-		dzv = this->_dz;
+			if (j == 1)
+				dxv = 0;
+			else if (j == 2)
+				dyv = 0;
 
-		if (j == 1) dxv = 0;
-		else if (j == 2) dyv = 0;
+			bool ok = false;
 
-		if (_quarter) {
-			dxv /= 4;
-			dyv /= 4;
-			dzv /= 4;
-		}
+			while (dxv || dyv || dzv) {
+				uint32 shapeFlags = avatar->getShapeInfo()->_flags;
 
-		bool ok = false;
-
-		while (dxv || dyv || dzv) {
-			uint32 shapeFlags = avatar->getShapeInfo()->_flags;
-
-			if (!_clipping || cm->isValidPosition(x + dxv, y + dyv, z + dzv, ixd, iyd, izd, _flags, 1, 0, 0)) {
-				if (_clipping && !dzv) {
-					if (cm->isValidPosition(x + dxv, y + dyv, z - 8, ixd, iyd, izd, _flags, 1, 0, 0) &&
-					        !cm->isValidPosition(x, y, z - 8, ixd, iyd, izd, _flags, 1, 0, 0)) {
-						dzv = -8;
-					} else if (cm->isValidPosition(x + dxv, y + dyv, z - 16, ixd, iyd, izd, _flags, 1, 0, 0) &&
-					           !cm->isValidPosition(x, y, z - 16, ixd, iyd, izd, _flags, 1, 0, 0)) {
-						dzv = -16;
-					} else if (cm->isValidPosition(x + dxv, y + dyv, z - 24, ixd, iyd, izd, _flags, 1, 0, 0) &&
-					           !cm->isValidPosition(x, y, z - 24, ixd, iyd, izd, _flags, 1, 0, 0)) {
-						dzv = -24;
-					} else if (cm->isValidPosition(x + dxv, y + dyv, z - 32, ixd, iyd, izd, _flags, 1, 0, 0) &&
-					           !cm->isValidPosition(x, y, z - 32, ixd, iyd, izd, _flags, 1, 0, 0)) {
-						dzv = -32;
+				Box start(pt.x, pt.y, pt.z, ixd, iyd, izd);
+				PositionInfo info = cm->getPositionInfo(Box(pt.x + dxv, pt.y + dyv, pt.z + dzv, ixd, iyd, izd), start, shapeFlags, 1);
+				if (info.valid) {
+					if (!dzv && !info.supported) {
+						// Adjust to stay on ground
+						if (cm->getPositionInfo(Box(pt.x + dxv, pt.y + dyv, pt.z - 8, ixd, iyd, izd), start, shapeFlags, 1).valid &&
+							!cm->getPositionInfo(Box(pt.x, pt.y, pt.z - 8, ixd, iyd, izd), start, shapeFlags, 1).valid) {
+							dzv = -8;
+						} else if (cm->getPositionInfo(Box(pt.x + dxv, pt.y + dyv, pt.z - 16, ixd, iyd, izd), start, shapeFlags, 1).valid &&
+								   !cm->getPositionInfo(Box(pt.x, pt.y, pt.z - 16, ixd, iyd, izd), start, shapeFlags, 1).valid) {
+							dzv = -16;
+						} else if (cm->getPositionInfo(Box(pt.x + dxv, pt.y + dyv, pt.z - 24, ixd, iyd, izd), start, shapeFlags, 1).valid &&
+								   !cm->getPositionInfo(Box(pt.x, pt.y, pt.z - 24, ixd, iyd, izd), start, shapeFlags, 1).valid) {
+							dzv = -24;
+						} else if (cm->getPositionInfo(Box(pt.x + dxv, pt.y + dyv, pt.z - 32, ixd, iyd, izd), start, shapeFlags, 1).valid &&
+								   !cm->getPositionInfo(Box(pt.x, pt.y, pt.z - 32, ixd, iyd, izd), start, shapeFlags, 1).valid) {
+							dzv = -32;
+						}
 					}
+					ok = true;
+					break;
+				} else if (cm->getPositionInfo(Box(pt.x + dxv, pt.y + dyv, pt.z + dzv + 8, ixd, iyd, izd), start, shapeFlags, 1).valid) {
+					dzv += 8;
+					ok = true;
+					break;
 				}
-				ok = true;
-				break;
-			} else if (cm->isValidPosition(x + dxv, y + dyv, z + dzv + 8, ixd, iyd, izd, shapeFlags, 1, 0, 0)) {
-				dzv += 8;
-				ok = true;
-				break;
+				dxv /= 2;
+				dyv /= 2;
+				dzv /= 2;
 			}
-			dxv /= 2;
-			dyv /= 2;
-			dzv /= 2;
+
+			if (ok)
+				break;
 		}
-		if (ok) break;
 	}
 
 	// Yes, i know, not entirely correct
-	avatar->collideMove(x + dxv, y + dyv, z + dzv, false, true);
+	avatar->collideMove(pt.x + dxv, pt.y + dyv, pt.z + dzv, false, true);
 
 	if (GAME_IS_CRUSADER) {
 		// Keep the camera on the avatar while we're quick-moving.
-		CameraProcess::SetCameraProcess(new CameraProcess(x + dxv, y + dyv, z + dzv));
+		Point3 cpt(pt.x + dxv, pt.y + dyv, pt.z + dzv);
+		CameraProcess::SetCameraProcess(new CameraProcess(cpt));
 	}
 
 	// Prevent avatar from running an idle animation while moving around
@@ -132,48 +219,142 @@ void QuickAvatarMoverProcess::run() {
 
 void QuickAvatarMoverProcess::terminate() {
 	Process::terminate();
-	_amp[_dir] = 0;
+	_amp = 0;
 }
 
-void QuickAvatarMoverProcess::terminateMover(int dir) {
-	assert(dir < 6);
-
+QuickAvatarMoverProcess *QuickAvatarMoverProcess::get_instance() {
 	Kernel *kernel = Kernel::get_instance();
-
-	QuickAvatarMoverProcess *p =
-	    dynamic_cast<QuickAvatarMoverProcess *>(kernel->getProcess(_amp[dir]));
-
-	if (p && !p->is_terminated())
-		p->terminate();
-}
-
-void QuickAvatarMoverProcess::startMover(int x, int y, int z, int dir) {
-	Ultima8Engine *g = Ultima8Engine::get_instance();
-	if (! g->isAvatarInStasis()) {
-		Process *p = new QuickAvatarMoverProcess(x, y, z, dir);
-		Kernel::get_instance()->addProcess(p);
-	} else {
-		pout << "Can't quickmove: avatarInStasis" << Std::endl;
+	QuickAvatarMoverProcess *p = nullptr;
+	if (_amp) {
+		p = dynamic_cast<QuickAvatarMoverProcess *>(kernel->getProcess(_amp));
 	}
+
+	if (!p) {
+		p = new QuickAvatarMoverProcess();
+		Kernel::get_instance()->addProcess(p);
+	}
+
+	return p;
 }
+
+bool QuickAvatarMoverProcess::onActionDown(KeybindingAction action) {
+	if (!isEnabled()) {
+		return false;
+	}
+
+	bool handled = true;
+	switch (action) {
+	case ACTION_MOVE_ASCEND:
+		setMovementFlag(MOVE_ASCEND);
+		break;
+	case ACTION_MOVE_DESCEND:
+		setMovementFlag(MOVE_DESCEND);
+		break;
+	case ACTION_TURN_LEFT:
+		setMovementFlag(MOVE_TURN_LEFT);
+		break;
+	case ACTION_TURN_RIGHT:
+		setMovementFlag(MOVE_TURN_RIGHT);
+		break;
+	case ACTION_MOVE_FORWARD:
+		setMovementFlag(MOVE_FORWARD);
+		break;
+	case ACTION_MOVE_BACK:
+		setMovementFlag(MOVE_BACK);
+		break;
+	case ACTION_MOVE_UP:
+		setMovementFlag(MOVE_UP);
+		break;
+	case ACTION_MOVE_DOWN:
+		setMovementFlag(MOVE_DOWN);
+		break;
+	case ACTION_MOVE_LEFT:
+		setMovementFlag(MOVE_LEFT);
+		break;
+	case ACTION_MOVE_RIGHT:
+		setMovementFlag(MOVE_RIGHT);
+		break;
+	case ACTION_MOVE_STEP:
+		setMovementFlag(MOVE_SLOW);
+		// Allow others to handle as well
+		handled = false; 
+		break;
+	case ACTION_MOVE_RUN:
+		setMovementFlag(MOVE_FAST);
+		// Allow others to handle as well
+		handled = false; 
+		break;
+	default:
+		handled = false;
+	}
+	return handled;
+}
+
+bool QuickAvatarMoverProcess::onActionUp(KeybindingAction action) {
+	if (!isEnabled()) {
+		return false;
+	}
+
+	bool handled = true;
+	switch (action) {
+	case ACTION_MOVE_ASCEND:
+		clearMovementFlag(MOVE_ASCEND);
+		break;
+	case ACTION_MOVE_DESCEND:
+		clearMovementFlag(MOVE_DESCEND);
+		break;
+	case ACTION_TURN_LEFT:
+		clearMovementFlag(MOVE_TURN_LEFT);
+		break;
+	case ACTION_TURN_RIGHT:
+		clearMovementFlag(MOVE_TURN_RIGHT);
+		break;
+	case ACTION_MOVE_FORWARD:
+		clearMovementFlag(MOVE_FORWARD);
+		break;
+	case ACTION_MOVE_BACK:
+		clearMovementFlag(MOVE_BACK);
+		break;
+	case ACTION_MOVE_UP:
+		clearMovementFlag(MOVE_UP);
+		break;
+	case ACTION_MOVE_DOWN:
+		clearMovementFlag(MOVE_DOWN);
+		break;
+	case ACTION_MOVE_LEFT:
+		clearMovementFlag(MOVE_LEFT);
+		break;
+	case ACTION_MOVE_RIGHT:
+		clearMovementFlag(MOVE_RIGHT);
+		break;
+	case ACTION_MOVE_STEP:
+		clearMovementFlag(MOVE_SLOW);
+		// Allow others to handle as well
+		handled = false; 
+		break;
+	case ACTION_MOVE_RUN:
+		clearMovementFlag(MOVE_FAST);
+		// Allow others to handle as well
+		handled = false; 
+		break;
+	default:
+		handled = false;
+	}
+	return handled;
+}
+
 
 void QuickAvatarMoverProcess::saveData(Common::WriteStream *ws) {
 	Process::saveData(ws);
 
-	ws->writeUint32LE(_dir);
+	ws->writeUint32LE(_movementFlags);
 	// don't save more information. We plan to terminate upon load
 }
 
 bool QuickAvatarMoverProcess::loadData(Common::ReadStream *rs, uint32 version) {
 	if (!Process::loadData(rs, version)) return false;
 
-	// small safety precaution
-	_dir = rs->readUint32LE();
-	if (_dir < 6)
-		_amp[_dir] = 0;
-	else
-		return false;
-
+	_movementFlags = rs->readUint32LE();
 	terminateDeferred(); // Don't allow this process to continue
 	return true;
 }

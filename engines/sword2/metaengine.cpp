@@ -21,33 +21,55 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "engines/metaengine.h"
+#include "engines/advancedDetector.h"
 
 #include "common/config-manager.h"
 #include "common/events.h"
 #include "common/file.h"
 #include "common/fs.h"
-#include "common/gui_options.h"
 #include "common/savefile.h"
 #include "common/system.h"
+#include "common/translation.h"
 
 #include "sword2/sword2.h"
 #include "sword2/saveload.h"
-#include "sword2/detection_internal.h"
 
-class Sword2MetaEngine : public MetaEngine {
+namespace Sword2 {
+
+static const ADExtraGuiOptionsMap optionsList[] = {
+	{
+		GAMEOPTION_OBJECT_LABELS,
+		{
+			_s("Show object labels"),
+			_s("Show labels for objects on mouse hover"),
+			"object_labels",
+			false,
+			0,
+			0
+		}
+	},
+	AD_EXTRA_GUI_OPTIONS_TERMINATOR
+};
+
+} // End of namespace Sword2
+
+class Sword2MetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 public:
 	const char *getName() const override {
 		return "sword2";
+	}
+
+	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override {
+		return Sword2::optionsList;
 	}
 
 	bool hasFeature(MetaEngineFeature f) const override;
 
 	SaveStateList listSaves(const char *target) const override;
 	int getMaximumSaveSlot() const override;
-	void removeSaveState(const char *target, int slot) const override;
+	bool removeSaveState(const char *target, int slot) const override;
 
-	Common::Error createInstance(OSystem *syst, Engine **engine) override;
+	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override;
 };
 
 bool Sword2MetaEngine::hasFeature(MetaEngineFeature f) const {
@@ -76,12 +98,12 @@ SaveStateList Sword2MetaEngine::listSaves(const char *target) const {
 	filenames = saveFileMan->listSavefiles(pattern);
 
 	SaveStateList saveList;
-	for (Common::StringArray::const_iterator file = filenames.begin(); file != filenames.end(); ++file) {
+	for (const auto &filename : filenames) {
 		// Obtain the last 3 digits of the filename, since they correspond to the save slot
-		int slotNum = atoi(file->c_str() + file->size() - 3);
+		int slotNum = atoi(filename.c_str() + filename.size() - 3);
 
 		if (slotNum >= 0 && slotNum <= 999) {
-			Common::InSaveFile *in = saveFileMan->openForLoading(*file);
+			Common::InSaveFile *in = saveFileMan->openForLoading(filename);
 			if (in) {
 				in->readUint32LE();
 				in->read(saveDesc, SAVE_DESCRIPTION_LEN);
@@ -98,35 +120,16 @@ SaveStateList Sword2MetaEngine::listSaves(const char *target) const {
 
 int Sword2MetaEngine::getMaximumSaveSlot() const { return 999; }
 
-void Sword2MetaEngine::removeSaveState(const char *target, int slot) const {
+bool Sword2MetaEngine::removeSaveState(const char *target, int slot) const {
 	Common::String filename = target;
 	filename += Common::String::format(".%03d", slot);
 
-	g_system->getSavefileManager()->removeSavefile(filename);
+	return g_system->getSavefileManager()->removeSavefile(filename);
 }
 
-Common::Error Sword2MetaEngine::createInstance(OSystem *syst, Engine **engine) {
-	assert(syst);
-	assert(engine);
-
-	Common::FSList fslist;
-	Common::FSNode dir(ConfMan.get("path"));
-	if (!dir.getChildren(fslist, Common::FSNode::kListAll)) {
-		return Common::kNoGameDataFoundError;
-	}
-
-	// Invoke the detector
-	Common::String gameid = ConfMan.get("gameid");
-	DetectedGames detectedGames = detectGamesImpl(fslist);
-
-	for (uint i = 0; i < detectedGames.size(); i++) {
-		if (detectedGames[i].gameId == gameid) {
-			*engine = new Sword2::Sword2Engine(syst);
-			return Common::kNoError;
-		}
-	}
-
-	return Common::kNoGameDataFoundError;
+Common::Error Sword2MetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const {
+	*engine = new Sword2::Sword2Engine(syst, desc);
+	return Common::kNoError;
 }
 
 #if PLUGIN_ENABLED_DYNAMIC(SWORD2)

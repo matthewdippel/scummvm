@@ -24,8 +24,15 @@
 #include "engines/advancedDetector.h"
 #include "common/file.h"
 
+#include "neverhood/dialogs.h"
 #include "neverhood/neverhood.h"
 #include "neverhood/detection.h"
+
+#include "common/translation.h"
+
+#include "backends/keymapper/action.h"
+#include "backends/keymapper/keymapper.h"
+#include "backends/keymapper/standard-actions.h"
 
 namespace Neverhood {
 
@@ -55,10 +62,14 @@ bool NeverhoodEngine::applyResourceFixes() const {
 
 } // End of namespace Neverhood
 
-class NeverhoodMetaEngine : public AdvancedMetaEngine {
+class NeverhoodMetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 public:
 	const char *getName() const override {
 		return "neverhood";
+	}
+
+	GUI::OptionsContainerWidget *buildEngineOptionsWidget(GUI::GuiObject *boss, const Common::String &name, const Common::String &target) const override {
+		return new Neverhood::NeverhoodOptionsWidget(boss, name, target);
 	}
 
 	bool hasFeature(MetaEngineFeature f) const override;
@@ -66,8 +77,9 @@ public:
 
 	SaveStateList listSaves(const char *target) const override;
 	int getMaximumSaveSlot() const override;
-	void removeSaveState(const char *target, int slot) const override;
+	bool removeSaveState(const char *target, int slot) const override;
 	SaveStateDescriptor querySaveMetaInfos(const char *target, int slot) const override;
+	Common::KeymapArray initKeymaps(const char *target) const override;
 };
 
 bool NeverhoodMetaEngine::hasFeature(MetaEngineFeature f) const {
@@ -127,10 +139,10 @@ int NeverhoodMetaEngine::getMaximumSaveSlot() const {
 	return 999;
 }
 
-void NeverhoodMetaEngine::removeSaveState(const char *target, int slot) const {
+bool NeverhoodMetaEngine::removeSaveState(const char *target, int slot) const {
 	Common::SaveFileManager *saveFileMan = g_system->getSavefileManager();
 	Common::String filename = Neverhood::NeverhoodEngine::getSavegameFilename(target, slot);
-	saveFileMan->removeSavefile(filename.c_str());
+	return saveFileMan->removeSavefile(filename.c_str());
 }
 
 SaveStateDescriptor NeverhoodMetaEngine::querySaveMetaInfos(const char *target, int slot) const {
@@ -161,6 +173,73 @@ SaveStateDescriptor NeverhoodMetaEngine::querySaveMetaInfos(const char *target, 
 	}
 
 	return SaveStateDescriptor();
+}
+
+Common::KeymapArray NeverhoodMetaEngine::initKeymaps(const char *target) const {
+	using namespace Common;
+	using namespace Neverhood;
+
+	Common::String extra = ConfMan.get("extra", target);
+	const bool isDemo = extra.contains("Demo");
+
+	Keymap *engineKeyMap = new Keymap(Keymap::kKeymapTypeGame, "neverhood-default", _("Default keymappings"));
+	Keymap *gameKeymap = new Keymap(Keymap::kKeymapTypeGame, "game", _("Game keymappings"));
+	Keymap *saveMenuKeymap = new Keymap(Keymap::kKeymapTypeGame, "save-management", _("Save file management menus keymappings"));
+	Keymap *pauseKeymap = new Keymap(Keymap::kKeymapTypeGame, "pause", _("Pause menu keymappings"));
+
+	Action *act;
+
+	act = new Action(kStandardActionInteract, _("Move / Interact"));
+	act->setLeftClickEvent();
+	act->addDefaultInputMapping("MOUSE_LEFT");
+	act->addDefaultInputMapping("MOUSE_RIGHT");
+	act->addDefaultInputMapping("JOY_A");
+	engineKeyMap->addAction(act);
+
+	if (isDemo) {
+		act = new Action("QUIT", _("Quit"));
+		act->setCustomEngineActionEvent(kActionQuit);
+		act->addDefaultInputMapping("ESCAPE");
+		act->addDefaultInputMapping("JOY_Y");
+		pauseKeymap->addAction(act);
+	} else {
+		act = new Action("PAUSE", _("Pause / Exit menu"));
+		act->setCustomEngineActionEvent(kActionPause);
+		act->addDefaultInputMapping("ESCAPE");
+		act->addDefaultInputMapping("JOY_Y");
+		pauseKeymap->addAction(act);
+	}
+
+	// I18N: (Game name: The Neverhood) The game has multiple cutscenes, and this action skips part of the scene.
+	act = new Action("SKIP", _("Skip section of cutscene"));
+	act->setCustomEngineActionEvent(kActionSkipPartial);
+	act->addDefaultInputMapping("SPACE");
+	act->addDefaultInputMapping("JOY_B");
+	gameKeymap->addAction(act);
+
+	// I18N: (Game name: The Neverhood) The game has multiple cutscenes, and this action skips the entire scene.
+	act = new Action("SKIPCREDITS", _("Skip entire scene (works only in some scenes)"));
+	act->setCustomEngineActionEvent(kActionSkipFull);
+	act->addDefaultInputMapping("ESCAPE");
+	act->addDefaultInputMapping("JOY_X");
+	gameKeymap->addAction(act);
+
+	// I18N: (Game name: The Neverhood) This action confirms the selected save or entered new save name in the save file management menus.
+	act = new Action("Confirm", _("Confirm the selected save / new save name"));
+	act->setCustomEngineActionEvent(kActionConfirm);
+	act->addDefaultInputMapping("RETURN");
+	act->addDefaultInputMapping("JOY_X");
+	saveMenuKeymap->addAction(act);
+
+	KeymapArray keymaps(4);
+	keymaps[0] = engineKeyMap;
+	keymaps[1] = gameKeymap;
+	keymaps[2] = pauseKeymap;
+	keymaps[3] = saveMenuKeymap;
+
+	saveMenuKeymap->setEnabled(false);
+
+	return keymaps;
 }
 
 #if PLUGIN_ENABLED_DYNAMIC(NEVERHOOD)

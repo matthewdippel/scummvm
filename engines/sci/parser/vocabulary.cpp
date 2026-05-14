@@ -90,7 +90,6 @@ void Vocabulary::reset() {
 
 bool Vocabulary::loadParserWords() {
 	char currentWord[VOCAB_MAX_WORDLENGTH] = "";
-	int currentWordPos = 0;
 
 	// First try to load the SCI0 vocab resource.
 	Resource *resource = _resMan->findResource(ResourceId(kResourceTypeVocab, _resourceIdWords), 0);
@@ -138,7 +137,7 @@ bool Vocabulary::loadParserWords() {
 	while (seeker < resource->size()) {
 		byte c;
 
-		currentWordPos = resource->getUint8At(seeker++); // Parts of previous words may be re-used
+		int currentWordPos = resource->getUint8At(seeker++); // Parts of previous words may be re-used
 
 		if (resourceType == kVocabularySCI1) {
 			c = 1;
@@ -188,7 +187,52 @@ bool Vocabulary::loadParserWords() {
 		seeker += 3;
 	}
 
+	// Russian translation can contain translated vocab in special format
+	if (g_sci->getLanguage() == Common::RU_RUS)
+		loadTranslatedWords();
+
 	return true;
+}
+
+void Vocabulary::loadTranslatedWords() {
+	// This is special fan made format similar to VOCAB.000 (see
+	// https://wiki.scummvm.org/index.php?title=SCI/Specifications/SCI_in_action/Parser#Vocabulary_file_formats)
+	// but all characters used are in the upper character range (80h..FFh)
+
+	Resource *resource = _resMan->findResource(ResourceId(kResourceTypeVocab, VOCAB_RESOURCE_SCUMM_LOC_VOCAB), 0);
+	if (!resource)
+		return;
+	
+	char currentWord[VOCAB_MAX_WORDLENGTH] = "";
+
+	uint32 seeker = 0;
+	while (seeker < resource->size()) {
+		byte c;
+
+		int currentWordPos = resource->getUint8At(seeker++); // Parts of previous words may be re-used
+
+		do {
+			if (seeker >= resource->size()) {
+				return;
+			}
+			c = resource->getUint8At(seeker++);
+			assert(currentWordPos < ARRAYSIZE(currentWord) - 1);
+			currentWord[currentWordPos++] = (c & 0x7f) | 0x80; // add 0x80 for upper character table
+		} while (c < 0x80);
+
+		currentWord[currentWordPos] = 0;
+
+		// Now decode class and group:
+		c = resource->getUint8At(seeker + 1);
+		ResultWord newWord;
+		newWord._class = ((resource->getUint8At(seeker)) << 4) | ((c & 0xf0) >> 4);
+		newWord._group = (resource->getUint8At(seeker + 2)) | ((c & 0x0f) << 8);
+
+		// Add this to the list of possible class,group pairs for this word
+		_parserWords[currentWord].push_back(newWord);
+
+		seeker += 3;
+	}
 }
 
 const char *Vocabulary::getAnyWordFromGroup(int group) {
@@ -327,6 +371,7 @@ bool Vocabulary::loadAltInputs() {
 		if (l == maxSize) {
 			error("Alt input replacement from %s appears truncated at %d", resource->name().c_str(), it - resource->cbegin());
 		}
+		t._replacementLength = l;
 		it += l + 1;
 
 		if (it < end && strncmp((const char *)&*it, t._input, t._inputLength) == 0)
@@ -378,11 +423,10 @@ bool Vocabulary::checkAltInput(Common::String &text, uint16 &cursorPos) {
 					continue;
 				if (strncmp(i->_input, t+p, i->_inputLength) == 0) {
 					// replace
-					const uint32 maxSize = text.size() - cursorPos;
 					if (cursorPos > p + i->_inputLength) {
-						cursorPos += Common::strnlen(i->_replacement, maxSize) - i->_inputLength;
+						cursorPos += i->_replacementLength - i->_inputLength;
 					} else if (cursorPos > p) {
-						cursorPos = p + Common::strnlen(i->_replacement, maxSize);
+						cursorPos = p + i->_replacementLength;
 					}
 
 					for (uint32 j = 0; j < i->_inputLength; ++j)
@@ -475,11 +519,12 @@ void Vocabulary::lookupWord(ResultWordList& retval, const char *word, int word_l
 		return;
 
 	// No match so far? Check if it's a number.
-
-	char *tester;
-	if ((strtol(tempword.c_str(), &tester, 10) >= 0) && (*tester == '\0')) { // Do we have a complete number here?
-		ResultWord tmp = { VOCAB_CLASS_NUMBER, VOCAB_MAGIC_NUMBER_GROUP };
-		retval.push_back(tmp);
+	if (getSciVersion() > SCI_VERSION_0_EARLY) {
+		char *tester;
+		if ((strtol(tempword.c_str(), &tester, 10) >= 0) && (*tester == '\0')) { // Do we have a complete number here?
+			ResultWord tmp = { VOCAB_CLASS_NOUN << 4, VOCAB_MAGIC_NUMBER_GROUP };
+			retval.push_back(tmp);
+		}
 	}
 }
 
@@ -655,19 +700,42 @@ static const byte lowerCaseMap[256] = {
 	0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff  // 0xf0
 };
 
+static const byte lowerCaseMap866[256] = {
+	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, // 0x00
+	0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, // 0x10
+	0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, // 0x20
+	0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, // 0x30
+	0x40,  'a',  'b',  'c',  'd',  'e',  'f',  'g',  'h',  'i',  'j',  'k',  'l',  'm',  'n',  'o', // 0x40
+	 'p',  'q',  'r',  's',  't',  'u',  'v',  'w',  'x',  'y',  'z', 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, // 0x50
+	0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, // 0x60
+	0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f, // 0x70
+	0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf, // 0x80
+	0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xed, 0xee, 0xef, // 0x90
+	0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf, // 0xa0
+	0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf, // 0xb0
+	0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb, 0xcc, 0xcd, 0xce, 0xcf, // 0xc0
+	0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xdb, 0xdc, 0xdd, 0xde, 0xdf, // 0xd0
+	0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xed, 0xee, 0xef, // 0xe0
+	0xa5, 0xa5, 0xf3, 0xf3, 0xf5, 0xf5, 0xf7, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff  // 0xf0
+};
+
 bool Vocabulary::tokenizeString(ResultWordListList &retval, const char *sentence, char **error) {
 	char currentWord[VOCAB_MAX_WORDLENGTH] = "";
 	int pos_in_sentence = 0;
 	unsigned char c;
 	int wordLen = 0;
+	const byte *lcMap = lowerCaseMap;
 
 	*error = nullptr;
+
+	if (g_sci->getLanguage() == Common::RU_RUS)
+		lcMap = lowerCaseMap866;
 
 	do {
 		c = sentence[pos_in_sentence++];
 
 		if (Common::isAlnum(c) || (c == '-' && wordLen) || (c >= 0x80)) {
-			currentWord[wordLen] = lowerCaseMap[c];
+			currentWord[wordLen] = lcMap[c];
 			++wordLen;
 		} else if (c == ' ' || c == '\0') {
 			// Continue on this word. Words may contain a '-', but may not start with
@@ -739,7 +807,6 @@ void _vocab_recursive_ptree_dump(ParseTreeNode *tree, int blanks) {
 
 	ParseTreeNode* lbranch = tree->left;
 	ParseTreeNode* rbranch = tree->right;
-	int i;
 
 	if (tree->type == kParseTreeLeafNode) {
 		debugN("vocab_dump_parse_tree: Error: consp is nil\n");
@@ -749,12 +816,12 @@ void _vocab_recursive_ptree_dump(ParseTreeNode *tree, int blanks) {
 	if (lbranch) {
 		if (lbranch->type == kParseTreeBranchNode) {
 			debugN("\n");
-			for (i = 0; i < blanks; i++)
+			for (int i = 0; i < blanks; i++)
 				debugN("    ");
 			debugN("(");
 			_vocab_recursive_ptree_dump(lbranch, blanks + 1);
 			debugN(")\n");
-			for (i = 0; i < blanks; i++)
+			for (int i = 0; i < blanks; i++)
 				debugN("    ");
 		} else
 			debugN("%x", lbranch->value);
@@ -817,7 +884,7 @@ void Vocabulary::printParserNodes(int num) {
 }
 
 int Vocabulary::parseNodes(int *i, int *pos, int type, int nr, int argc, const char **argv) {
-	int nextToken = 0, nextValue = 0, newPos = 0, oldPos = 0;
+	int nextToken = 0, nextValue = 0, oldPos = 0;
 	Console *con = g_sci->getSciDebugger();
 
 	if (type == kParseNil)
@@ -858,7 +925,7 @@ int Vocabulary::parseNodes(int *i, int *pos, int type, int nr, int argc, const c
 			}
 		}
 
-		newPos = parseNodes(i, pos, nextToken, nextValue, argc, argv);
+		int newPos = parseNodes(i, pos, nextToken, nextValue, argc, argv);
 
 		if (newPos == -1)
 			return -1;

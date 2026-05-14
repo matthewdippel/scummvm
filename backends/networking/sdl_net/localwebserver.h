@@ -37,6 +37,10 @@
 #include "common/singleton.h"
 #include "common/scummsys.h"
 
+#ifdef USE_CLOUD
+#include "backends/networking/sdl_net/handlers/connectcloudhandler.h"
+#endif // USE_CLOUD
+
 namespace Common {
 class SeekableReadStream;
 }
@@ -69,6 +73,9 @@ class LocalWebserver : public Common::Singleton<LocalWebserver> {
 	UploadFileHandler _uploadFileHandler;
 	ListAjaxHandler _listAjaxHandler;
 	FilesAjaxPageHandler _filesAjaxPageHandler;
+#ifdef USE_CLOUD
+	ConnectCloudHandler _connectCloudHandler;
+#endif // USE_CLOUD
 	ResourceHandler _resourceHandler;
 	uint32 _idlingFrames;
 	Common::Mutex _handleMutex;
@@ -81,13 +88,13 @@ class LocalWebserver : public Common::Singleton<LocalWebserver> {
 	void handleClient(uint32 i);
 	void acceptClient();
 	void resolveAddress(void *ipAddress);
-	void addPathHandler(Common::String path, BaseHandler *handler);
+	void addPathHandler(const Common::String &path, BaseHandler *handler);
 
 public:
 	static const uint32 DEFAULT_SERVER_PORT = 12345;
 
 	LocalWebserver();
-	virtual ~LocalWebserver();
+	~LocalWebserver() override;
 
 	void start(bool useMinimalMode = false);
 	void stop();
@@ -98,12 +105,16 @@ public:
 	bool isRunning();
 	static uint32 getPort();
 
-	static void setClientGetHandler(Client &client, Common::String response, long code = 200, const char *mimeType = nullptr);
+#ifdef USE_CLOUD
+	void setStorageConnectionCallback(Networking::ErrorCallback cb) { _connectCloudHandler.setStorageConnectionCallback(cb); }
+#endif // USE_CLOUD
+
+	static void setClientGetHandler(Client &client, const Common::String &response, long code = 200, const char *mimeType = nullptr);
 	static void setClientGetHandler(Client &client, Common::SeekableReadStream *responseStream, long code = 200, const char *mimeType = nullptr);
-	static void setClientRedirectHandler(Client &client, Common::String response, Common::String location, const char *mimeType = nullptr);
-	static void setClientRedirectHandler(Client &client, Common::SeekableReadStream *responseStream, Common::String location, const char *mimeType = nullptr);
-	static Common::String urlDecode(Common::String value);
-	static Common::String urlEncodeQueryParameterValue(Common::String value);
+	static void setClientRedirectHandler(Client &client, const Common::String &response, const Common::String &location, const char *mimeType = nullptr);
+	static void setClientRedirectHandler(Client &client, Common::SeekableReadStream *responseStream, const Common::String &location, const char *mimeType = nullptr);
+	static Common::String urlDecode(const Common::String &value);
+	static Common::String urlEncodeQueryParameterValue(const Common::String &value);
 };
 
 /** Shortcut for accessing the local webserver. */

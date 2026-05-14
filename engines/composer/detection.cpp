@@ -42,7 +42,7 @@ static const PlainGameDescriptor composerGames[] = {
 using namespace Composer;
 
 // we match from data too, to stop detection from a non-top-level directory
-static const char *directoryGlobs[] = {
+static const char *const directoryGlobs[] = {
 	"data",
 	"liam",
 	"programs",
@@ -51,18 +51,18 @@ static const char *directoryGlobs[] = {
 	nullptr
 };
 
-class ComposerMetaEngineDetection : public AdvancedMetaEngineDetection {
+class ComposerMetaEngineDetection : public AdvancedMetaEngineDetection<Composer::ComposerGameDescription> {
 public:
-	ComposerMetaEngineDetection() : AdvancedMetaEngineDetection(Composer::gameDescriptions, sizeof(Composer::ComposerGameDescription), composerGames) {
+	ComposerMetaEngineDetection() : AdvancedMetaEngineDetection(Composer::gameDescriptions, composerGames) {
 		_maxScanDepth = 2;
 		_directoryGlobs = directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "composer";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Magic Composer";
 	}
 

@@ -51,16 +51,16 @@ class MystCard;
 
 // Engine Debug Flags
 enum {
-	kDebugVariable = (1 << 0),
-	kDebugSaveLoad = (1 << 1),
-	kDebugView     = (1 << 2),
-	kDebugHint     = (1 << 3),
-	kDebugResource = (1 << 4),
-	kDebugINIT     = (1 << 5),
-	kDebugEXIT     = (1 << 6),
-	kDebugScript   = (1 << 7),
-	kDebugHelp     = (1 << 8),
-	kDebugCache    = (1 << 9)
+	kDebugVariable = 1,
+	kDebugSaveLoad,
+	kDebugView,
+	kDebugHint,
+	kDebugResource,
+	kDebugINIT,
+	kDebugEXIT,
+	kDebugScript,
+	kDebugHelp,
+	kDebugCache,
 };
 
 // Myst Stacks
@@ -176,7 +176,7 @@ public:
 	void playFlybyMovie(MystStack stack);
 	void playSkippableMovie(const VideoEntryPtr &video, bool looping);
 	void waitUntilMovieEnds(const VideoEntryPtr &video);
-	Common::String selectLocalizedMovieFilename(const Common::String &movieName);
+	Common::Path selectLocalizedMovieFilename(const Common::Path &movieName);
 
 	void playSoundBlocking(uint16 id);
 
@@ -188,8 +188,8 @@ public:
 	 */
 	bool isInteractive() const;
 	bool isGameStarted() const;
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 	Common::String getSaveStateName(int slot) const override {
@@ -228,7 +228,7 @@ private:
 
 	void dropPage();
 
-	Common::String wrapMovieFilename(const Common::String &movieName, uint16 stack);
+	Common::Path wrapMovieFilename(const Common::String &movieName, uint16 stack);
 
 	void loadStackArchives(MystStack stackId);
 	void loadArchive(const char *archiveName, const char *language, bool mandatory);

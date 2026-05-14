@@ -113,10 +113,12 @@ void GraphicsManager::drawParallax() {
 
 		debugC(1, kSludgeDebugGraphics, "drawParallax(): camX: %d camY: %d dims: %d x %d sceneDims: %d x %d winDims: %d x %d surf: %d x %d", p->cameraX, p->cameraY, w, h, _sceneWidth, _sceneHeight, _winWidth, _winHeight, p->surface.w, p->surface.h);
 
-		Graphics::TransparentSurface tmp(p->surface, false);
+		Graphics::ManagedSurface tmp;
+		tmp.copyFrom(p->surface);
+
 		for (uint y = 0; y < _sceneHeight; y += p->surface.h) {
 			for (uint x = 0; x < _sceneWidth; x += p->surface.w) {
-				tmp.blit(_renderSurface, x - p->cameraX, y - p->cameraY);
+				tmp.blendBlitTo(_renderSurface, x - p->cameraX, y - p->cameraY);
 				debugC(3, kSludgeDebugGraphics, "drawParallax(): blit to: %d, %d", x - p->cameraX, y - p->cameraY);
 			}
 		}
@@ -287,26 +289,31 @@ void GraphicsManager::blankAllScreen() {
 
 // This function is very useful for scrolling credits, but very little else
 void GraphicsManager::hardScroll(int distance) {
+	// scroll more than backdrop height, screen stay blank
+	if (ABS(distance) >= (int)_sceneHeight) {
+		blankAllScreen();
+		return;
+	}
+
 	// scroll 0 distance, return
 	if (!distance)
 		return;
 
-	// blank screen
-	blankAllScreen();
-
-	// scroll more than backdrop height, screen stay blank
-	if (ABS(distance) >= (int)_sceneHeight) {
-		return;
-	}
+	Graphics::Surface tmp;
+	tmp.copyFrom(_backdropSurface);
 
 	// copy part of the backdrop to it
 	if (distance > 0) {
-		_backdropSurface.copyRectToSurface(_origBackdropSurface, 0, 0,
+		_backdropSurface.copyRectToSurface(tmp, 0, 0,
 				Common::Rect(0, distance, _backdropSurface.w, _backdropSurface.h));
+		_backdropSurface.fillRect(Common::Rect(0, _backdropSurface.h - distance, _backdropSurface.w, _backdropSurface.h), _currentBlankColour);
 	} else {
-		_backdropSurface.copyRectToSurface(_origBackdropSurface, 0, -distance,
+		_backdropSurface.copyRectToSurface(tmp, 0, -distance,
 				Common::Rect(0, 0, _backdropSurface.w, _backdropSurface.h + distance));
+		_backdropSurface.fillRect(Common::Rect(0, 0, _backdropSurface.w, -distance), _currentBlankColour);
 	}
+
+	tmp.free();
 }
 
 void GraphicsManager::drawLine(uint x1, uint y1, uint x2, uint y2) {
@@ -322,8 +329,9 @@ void GraphicsManager::drawHorizontalLine(uint x1, uint y, uint x2) {
 }
 
 void GraphicsManager::darkScreen() {
-	Graphics::TransparentSurface tmp(_backdropSurface, false);
-	tmp.blit(_backdropSurface, 0, 0, Graphics::FLIP_NONE, nullptr, TS_ARGB(255 >> 1, 0, 0, 0));
+	Graphics::ManagedSurface tmp;
+	tmp.copyFrom(_backdropSurface);
+	tmp.blendBlitTo(_backdropSurface, 0, 0, Graphics::FLIP_NONE, nullptr, MS_ARGB(255 >> 1, 0, 0, 0));
 
 	// reset zBuffer
 	if (_zBuffer->originalNum >= 0) {
@@ -335,11 +343,12 @@ void GraphicsManager::drawBackDrop() {
 	// TODO: apply lightmap shader
 	drawParallax();
 
-	if (!_backdropExists)
+	if (!_backdropExists && !_backdropSurface.getPixels())
 		return;
 	// draw backdrop
-	Graphics::TransparentSurface tmp(_backdropSurface, false);
-	tmp.blit(_renderSurface, -_cameraX, -_cameraY);
+	Graphics::ManagedSurface tmp;
+	tmp.copyFrom(_backdropSurface);
+	tmp.blendBlitTo(_renderSurface, -_cameraX, -_cameraY);
 }
 
 bool GraphicsManager::loadLightMap(int v) {
@@ -351,16 +360,16 @@ bool GraphicsManager::loadLightMap(int v) {
 	_lightMapNumber = v;
 	_lightMap.create(_sceneWidth, _sceneWidth, *_vm->getScreenPixelFormat());
 
-	Graphics::TransparentSurface tmp;
+	Graphics::ManagedSurface tmp;
 
-	if (!ImgLoader::loadImage(v, "lightmap", g_sludge->_resMan->getData(), &tmp))
+	if (!ImgLoader::loadImage(v, "lightmap", g_sludge->_resMan->getData(), tmp.surfacePtr()))
 		return false;
 
 	if (tmp.w != (int16)_sceneWidth || tmp.h != (int16)_sceneHeight) {
 		if (_lightMapMode == LIGHTMAPMODE_HOTSPOT) {
 			return fatal("Light map width and height don't match scene width and height. That is required for lightmaps in HOTSPOT mode.");
 		} else if (_lightMapMode == LIGHTMAPMODE_PIXEL) {
-			tmp.blit(_lightMap, 0, 0, Graphics::FLIP_NONE, nullptr, TS_ARGB((uint)255, (uint)255, (uint)255, (uint)255), (int)_sceneWidth, (int)_sceneHeight);
+			tmp.blendBlitTo(_lightMap, 0, 0, Graphics::FLIP_NONE, nullptr, MS_ARGB((uint)255, (uint)255, (uint)255, (uint)255), (int)_sceneWidth, (int)_sceneHeight);
 		} else {
 			_lightMap.copyFrom(tmp);
 		}
@@ -417,8 +426,10 @@ bool GraphicsManager::loadHSI(int num, Common::SeekableReadStream *stream, int x
 
 	// resize backdrop
 	if (reserve) {
-		if (!resizeBackdrop(realPicWidth, realPicHeight))
+		if (!resizeBackdrop(realPicWidth, realPicHeight)) {
+			tmp.free();
 			return false;
+		}
 	}
 
 	if (x == IN_THE_CENTRE)
@@ -427,12 +438,17 @@ bool GraphicsManager::loadHSI(int num, Common::SeekableReadStream *stream, int x
 		y = (_sceneHeight - realPicHeight) >> 1;
 	if (x < 0 || x + realPicWidth > _sceneWidth || y < 0 || y + realPicHeight > _sceneHeight) {
 		debugC(0, kSludgeDebugGraphics, "Illegal back drop size");
+		tmp.free();
 		return false;
 	}
 
+	if (!_backdropExists)
+		_backdropSurface.fillRect(Common::Rect(x, y, x + tmp.w, y + tmp.h), _renderSurface.format.ARGBToColor(0, 0, 0, 0));
+
 	// copy surface loaded to backdrop
-	Graphics::TransparentSurface tmp_trans(tmp, false);
-	tmp_trans.blit(_backdropSurface, x, y);
+	Graphics::ManagedSurface tmp_trans;
+	tmp_trans.copyFrom(tmp);
+	tmp_trans.blendBlitTo(_backdropSurface, x, y);
 	tmp.free();
 
 	_origBackdropSurface.copyFrom(_backdropSurface);
@@ -454,11 +470,14 @@ bool GraphicsManager::mixHSI(int num, Common::SeekableReadStream *stream, int x,
 		x = (_sceneWidth - realPicWidth) >> 1;
 	if (y == IN_THE_CENTRE)
 		y = (_sceneHeight - realPicHeight) >> 1;
-	if (x < 0 || x + realPicWidth > _sceneWidth || y < 0 || y + realPicHeight > _sceneHeight)
+	if (x < 0 || x + realPicWidth > _sceneWidth || y < 0 || y + realPicHeight > _sceneHeight) {
+		mixSurface.free();
 		return false;
+	}
 
-	Graphics::TransparentSurface tmp(mixSurface, false);
-	tmp.blit(_backdropSurface, x, y, Graphics::FLIP_NONE, nullptr, TS_ARGB(255 >> 1, 255, 255, 255));
+	Graphics::ManagedSurface tmp;
+	tmp.copyFrom(mixSurface);
+	tmp.blendBlitTo(_backdropSurface, x, y, Graphics::FLIP_NONE, nullptr, MS_ARGB(255 >> 1, 255, 255, 255));
 	mixSurface.free();
 
 	return true;
@@ -477,17 +496,22 @@ void GraphicsManager::saveBackdrop(Common::WriteStream *stream) {
 }
 
 void GraphicsManager::loadBackdrop(int ssgVersion, Common::SeekableReadStream *stream) {
-	_cameraX = stream->readUint16BE();
-	_cameraY = stream->readUint16BE();
+	int cameraX = stream->readUint16BE();
+	int cameraY = stream->readUint16BE();
+	float cameraZoom;
 	if (ssgVersion >= VERSION(2, 0)) {
-		_cameraZoom = stream->readFloatLE();
+		cameraZoom = stream->readFloatLE();
 	} else {
-		_cameraZoom = 1.0;
+		cameraZoom = 1.0;
 	}
 
 	_brightnessLevel = stream->readByte();
 
 	loadHSI(-1, stream, 0, 0, true);
+
+	_cameraX = cameraX;
+	_cameraY = cameraY;
+	_cameraZoom = cameraZoom;
 }
 
 bool GraphicsManager::getRGBIntoStack(uint x, uint y, StackHandler *sH) {

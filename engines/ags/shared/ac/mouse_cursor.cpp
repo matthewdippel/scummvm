@@ -21,17 +21,18 @@
 
 #include "ags/shared/ac/mouse_cursor.h"
 #include "ags/shared/util/stream.h"
+#include "ags/shared/util/string_utils.h"
 #include "common/util.h"
 
 namespace AGS3 {
 
-using AGS::Shared::Stream;
+using namespace AGS::Shared;
 
 void MouseCursor::clear() {
 	pic = 0;
 	hotx = hoty = 0;
 	view = -1;
-	Common::fill(&name[0], &name[10], '\0');
+	name.Empty();
 	flags = 0;
 }
 
@@ -40,8 +41,11 @@ void MouseCursor::ReadFromFile(Stream *in) {
 	hotx = in->ReadInt16();
 	hoty = in->ReadInt16();
 	view = in->ReadInt16();
-	in->Read(name, 10);
+	StrUtil::ReadCStrCount(legacy_name, in, LEGACY_MAX_CURSOR_NAME_LENGTH);
 	flags = in->ReadInt8();
+	in->Seek(3); // alignment padding to int32
+
+	name = legacy_name;
 }
 
 void MouseCursor::WriteToFile(Stream *out) {
@@ -49,8 +53,9 @@ void MouseCursor::WriteToFile(Stream *out) {
 	out->WriteInt16(hotx);
 	out->WriteInt16(hoty);
 	out->WriteInt16(view);
-	out->Write(name, 10);
+	out->Write(legacy_name, LEGACY_MAX_CURSOR_NAME_LENGTH);
 	out->WriteInt8(flags);
+	out->WriteByteCount(0, 3); // alignment padding to int32
 }
 
 void MouseCursor::ReadFromSavegame(Stream *in, int cmp_ver) {
@@ -59,7 +64,7 @@ void MouseCursor::ReadFromSavegame(Stream *in, int cmp_ver) {
 	hoty = static_cast<int16_t>(in->ReadInt32());
 	view = static_cast<int16_t>(in->ReadInt32());
 	flags = static_cast<int8_t>(in->ReadInt32());
-	if (cmp_ver > 0)
+	if (cmp_ver >= kCursorSvgVersion_36016)
 		animdelay = in->ReadInt32();
 }
 

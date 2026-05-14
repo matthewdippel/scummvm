@@ -83,8 +83,8 @@ public:
 	bool slideInTransition(Graphics::Surface *newBackground, int direction, int stripSize, int totalTime);
 	bool slideOutTransition(Graphics::Surface *newBackground, int direction, int stripSize, int totalTime);
 
-	bool changeStillFrameMovie(const Common::String &fileName = "");
-	bool changeCycleFrameMovie(const Common::String &fileName = "");
+	bool changeStillFrameMovie(const Common::Path &fileName = Common::Path());
+	bool changeCycleFrameMovie(const Common::Path &fileName = Common::Path());
 
 	Graphics::Surface *getStillFrameCopy(int frameIndex);
 	const Graphics::Surface *getStillFrame(int frameIndex);
@@ -140,6 +140,7 @@ public:
 	void onLButtonUp(const Common::Point &point, uint flags);
 	void onMouseMove(const Common::Point &point, uint flags);
 
+	void onActionEnd(const Common::CustomEventType &action, uint flags);
 	void onKeyUp(const Common::KeyState &key, uint flags);
 
 	bool isScenePresent() { return _currentScene != 0; }
@@ -169,7 +170,7 @@ private:
 	GlobalFlags _globalFlags;
 	VideoWindow *_walkMovie;
 
-	Common::String _walkMovieFileName;
+	Common::Path _walkMovieFileName;
 
 	AVIFrames *_stillFrames;
 	AVIFrames *_cycleFrames;
@@ -187,12 +188,12 @@ private:
 	bool _burnedLetterDisplayed;
 
 	VideoWindow *_asyncMovie;
-	Common::String _asyncMovieFileName;
+	Common::Path _asyncMovieFileName;
 	int _asyncMovieStartFrame;
 	int _asyncMovieFrameCount;
 	bool _loopAsyncMovie;
 
-	Common::String _lastAICommentFileName;
+	Common::Path _lastAICommentFileName;
 
 	// Special sound handling for the demo
 	uint _demoSoundTimer;

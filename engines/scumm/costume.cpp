@@ -71,252 +71,83 @@ static const int v1MMNESLookup[25] = {
 	0x17, 0x00, 0x01, 0x05, 0x16
 };
 
-byte ClassicCostumeRenderer::mainRoutine(int xmoveCur, int ymoveCur) {
-	int i, skip = 0;
-	byte drawFlag = 1;
-	bool use_scaling;
-	byte startScaleIndexX;
+byte ClassicCostumeRenderer::paintCelByleRLE(int xMoveCur, int yMoveCur) {
 	int ex1, ex2;
-	Common::Rect rect;
-	int step;
-	Codec1 v1;
+	ByleRLEData compData;
 
-	const int scaletableSize = 128;
+	const bool c64Cost = _loaded._format == 0x57;
 	const bool newAmiCost = (_vm->_game.version == 5) && (_vm->_game.platform == Common::kPlatformAmiga);
 	const bool pcEngCost = (_vm->_game.id == GID_LOOM && _vm->_game.platform == Common::kPlatformPCEngine);
-
-	v1.scaletable = smallCostumeScaleTable;
-
-	if (_loaded._numColors == 32) {
-		v1.mask = 7;
-		v1.shr = 3;
-	} else {
-		v1.mask = 15;
-		v1.shr = 4;
-	}
 
 	switch (_loaded._format) {
 	case 0x60:
 	case 0x61:
 		// This format is used e.g. in the Sam&Max intro
-		ex1 = _srcptr[0];
-		ex2 = _srcptr[1];
-		_srcptr += 2;
+		ex1 = _srcPtr[0];
+		ex2 = _srcPtr[1];
+		_srcPtr += 2;
 		if (ex1 != 0xFF || ex2 != 0xFF) {
 			ex1 = READ_LE_UINT16(_loaded._frameOffsets + ex1 * 2);
-			_srcptr = _loaded._baseptr + READ_LE_UINT16(_loaded._baseptr + ex1 + ex2 * 2) + 14;
+			_srcPtr = _loaded._baseptr + READ_LE_UINT16(_loaded._baseptr + ex1 + ex2 * 2) + 14;
 		}
 		break;
 	default:
 		break;
 	}
 
-	use_scaling = (_scaleX != 0xFF) || (_scaleY != 0xFF);
+	compData.scaleTable = smallCostumeScaleTable;
 
-	v1.x = _actorX;
-	v1.y = _actorY;
+	compData.x = _actorX;
+	compData.y = _actorY;
 
 	// V0/V1 games are off by 1
 	if (_vm->_game.version <= 1)
-		v1.y += 1;
+		compData.y += 1;
 
-	if (use_scaling) {
+	// It's possible that the scale indexes will overflow and wrap
+	// around to zero, so it's important that we use the same
+	// method of accessing it both when calculating the size of the
+	// scaled costume, and when drawing it. See bug #2729.
+	compData.scaleIndexMask = 0xff;
 
-		/* Scale direction */
-		v1.scaleXstep = -1;
-		if (xmoveCur < 0) {
-			xmoveCur = -xmoveCur;
-			v1.scaleXstep = 1;
-		}
+	bool decode = true;
 
-		// It's possible that the scale indexes will overflow and wrap
-		// around to zero, so it's important that we use the same
-		// method of accessing it both when calculating the size of the
-		// scaled costume, and when drawing it. See bug #2729.
+	byte drawFlag = paintCelByleRLECommon(
+		xMoveCur,
+		yMoveCur,
+		_loaded._numColors,
+		128,
+		newAmiCost || pcEngCost,
+		c64Cost,
+		compData,
+		decode);
 
-		if (_mirror) {
-			/* Adjust X position */
-			startScaleIndexX = _scaleIndexX = scaletableSize - xmoveCur;
-			for (i = 0; i < xmoveCur; i++) {
-				if (v1.scaletable[_scaleIndexX++] < _scaleX)
-					v1.x -= v1.scaleXstep;
-			}
+	if (!decode)
+		return drawFlag;
 
-			rect.left = rect.right = v1.x;
+	compData.maskPtr = _vm->getMaskBuffer(0, compData.y, _zbuf);
 
-			_scaleIndexX = startScaleIndexX;
-			for (i = 0; i < _width; i++) {
-				if (rect.right < 0) {
-					skip++;
-					startScaleIndexX = _scaleIndexX;
-				}
-				if (v1.scaletable[_scaleIndexX++] < _scaleX)
-					rect.right++;
-			}
-		} else {
-			/* No mirror */
-			/* Adjust X position */
-			startScaleIndexX = _scaleIndexX = xmoveCur + scaletableSize;
-			for (i = 0; i < xmoveCur; i++) {
-				if (v1.scaletable[_scaleIndexX--] < _scaleX)
-					v1.x += v1.scaleXstep;
-			}
-
-			rect.left = rect.right = v1.x;
-
-			_scaleIndexX = startScaleIndexX;
-			for (i = 0; i < _width; i++) {
-				if (rect.left >= _out.w) {
-					startScaleIndexX = _scaleIndexX;
-					skip++;
-				}
-				if (v1.scaletable[_scaleIndexX--] < _scaleX)
-					rect.left--;
-			}
-		}
-		_scaleIndexX = startScaleIndexX;
-
-		if (skip)
-			skip--;
-
-		step = -1;
-		if (ymoveCur < 0) {
-			ymoveCur = -ymoveCur;
-			step = 1;
-		}
-
-		_scaleIndexY = scaletableSize - ymoveCur;
-		for (i = 0; i < ymoveCur; i++) {
-			if (v1.scaletable[_scaleIndexY++] < _scaleY)
-				v1.y -= step;
-		}
-
-		rect.top = rect.bottom = v1.y;
-		_scaleIndexY = scaletableSize - ymoveCur;
-		for (i = 0; i < _height; i++) {
-			if (v1.scaletable[_scaleIndexY++] < _scaleY)
-				rect.bottom++;
-		}
-
-		_scaleIndexY = scaletableSize - ymoveCur;
-	} else {
-		if (!_mirror)
-			xmoveCur = -xmoveCur;
-
-		v1.x += xmoveCur;
-		v1.y += ymoveCur;
-
-		if (_mirror) {
-			rect.left = v1.x;
-			rect.right = v1.x + _width;
-		} else {
-			rect.left = v1.x - _width;
-			rect.right = v1.x;
-		}
-
-		rect.top = v1.y;
-		rect.bottom = rect.top + _height;
-
-	}
-
-	v1.skip_width = _width;
-	v1.scaleXstep = _mirror ? 1 : -1;
-
-	if (_vm->_game.version == 1)
-		// V1 games uses 8 x 8 pixels for actors
-		_vm->markRectAsDirty(kMainVirtScreen, rect.left, rect.right + 8, rect.top, rect.bottom, _actorID);
-	else
-		_vm->markRectAsDirty(kMainVirtScreen, rect.left, rect.right + 1, rect.top, rect.bottom, _actorID);
-
-	if (rect.top >= _out.h || rect.bottom <= 0)
-		return 0;
-
-	if (rect.left >= _out.w || rect.right <= 0)
-		return 0;
-
-	v1.replen = 0;
-
-	if (_mirror) {
-		if (!use_scaling)
-			skip = -v1.x;
-		if (skip > 0) {
-			if (!newAmiCost && !pcEngCost && _loaded._format != 0x57) {
-				v1.skip_width -= skip;
-				codec1_ignorePakCols(v1, skip);
-				v1.x = 0;
-			}
-		} else {
-			skip = rect.right - _out.w;
-			if (skip <= 0) {
-				drawFlag = 2;
-			} else {
-				v1.skip_width -= skip;
-			}
-		}
-	} else {
-		if (!use_scaling)
-			skip = rect.right - _out.w;
-		if (skip > 0) {
-			if (!newAmiCost && !pcEngCost && _loaded._format != 0x57) {
-				v1.skip_width -= skip;
-				codec1_ignorePakCols(v1, skip);
-				v1.x = _out.w - 1;
-			}
-		} else {
-			// V1 games uses 8 x 8 pixels for actors
-			if (_loaded._format == 0x57)
-				skip = -8 - rect.left;
-			else
-				skip = -1 - rect.left;
-			if (skip <= 0)
-				drawFlag = 2;
-			else
-				v1.skip_width -= skip;
-		}
-	}
-
-	if (v1.skip_width <= 0)
-		return 0;
-
-	if (rect.left < 0)
-		rect.left = 0;
-
-	if (rect.top < 0)
-		rect.top = 0;
-
-	if (rect.top > _out.h)
-		rect.top = _out.h;
-
-	if (rect.bottom > _out.h)
-		rect.bottom = _out.h;
-
-	if (_draw_top > rect.top)
-		_draw_top = rect.top;
-	if (_draw_bottom < rect.bottom)
-		_draw_bottom = rect.bottom;
-
-	if (_height + rect.top >= 256) {
-		return 2;
-	}
-
-	v1.width = _out.w;
-	v1.height = _out.h;
-	v1.destptr = (byte *)_out.getBasePtr(v1.x, v1.y);
-
-	v1.mask_ptr = _vm->getMaskBuffer(0, v1.y, _zbuf);
-
-	if (_loaded._format == 0x57) {
+	if (c64Cost) {
 		// The v1 costume renderer needs the actor number, which is
 		// the same thing as the costume renderer's _actorID.
-		procC64(v1, _actorID);
+		byleRLEDecode_C64(compData, _actorID);
 	} else if (newAmiCost)
-		proc3_ami(v1);
+		byleRLEDecode_ami(compData);
 	else if (pcEngCost)
-		procPCEngine(v1);
+		byleRLEDecode_PCEngine(compData);
 	else
-		proc3(v1);
+		byleRLEDecode(compData);
 
 	return drawFlag;
+}
+
+void ClassicCostumeRenderer::markAsDirty(const Common::Rect &rect, ByleRLEData &compData, bool &decode) {
+	if (_vm->_game.version == 1) {
+		// V1 games uses 8 x 8 pixels for actors
+		_vm->markRectAsDirty(kMainVirtScreen, rect.left, rect.right + 8, rect.top, rect.bottom, _actorID);
+	} else {
+		_vm->markRectAsDirty(kMainVirtScreen, rect.left, rect.right + 1, rect.top, rect.bottom, _actorID);
+	}
 }
 
 // Skin colors
@@ -329,7 +160,7 @@ static const int v1MMActorPalatte2[25] = {
 };
 
 #define MASK_AT(xoff) \
-	(mask && (mask[((v1.x + xoff) / 8)] & revBitMask((v1.x + xoff) & 7)))
+	(mask && (mask[((compData.x + xoff) / 8)] & revBitMask((compData.x + xoff) & 7)))
 #define LINE(c,p) \
 	pcolor = (color >> c) & 3; \
 	if (pcolor) { \
@@ -339,7 +170,7 @@ static const int v1MMActorPalatte2[25] = {
 			dst[p + 1] = palette[pcolor]; \
 	}
 
-void ClassicCostumeRenderer::procC64(Codec1 &v1, int actor) {
+void ClassicCostumeRenderer::byleRLEDecode_C64(ByleRLEData &compData, int actor) {
 	const byte *mask, *src;
 	byte *dst;
 	byte len;
@@ -348,14 +179,14 @@ void ClassicCostumeRenderer::procC64(Codec1 &v1, int actor) {
 	byte color, pcolor;
 	bool rep;
 
-	y = v1.y;
-	src = _srcptr;
-	dst = v1.destptr;
-	len = v1.replen;
-	color = v1.repcolor;
+	y = compData.y;
+	src = _srcPtr;
+	dst = compData.destPtr;
+	len = compData.repLen;
+	color = compData.repColor;
 	height = _height;
 
-	v1.skip_width /= 8;
+	compData.skipWidth /= 8;
 
 	// Set up the palette data
 	byte palette[4] = { 0, 0, 0, 0 };
@@ -372,7 +203,7 @@ void ClassicCostumeRenderer::procC64(Codec1 &v1, int actor) {
 		palette[2] = _vm->_gdi->remapColorToRenderMode(11);
 		palette[3] = _vm->_gdi->remapColorToRenderMode(11);
 	}
-	mask = v1.mask_ptr;
+	mask = compData.maskPtr;
 
 	if (len)
 		goto StartPos;
@@ -388,8 +219,8 @@ void ClassicCostumeRenderer::procC64(Codec1 &v1, int actor) {
 			if (!rep)
 				color = *src++;
 
-			if (0 <= y && y < _out.h && 0 <= v1.x && v1.x < _out.w) {
-				if (!_mirror) {
+			if (0 <= y && y < _out.h && 0 <= compData.x && compData.x < _out.w) {
+				if (!_drawActorToRight) {
 					LINE(0, 0); LINE(2, 2); LINE(4, 4); LINE(6, 6);
 				} else {
 					LINE(6, 0); LINE(4, 2); LINE(2, 4); LINE(0, 6);
@@ -399,16 +230,16 @@ void ClassicCostumeRenderer::procC64(Codec1 &v1, int actor) {
 			y++;
 			mask += _numStrips;
 			if (!--height) {
-				if (!--v1.skip_width)
+				if (!--compData.skipWidth)
 					return;
 				height = _height;
-				y = v1.y;
-				v1.x += 8 * v1.scaleXstep;
-				if (v1.x < 0 || v1.x >= _out.w)
+				y = compData.y;
+				compData.x += 8 * compData.scaleXStep;
+				if (compData.x < 0 || compData.x >= _out.w)
 					return;
-				mask = v1.mask_ptr;
-				v1.destptr += 8 * v1.scaleXstep;
-				dst = v1.destptr;
+				mask = compData.maskPtr;
+				compData.destPtr += 8 * compData.scaleXStep;
+				dst = compData.destPtr;
 			}
 		}
 	} while (1);
@@ -417,118 +248,7 @@ void ClassicCostumeRenderer::procC64(Codec1 &v1, int actor) {
 #undef LINE
 #undef MASK_AT
 
-#ifdef USE_ARM_COSTUME_ASM
-
-#ifndef IPHONE
-#define ClassicProc3RendererShadowARM _ClassicProc3RendererShadowARM
-#endif
-
-extern "C" int ClassicProc3RendererShadowARM(int _scaleY,
-										ClassicCostumeRenderer::Codec1 *v1,
-										int pitch,
-										const byte *src,
-										int   height,
-										int _scaleX,
-										int _scaleIndexX,
-										byte *_shadow_table,
-										uint16 _palette[32],
-										int32 _numStrips,
-										int _scaleIndexY);
-#endif
-
-void ClassicCostumeRenderer::proc3(Codec1 &v1) {
-	const byte *mask, *src;
-	byte *dst;
-	byte len, maskbit;
-	int y;
-	uint color, height, pcolor;
-	byte scaleIndexY;
-	bool masked;
-
-#ifdef USE_ARM_COSTUME_ASM
-	if (((_shadow_mode & 0x20) == 0) &&
-	    (v1.mask_ptr != NULL) &&
-	    (_shadow_table != NULL))
-	{
-		_scaleIndexX = ClassicProc3RendererShadowARM(_scaleY,
-		                                             &v1,
-		                                             _out.pitch,
-		                                             _srcptr,
-		                                             _height,
-		                                             _scaleX,
-		                                             _scaleIndexX,
-		                                             _shadow_table,
-		                                             _palette,
-		                                             _numStrips,
-		                                             _scaleIndexY);
-		return;
-	}
-#endif /* USE_ARM_COSTUME_ASM */
-
-	y = v1.y;
-	src = _srcptr;
-	dst = v1.destptr;
-	len = v1.replen;
-	color = v1.repcolor;
-	height = _height;
-
-	scaleIndexY = _scaleIndexY;
-	maskbit = revBitMask(v1.x & 7);
-	mask = v1.mask_ptr + v1.x / 8;
-
-	if (len)
-		goto StartPos;
-
-	do {
-		len = *src++;
-		color = len >> v1.shr;
-		len &= v1.mask;
-		if (!len)
-			len = *src++;
-
-		do {
-			if (_scaleY == 255 || v1.scaletable[scaleIndexY++] < _scaleY) {
-				masked = (y < 0 || y >= _out.h) || (v1.x < 0 || v1.x >= _out.w) || (v1.mask_ptr && (mask[0] & maskbit));
-
-				if (color && !masked) {
-					if (_shadow_mode & 0x20) {
-						pcolor = _shadow_table[*dst];
-					} else {
-						pcolor = _palette[color];
-						if (pcolor == 13 && _shadow_table)
-							pcolor = _shadow_table[*dst];
-					}
-					*dst = pcolor;
-				}
-				dst += _out.pitch;
-				mask += _numStrips;
-				y++;
-			}
-			if (!--height) {
-				if (!--v1.skip_width)
-					return;
-				height = _height;
-				y = v1.y;
-
-				scaleIndexY = _scaleIndexY;
-
-				if (_scaleX == 255 || v1.scaletable[_scaleIndexX] < _scaleX) {
-					v1.x += v1.scaleXstep;
-					if (v1.x < 0 || v1.x >= _out.w)
-						return;
-					maskbit = revBitMask(v1.x & 7);
-					v1.destptr += v1.scaleXstep;
-				}
-				_scaleIndexX += v1.scaleXstep;
-				dst = v1.destptr;
-				mask = v1.mask_ptr + v1.x / 8;
-			}
-		StartPos:;
-		} while (--len);
-	} while (1);
-}
-
-void ClassicCostumeRenderer::proc3_ami(Codec1 &v1) {
+void ClassicCostumeRenderer::byleRLEDecode_ami(ByleRLEData &compData) {
 	const byte *mask, *src;
 	byte *dst;
 	byte maskbit, len, height, width;
@@ -537,15 +257,15 @@ void ClassicCostumeRenderer::proc3_ami(Codec1 &v1) {
 	bool masked;
 	int oldXpos, oldScaleIndexX;
 
-	mask = v1.mask_ptr + v1.x / 8;
-	dst = v1.destptr;
+	mask = compData.maskPtr + compData.x / 8;
+	dst = compData.destPtr;
 	height = _height;
 	width = _width;
-	src = _srcptr;
-	maskbit = revBitMask(v1.x & 7);
-	y = v1.y;
-	oldXpos = v1.x;
-	oldScaleIndexX = _scaleIndexX;
+	src = _srcPtr;
+	maskbit = revBitMask(compData.x & 7);
+	y = compData.y;
+	oldXpos = compData.x;
+	oldScaleIndexX = compData.scaleXIndex;
 
 	// Indy4 Amiga always uses the room map to match colors to the currently
 	// setup palette in the actor code in the original, thus we need to do this
@@ -556,13 +276,13 @@ void ClassicCostumeRenderer::proc3_ami(Codec1 &v1) {
 
 	do {
 		len = *src++;
-		color = len >> v1.shr;
-		len &= v1.mask;
+		color = len >> compData.shr;
+		len &= compData.mask;
 		if (!len)
 			len = *src++;
 		do {
-			if (_scaleY == 255 || v1.scaletable[_scaleIndexY] < _scaleY) {
-				masked = (y < 0 || y >= _out.h) || (v1.x < 0 || v1.x >= _out.w) || (v1.mask_ptr && (mask[0] & maskbit));
+			if (_scaleY == 255 || compData.scaleTable[compData.scaleYIndex] < _scaleY) {
+				masked = (y < 0 || y >= _out.h) || (compData.x < 0 || compData.x >= _out.w) || (compData.maskPtr && (mask[0] & maskbit));
 
 				if (color && !masked) {
 					if (amigaMap)
@@ -571,13 +291,13 @@ void ClassicCostumeRenderer::proc3_ami(Codec1 &v1) {
 						*dst = _palette[color];
 				}
 
-				if (_scaleX == 255 || v1.scaletable[_scaleIndexX] < _scaleX) {
-					v1.x += v1.scaleXstep;
-					dst += v1.scaleXstep;
-					maskbit = revBitMask(v1.x & 7);
+				if (_scaleX == 255 || compData.scaleTable[compData.scaleXIndex] < _scaleX) {
+					compData.x += compData.scaleXStep;
+					dst += compData.scaleXStep;
+					maskbit = revBitMask(compData.x & 7);
 				}
-				_scaleIndexX += v1.scaleXstep;
-				mask = v1.mask_ptr + v1.x / 8;
+				compData.scaleXIndex = (compData.scaleXIndex + compData.scaleXStep) & compData.scaleIndexMask;
+				mask = compData.maskPtr + compData.x / 8;
 			}
 			if (!--width) {
 				if (!--height)
@@ -586,17 +306,17 @@ void ClassicCostumeRenderer::proc3_ami(Codec1 &v1) {
 				if (y >= _out.h)
 					return;
 
-				if (v1.x != oldXpos) {
-					dst += _out.pitch - (v1.x - oldXpos);
-					v1.mask_ptr += _numStrips;
-					mask = v1.mask_ptr + oldXpos / 8;
+				if (compData.x != oldXpos) {
+					dst += _out.pitch - (compData.x - oldXpos);
+					compData.maskPtr += _numStrips;
+					mask = compData.maskPtr + oldXpos / 8;
 					maskbit = revBitMask(oldXpos & 7);
 					y++;
 				}
 				width = _width;
-				v1.x = oldXpos;
-				_scaleIndexX = oldScaleIndexX;
-				_scaleIndexY++;
+				compData.x = oldXpos;
+				compData.scaleXIndex = oldScaleIndexX;
+				compData.scaleYIndex = (compData.scaleYIndex + 1) & compData.scaleIndexMask;
 			}
 		} while (--len);
 	} while (1);
@@ -612,7 +332,7 @@ static void PCESetCostumeData(byte block[16][16], int index, byte value) {
 	}
 }
 
-void ClassicCostumeRenderer::procPCEngine(Codec1 &v1) {
+void ClassicCostumeRenderer::byleRLEDecode_PCEngine(ByleRLEData &compData) {
 	const byte *mask, *src;
 	byte *dst;
 	byte maskbit;
@@ -623,14 +343,14 @@ void ClassicCostumeRenderer::procPCEngine(Codec1 &v1) {
 	int xStep;
 	byte block[16][16];
 
-	src = _srcptr;
+	src = _srcPtr;
 	width = _width / 16;
 	height = _height / 16;
 
 	if (_numBlocks == 0)
 		return;
 
-	xStep = _mirror ? +1 : -1;
+	xStep = _drawActorToRight ? +1 : -1;
 
 	for (uint x = 0; x < width; ++x) {
 		yPos = 0;
@@ -668,14 +388,14 @@ void ClassicCostumeRenderer::procPCEngine(Codec1 &v1) {
 			for (int row = 0; row < 16; ++row) {
 				xPos = xStep * x * 16;
 				for (int col = 0; col < 16; ++col) {
-					dst = v1.destptr + yPos * _out.pitch + xPos * _vm->_bytesPerPixel;
-					mask = v1.mask_ptr + yPos * _numStrips + (v1.x + xPos) / 8;
-					maskbit = revBitMask((v1.x + xPos) % 8);
+					dst = compData.destPtr + yPos * _out.pitch + xPos * _vm->_bytesPerPixel;
+					mask = compData.maskPtr + yPos * _numStrips + (compData.x + xPos) / 8;
+					maskbit = revBitMask((compData.x + xPos) % 8);
 
 					pcolor = block[row][col];
-					masked = (v1.y + yPos < 0 || v1.y + yPos >= _out.h) ||
-					         (v1.x + xPos < 0 || v1.x + xPos >= _out.w) ||
-							 (v1.mask_ptr && (mask[0] & maskbit));
+					masked = (compData.y + yPos < 0 || compData.y + yPos >= _out.h) ||
+							 (compData.x + xPos < 0 || compData.x + xPos >= _out.w) ||
+							 (compData.maskPtr && (mask[0] & maskbit));
 
 					if (pcolor && !masked) {
 						WRITE_UINT16(dst, ((uint16 *)_palette)[pcolor]);
@@ -746,7 +466,7 @@ void ClassicCostumeLoader::loadCostume(int id) {
 
 	// In GF_OLD_BUNDLE games, there is no actual palette, just a single color byte.
 	// Don't forget, these games were designed around a fixed 16 color HW palette :-)
-	// In addition, all offsets are shifted by 2; we accomodate that via a separate
+	// In addition, all offsets are shifted by 2; we accommodate that via a separate
 	// _baseptr value (instead of adding tons of if's throughout the code).
 	if (_vm->_game.features & GF_OLD_BUNDLE) {
 		_numColors = (_format == 0x57) ? 0 : 1;
@@ -765,7 +485,7 @@ void ClassicCostumeLoader::loadCostume(int id) {
 	// WORKAROUND bug #13433: Guybrush can give the stick to two dogs: the one
 	// guarding the jail, and the one in front of the mansion. But the palette
 	// for this costume is invalid in the second case on Amiga, causing a glitch.
-	if (_vm->_game.id == GID_MONKEY2 && _vm->_game.platform == Common::kPlatformAmiga && _vm->_currentRoom == 53 && id == 55 && _numColors == 16 && _vm->_enableEnhancements) {
+	if (_vm->_game.id == GID_MONKEY2 && _vm->_game.platform == Common::kPlatformAmiga && _vm->_currentRoom == 53 && id == 55 && _numColors == 16 && _vm->enhancementEnabled(kEnhMinorBugFixes)) {
 		// Note: handmade, trying to match the colors between rooms 53 and 29,
 		// and based on (similar) costume 1.
 		_palette = amigaMonkey2Costume55Room53;
@@ -854,8 +574,8 @@ byte NESCostumeRenderer::drawLimb(const Actor *a, int limb) {
 		}
 	}
 
-	_draw_top = top;
-	_draw_bottom = bottom;
+	_drawTop = top;
+	_drawBottom = bottom;
 
 	_vm->markRectAsDirty(kMainVirtScreen, left, right, top, bottom, _actorID);
 
@@ -891,38 +611,38 @@ byte ClassicCostumeRenderer::drawLimb(const Actor *a, int limb) {
 	if (code != 0x7B) {
 		if (_vm->_game.id == GID_LOOM && _vm->_game.platform == Common::kPlatformPCEngine)
 			baseptr = frameptr + code * 2 + 2;
-		_srcptr = baseptr + READ_LE_UINT16(frameptr + code * 2);
+		_srcPtr = baseptr + READ_LE_UINT16(frameptr + code * 2);
 
 		if (!(_vm->_game.features & GF_OLD256) || code < 0x79) {
 			const CostumeInfo *costumeInfo;
 			int xmoveCur, ymoveCur;
 
 			if (_vm->_game.id == GID_LOOM && _vm->_game.platform == Common::kPlatformPCEngine) {
-				_numBlocks = _srcptr[0];
-				_width = _srcptr[1] * 16;
-				_height = _srcptr[2] * 16;
-				xmoveCur = _xmove + PCE_SIGNED(_srcptr[3]);
-				ymoveCur = _ymove + PCE_SIGNED(_srcptr[4]);
-				_xmove += PCE_SIGNED(_srcptr[5]);
-				_ymove -= PCE_SIGNED(_srcptr[6]);
-				_srcptr += 7;
+				_numBlocks = _srcPtr[0];
+				_width = _srcPtr[1] * 16;
+				_height = _srcPtr[2] * 16;
+				xmoveCur = _xMove + PCE_SIGNED(_srcPtr[3]);
+				ymoveCur = _yMove + PCE_SIGNED(_srcPtr[4]);
+				_xMove += PCE_SIGNED(_srcPtr[5]);
+				_yMove -= PCE_SIGNED(_srcPtr[6]);
+				_srcPtr += 7;
 			} else if (_loaded._format == 0x57) {
-				_width = _srcptr[0] * 8;
-				_height = _srcptr[1];
-				xmoveCur = _xmove + (int8)_srcptr[2] * 8;
-				ymoveCur = _ymove - (int8)_srcptr[3];
-				_xmove += (int8)_srcptr[4] * 8;
-				_ymove -= (int8)_srcptr[5];
-				_srcptr += 6;
+				_width = _srcPtr[0] * 8;
+				_height = _srcPtr[1];
+				xmoveCur = _xMove + (int8)_srcPtr[2] * 8;
+				ymoveCur = _yMove - (int8)_srcPtr[3];
+				_xMove += (int8)_srcPtr[4] * 8;
+				_yMove -= (int8)_srcPtr[5];
+				_srcPtr += 6;
 			} else {
-				costumeInfo = (const CostumeInfo *)_srcptr;
+				costumeInfo = (const CostumeInfo *)_srcPtr;
 				_width = READ_LE_UINT16(&costumeInfo->width);
 				_height = READ_LE_UINT16(&costumeInfo->height);
-				xmoveCur = _xmove + (int16)READ_LE_UINT16(&costumeInfo->rel_x);
-				ymoveCur = _ymove + (int16)READ_LE_UINT16(&costumeInfo->rel_y);
-				_xmove += (int16)READ_LE_UINT16(&costumeInfo->move_x);
-				_ymove -= (int16)READ_LE_UINT16(&costumeInfo->move_y);
-				_srcptr += 12;
+				xmoveCur = _xMove + (int16)READ_LE_UINT16(&costumeInfo->relX);
+				ymoveCur = _yMove + (int16)READ_LE_UINT16(&costumeInfo->relY);
+				_xMove += (int16)READ_LE_UINT16(&costumeInfo->moveX);
+				_yMove -= (int16)READ_LE_UINT16(&costumeInfo->moveY);
+				_srcPtr += 12;
 			}
 
 			// WORKAROUND: During the intro, there are a couple of
@@ -935,11 +655,11 @@ byte ClassicCostumeRenderer::drawLimb(const Actor *a, int limb) {
 			// We adjust the positioning a bit, and make sure the
 			// lid is always mirrored the same way.
 
-			bool mirror = _mirror;
+			bool mirror = _drawActorToRight;
 
-			if (_vm->_game.id == GID_TENTACLE && _vm->_currentRoom == 61 && a->_number == 1 && _loaded._id == 324 && _vm->_enableEnhancements) {
+			if (_vm->_game.id == GID_TENTACLE && _vm->_currentRoom == 61 && a->_number == 1 && _loaded._id == 324 && _vm->enhancementEnabled(kEnhMinorBugFixes)) {
 				if (limb == 0) {
-					_mirror = true;
+					_drawActorToRight = true;
 					xmoveCur--;
 				} else {
 					if (a->getFacing() == 270) {
@@ -950,9 +670,9 @@ byte ClassicCostumeRenderer::drawLimb(const Actor *a, int limb) {
 				}
 			}
 
-			byte result = mainRoutine(xmoveCur, ymoveCur);
+			byte result = paintCelByleRLE(xmoveCur, ymoveCur);
 
-			_mirror = mirror;
+			_drawActorToRight = mirror;
 			return result;
 		}
 	}
@@ -1071,7 +791,7 @@ void ClassicCostumeLoader::costumeDecodeData(Actor *a, int frame, uint usemask) 
 		i++;
 		usemask <<= 1;
 		mask <<= 1;
-	} while (mask&0xFFFF);
+	} while (mask & 0xFFFF);
 }
 
 void ClassicCostumeRenderer::setPalette(uint16 *palette) {
@@ -1109,31 +829,30 @@ void ClassicCostumeRenderer::setPalette(uint16 *palette) {
 }
 
 void ClassicCostumeRenderer::setFacing(const Actor *a) {
-	_mirror = newDirToOldDir(a->getFacing()) != 0 || _loaded._mirror;
+	_drawActorToRight = newDirToOldDir(a->getFacing()) != 0 || _loaded._mirror;
 }
 
 void ClassicCostumeRenderer::setCostume(int costume, int shadow) {
 	_loaded.loadCostume(costume);
 }
 
-byte ClassicCostumeLoader::increaseAnims(Actor *a) {
-	int i;
-	byte r = 0;
+bool ClassicCostumeLoader::increaseAnims(Actor *a) {
+	bool r = false;
 
-	for (i = 0; i != 16; i++) {
+	for (int i = 0; i != 16; i++) {
 		if (a->_cost.curpos[i] != 0xFFFF)
-			r += increaseAnim(a, i);
+			r |= increaseAnim(a, i);
 	}
 	return r;
 }
 
-byte ClassicCostumeLoader::increaseAnim(Actor *a, int slot) {
+bool ClassicCostumeLoader::increaseAnim(Actor *a, int slot) {
 	int highflag;
 	int i, end;
 	byte code, nc;
 
 	if (a->_cost.curpos[slot] == 0xFFFF)
-		return 0;
+		return false;
 
 	highflag = a->_cost.curpos[slot] & 0x8000;
 	i = a->_cost.curpos[slot] & 0x7FFF;
@@ -1163,7 +882,7 @@ byte ClassicCostumeLoader::increaseAnim(Actor *a, int slot) {
 			if (_vm->_game.version >= 6) {
 				if (nc >= 0x71 && nc <= 0x78) {
 					uint sound = (_vm->_game.heversion == 60) ? 0x78 - nc : nc - 0x71;
-					_vm->_sound->addSoundToQueue2(a->_sound[sound]);
+					_vm->_sound->addSoundToQueue(a->_sound[sound]);
 					if (a->_cost.start[slot] != end)
 						continue;
 				}
@@ -1178,7 +897,7 @@ byte ClassicCostumeLoader::increaseAnim(Actor *a, int slot) {
 
 		a->_cost.curpos[slot] = i | highflag;
 		return (_animCmds[i] & 0x7F) != code;
-	} while (1);
+	} while (true);
 }
 
 /**
@@ -1208,18 +927,17 @@ void NESCostumeLoader::costumeDecodeData(Actor *a, int frame, uint usemask) {
 	a->_cost.frame[0] = anim;
 }
 
-byte NESCostumeLoader::increaseAnims(Actor *a) {
-	int i;
-	byte r = 0;
+bool NESCostumeLoader::increaseAnims(Actor *a) {
+	bool r = false;
 
-	for (i = 0; i != 16; i++) {
+	for (int i = 0; i != 16; i++) {
 		if (a->_cost.curpos[i] != 0xFFFF)
-			r += increaseAnim(a, i);
+			r |= increaseAnim(a, i);
 	}
 	return r;
 }
 
-byte NESCostumeLoader::increaseAnim(Actor *a, int slot) {
+bool NESCostumeLoader::increaseAnim(Actor *a, int slot) {
 	int oldframe = a->_cost.curpos[slot]++;
 	if (a->_cost.curpos[slot] >= a->_cost.end[slot])
 		a->_cost.curpos[slot] = a->_cost.start[slot];
@@ -1248,8 +966,8 @@ byte V0CostumeRenderer::drawLimb(const Actor *a, int limb) {
 		return 0;
 
 	if (limb == 0) {
-		_draw_top = 200;
-		_draw_bottom = 0;
+		_drawTop = 200;
+		_drawBottom = 0;
 	}
 
 	// Invalid current position?
@@ -1257,7 +975,7 @@ byte V0CostumeRenderer::drawLimb(const Actor *a, int limb) {
 		return 0;
 
 	_loaded.loadCostume(a->_costume);
-	byte frame = _loaded._frameOffsets[a->_cost.curpos[limb] + a->_cost.active[limb]];
+	byte frame = _loaded._frameOffsets[a->_cost.curpos[limb] + a->_cost.animType[limb]];
 
 	// Get the frame ptr
 	byte ptrLow = _loaded._baseptr[frame];
@@ -1278,10 +996,10 @@ byte V0CostumeRenderer::drawLimb(const Actor *a, int limb) {
 
 	int width = data[0];
 	int height = data[1];
-	int offsetX = _xmove + data[2];
-	int offsetY = _ymove + data[3];
-	_xmove += (int8)data[4];
-	_ymove += (int8)data[5];
+	int offsetX = _xMove + data[2];
+	int offsetY = _yMove + data[3];
+	_xMove += (int8)data[4];
+	_yMove += (int8)data[5];
 	data += 6;
 
 	if (!width || !height)
@@ -1312,8 +1030,8 @@ byte V0CostumeRenderer::drawLimb(const Actor *a, int limb) {
 		}
 	}
 
-	_draw_top = MIN(_draw_top, ypos);
-	_draw_bottom = MAX(_draw_bottom, ypos + height);
+	_drawTop = MIN(_drawTop, ypos);
+	_drawBottom = MAX(_drawBottom, ypos + height);
 	if (a0->_limb_flipped[limb])
 		_vm->markRectAsDirty(kMainVirtScreen, xpos - (width * 8), xpos, ypos, ypos + height, _actorID);
 	else
@@ -1407,26 +1125,26 @@ byte V0CostumeLoader::getFrame(Actor *a, int limb) {
 	return _frameOffsets[_frameOffsets[limb] + a->_cost.start[limb]];
 }
 
-byte V0CostumeLoader::increaseAnims(Actor *a) {
+bool V0CostumeLoader::increaseAnims(Actor *a) {
 	Actor_v0 *a0 = (Actor_v0 *)a;
 	int i;
-	byte r = 0;
+	bool r = false;
 
 	for (i = 0; i != 8; i++) {
 		a0->limbFrameCheck(i);
-		r += increaseAnim(a, i);
+		r |= increaseAnim(a, i);
 	}
 	return r;
 }
 
-byte V0CostumeLoader::increaseAnim(Actor *a, int limb) {
+bool V0CostumeLoader::increaseAnim(Actor *a, int limb) {
 	Actor_v0 *a0 = (Actor_v0 *)a;
 	const uint16 limbPrevious = a->_cost.curpos[limb]++;
 
 	loadCostume(a->_costume);
 
 	// 0x2543
-	byte frame = _frameOffsets[a->_cost.curpos[limb] + a->_cost.active[limb]];
+	byte frame = _frameOffsets[a->_cost.curpos[limb] + a->_cost.animType[limb]];
 
 	// Is this frame invalid?
 	if (frame == 0xFF) {
@@ -1457,10 +1175,7 @@ byte V0CostumeLoader::increaseAnim(Actor *a, int limb) {
 	}
 
 	// Limb frame has changed?
-	if (limbPrevious == a->_cost.curpos[limb])
-		return 0;
-
-	return 1;
+	return limbPrevious != a->_cost.curpos[limb];
 }
 
 } // End of namespace Scumm

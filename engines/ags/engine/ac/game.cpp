@@ -19,6 +19,7 @@
  *
  */
 
+#include "common/config-manager.h"
 #include "common/memstream.h"
 #include "ags/engine/ac/game.h"
 #include "ags/shared/ac/common.h"
@@ -50,12 +51,15 @@
 #include "ags/engine/ac/sys_events.h"
 #include "ags/engine/ac/rich_game_media.h"
 #include "ags/engine/ac/room_status.h"
+#include "ags/engine/ac/sprite.h"
 #include "ags/shared/ac/sprite_cache.h"
 #include "ags/engine/ac/string.h"
 #include "ags/engine/ac/translation.h"
 #include "ags/engine/ac/dynobj/all_dynamic_classes.h"
 #include "ags/engine/ac/dynobj/all_script_classes.h"
 #include "ags/engine/ac/dynobj/script_camera.h"
+#include "ags/engine/ac/dynobj/script_game.h"
+#include "ags/engine/ac/dynobj/dynobj_manager.h"
 #include "ags/engine/debugging/debug_log.h"
 #include "ags/engine/debugging/debugger.h"
 #include "ags/shared/debugging/out.h"
@@ -68,6 +72,7 @@
 #include "ags/shared/gui/gui_slider.h"
 #include "ags/engine/gui/gui_dialog.h"
 #include "ags/engine/main/engine.h"
+#include "ags/engine/main/game_run.h"
 #include "ags/engine/media/audio/audio_system.h"
 #include "ags/engine/media/video/video.h"
 #include "ags/engine/platform/base/ags_platform_driver.h"
@@ -144,9 +149,10 @@ void Game_SetAudioTypeVolume(int audioType, int volume, int changeType) {
 	if ((audioType < 0) || ((size_t)audioType >= _GP(game).audioClipTypes.size()))
 		quitprintf("!Game.SetAudioTypeVolume: invalid audio type: %d", audioType);
 
-	Debug::Printf("Game.SetAudioTypeVolume: type: %d, volume: %d, change: %d", audioType, volume, changeType);
-	if ((changeType == VOL_CHANGEEXISTING) ||
-	        (changeType == VOL_BOTH)) {
+	const char *change_str[3]{"existing", "future", "all"};
+	Debug::Printf("Game.SetAudioTypeVolume: type: %d, volume: %d, change: %s", audioType, volume,
+				  change_str[changeType - VOL_CHANGEEXISTING]);
+	if ((changeType == VOL_CHANGEEXISTING) || (changeType == VOL_BOTH)) {
 		for (int aa = 0; aa < _GP(game).numGameChannels; aa++) {
 			ScriptAudioClip *clip = AudioChannel_GetPlayingClip(&_G(scrAudioChannel)[aa]);
 			if ((clip != nullptr) && (clip->type == audioType)) {
@@ -164,7 +170,6 @@ void Game_SetAudioTypeVolume(int audioType, int volume, int changeType) {
 		// update queued clip volumes
 		update_queued_clips_volume(audioType, volume);
 	}
-
 }
 
 int Game_GetMODPattern() {
@@ -184,13 +189,16 @@ int Game_GetDialogCount() {
 
 void set_debug_mode(bool on) {
 	_GP(play).debug_mode = on ? 1 : 0;
-	debug_set_console(on);
 }
 
 void set_game_speed(int new_fps) {
 	_G(frames_per_second) = new_fps;
 	if (!isTimerFpsMaxed()) // if in maxed mode, don't update timer for now
 		setTimerFps(new_fps);
+}
+
+float get_game_speed() {
+	return _G(frames_per_second);
 }
 
 void setup_for_dialog() {
@@ -267,19 +275,10 @@ static bool SetSaveGameDirectory(const FSLocation &fsdir) {
 		return false;
 
 	// copy the Restart Game file, if applicable
-	String restartGamePath = Path::ConcatPaths(_G(saveGameDirectory), get_save_game_filename(RESTART_POINT_SAVE_GAME_NUMBER));
-	Stream *restartGameFile = File::OpenFileRead(restartGamePath);
-	if (restartGameFile != nullptr) {
-		long fileSize = restartGameFile->GetLength();
-		char *mbuffer = (char *)malloc(fileSize);
-		restartGameFile->Read(mbuffer, fileSize);
-		delete restartGameFile;
-
-		restartGamePath = Path::ConcatPaths(newSaveGameDir, get_save_game_filename(RESTART_POINT_SAVE_GAME_NUMBER));
-		restartGameFile = File::CreateFile(restartGamePath);
-		restartGameFile->Write(mbuffer, fileSize);
-		delete restartGameFile;
-		free(mbuffer);
+	String old_restart_path = Path::ConcatPaths(_G(saveGameDirectory), get_save_game_filename(RESTART_POINT_SAVE_GAME_NUMBER));
+	if (File::IsFile(old_restart_path)) {
+		String new_restart_path = Path::ConcatPaths(newSaveGameDir, get_save_game_filename(RESTART_POINT_SAVE_GAME_NUMBER));
+		File::CopyFile(old_restart_path, new_restart_path, true);
 	}
 
 	_G(saveGameDirectory) = newSaveGameDir;
@@ -359,95 +358,60 @@ bool do_save_game_dialog() {
 }
 
 void free_do_once_tokens() {
-	_GP(play).do_once_tokens.resize(0);
+	_GP(play).do_once_tokens.clear();
 }
 
 
 // Free all the memory associated with the game
-void unload_game_file() {
+void unload_game() {
+	dispose_game_drawdata();
+	// NOTE: fonts should be freed prior to stopping plugins,
+	// as plugins may provide font renderer interface.
+	free_all_fonts();
 	close_translation();
 
-	_GP(play).FreeViewportsAndCameras();
-
-	_GP(charextra).clear();
-	_GP(mls).clear();
-
-	dispose_game_drawdata();
-
-	delete _G(gameinstFork);
-	delete _G(gameinst);
-	_G(gameinstFork) = nullptr;
-	_G(gameinst) = nullptr;
-	_GP(gamescript).reset();
-
-	delete _G(dialogScriptsInst);
-	_G(dialogScriptsInst) = nullptr;
-	_GP(dialogScriptsScript).reset();
-
-	for (size_t i = 0; i < _G(numScriptModules); ++i) {
-		delete _GP(moduleInstFork)[i];
-		delete _GP(moduleInst)[i];
-		_GP(scriptModules)[i].reset();
-	}
-
-	_GP(moduleInstFork).resize(0);
-	_GP(moduleInst).resize(0);
-	_GP(scriptModules).resize(0);
-	_GP(repExecAlways).moduleHasFunction.resize(0);
-	_GP(lateRepExecAlways).moduleHasFunction.resize(0);
-	_GP(getDialogOptionsDimensionsFunc).moduleHasFunction.resize(0);
-	_GP(renderDialogOptionsFunc).moduleHasFunction.resize(0);
-	_GP(getDialogOptionUnderCursorFunc).moduleHasFunction.resize(0);
-	_GP(runDialogOptionMouseClickHandlerFunc).moduleHasFunction.resize(0);
-	_GP(runDialogOptionKeyPressHandlerFunc).moduleHasFunction.resize(0);
-	_GP(runDialogOptionTextInputHandlerFunc).moduleHasFunction.resize(0);
-	_GP(runDialogOptionRepExecFunc).moduleHasFunction.resize(0);
-	_GP(runDialogOptionCloseFunc).moduleHasFunction.resize(0);
-	_G(numScriptModules) = 0;
-
-	_GP(views).clear();
-
-	if (_G(splipsync) != nullptr) {
-		for (int i = 0; i < _G(numLipLines); ++i) {
-			free(_G(splipsync)[i].endtimeoffs);
-			free(_G(splipsync)[i].frame);
-		}
-		free(_G(splipsync));
-		_G(splipsync) = nullptr;
-		_G(numLipLines) = 0;
-		_G(curLipLine) = -1;
-	}
-
-	for (auto &dlg : _G(dialog)) {
-		if (dlg.optionscripts != nullptr)
-			free(dlg.optionscripts);
-	}
-	_G(dialog).clear();
-	delete[] _G(scrDialog);
-	_G(scrDialog) = nullptr;
-
-	_GP(guis).clear();
-	free(_G(scrGui));
-
-	free_all_fonts();
-
+	// NOTE: script objects must be freed prior to stopping plugins,
+	// in case there are managed objects provided by plugins.
 	ccRemoveAllSymbols();
 	ccUnregisterAllObjects();
 	pl_stop_plugins();
 
-	free_do_once_tokens();
-	_GP(play).gui_draw_order.clear();
+	// Free all script instances and script modules
+	FreeAllScriptInstances();
+	FreeGlobalScripts();
+
+	_GP(charextra).clear();
+	_GP(mls).clear();
+	_GP(views).clear();
+
+	_GP(splipsync).clear();
+	_G(numLipLines) = 0;
+	_G(curLipLine) = -1;
+
+	_G(dialog).clear();
+	_GP(scrDialog).clear();
+
+	_GP(guis).clear();
+	_GP(scrGui).clear();
+
+	get_overlays().clear();
 
 	resetRoomStatuses();
+	_GP(thisroom).Free();
 
-	// free game struct last because it contains object counts
-	_GP(game).Free();
+	// Free game state and game struct
+	// Use placement new to keep the same memory locations
+	// as these structures are still referenced and may be reused
+	// in some games
+	_G(play)->~GameState();
+	new(_G(play)) GameState();
+	_G(game)->~GameSetupStruct();
+	new(_G(game)) GameSetupStruct();
+
+	// Reset all resource caches
+	// IMPORTANT: this is hard reset, including locked items
+	_GP(spriteset).Reset();
 }
-
-
-
-
-
 
 const char *Game_GetGlobalStrings(int index) {
 	if ((index < 0) || (index >= MAXGLOBALSTRINGS))
@@ -508,52 +472,71 @@ int Game_GetSpriteHeight(int spriteNum) {
 	return game_to_data_coord(_GP(game).SpriteInfos[spriteNum].Height);
 }
 
-int Game_GetLoopCountForView(int viewNumber) {
-	if ((viewNumber < 1) || (viewNumber > _GP(game).numviews))
-		quit("!GetGameParameter: invalid view specified");
-
-	return _GP(views)[viewNumber - 1].numLoops;
+void AssertView(const char *apiname, int view) {
+	// NOTE: we assume (here and below) that the view is already in an internal 0-based range.
+	// but when printing an error we will use (view + 1) for compliance with the script API.
+	if ((view < 0) || (view >= _GP(game).numviews))
+		quitprintf("!%s: invalid view %d (range is 1..%d)", apiname, view + 1, _GP(game).numviews);
 }
 
-int Game_GetRunNextSettingForLoop(int viewNumber, int loopNumber) {
-	if ((viewNumber < 1) || (viewNumber > _GP(game).numviews))
-		quit("!GetGameParameter: invalid view specified");
-	if ((loopNumber < 0) || (loopNumber >= _GP(views)[viewNumber - 1].numLoops))
-		quit("!GetGameParameter: invalid loop specified");
-
-	return (_GP(views)[viewNumber - 1].loops[loopNumber].RunNextLoop()) ? 1 : 0;
+void AssertViewHasLoops(const char *apiname, int view) {
+	AssertView(apiname, view);
+	if (_GP(views)[view].numLoops == 0)
+		quitprintf("!%s: view %d does not have any loops.", apiname, view + 1);
 }
 
-int Game_GetFrameCountForLoop(int viewNumber, int loopNumber) {
-	if ((viewNumber < 1) || (viewNumber > _GP(game).numviews))
-		quit("!GetGameParameter: invalid view specified");
-	if ((loopNumber < 0) || (loopNumber >= _GP(views)[viewNumber - 1].numLoops))
-		quit("!GetGameParameter: invalid loop specified");
-
-	return _GP(views)[viewNumber - 1].loops[loopNumber].numFrames;
+void AssertLoop(const char *apiname, int view, int loop) {
+	AssertViewHasLoops(apiname, view);
+	if ((loop < 0) || (loop >= _GP(views)[view].numLoops))
+		quitprintf("!%s: invalid loop number %d for view %d (range is 0..%d).",
+				   apiname, loop, view + 1, _GP(views)[view].numLoops - 1);
 }
 
-ScriptViewFrame *Game_GetViewFrame(int viewNumber, int loopNumber, int frame) {
-	if ((viewNumber < 1) || (viewNumber > _GP(game).numviews))
-		quit("!GetGameParameter: invalid view specified");
-	if ((loopNumber < 0) || (loopNumber >= _GP(views)[viewNumber - 1].numLoops))
-		quit("!GetGameParameter: invalid loop specified");
-	if ((frame < 0) || (frame >= _GP(views)[viewNumber - 1].loops[loopNumber].numFrames))
-		quit("!GetGameParameter: invalid frame specified");
+void AssertFrame(const char *apiname, int view, int loop, int frame) {
+	AssertLoop(apiname, view, loop);
+	if (_GP(views)[view].loops[loop].numFrames == 0)
+		quitprintf("!%s: view %d loop %d does not have any frames", apiname, view + 1, loop);
+	if ((frame < 0) || (frame >= _GP(views)[view].loops[loop].numFrames))
+		quitprintf("!%s: invalid frame number %d for view %d loop %d (range is 0..%d)",
+				   apiname, frame, view + 1, loop, _GP(views)[view].loops[loop].numFrames - 1);
+}
 
-	ScriptViewFrame *sdt = new ScriptViewFrame(viewNumber - 1, loopNumber, frame);
+int Game_GetLoopCountForView(int view) {
+	view--; // convert to 0-based
+	AssertView("Game.GetLoopCountForView", view);
+	return _GP(views)[view].numLoops;
+}
+
+int Game_GetRunNextSettingForLoop(int view, int loop) {
+	view--; // convert to 0-based
+	AssertLoop("Game.GetRunNextSettingForLoop", view, loop);
+	return (_GP(views)[view].loops[loop].RunNextLoop()) ? 1 : 0;
+}
+
+int Game_GetFrameCountForLoop(int view, int loop) {
+	view--; // convert to 0-based
+	AssertLoop("Game.GetFrameCountForLoop", view, loop);
+	return _GP(views)[view].loops[loop].numFrames;
+}
+
+ScriptViewFrame *Game_GetViewFrame(int view, int loop, int frame) {
+	view--; // convert to 0-based
+	AssertFrame("Game.GetViewFrame", view, loop, frame);
+	ScriptViewFrame *sdt = new ScriptViewFrame(view, loop, frame);
 	ccRegisterManagedObject(sdt, sdt);
 	return sdt;
 }
 
 int Game_DoOnceOnly(const char *token) {
-	for (int i = 0; i < (int)_GP(play).do_once_tokens.size(); i++) {
-		if (_GP(play).do_once_tokens[i] == token) {
-			return 0;
-		}
-	}
-	_GP(play).do_once_tokens.push_back(token);
+	if (_GP(play).do_once_tokens.find(String::Wrapper(token)) != _GP(play).do_once_tokens.end())
+		return 0;
+
+	_GP(play).do_once_tokens.insert(token);
 	return 1;
+}
+
+void Game_ResetDoOnceOnly() {
+	free_do_once_tokens();
 }
 
 int Game_GetTextReadingSpeed() {
@@ -592,9 +575,9 @@ const char *Game_GetName() {
 }
 
 void Game_SetName(const char *newName) {
-	strncpy(_GP(play).game_name, newName, 99);
-	_GP(play).game_name[99] = 0;
-	sys_window_set_title(_GP(play).game_name);
+	_GP(play).game_name = newName;
+	sys_window_set_title(_GP(play).game_name.GetCStr());
+	GUI::MarkSpecialLabelsForUpdate(kLabelMacro_Gamename);
 }
 
 int Game_GetSkippingCutscene() {
@@ -628,13 +611,13 @@ int Game_GetColorFromRGB(int red, int grn, int blu) {
 
 const char *Game_InputBox(const char *msg) {
 	char buffer[STD_BUFFER_SIZE];
-	sc_inputbox(msg, buffer);
+	ShowInputBoxImpl(msg, buffer, STD_BUFFER_SIZE);
 	return CreateNewScriptString(buffer);
 }
 
 const char *Game_GetLocationName(int x, int y) {
 	char buffer[STD_BUFFER_SIZE];
-	GetLocationName(x, y, buffer);
+	GetLocationName(x, y, buffer); // fills up to MAX_MAXSTRLEN
 	return CreateNewScriptString(buffer);
 }
 
@@ -643,7 +626,6 @@ const char *Game_GetGlobalMessages(int index) {
 		return nullptr;
 	}
 	char buffer[STD_BUFFER_SIZE];
-	buffer[0] = 0;
 	replace_tokens(get_translation(get_global_message(index)), buffer, STD_BUFFER_SIZE);
 	return CreateNewScriptString(buffer);
 }
@@ -657,7 +639,7 @@ int Game_GetNormalFont() {
 
 const char *Game_GetTranslationFilename() {
 	char buffer[STD_BUFFER_SIZE];
-	GetTranslationName(buffer);
+	GetTranslationName(buffer); // fills up to MAX_MAXSTRLEN
 	return CreateNewScriptString(buffer);
 }
 
@@ -683,13 +665,18 @@ const char *Game_GetSpeechVoxFilename() {
 }
 
 bool Game_ChangeSpeechVox(const char *newFilename) {
-	if (!init_voicepak(newFilename)) {
+	_GP(play).voice_avail = init_voicepak(newFilename);
+	if (!_GP(play).voice_avail) {
 		// if failed (and was not default)- fallback to default
 		if (strlen(newFilename) > 0)
-			init_voicepak();
+			_GP(play).voice_avail = init_voicepak();
 		return false;
 	}
 	return true;
+}
+
+int Game_GetAudioClipCount() {
+	return _GP(game).audioClips.size();
 }
 
 ScriptAudioClip *Game_GetAudioClip(int index) {
@@ -711,11 +698,24 @@ ScriptCamera *Game_GetAnyCamera(int index) {
 }
 
 void Game_SimulateKeyPress(int key) {
-	ags_simulate_keypress(static_cast<eAGSKeyCode>(key));
+	ags_simulate_keypress(static_cast<eAGSKeyCode>(key), (_GP(game).options[OPT_KEYHANDLEAPI] == 0));
 }
 
 int Game_BlockingWaitSkipped() {
 	return _GP(play).GetWaitSkipResult();
+}
+
+void Game_PrecacheSprite(int sprnum) {
+	const auto tp_start = AGS_Clock::now();
+	_GP(spriteset).PrecacheSprite(sprnum);
+	const auto tp_filedone = AGS_Clock::now();
+
+	const auto dur1 = ToMilliseconds(tp_filedone - tp_start);
+	Debug::Printf("Precache sprite %d; file->mem = %lld ms", sprnum, dur1);
+}
+
+void Game_PrecacheView(int view, int first_loop, int last_loop) {
+	precache_view(view - 1 /* to 0-based view index */, first_loop, last_loop, true);
 }
 
 //=============================================================================
@@ -823,7 +823,7 @@ long write_screen_shot_for_vista(Stream *out, Bitmap *screenshot) {
 	Common::MemoryWriteStreamDynamic bitmap(DisposeAfterUse::YES);
 	screenshot->SaveToFile(bitmap, _G(palette));
 
-	update_polled_stuff_if_runtime();
+	update_polled_stuff();
 
 	// Write the bitmap to the output stream
 	out->Write(bitmap.getData(), bitmap.size());
@@ -832,6 +832,9 @@ long write_screen_shot_for_vista(Stream *out, Bitmap *screenshot) {
 }
 
 Bitmap *create_savegame_screenshot() {
+	if ((_GP(play).screenshot_width < 16) || (_GP(play).screenshot_height < 16))
+		quit("!Invalid game.screenshot_width/height, must be from 16x16 to screen res");
+
 	// Render the view without any UI elements
 	int old_flags = _G(debug_flags);
 	_G(debug_flags) |= DBG_NOIFACE;
@@ -841,16 +844,13 @@ Bitmap *create_savegame_screenshot() {
 
 	int usewid = data_to_game_coord(_GP(play).screenshot_width);
 	int usehit = data_to_game_coord(_GP(play).screenshot_height);
+	// NOTE: be aware that by the historical logic AGS makes a screenshot
+	// of a "main viewport", that may be smaller in legacy "letterbox" mode.
 	const Rect &viewport = _GP(play).GetMainViewport();
-	if (usewid > viewport.GetWidth())
-		usewid = viewport.GetWidth();
-	if (usehit > viewport.GetHeight())
-		usehit = viewport.GetHeight();
+	usewid = std::min(usewid, viewport.GetWidth());
+	usehit = std::min(usehit, viewport.GetHeight());
 
-	if ((_GP(play).screenshot_width < 16) || (_GP(play).screenshot_height < 16))
-		quit("!Invalid game.screenshot_width/height, must be from 16x16 to screen res");
-
-	Bitmap *screenshot = CopyScreenIntoBitmap(usewid, usehit);
+	Bitmap *screenshot = CopyScreenIntoBitmap(usewid, usehit, &viewport);
 	screenshot->GetAllegroBitmap()->makeOpaque();
 
 	// Restore original screen
@@ -861,6 +861,9 @@ Bitmap *create_savegame_screenshot() {
 }
 
 void save_game(int slotn, const char *descript) {
+
+	VALIDATE_STRING(descript);
+
 	// dont allow save in rep_exec_always, because we dont save
 	// the state of blocked scripts
 	can_run_delayed_command();
@@ -871,15 +874,18 @@ void save_game(int slotn, const char *descript) {
 		return;
 	}
 
-	if (_G(platform)->GetDiskFreeSpaceMB() < 2) {
+	if (_G(platform)->GetDiskFreeSpaceMB(get_save_game_directory()) < 2) {
 		Display("ERROR: There is not enough disk space free to save the game. Clear some disk space and try again.");
 		return;
 	}
 
-	VALIDATE_STRING(descript);
 	String nametouse = get_save_game_path(slotn);
 	std::unique_ptr<Bitmap> screenShot;
-	if (_GP(game).options[OPT_SAVESCREENSHOT] != 0)
+
+	// WORKAROUND: AGS originally only creates savegames if the game flags
+	// that it supports it. But we want it all the time for ScummVM GMM,
+	// unless explicitly disabled through gameflag
+	if ((/*_GP(game).options[OPT_SAVESCREENSHOT] != 0*/ true) && _G(saveThumbnail) && slotn != 999)
 		screenShot.reset(create_savegame_screenshot());
 
 	std::unique_ptr<Stream> out(StartSavegame(nametouse, descript, screenShot.get()));
@@ -888,16 +894,16 @@ void save_game(int slotn, const char *descript) {
 		return;
 	}
 
-	update_polled_stuff_if_runtime();
-
 	// Actual dynamic game data is saved here
 	SaveGameState(out.get());
+	// call "After Save" event callback
+	run_on_event(GE_SAVE_GAME, RuntimeScriptValue().SetInt32(slotn));
 
 	if (screenShot != nullptr) {
 		int screenShotOffset = out->GetPosition() - sizeof(RICH_GAME_MEDIA_HEADER);
 		int screenShotSize = write_screen_shot_for_vista(out.get(), screenShot.get());
 
-		update_polled_stuff_if_runtime();
+		update_polled_stuff();  // TODO: probably unneeded
 
 		out->Seek(12, kSeekBegin);
 		out->WriteInt32(screenShotOffset);
@@ -917,25 +923,18 @@ bool read_savedgame_description(const String &savedgame, String &description) {
 	return true;
 }
 
-bool read_savedgame_screenshot(const String &savedgame, int &want_shot) {
-	want_shot = 0;
-
+std::unique_ptr<Shared::Bitmap> read_savedgame_screenshot(const String &savedgame) {
 	SavegameDescription desc;
 	HSaveError err = OpenSavegame(savedgame, desc, kSvgDesc_UserImage);
 	if (!err) {
 		Debug::Printf(kDbgMsg_Error, "Unable to read save's screenshot.\n%s", err->FullMessage().GetCStr());
-		return false;
+		return nullptr;
 	}
-
-	if (desc.UserImage.get()) {
-		int slot = _GP(spriteset).GetFreeIndex();
-		if (slot > 0) {
-			// add it into the sprite set
-			add_dynamic_sprite(slot, PrepareSpriteForUse(desc.UserImage.release(), false));
-			want_shot = slot;
-		}
+	if (desc.UserImage) {
+		desc.UserImage.reset(PrepareSpriteForUse(desc.UserImage.release(), false));
+		return std::move(desc.UserImage);
 	}
-	return true;
+	return nullptr;
 }
 
 
@@ -963,15 +962,15 @@ HSaveError load_game(const String &path, int slotNumber, bool &data_overwritten)
 	data_overwritten = false;
 	_G(gameHasBeenRestored)++;
 
-	_G(oldeip) = _G(our_eip);
-	_G(our_eip) = 2050;
+	_G(oldeip) = get_our_eip();
+	set_our_eip(2050);
 
 	HSaveError err;
 	SavegameSource src;
 	SavegameDescription desc;
 	err = OpenSavegame(path, src, desc, kSvgDesc_EnvInfo);
 
-	// saved in incompatible enviroment
+	// saved in incompatible environment
 	if (!err)
 		return err;
 	// CHECKME: is this color depth test still essential? if yes, is there possible workaround?
@@ -986,7 +985,7 @@ HSaveError load_game(const String &path, int slotNumber, bool &data_overwritten)
 			loadDesc = &desc;
 			String gamefile = FindGameData(_GP(ResPaths).DataDir, TestGame);
 
-			if (Shared::File::TestReadFile(gamefile)) {
+			if (!gamefile.IsEmpty()) {
 				RunAGSGame(gamefile.GetCStr(), 0, 0);
 				_G(load_new_game_restore) = slotNumber;
 				return HSaveError::None();
@@ -998,7 +997,7 @@ HSaveError load_game(const String &path, int slotNumber, bool &data_overwritten)
 	// TODO: remove filename test after deprecating old saves
 	else if (desc.MainDataFilename.Compare(_GP(ResPaths).GamePak.Name)) {
 		String gamefile = Path::ConcatPaths(_GP(ResPaths).DataDir, desc.MainDataFilename);
-		if (Shared::File::TestReadFile(gamefile)) {
+		if (IsMainGameLibrary(gamefile)) {
 			RunAGSGame(desc.MainDataFilename, 0, 0);
 			_G(load_new_game_restore) = slotNumber;
 			return HSaveError::None();
@@ -1014,7 +1013,7 @@ HSaveError load_game(const String &path, int slotNumber, bool &data_overwritten)
 	if (!err)
 		return err;
 	src.InputStream.reset();
-	_G(our_eip) = _G(oldeip);
+	set_our_eip(_G(oldeip));
 
 	// ensure input state is reset
 	ags_clear_input_state();
@@ -1029,6 +1028,7 @@ bool try_restore_save(int slot) {
 
 bool try_restore_save(const Shared::String &path, int slot) {
 	bool data_overwritten;
+	Debug::Printf(kDbgMsg_Info, "Restoring saved game '%s'", path.GetCStr());
 	HSaveError err = load_game(path, slot, data_overwritten);
 	if (!err) {
 		String error = String::FromFormat("Unable to restore the saved game.\n%s",
@@ -1068,7 +1068,8 @@ void start_skipping_cutscene() {
 }
 
 bool check_skip_cutscene_keypress(int kgn) {
-
+	if (IsAGSServiceKey(static_cast<eAGSKeyCode>(kgn)))
+		return false;
 	CutsceneSkipStyle skip = get_cutscene_skipstyle();
 	if (skip == eSkipSceneAnyKey || skip == eSkipSceneKeyMouse ||
 	        (kgn == eAGSKeyCodeEscape && (skip == eSkipSceneEscOnly || skip == eSkipSceneEscOrRMB))) {
@@ -1081,7 +1082,7 @@ bool check_skip_cutscene_keypress(int kgn) {
 bool check_skip_cutscene_mclick(int mbut) {
 	CutsceneSkipStyle skip = get_cutscene_skipstyle();
 	if (skip == eSkipSceneMouse || skip == eSkipSceneKeyMouse ||
-	        (mbut == MouseRight && skip == eSkipSceneEscOrRMB)) {
+	        (mbut == kMouseRight && skip == eSkipSceneEscOrRMB)) {
 		start_skipping_cutscene();
 		return true;
 	}
@@ -1129,7 +1130,7 @@ int __GetLocationType(int xxx, int yyy, int allowHotspot0) {
 		return 0;
 	xxx = vpt.first.X;
 	yyy = vpt.first.Y;
-	if ((xxx >= _GP(thisroom).Width) | (xxx < 0) | (yyy < 0) | (yyy >= _GP(thisroom).Height))
+	if ((xxx >= _GP(thisroom).Width) || (xxx < 0) || (yyy < 0) || (yyy >= _GP(thisroom).Height))
 		return 0;
 
 	// check characters, objects and walkbehinds, work out which is
@@ -1189,7 +1190,7 @@ int __GetLocationType(int xxx, int yyy, int allowHotspot0) {
 	return winner;
 }
 
-// Called whenever game looses input focus
+// Called whenever game loses input focus
 void display_switch_out() {
 	Debug::Printf("Switching out from the game");
 	_G(switched_away) = true;
@@ -1256,14 +1257,14 @@ void display_switch_in_resume() {
 	_G(game_update_suspend)--;
 }
 
-void replace_tokens(const char *srcmes, char *destm, int maxlen) {
-	int indxdest = 0, indxsrc = 0;
+void replace_tokens(const char *srcmes, char *destm, size_t maxlen) {
+	size_t indxdest = 0, indxsrc = 0;
 	const char *srcp;
 	char *destp;
 	while (srcmes[indxsrc] != 0) {
 		srcp = &srcmes[indxsrc];
 		destp = &destm[indxdest];
-		if ((strncmp(srcp, "@IN", 3) == 0) | (strncmp(srcp, "@GI", 3) == 0)) {
+		if ((strncmp(srcp, "@IN", 3) == 0) || (strncmp(srcp, "@GI", 3) == 0)) {
 			int tokentype = 0;
 			if (srcp[1] == 'I') tokentype = 1;
 			else tokentype = 2;
@@ -1277,11 +1278,11 @@ void replace_tokens(const char *srcmes, char *destm, int maxlen) {
 			}
 			char tval[10];
 			if (tokentype == 1) {
-				if ((inx < 1) | (inx >= _GP(game).numinvitems))
+				if ((inx < 1) || (inx >= _GP(game).numinvitems))
 					quit("!Display: invalid inv item specified in @IN@");
 				snprintf(tval, sizeof(tval), "%d", _G(playerchar)->inv[inx]);
 			} else {
-				if ((inx < 0) | (inx >= MAXGSVALUES))
+				if ((inx < 0) || (inx >= MAXGSVALUES))
 					quit("!Display: invalid global int index speicifed in @GI@");
 				snprintf(tval, sizeof(tval), "%d", GetGlobalInt(inx));
 			}
@@ -1299,9 +1300,9 @@ void replace_tokens(const char *srcmes, char *destm, int maxlen) {
 }
 
 const char *get_global_message(int msnum) {
-	if (_GP(game).messages[msnum - 500] == nullptr)
+	if (_GP(game).messages[msnum - 500].IsEmpty())
 		return "";
-	return get_translation(_GP(game).messages[msnum - 500]);
+	return get_translation(_GP(game).messages[msnum - 500].GetCStr());
 }
 
 void get_message_text(int msnum, char *buffer, char giveErr) {
@@ -1311,14 +1312,14 @@ void get_message_text(int msnum, char *buffer, char giveErr) {
 
 	if (msnum >= 500) {
 
-		if ((msnum >= MAXGLOBALMES + 500) || (_GP(game).messages[msnum - 500] == nullptr)) {
+		if ((msnum >= MAXGLOBALMES + 500) || (_GP(game).messages[msnum - 500].IsEmpty())) {
 			if (giveErr)
 				quit("!DisplayGlobalMessage: message does not exist");
 			buffer[0] = 0;
 			return;
 		}
 		buffer[0] = 0;
-		replace_tokens(get_translation(_GP(game).messages[msnum - 500]), buffer, maxlen);
+		replace_tokens(get_translation(_GP(game).messages[msnum - 500].GetCStr()), buffer, maxlen);
 		return;
 	} else if (msnum < 0 || (size_t)msnum >= _GP(thisroom).MessageCount) {
 		if (giveErr)
@@ -1331,24 +1332,15 @@ void get_message_text(int msnum, char *buffer, char giveErr) {
 	replace_tokens(get_translation(_GP(thisroom).Messages[msnum].GetCStr()), buffer, maxlen);
 }
 
-bool unserialize_audio_script_object(int index, const char *objectType, Stream *in, size_t data_sz) {
-	if (strcmp(objectType, "AudioChannel") == 0) {
-		_GP(ccDynamicAudio).Unserialize(index, in, data_sz);
-	} else if (strcmp(objectType, "AudioClip") == 0) {
-		_GP(ccDynamicAudioClip).Unserialize(index, in, data_sz);
-	} else {
-		return false;
-	}
-	return true;
-}
+void game_sprite_updated(int sprnum, bool deleted) {
+	// Notify draw system about dynamic sprite change
+	notify_sprite_changed(sprnum, deleted);
 
-void game_sprite_updated(int sprnum) {
-	// update the shared texture (if exists)
-	_G(gfxDriver)->UpdateSharedDDB(sprnum, _GP(spriteset)[sprnum], (_GP(game).SpriteInfos[sprnum].Flags & SPF_ALPHACHANNEL) != 0, false);
-
-	// character and object draw caches
-	reset_objcache_for_sprite(sprnum);
-
+	// GUI still have a special draw route, so cannot rely on object caches;
+	// will have to do a per-GUI and per-control check.
+	// TODO: devise a way to speed this iteration up, perhaps link GUI objects
+	// to the sprite notification block somehow, etc...?
+	//
 	// gui backgrounds
 	for (auto &gui : _GP(guis)) {
 		if (gui.BgImage == sprnum) {
@@ -1357,7 +1349,7 @@ void game_sprite_updated(int sprnum) {
 	}
 	// gui buttons
 	for (auto &but : _GP(guibuts)) {
-		if (but.CurrentImage == sprnum) {
+		if (but.GetCurrentImage() == sprnum) {
 			but.MarkChanged();
 		}
 	}
@@ -1367,70 +1359,38 @@ void game_sprite_updated(int sprnum) {
 			slider.MarkChanged();
 		}
 	}
-	// overlays
-	for (auto &over : _GP(screenover)) {
-		if (over.GetSpriteNum() == sprnum)
-			over.MarkChanged();
-	}
 }
 
-void game_sprite_deleted(int sprnum) {
-	// clear from texture cache
-	_G(gfxDriver)->ClearSharedDDB(sprnum);
-	// character and object draw caches
-	reset_objcache_for_sprite(sprnum);
-	// room object graphics
-	if (_G(croom) != nullptr) {
-		for (size_t i = 0; i < (size_t)_G(croom)->numobj; ++i) {
-			if (_G(objs)[i].num == sprnum)
-				_G(objs)[i].num = 0;
-		}
-	}
-	// gui backgrounds
-	for (size_t i = 0; i < (size_t)_GP(game).numgui; ++i) {
-		if (_GP(guis)[i].BgImage == sprnum) {
-			_GP(guis)[i].BgImage = 0;
-			_GP(guis)[i].MarkChanged();
-		}
-	}
-	// gui buttons
-	for (auto &but : _GP(guibuts)) {
-		if (but.Image == sprnum)
-			but.Image = 0;
-		if (but.MouseOverImage == sprnum)
-			but.MouseOverImage = 0;
-		if (but.PushedImage == sprnum)
-			but.PushedImage = 0;
+void precache_view(int view, int first_loop, int last_loop, bool with_sounds) {
+	if (view < 0)
+		return;
+	if (first_loop > last_loop)
+		return;
 
-		if (but.CurrentImage == sprnum) {
-			but.CurrentImage = 0;
-			but.MarkChanged();
+	first_loop = Math::Clamp(first_loop, 0, _GP(views)[view].numLoops - 1);
+	last_loop = Math::Clamp(last_loop, 0, _GP(views)[view].numLoops - 1);
+
+	// Record cache sizes and timestamps, for diagnostic purposes
+	const size_t spcache_before = _GP(spriteset).GetCacheSize();
+	int total_frames = 0;
+	int64_t dur_sp_load = 0;
+	for (int i = first_loop; i <= last_loop; ++i) {
+		for (int j = 0; j < _GP(views)[view].loops[i].numFrames; ++j, ++total_frames) {
+			const auto &frame = _GP(views)[view].loops[i].frames[j];
+			const auto tp_detail1 = AGS_Clock::now();
+			_GP(spriteset).PrecacheSprite(frame.pic);
+			const auto tp_detail2 = AGS_Clock::now();
+			dur_sp_load += ToMilliseconds(tp_detail2 - tp_detail1);
 		}
 	}
-	// gui sliders
-	for (auto &slider : _GP(guislider)) {
-		if ((slider.BgImage == sprnum) || (slider.HandleImage == sprnum))
-			slider.MarkChanged();
-		if (slider.BgImage == sprnum)
-			slider.BgImage = 0;
-		if (slider.HandleImage == sprnum)
-			slider.HandleImage = 0;
-	}
-	// views
-	for (size_t v = 0; v < (size_t)_GP(game).numviews; ++v) {
-		for (size_t l = 0; l < (size_t)_GP(views)[v].numLoops; ++l) {
-			for (size_t f = 0; f < (size_t)_GP(views)[v].loops[l].numFrames; ++f) {
-				if (_GP(views)[v].loops[l].frames[f].pic == sprnum)
-					_GP(views)[v].loops[l].frames[f].pic = 0;
-			}
-		}
-	}
-	// overlays
-	for (auto &over : _GP(screenover)) {
-		if (over.GetSpriteNum() == sprnum)
-			over.SetSpriteNum(0);
-	}
+
+	// Print gathered time and size info
+	size_t spcache_after = _GP(spriteset).GetCacheSize();
+	Debug::Printf("Precache view %d (loops %d-%d) with %d frames, total = %lld ms, average file->mem = %lld ms",
+				  view, first_loop, last_loop, total_frames, dur_sp_load, dur_sp_load / total_frames);
+	Debug::Printf("\tSprite cache: %zu -> %zu KB", spcache_before / 1024u, spcache_after / 1024u);
 }
+
 
 //=============================================================================
 //
@@ -1472,6 +1432,10 @@ RuntimeScriptValue Sc_Game_DoOnceOnly(const RuntimeScriptValue *params, int32_t 
 	API_SCALL_INT_POBJ(Game_DoOnceOnly, const char);
 }
 
+RuntimeScriptValue Sc_Game_ResetDoOnceOnly(const RuntimeScriptValue *params, int32_t param_count) {
+	API_SCALL_VOID(Game_ResetDoOnceOnly);
+}
+
 // int (int red, int grn, int blu)
 RuntimeScriptValue Sc_Game_GetColorFromRGB(const RuntimeScriptValue *params, int32_t param_count) {
 	API_SCALL_INT_PINT3(Game_GetColorFromRGB);
@@ -1484,7 +1448,7 @@ RuntimeScriptValue Sc_Game_GetFrameCountForLoop(const RuntimeScriptValue *params
 
 // const char* (int x, int y)
 RuntimeScriptValue Sc_Game_GetLocationName(const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_SCALL_OBJ_PINT2(const char, _GP(myScriptStringImpl), Game_GetLocationName);
+	API_SCALL_OBJ_PINT2(const char, _GP(myScriptStringImpl), Game_GetLocationName);
 }
 
 // int (int viewNumber)
@@ -1504,7 +1468,7 @@ RuntimeScriptValue Sc_Game_GetRunNextSettingForLoop(const RuntimeScriptValue *pa
 
 // const char* (int slnum)
 RuntimeScriptValue Sc_Game_GetSaveSlotDescription(const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_SCALL_OBJ_PINT(const char, _GP(myScriptStringImpl), Game_GetSaveSlotDescription);
+	API_SCALL_OBJ_PINT(const char, _GP(myScriptStringImpl), Game_GetSaveSlotDescription);
 }
 
 // ScriptViewFrame* (int viewNumber, int loopNumber, int frame)
@@ -1514,7 +1478,7 @@ RuntimeScriptValue Sc_Game_GetViewFrame(const RuntimeScriptValue *params, int32_
 
 // const char* (const char *msg)
 RuntimeScriptValue Sc_Game_InputBox(const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_SCALL_OBJ_POBJ(const char, _GP(myScriptStringImpl), Game_InputBox, const char);
+	API_SCALL_OBJ_POBJ(const char, _GP(myScriptStringImpl), Game_InputBox, const char);
 }
 
 // int (const char *newFolder)
@@ -1539,7 +1503,7 @@ RuntimeScriptValue Sc_Game_GetDialogCount(const RuntimeScriptValue *params, int3
 
 // const char *()
 RuntimeScriptValue Sc_Game_GetFileName(const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_SCALL_OBJ(const char, _GP(myScriptStringImpl), Game_GetFileName);
+	API_SCALL_OBJ(const char, _GP(myScriptStringImpl), Game_GetFileName);
 }
 
 // int ()
@@ -1549,12 +1513,12 @@ RuntimeScriptValue Sc_Game_GetFontCount(const RuntimeScriptValue *params, int32_
 
 // const char* (int index)
 RuntimeScriptValue Sc_Game_GetGlobalMessages(const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_SCALL_OBJ_PINT(const char, _GP(myScriptStringImpl), Game_GetGlobalMessages);
+	API_SCALL_OBJ_PINT(const char, _GP(myScriptStringImpl), Game_GetGlobalMessages);
 }
 
 // const char* (int index)
 RuntimeScriptValue Sc_Game_GetGlobalStrings(const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_SCALL_OBJ_PINT(const char, _GP(myScriptStringImpl), Game_GetGlobalStrings);
+	API_SCALL_OBJ_PINT(const char, _GP(myScriptStringImpl), Game_GetGlobalStrings);
 }
 
 // void  (int index, char *newval);
@@ -1604,7 +1568,7 @@ RuntimeScriptValue Sc_Game_GetMouseCursorCount(const RuntimeScriptValue *params,
 
 // const char *()
 RuntimeScriptValue Sc_Game_GetName(const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_SCALL_OBJ(const char, _GP(myScriptStringImpl), Game_GetName);
+	API_SCALL_OBJ(const char, _GP(myScriptStringImpl), Game_GetName);
 }
 
 // void (const char *newName)
@@ -1659,11 +1623,11 @@ RuntimeScriptValue Sc_Game_SetTextReadingSpeed(const RuntimeScriptValue *params,
 
 // const char* ()
 RuntimeScriptValue Sc_Game_GetTranslationFilename(const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_SCALL_OBJ(const char, _GP(myScriptStringImpl), Game_GetTranslationFilename);
+	API_SCALL_OBJ(const char, _GP(myScriptStringImpl), Game_GetTranslationFilename);
 }
 
 RuntimeScriptValue Sc_Game_GetSpeechVoxFilename(const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_SCALL_OBJ(const char, _GP(myScriptStringImpl), Game_GetSpeechVoxFilename);
+	API_SCALL_OBJ(const char, _GP(myScriptStringImpl), Game_GetSpeechVoxFilename);
 }
 
 // int ()
@@ -1677,7 +1641,7 @@ RuntimeScriptValue Sc_Game_GetViewCount(const RuntimeScriptValue *params, int32_
 }
 
 RuntimeScriptValue Sc_Game_GetAudioClipCount(const RuntimeScriptValue *params, int32_t param_count) {
-	API_VARGET_INT(_GP(game).audioClips.size());
+	API_SCALL_INT(Game_GetAudioClipCount);
 }
 
 RuntimeScriptValue Sc_Game_GetAudioClip(const RuntimeScriptValue *params, int32_t param_count) {
@@ -1712,74 +1676,88 @@ RuntimeScriptValue Sc_Game_BlockingWaitSkipped(const RuntimeScriptValue *params,
 	API_SCALL_INT(Game_BlockingWaitSkipped);
 }
 
-void RegisterGameAPI() {
-	ccAddExternalStaticFunction("Game::IsAudioPlaying^1",                       Sc_Game_IsAudioPlaying);
-	ccAddExternalStaticFunction("Game::SetAudioTypeSpeechVolumeDrop^2",         Sc_Game_SetAudioTypeSpeechVolumeDrop);
-	ccAddExternalStaticFunction("Game::SetAudioTypeVolume^3",                   Sc_Game_SetAudioTypeVolume);
-	ccAddExternalStaticFunction("Game::StopAudio^1",                            Sc_Game_StopAudio);
-	ccAddExternalStaticFunction("Game::ChangeTranslation^1",                    Sc_Game_ChangeTranslation);
-	ccAddExternalStaticFunction("Game::DoOnceOnly^1",                           Sc_Game_DoOnceOnly);
-	ccAddExternalStaticFunction("Game::GetColorFromRGB^3",                      Sc_Game_GetColorFromRGB);
-	ccAddExternalStaticFunction("Game::GetFrameCountForLoop^2",                 Sc_Game_GetFrameCountForLoop);
-	ccAddExternalStaticFunction("Game::GetLocationName^2",                      Sc_Game_GetLocationName);
-	ccAddExternalStaticFunction("Game::GetLoopCountForView^1",                  Sc_Game_GetLoopCountForView);
-	ccAddExternalStaticFunction("Game::GetMODPattern^0",                        Sc_Game_GetMODPattern);
-	ccAddExternalStaticFunction("Game::GetRunNextSettingForLoop^2",             Sc_Game_GetRunNextSettingForLoop);
-	ccAddExternalStaticFunction("Game::GetSaveSlotDescription^1",               Sc_Game_GetSaveSlotDescription);
-	ccAddExternalStaticFunction("Game::GetViewFrame^3",                         Sc_Game_GetViewFrame);
-	ccAddExternalStaticFunction("Game::InputBox^1",                             Sc_Game_InputBox);
-	ccAddExternalStaticFunction("Game::SetSaveGameDirectory^1",                 Sc_Game_SetSaveGameDirectory);
-	ccAddExternalStaticFunction("Game::StopSound^1",                            Sc_StopAllSounds);
-	ccAddExternalStaticFunction("Game::get_CharacterCount",                     Sc_Game_GetCharacterCount);
-	ccAddExternalStaticFunction("Game::get_DialogCount",                        Sc_Game_GetDialogCount);
-	ccAddExternalStaticFunction("Game::get_FileName",                           Sc_Game_GetFileName);
-	ccAddExternalStaticFunction("Game::get_FontCount",                          Sc_Game_GetFontCount);
-	ccAddExternalStaticFunction("Game::geti_GlobalMessages",                    Sc_Game_GetGlobalMessages);
-	ccAddExternalStaticFunction("Game::geti_GlobalStrings",                     Sc_Game_GetGlobalStrings);
-	ccAddExternalStaticFunction("Game::seti_GlobalStrings",                     Sc_SetGlobalString);
-	ccAddExternalStaticFunction("Game::get_GUICount",                           Sc_Game_GetGUICount);
-	ccAddExternalStaticFunction("Game::get_IgnoreUserInputAfterTextTimeoutMs",  Sc_Game_GetIgnoreUserInputAfterTextTimeoutMs);
-	ccAddExternalStaticFunction("Game::set_IgnoreUserInputAfterTextTimeoutMs",  Sc_Game_SetIgnoreUserInputAfterTextTimeoutMs);
-	ccAddExternalStaticFunction("Game::get_InSkippableCutscene",                Sc_Game_GetInSkippableCutscene);
-	ccAddExternalStaticFunction("Game::get_InventoryItemCount",                 Sc_Game_GetInventoryItemCount);
-	ccAddExternalStaticFunction("Game::get_MinimumTextDisplayTimeMs",           Sc_Game_GetMinimumTextDisplayTimeMs);
-	ccAddExternalStaticFunction("Game::set_MinimumTextDisplayTimeMs",           Sc_Game_SetMinimumTextDisplayTimeMs);
-	ccAddExternalStaticFunction("Game::get_MouseCursorCount",                   Sc_Game_GetMouseCursorCount);
-	ccAddExternalStaticFunction("Game::get_Name",                               Sc_Game_GetName);
-	ccAddExternalStaticFunction("Game::set_Name",                               Sc_Game_SetName);
-	ccAddExternalStaticFunction("Game::get_NormalFont",                         Sc_Game_GetNormalFont);
-	ccAddExternalStaticFunction("Game::set_NormalFont",                         Sc_SetNormalFont);
-	ccAddExternalStaticFunction("Game::get_SkippingCutscene",                   Sc_Game_GetSkippingCutscene);
-	ccAddExternalStaticFunction("Game::get_SpeechFont",                         Sc_Game_GetSpeechFont);
-	ccAddExternalStaticFunction("Game::set_SpeechFont",                         Sc_SetSpeechFont);
-	ccAddExternalStaticFunction("Game::geti_SpriteWidth",                       Sc_Game_GetSpriteWidth);
-	ccAddExternalStaticFunction("Game::geti_SpriteHeight",                      Sc_Game_GetSpriteHeight);
-	ccAddExternalStaticFunction("Game::get_TextReadingSpeed",                   Sc_Game_GetTextReadingSpeed);
-	ccAddExternalStaticFunction("Game::set_TextReadingSpeed",                   Sc_Game_SetTextReadingSpeed);
-	ccAddExternalStaticFunction("Game::get_TranslationFilename",                Sc_Game_GetTranslationFilename);
-	ccAddExternalStaticFunction("Game::get_UseNativeCoordinates",               Sc_Game_GetUseNativeCoordinates);
-	ccAddExternalStaticFunction("Game::get_ViewCount",                          Sc_Game_GetViewCount);
-	ccAddExternalStaticFunction("Game::get_AudioClipCount",                     Sc_Game_GetAudioClipCount);
-	ccAddExternalStaticFunction("Game::geti_AudioClips",                        Sc_Game_GetAudioClip);
-	ccAddExternalStaticFunction("Game::IsPluginLoaded",                         Sc_Game_IsPluginLoaded);
-	ccAddExternalStaticFunction("Game::ChangeSpeechVox", Sc_Game_ChangeSpeechVox);
-	ccAddExternalStaticFunction("Game::PlayVoiceClip",                          Sc_Game_PlayVoiceClip);
-	ccAddExternalStaticFunction("Game::SimulateKeyPress",                       Sc_Game_SimulateKeyPress);
-	ccAddExternalStaticFunction("Game::get_BlockingWaitSkipped",                Sc_Game_BlockingWaitSkipped);
-	ccAddExternalStaticFunction("Game::get_SpeechVoxFilename", Sc_Game_GetSpeechVoxFilename);
+RuntimeScriptValue Sc_Game_PrecacheSprite(const RuntimeScriptValue *params, int32_t param_count) {
+	API_SCALL_VOID_PINT(Game_PrecacheSprite);
+}
 
-	ccAddExternalStaticFunction("Game::get_Camera",                             Sc_Game_GetCamera);
-	ccAddExternalStaticFunction("Game::get_CameraCount",                        Sc_Game_GetCameraCount);
-	ccAddExternalStaticFunction("Game::geti_Cameras",                           Sc_Game_GetAnyCamera);
+RuntimeScriptValue Sc_Game_PrecacheView(const RuntimeScriptValue *params, int32_t param_count) {
+	API_SCALL_VOID_PINT3(Game_PrecacheView);
+}
+
+void RegisterGameAPI() {
+	ScFnRegister game_api[] = {
+		{"Game::IsAudioPlaying^1", API_FN_PAIR(Game_IsAudioPlaying)},
+		{"Game::SetAudioTypeSpeechVolumeDrop^2", API_FN_PAIR(Game_SetAudioTypeSpeechVolumeDrop)},
+		{"Game::SetAudioTypeVolume^3", API_FN_PAIR(Game_SetAudioTypeVolume)},
+		{"Game::StopAudio^1", API_FN_PAIR(Game_StopAudio)},
+		{"Game::ChangeTranslation^1", API_FN_PAIR(Game_ChangeTranslation)},
+		{"Game::DoOnceOnly^1", API_FN_PAIR(Game_DoOnceOnly)},
+		{"Game::GetColorFromRGB^3", API_FN_PAIR(Game_GetColorFromRGB)},
+		{"Game::GetFrameCountForLoop^2", API_FN_PAIR(Game_GetFrameCountForLoop)},
+		{"Game::GetLocationName^2", API_FN_PAIR(Game_GetLocationName)},
+		{"Game::GetLoopCountForView^1", API_FN_PAIR(Game_GetLoopCountForView)},
+		{"Game::GetMODPattern^0", API_FN_PAIR(Game_GetMODPattern)},
+		{"Game::GetRunNextSettingForLoop^2", API_FN_PAIR(Game_GetRunNextSettingForLoop)},
+		{"Game::GetSaveSlotDescription^1", API_FN_PAIR(Game_GetSaveSlotDescription)},
+		{"Game::GetViewFrame^3", API_FN_PAIR(Game_GetViewFrame)},
+		{"Game::InputBox^1", API_FN_PAIR(Game_InputBox)},
+		{"Game::SetSaveGameDirectory^1", API_FN_PAIR(Game_SetSaveGameDirectory)},
+		{"Game::StopSound^1", API_FN_PAIR(StopAllSounds)},
+		{"Game::IsPluginLoaded", Sc_Game_IsPluginLoaded},
+		{"Game::ChangeSpeechVox", API_FN_PAIR(Game_ChangeSpeechVox)},
+		{"Game::PlayVoiceClip", Sc_Game_PlayVoiceClip},
+		{"Game::SimulateKeyPress", API_FN_PAIR(Game_SimulateKeyPress)},
+		{"Game::ResetDoOnceOnly", API_FN_PAIR(Game_ResetDoOnceOnly)},
+		{"Game::PrecacheSprite", API_FN_PAIR(Game_PrecacheSprite)},
+		{"Game::PrecacheView", API_FN_PAIR(Game_PrecacheView)},
+		{"Game::get_CharacterCount", API_FN_PAIR(Game_GetCharacterCount)},
+		{"Game::get_DialogCount", API_FN_PAIR(Game_GetDialogCount)},
+		{"Game::get_FileName", API_FN_PAIR(Game_GetFileName)},
+		{"Game::get_FontCount", API_FN_PAIR(Game_GetFontCount)},
+		{"Game::geti_GlobalMessages", API_FN_PAIR(Game_GetGlobalMessages)},
+		{"Game::geti_GlobalStrings", API_FN_PAIR(Game_GetGlobalStrings)},
+		{"Game::seti_GlobalStrings", API_FN_PAIR(SetGlobalString)},
+		{"Game::get_GUICount", API_FN_PAIR(Game_GetGUICount)},
+		{"Game::get_IgnoreUserInputAfterTextTimeoutMs", API_FN_PAIR(Game_GetIgnoreUserInputAfterTextTimeoutMs)},
+		{"Game::set_IgnoreUserInputAfterTextTimeoutMs", API_FN_PAIR(Game_SetIgnoreUserInputAfterTextTimeoutMs)},
+		{"Game::get_InSkippableCutscene", API_FN_PAIR(Game_GetInSkippableCutscene)},
+		{"Game::get_InventoryItemCount", API_FN_PAIR(Game_GetInventoryItemCount)},
+		{"Game::get_MinimumTextDisplayTimeMs", API_FN_PAIR(Game_GetMinimumTextDisplayTimeMs)},
+		{"Game::set_MinimumTextDisplayTimeMs", API_FN_PAIR(Game_SetMinimumTextDisplayTimeMs)},
+		{"Game::get_MouseCursorCount", API_FN_PAIR(Game_GetMouseCursorCount)},
+		{"Game::get_Name", API_FN_PAIR(Game_GetName)},
+		{"Game::set_Name", API_FN_PAIR(Game_SetName)},
+		{"Game::get_NormalFont", API_FN_PAIR(Game_GetNormalFont)},
+		{"Game::set_NormalFont", API_FN_PAIR(SetNormalFont)},
+		{"Game::get_SkippingCutscene", API_FN_PAIR(Game_GetSkippingCutscene)},
+		{"Game::get_SpeechFont", API_FN_PAIR(Game_GetSpeechFont)},
+		{"Game::set_SpeechFont", API_FN_PAIR(SetSpeechFont)},
+		{"Game::geti_SpriteWidth", API_FN_PAIR(Game_GetSpriteWidth)},
+		{"Game::geti_SpriteHeight", API_FN_PAIR(Game_GetSpriteHeight)},
+		{"Game::get_TextReadingSpeed", API_FN_PAIR(Game_GetTextReadingSpeed)},
+		{"Game::set_TextReadingSpeed", API_FN_PAIR(Game_SetTextReadingSpeed)},
+		{"Game::get_TranslationFilename", API_FN_PAIR(Game_GetTranslationFilename)},
+		{"Game::get_UseNativeCoordinates", API_FN_PAIR(Game_GetUseNativeCoordinates)},
+		{"Game::get_ViewCount", API_FN_PAIR(Game_GetViewCount)},
+		{"Game::get_AudioClipCount", API_FN_PAIR(Game_GetAudioClipCount)},
+		{"Game::geti_AudioClips", API_FN_PAIR(Game_GetAudioClip)},
+		{"Game::get_BlockingWaitSkipped", API_FN_PAIR(Game_BlockingWaitSkipped)},
+		{"Game::get_SpeechVoxFilename", API_FN_PAIR(Game_GetSpeechVoxFilename)},
+		{"Game::get_Camera", API_FN_PAIR(Game_GetCamera)},
+		{"Game::get_CameraCount", API_FN_PAIR(Game_GetCameraCount)},
+		{"Game::geti_Cameras", API_FN_PAIR(Game_GetAnyCamera)},
+	};
+
+	ccAddExternalFunctions361(game_api);
 }
 
 void RegisterStaticObjects() {
-	ccAddExternalStaticObject("game", &_GP(play), &_GP(GameStaticManager));
-	ccAddExternalStaticObject("gs_globals", &_GP(play).globalvars[0], &_GP(GlobalStaticManager));
-	ccAddExternalStaticObject("mouse", &_GP(scmouse), &_GP(GlobalStaticManager));
-	ccAddExternalStaticObject("palette", &_G(palette)[0], &_GP(GlobalStaticManager));
-	ccAddExternalStaticObject("system", &_GP(scsystem), &_GP(GlobalStaticManager));
-	ccAddExternalStaticObject("savegameindex", &_GP(play).filenumbers[0], &_GP(GlobalStaticManager));
+	ccAddExternalScriptObject("game", &_GP(play), &_GP(GameStaticManager));
+	ccAddExternalScriptObject("gs_globals", &_GP(play).globalvars[0], &_GP(GlobalStaticManager));
+	ccAddExternalScriptObject("mouse", &_GP(scmouse), &_GP(scmouse));
+	ccAddExternalScriptObject("palette", &_G(palette)[0], &_GP(GlobalStaticManager));
+	ccAddExternalScriptObject("system", &_GP(scsystem), &_GP(scsystem));
+	ccAddExternalScriptObject("savegameindex", &_GP(play).filenumbers[0], &_GP(GlobalStaticManager));
 }
 
 } // namespace AGS3

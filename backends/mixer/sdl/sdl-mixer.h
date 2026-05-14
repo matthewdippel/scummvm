@@ -33,6 +33,7 @@
  */
 class SdlMixerManager : public MixerManager {
 public:
+	SdlMixerManager();
 	virtual ~SdlMixerManager();
 
 	/**
@@ -75,10 +76,21 @@ protected:
 	virtual void callbackHandler(byte *samples, int len);
 
 	/**
-	 * The mixer callback entry point. Static functions can't be overrided
+	 * The mixer callback entry point. Static functions can't be overridden
 	 * by subclasses, so it invokes the non-static function callbackHandler()
 	 */
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+	static void sdlCallback(void *userdata, SDL_AudioStream *stream, int additional_amount, int total_amount);
+#else
 	static void sdlCallback(void *this_, byte *samples, int len);
+#endif
+
+	bool _isSubsystemInitialized;
+	bool _isAudioOpen;
+
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+	SDL_AudioStream *_stream = nullptr;
+#endif
 };
 
 #endif

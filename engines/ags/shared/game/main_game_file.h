@@ -30,10 +30,10 @@
 #ifndef AGS_SHARED_GAME_MAIN_GAME_FILE_H
 #define AGS_SHARED_GAME_MAIN_GAME_FILE_H
 
-#include "ags/lib/std/functional.h"
-#include "ags/lib/std/memory.h"
-#include "ags/lib/std/set.h"
-#include "ags/lib/std/vector.h"
+#include "common/std/functional.h"
+#include "common/std/memory.h"
+#include "common/std/set.h"
+#include "common/std/vector.h"
 #include "ags/shared/core/platform.h"
 #include "ags/shared/ac/game_version.h"
 #include "ags/shared/ac/view.h"
@@ -120,12 +120,12 @@ struct LoadedGameEntities {
 
 	// Original sprite data (when it was read into const-sized arrays)
 	size_t                  SpriteCount;
-	Common::Array<byte>     SpriteFlags;
+	std::vector<uint8_t>	SpriteFlags; // SPF_* flags
 
 	// Old dialog support
 	// legacy compiled dialog script of its own format,
 	// requires separate interpreting
-	std::vector< std::shared_ptr<unsigned char> > OldDialogScripts;
+	std::vector<std::vector<uint8_t>> OldDialogScripts;
 	// probably, actual dialog script sources kept within some older games
 	std::vector<String>     OldDialogSources;
 	// speech texts displayed during dialog

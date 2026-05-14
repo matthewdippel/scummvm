@@ -35,7 +35,7 @@
 #include "common/keyboard.h"
 #include "engines/engine.h"
 #include "engines/util.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/pixelformat.h"
 #include "graphics/surface.h"
 
@@ -49,7 +49,7 @@ AccessVIDMovieDecoder::AccessVIDMovieDecoder()
 }
 
 AccessVIDMovieDecoder::~AccessVIDMovieDecoder() {
-	close();
+	AccessVIDMovieDecoder::close();
 }
 
 bool AccessVIDMovieDecoder::loadStream(Common::SeekableReadStream *stream) {
@@ -692,30 +692,30 @@ Audio::AudioStream *AccessVIDMovieDecoder::StreamAudioTrack::getAudioStream() co
 	return _audioStream;
 }
 
-bool AccessEngine::playMovie(const Common::String &filename, const Common::Point &pos) {
-	AccessVIDMovieDecoder *videoDecoder = new AccessVIDMovieDecoder();
+bool AccessEngine::playMovie(const Common::Path &filename, const Common::Point &pos) {
+	AccessVIDMovieDecoder videoDecoder;
 
 	Common::Point framePos(pos.x, pos.y);
 
-	if (!videoDecoder->loadFile(filename)) {
-		warning("AccessVIDMoviePlay: could not open '%s'", filename.c_str());
+	if (!videoDecoder.loadFile(filename)) {
+		warning("AccessVIDMoviePlay: could not open '%s'", filename.toString().c_str());
 		return false;
 	}
 
 	bool skipVideo = false;
 
 	_events->clearEvents();
-	videoDecoder->start();
+	videoDecoder.start();
 
-	while (!shouldQuit() && !videoDecoder->endOfVideo() && !skipVideo) {
-		if (videoDecoder->needsUpdate()) {
-			const Graphics::Surface *frame = videoDecoder->decodeNextFrame();
+	while (!shouldQuit() && !videoDecoder.endOfVideo() && !skipVideo) {
+		if (videoDecoder.needsUpdate()) {
+			const Graphics::Surface *frame = videoDecoder.decodeNextFrame();
 
 			if (frame) {
 				_screen->blitFrom(*frame);
 
-				if (videoDecoder->hasDirtyPalette()) {
-					const byte *palette = videoDecoder->getPalette();
+				if (videoDecoder.hasDirtyPalette()) {
+					const byte *palette = videoDecoder.getPalette();
 					g_system->getPaletteManager()->setPalette(palette, 0, 256);
 				}
 
@@ -725,15 +725,12 @@ bool AccessEngine::playMovie(const Common::String &filename, const Common::Point
 
 		_events->pollEventsAndWait();
 
-		Common::KeyState keyState;
-		if (_events->getKey(keyState)) {
-			if (keyState.keycode == Common::KEYCODE_ESCAPE)
+		Common::CustomEventType action;
+		if (_events->getAction(action)) {
+			if (action == kActionSkip)
 				skipVideo = true;
 		}
 	}
-
-	videoDecoder->close();
-	delete videoDecoder;
 
 	return !skipVideo;
 }

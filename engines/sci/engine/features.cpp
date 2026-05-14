@@ -27,6 +27,7 @@
 
 #include "common/config-manager.h"
 #include "common/file.h"
+#include "common/gui_options.h"
 
 namespace Sci {
 
@@ -46,6 +47,8 @@ GameFeatures::GameFeatures(SegManager *segMan, Kernel *kernel) : _segMan(segMan)
 	_forceDOSTracks = false;
 	_useWindowsCursors = ConfMan.getBool("windows_cursors");
 	_pseudoMouseAbility = kPseudoMouseAbilityUninitialized;
+	_useAudioPopfix = Common::checkGameGUIOption(GAMEOPTION_GK1_ENABLE_AUDIO_POPFIX, ConfMan.get("guioptions")) &&
+	                  ConfMan.getBool("audio_popfix_enabled");
 }
 
 reg_t GameFeatures::getDetectionAddr(const Common::String &objName, Selector slc, int methodNum) {
@@ -126,9 +129,7 @@ bool GameFeatures::autoDetectSoundType() {
 					_doSoundType = foundTarget ? SCI_VERSION_1_LATE : SCI_VERSION_1_EARLY;
 					break;
 				}
-
-				if (_doSoundType != SCI_VERSION_NONE)
-					return true;
+				return true;
 			}
 		}
 	}
@@ -233,7 +234,7 @@ SciVersion GameFeatures::detectSetCursorType() {
 	return _setCursorType;
 }
 
-bool GameFeatures::autoDetectLofsType(Common::String gameSuperClassName, int methodNum) {
+bool GameFeatures::autoDetectLofsType(const Common::String &gameSuperClassName, int methodNum) {
 	// Look up the script address
 	reg_t addr = getDetectionAddr(gameSuperClassName.c_str(), -1, methodNum);
 
@@ -493,7 +494,7 @@ bool GameFeatures::autoDetectSci21KernelType() {
 
 		// HACK: The Inside the Chest Demo and King's Questions minigame
 		// don't have sounds at all, but they're using a SCI2 kernel
-		if (g_sci->getGameId() == GID_CHEST || g_sci->getGameId() == GID_KQUESTIONS) {
+		if (g_sci->getGameId() == GID_CHEST || g_sci->getGameId() == GID_SHIELD || g_sci->getGameId() == GID_KQUESTIONS) {
 			_sci21KernelType = SCI_VERSION_2;
 		} else if (g_sci->getGameId() == GID_RAMA && g_sci->isDemo()) {
 			_sci21KernelType = SCI_VERSION_2_1_MIDDLE;
@@ -568,7 +569,6 @@ bool GameFeatures::supportsSpeechWithSubtitles() const {
 	case GID_LAURABOW2:
 	case GID_KQ6:
 #ifdef ENABLE_SCI32
-	// TODO: SCI3
 	case GID_GK1:
 	case GID_KQ7:
 	case GID_LSL6HIRES:
@@ -589,7 +589,6 @@ bool GameFeatures::audioVolumeSyncUsesGlobals() const {
 	switch (g_sci->getGameId()) {
 	case GID_GK1:
 	case GID_GK2:
-	case GID_HOYLE5:
 	case GID_LSL6:
 	case GID_LSL6HIRES:
 	case GID_LSL7:
@@ -598,6 +597,9 @@ bool GameFeatures::audioVolumeSyncUsesGlobals() const {
 	case GID_RAMA:
 	case GID_TORIN:
 		return true;
+	case GID_HOYLE5:
+		// Hoyle school house math does not use a volume global
+		return !g_sci->getResMan()->testResource(ResourceId(kResourceTypeView, 21));
 	default:
 		return false;
 	}
@@ -614,7 +616,6 @@ MessageTypeSyncStrategy GameFeatures::getMessageTypeSyncStrategy() const {
 
 #ifdef ENABLE_SCI32
 	switch (g_sci->getGameId()) {
-	// TODO: SCI3
 	case GID_GK1:
 	case GID_PQ4:
 	case GID_QFG4:
@@ -624,7 +625,6 @@ MessageTypeSyncStrategy GameFeatures::getMessageTypeSyncStrategy() const {
 	case GID_LSL7:
 	case GID_MOTHERGOOSEHIRES:
 	case GID_PHANTASMAGORIA:
-	case GID_SQ6:
 	case GID_TORIN:
 		return kMessageTypeSyncStrategyDefault;
 
@@ -633,6 +633,13 @@ MessageTypeSyncStrategy GameFeatures::getMessageTypeSyncStrategy() const {
 
 	case GID_SHIVERS:
 		return kMessageTypeSyncStrategyShivers;
+
+	case GID_SQ6:
+		// don't sync the early demos; they are speechless and
+		// require the message type global to remain unchanged.
+		return (g_sci->isDemo() && getSciVersion() < SCI_VERSION_2_1_MIDDLE) ?
+			kMessageTypeSyncStrategyNone :
+			kMessageTypeSyncStrategyDefault;
 
 	case GID_GK2:
 	case GID_PQSWAT:
@@ -858,6 +865,9 @@ bool GameFeatures::hasScriptObjectNames() const {
 }
 
 bool GameFeatures::canSaveFromGMM() const {
+	if (!ConfMan.getBool("gmm_save_enabled"))
+		return false;
+
 	switch (g_sci->getGameId()) {
 	// ==== Demos/mini-games with no saving functionality ====
 	case GID_ASTROCHICKEN:
@@ -895,11 +905,10 @@ bool GameFeatures::canSaveFromGMM() const {
 
 uint16 GameFeatures::getGameFlagsGlobal() const {
 	Common::Platform platform = g_sci->getPlatform();
-	bool isCD = g_sci->isCD();
 	switch (g_sci->getGameId()) {
 	case GID_CAMELOT: return 250;
 	case GID_CASTLEBRAIN: return 250;
-	case GID_ECOQUEST: return isCD ? 152 : 150;
+	case GID_ECOQUEST: return (getSciVersion() == SCI_VERSION_1_1) ? 152 : 150;
 	case GID_ECOQUEST2: return 110;
 	case GID_FAIRYTALES: return 250;
 	case GID_FREDDYPHARKAS: return 186;
@@ -907,13 +916,13 @@ uint16 GameFeatures::getGameFlagsGlobal() const {
 	case GID_GK2: return 150;
 	// ICEMAN uses object properties
 	case GID_ISLANDBRAIN: return 250;
-	case GID_LAURABOW: return 440;
-	case GID_LAURABOW2: return 186;
 	case GID_KQ1: return 150;
 	// KQ4 has no flags
 	case GID_KQ5: return 129;
 	case GID_KQ6: return 137;
 	case GID_KQ7: return 127;
+	case GID_LAURABOW: return 440;
+	case GID_LAURABOW2: return 186;
 	case GID_LIGHTHOUSE: return 116;
 	case GID_LONGBOW: return 200;
 	case GID_LSL1: return 111;
@@ -943,6 +952,20 @@ uint16 GameFeatures::getGameFlagsGlobal() const {
 	case GID_SQ6: return 250;
 	// TORIN uses a flags object
 	default: return 0;
+	}
+}
+
+bool GameFeatures::isGameFlagBitOrderNormal() const {
+	// Most games store flags in reverse bit order
+	switch (g_sci->getGameId()) {
+	case GID_KQ5:
+	case GID_LAURABOW:
+	case GID_PEPPER:
+	case GID_PQ1:
+	case GID_PQ3:
+		return true;
+	default:
+		return false;
 	}
 }
 

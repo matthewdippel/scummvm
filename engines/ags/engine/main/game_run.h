@@ -22,6 +22,8 @@
 #ifndef AGS_ENGINE_MAIN_GAME_RUN_H
 #define AGS_ENGINE_MAIN_GAME_RUN_H
 
+#include "ags/shared/ac/keycode.h"
+
 namespace AGS3 {
 
 namespace AGS {
@@ -44,20 +46,33 @@ void GameLoopUntilButAnimEnd(int guin, int objn);
 
 // Run the actual game until it ends, or aborted by player/error; loops GameTick() internally
 void RunGameUntilAborted();
-// Update everything game related
+// Update everything game related; wait for the next frame
 void UpdateGameOnce(bool checkControls = false, IDriverDependantBitmap *extraBitmap = nullptr, int extraX = 0, int extraY = 0);
-// Update minimal required game state: audio, loop counter, etc
+// Update minimal required game state: audio, loop counter, etc; wait for the next frame
 void UpdateGameAudioOnly();
+// Updates everything related to object views that could have changed in the midst of a
+// blocking script, cursor position and view, poll anything related to cursor position;
+// this function is useful when you don't want to update whole game, but only things
+// that are necessary for rendering the game screen.
+void UpdateCursorAndDrawables();
+// Syncs object drawable states with their logical states.
+// Useful after a major game state change, such as loading new room, in case we expect
+// that a render may occur before a normal game update is performed.
+void SyncDrawablesState();
 // Gets current logical game FPS, this is normally a fixed number set in script;
 // in case of "maxed fps" mode this function returns real measured FPS.
-float get_current_fps();
-struct KeyInput;
+float get_game_fps();
+// Gets real fps, calculated based on the game performance.
+float get_real_fps();
 // Runs service key controls, returns false if no key was pressed or key input was claimed by the engine,
 // otherwise returns true and provides a keycode.
 bool run_service_key_controls(KeyInput &kgn);
 // Runs service mouse controls, returns false if mouse input was claimed by the engine,
 // otherwise returns true and provides mouse button code.
-bool run_service_mb_controls(int &mbut, int &mwheelz);
+bool run_service_mb_controls(eAGSMouseButton &mbut, int &mwheelz);
+// Polls few things (exit flag and debugger messages)
+// TODO: refactor this
+void update_polled_stuff();
 
 } // namespace AGS3
 

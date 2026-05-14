@@ -33,17 +33,18 @@ class Effect;
  */
 class EffectManager {
 	friend class Effect;
-	typedef Std::vector<Effect *>::iterator EffectIterator;
+	typedef Common::Array<Effect *>::iterator EffectIterator;
+	typedef Common::Array<Effect *>::const_iterator ConstEffectIterator;
 	/* For each EffectWatch, a message will be sent to "watcher" when
 	   "effect" is deleted. */
 	typedef struct {
 		CallBack *watcher;
 		Effect *effect;
 	} EffectWatch;
-	typedef Std::vector<EffectWatch>::iterator WatchIterator;
+	typedef Common::Array<EffectWatch>::iterator WatchIterator;
 
-	Std::vector<Effect *> effects; // the simple list
-	Std::vector<EffectWatch> watched;
+	Common::Array<Effect *> effects; // the simple list
+	Common::Array<EffectWatch> watched;
 
 	void add_effect(Effect *eff); // only effects can add themselves
 	void signal_watch(Effect *effect);
@@ -56,9 +57,9 @@ public:
 	void delete_effect(Effect *eff); // anyone may delete an effect
 	void update_effects(); // check and delete
 
-	bool has_effects();
+	bool has_effects() const;
 	void watch_effect(CallBack *callback_target, Effect *watch);
-	void unwatch_effect(CallBack *callback_target, Effect *watch = NULL);
+	void unwatch_effect(CallBack *callback_target, Effect *watch = nullptr);
 };
 
 } // End of namespace Nuvie

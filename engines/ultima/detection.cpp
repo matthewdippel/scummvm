@@ -22,165 +22,28 @@
 #include "base/plugins.h"
 
 #include "common/config-manager.h"
-#include "common/translation.h"
 
 #include "ultima/detection.h"
 #include "ultima/detection_tables.h"
+#include "ultima/ultima.h"
 
-namespace Ultima {
-
-static const PlainGameDescriptor ULTIMA_GAMES[] = {
-#ifndef RELEASE_BUILD
-	{ "ultima1", "Ultima I - The First Age of Darkness" },
-#endif
-	{ "ultima4", "Ultima IV - Quest of the Avatar" },
-	{ "ultima4_enh", "Ultima IV - Quest of the Avatar - Enhanced" },
-	{ "ultima6", "Ultima VI - The False Prophet" },
-	{ "ultima6_enh", "Ultima VI - The False Prophet - Enhanced" },
-	{ "ultima8", "Ultima VIII - Pagan" },
-	{ "remorse", "Crusader: No Remorse" },
-	{ "regret", "Crusader: No Regret" },
-
-	{ "martiandreams", "Worlds of Ultima: Martian Dreams" },
-	{ "martiandreams_enh", "Worlds of Ultima: Martian Dreams - Enhanced" },
-	{ "thesavageempire", "Worlds of Ultima: The Savage Empire" },
-	{ "thesavageempire_enh", "Worlds of Ultima: The Savage Empire - Enhanced" },
-	{ 0, 0 }
+const DebugChannelDef UltimaMetaEngineDetection::debugFlagList[] = {
+	{Ultima::kDebugPath, "Path", "Pathfinding debug level"},
+	{Ultima::kDebugGraphics, "Graphics", "Graphics debug level"},
+	{Ultima::kDebugVideo, "Video", "Video playback debug level"},
+	{Ultima::kDebugActor, "Actor", "Actor debug level"},
+	{Ultima::kDebugObject, "Object", "Object debug level"},
+	{Ultima::kDebugCollision, "Collision", "Collision debug level"},
+	{Ultima::kDebugImGui, "imgui", "Imgui debug output"},
+	DEBUG_CHANNEL_END
 };
-
-static const ADExtraGuiOptionsMap optionsList[] = {
-	{
-		GAMEOPTION_ORIGINAL_SAVELOAD,
-		{
-			_s("Use original save/load screens"),
-			_s("Use the original save/load screens instead of the ScummVM ones"),
-			"originalsaveload",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_FRAME_SKIPPING,
-		{
-			_s("Enable frame skipping"),
-			_s("Allow the game to skip animation frames when running too slow."),
-			"frameSkip",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_FRAME_LIMITING,
-		{
-			_s("Enable frame limiting"),
-			_s("Limits the speed of the game to prevent running too fast."),
-			"frameLimit",
-			true,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_CHEATS,
-		{
-			_s("Enable cheats"),
-			_s("Allow cheats by commands and a menu when player is clicked."),
-			"cheat",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_HIGH_RESOLUTION,
-		{
-			_s("Enable high resolution"),
-			_s("Enable a higher resolution for the game"),
-			"usehighres",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_FOOTSTEP_SOUNDS,
-		{
-			_s("Play foot step sounds"),
-			_s("Plays sound when the player moves."),
-			"footsteps",
-			true,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_JUMP_TO_MOUSE,
-		{
-			_s("Enable jump to mouse position"),
-			_s("Jumping while not moving targets the mouse cursor rather than direction only."),
-			"targetedjump",
-			true,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_FONT_REPLACEMENT,
-		{
-			_s("Enable font replacement"),
-			_s("Replaces game fonts with rendered fonts"),
-			"font_override",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_FONT_ANTIALIASING,
-		{
-			_s("Enable font anti-aliasing"),
-			_s("When font anti-aliasing is enabled, the text is smoother."),
-			"font_antialiasing",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_CAMERA_WITH_SILENCER,
-		{
-			// I18N: Silencer is the player-character in Crusader games, known as the Avatar in Ultima series.
-			_s("Camera moves with Silencer"),
-			_s("Camera tracks the player movement rather than snapping to defined positions."),
-			"camera_on_player",
-			true,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_ALWAYS_CHRISTMAS,
-		{
-			_s("Always enable Christmas easter-egg"),
-			_s("Enable the Christmas music at any time of year."),
-			"always_christmas",
-			true,
-			0,
-			0
-		}
-	},
-	AD_EXTRA_GUI_OPTIONS_TERMINATOR
-};
-
-} // End of namespace Ultima
 
 UltimaMetaEngineDetection::UltimaMetaEngineDetection() : AdvancedMetaEngineDetection(Ultima::GAME_DESCRIPTIONS,
-	        sizeof(Ultima::UltimaGameDescription), Ultima::ULTIMA_GAMES, Ultima::optionsList) {
+	        Ultima::ULTIMA_GAMES) {
 	static const char *const DIRECTORY_GLOBS[2] = { "usecode", 0 };
 	_maxScanDepth = 2;
 	_directoryGlobs = DIRECTORY_GLOBS;
+	_flags = kADFlagMatchFullPaths;
 }
 
 REGISTER_PLUGIN_STATIC(ULTIMA_DETECTION, PLUGIN_TYPE_ENGINE_DETECTION, UltimaMetaEngineDetection);

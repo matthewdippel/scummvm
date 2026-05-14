@@ -42,8 +42,9 @@ class String;
 /**
  * List of game language.
  */
-enum Language {
+enum Language : int8 {
 	AR_ARB,
+	BG_BUL,
 	CA_ESP,
 	CS_CZE,
 	DA_DNK,
@@ -53,16 +54,19 @@ enum Language {
 	EN_GRB,
 	EN_USA,
 	ES_ESP,
+	EU_ESP,
 	ET_EST,
 	FA_IRN,
 	FI_FIN,
 	FR_FRA,
+	FR_CAN,
 	HE_ISR,
 	HR_HRV,
 	HU_HUN,
 	IT_ITA,
 	JA_JPN,
 	KO_KOR,
+	LT_LTU,
 	LV_LVA,
 	NL_BEL,
 	NL_NLD,
@@ -71,7 +75,7 @@ enum Language {
 	PT_BRA,
 	PT_PRT,
 	RU_RUS,
-	SE_SWE,
+	SV_SWE,
 	SK_SVK,
 	SR_SRB,
 	TR_TUR,
@@ -101,10 +105,12 @@ extern const char *getLanguageLocale(Language id);
 extern const char *getLanguageDescription(Language id);
 
 // TODO: Document this GUIO related function
-const String getGameGUIOptionsDescriptionLanguage(Common::Language lang);
+const String getGameGUIOptionsDescriptionLanguage(Language lang);
+const String getGameGUIOptionsDescriptionLanguages(const List<Language> &languages);
+List<Language> parseLanguagesFromGameGUIOptionsString(const String &optionsString);
 
 // TODO: Document this GUIO related function
-bool checkGameGUIOptionLanguage(Common::Language lang, const String &str);
+bool checkGameGUIOptionLanguage(Language lang, const String &str);
 
 List<String> getLanguageList();
 

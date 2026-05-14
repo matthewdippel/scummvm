@@ -23,9 +23,9 @@
 #include "backends/cloud/onedrive/onedrivestorage.h"
 #include "backends/cloud/onedrive/onedrivetokenrefresher.h"
 #include "backends/cloud/iso8601.h"
-#include "backends/networking/curl/connectionmanager.h"
-#include "backends/networking/curl/networkreadstream.h"
-#include "common/json.h"
+#include "backends/networking/http/connectionmanager.h"
+#include "backends/networking/http/networkreadstream.h"
+#include "common/formats/json.h"
 
 namespace Cloud {
 namespace OneDrive {
@@ -33,7 +33,7 @@ namespace OneDrive {
 #define ONEDRIVE_API_SPECIAL_APPROOT_CHILDREN "https://graph.microsoft.com/v1.0/drive/special/approot:/%s:/children"
 #define ONEDRIVE_API_SPECIAL_APPROOT_CHILDREN_ROOT_ITSELF "https://graph.microsoft.com/v1.0/drive/special/approot/children"
 
-OneDriveListDirectoryRequest::OneDriveListDirectoryRequest(OneDriveStorage *storage, Common::String path, Storage::ListDirectoryCallback cb, Networking::ErrorCallback ecb, bool recursive):
+OneDriveListDirectoryRequest::OneDriveListDirectoryRequest(OneDriveStorage *storage, const Common::String &path, Storage::ListDirectoryCallback cb, Networking::ErrorCallback ecb, bool recursive):
 	Networking::Request(nullptr, ecb),
 	_requestedPath(path), _requestedRecursive(recursive), _storage(storage), _listDirectoryCallback(cb),
 	_workingRequest(nullptr), _ignoreCallback(false) {
@@ -76,22 +76,22 @@ void OneDriveListDirectoryRequest::listNextDirectory() {
 
 	Common::String dir = _currentDirectory;
 	dir.deleteLastChar();
-	Common::String url = Common::String::format(ONEDRIVE_API_SPECIAL_APPROOT_CHILDREN, ConnMan.urlEncode(dir).c_str());
+	Common::String url = Common::String::format(ONEDRIVE_API_SPECIAL_APPROOT_CHILDREN, Common::percentEncodeString(dir).c_str());
 	if (dir == "") url = Common::String(ONEDRIVE_API_SPECIAL_APPROOT_CHILDREN_ROOT_ITSELF);
 	makeRequest(url);
 }
 
-void OneDriveListDirectoryRequest::makeRequest(Common::String url) {
-	Networking::JsonCallback callback = new Common::Callback<OneDriveListDirectoryRequest, Networking::JsonResponse>(this, &OneDriveListDirectoryRequest::listedDirectoryCallback);
-	Networking::ErrorCallback failureCallback = new Common::Callback<OneDriveListDirectoryRequest, Networking::ErrorResponse>(this, &OneDriveListDirectoryRequest::listedDirectoryErrorCallback);
-	Networking::CurlJsonRequest *request = new OneDriveTokenRefresher(_storage, callback, failureCallback, url.c_str());
+void OneDriveListDirectoryRequest::makeRequest(const Common::String &url) {
+	Networking::JsonCallback callback = new Common::Callback<OneDriveListDirectoryRequest, const Networking::JsonResponse &>(this, &OneDriveListDirectoryRequest::listedDirectoryCallback);
+	Networking::ErrorCallback failureCallback = new Common::Callback<OneDriveListDirectoryRequest, const Networking::ErrorResponse &>(this, &OneDriveListDirectoryRequest::listedDirectoryErrorCallback);
+	Networking::HttpJsonRequest *request = new OneDriveTokenRefresher(_storage, callback, failureCallback, url.c_str());
 	request->addHeader("Authorization: bearer " + _storage->accessToken());
 	_workingRequest = ConnMan.addRequest(request);
 }
 
-void OneDriveListDirectoryRequest::listedDirectoryCallback(Networking::JsonResponse response) {
+void OneDriveListDirectoryRequest::listedDirectoryCallback(const Networking::JsonResponse &response) {
 	_workingRequest = nullptr;
-	Common::JSONValue *json = response.value;
+	const Common::JSONValue *json = response.value;
 
 	if (_ignoreCallback) {
 		delete json;
@@ -102,7 +102,7 @@ void OneDriveListDirectoryRequest::listedDirectoryCallback(Networking::JsonRespo
 		_date = response.request->date();
 
 	Networking::ErrorResponse error(this, "OneDriveListDirectoryRequest::listedDirectoryCallback: unknown error");
-	Networking::CurlJsonRequest *rq = (Networking::CurlJsonRequest *)response.request;
+	const Networking::HttpJsonRequest *rq = (const Networking::HttpJsonRequest *)response.request;
 	if (rq && rq->getNetworkReadStream())
 		error.httpResponseCode = rq->getNetworkReadStream()->httpResponseCode();
 
@@ -122,7 +122,7 @@ void OneDriveListDirectoryRequest::listedDirectoryCallback(Networking::JsonRespo
 	Common::JSONObject object = json->asObject();
 
 	//check that ALL keys exist AND HAVE RIGHT TYPE to avoid segfaults
-	if (!Networking::CurlJsonRequest::jsonContainsArray(object, "value", "OneDriveListDirectoryRequest")) {
+	if (!Networking::HttpJsonRequest::jsonContainsArray(object, "value", "OneDriveListDirectoryRequest")) {
 		error.response = "\"value\" not found or that's not an array!";
 		finishError(error);
 		delete json;
@@ -131,14 +131,14 @@ void OneDriveListDirectoryRequest::listedDirectoryCallback(Networking::JsonRespo
 
 	Common::JSONArray items = object.getVal("value")->asArray();
 	for (uint32 i = 0; i < items.size(); ++i) {
-		if (!Networking::CurlJsonRequest::jsonIsObject(items[i], "OneDriveListDirectoryRequest")) continue;
+		if (!Networking::HttpJsonRequest::jsonIsObject(items[i], "OneDriveListDirectoryRequest")) continue;
 
 		Common::JSONObject item = items[i]->asObject();
 
-		if (!Networking::CurlJsonRequest::jsonContainsAttribute(item, "folder", "OneDriveListDirectoryRequest", true)) continue;
-		if (!Networking::CurlJsonRequest::jsonContainsString(item, "name", "OneDriveListDirectoryRequest")) continue;
-		if (!Networking::CurlJsonRequest::jsonContainsIntegerNumber(item, "size", "OneDriveListDirectoryRequest")) continue;
-		if (!Networking::CurlJsonRequest::jsonContainsString(item, "lastModifiedDateTime", "OneDriveListDirectoryRequest")) continue;
+		if (!Networking::HttpJsonRequest::jsonContainsAttribute(item, "folder", "OneDriveListDirectoryRequest", true)) continue;
+		if (!Networking::HttpJsonRequest::jsonContainsString(item, "name", "OneDriveListDirectoryRequest")) continue;
+		if (!Networking::HttpJsonRequest::jsonContainsIntegerNumber(item, "size", "OneDriveListDirectoryRequest")) continue;
+		if (!Networking::HttpJsonRequest::jsonContainsString(item, "lastModifiedDateTime", "OneDriveListDirectoryRequest")) continue;
 
 		Common::String path = _currentDirectory + item.getVal("name")->asString();
 		bool isDirectory = item.contains("folder");
@@ -154,7 +154,7 @@ void OneDriveListDirectoryRequest::listedDirectoryCallback(Networking::JsonRespo
 
 	bool hasMore = object.contains("@odata.nextLink");
 	if (hasMore) {
-		if (!Networking::CurlJsonRequest::jsonContainsString(object, "@odata.nextLink", "OneDriveListDirectoryRequest")) {
+		if (!Networking::HttpJsonRequest::jsonContainsString(object, "@odata.nextLink", "OneDriveListDirectoryRequest")) {
 			error.response = "\"@odata.nextLink\" is not a string!";
 			finishError(error);
 			delete json;
@@ -169,7 +169,7 @@ void OneDriveListDirectoryRequest::listedDirectoryCallback(Networking::JsonRespo
 	delete json;
 }
 
-void OneDriveListDirectoryRequest::listedDirectoryErrorCallback(Networking::ErrorResponse error) {
+void OneDriveListDirectoryRequest::listedDirectoryErrorCallback(const Networking::ErrorResponse &error) {
 	_workingRequest = nullptr;
 	if (_ignoreCallback)
 		return;
@@ -184,7 +184,7 @@ void OneDriveListDirectoryRequest::restart() { start(); }
 
 Common::String OneDriveListDirectoryRequest::date() const { return _date; }
 
-void OneDriveListDirectoryRequest::finishListing(Common::Array<StorageFile> &files) {
+void OneDriveListDirectoryRequest::finishListing(const Common::Array<StorageFile> &files) {
 	Request::finishSuccess();
 	if (_listDirectoryCallback)
 		(*_listDirectoryCallback)(Storage::ListDirectoryResponse(this, files));

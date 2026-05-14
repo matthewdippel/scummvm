@@ -33,7 +33,7 @@
 namespace MTropolis {
 
 
-CompoundVarSaver::CompoundVarSaver(RuntimeObject *object) : _object(object) {
+CompoundVarSaver::CompoundVarSaver(Runtime *runtime, RuntimeObject *object) : _runtime(runtime), _object(object) {
 }
 
 bool CompoundVarSaver::writeSave(Common::WriteStream *stream) {
@@ -41,7 +41,7 @@ bool CompoundVarSaver::writeSave(Common::WriteStream *stream) {
 		return false;
 
 	Modifier *modifier = static_cast<Modifier *>(_object);
-	Common::SharedPtr<ModifierSaveLoad> saveLoad = modifier->getSaveLoad();
+	Common::SharedPtr<ModifierSaveLoad> saveLoad = modifier->getSaveLoad(_runtime);
 	if (!saveLoad)
 		return false;
 
@@ -73,13 +73,13 @@ bool MTropolisEngine::promptSave(ISaveWriter *writer, const Graphics::Surface *s
 	Common::String desc;
 	int slot;
 
-	Common::SharedPtr<GUI::SaveLoadChooser> dialog(new GUI::SaveLoadChooser(_("Save game:"), _("Save"), true));
+	Common::SharedPtr<GUI::SaveLoadChooser> dialog(new GUI::SaveLoadChooser(true));
 
 	slot = dialog->runModalWithCurrentTarget();
 	desc = dialog->getResultString();
 
 	if (desc.empty()) {
-		// create our own description for the saved game, the user didnt enter it
+		// create our own description for the saved game, the user didn't enter it
 		desc = dialog->createDefaultSaveDescription(slot);
 	}
 
@@ -87,6 +87,12 @@ bool MTropolisEngine::promptSave(ISaveWriter *writer, const Graphics::Surface *s
 		return true;
 
 	Common::String saveFileName = getSaveStateName(slot);
+
+	return save(writer, screenshotOverride, saveFileName, desc);
+}
+
+bool MTropolisEngine::save(ISaveWriter *writer, const Graphics::Surface *screenshotOverride, const Common::String &saveFileName, const Common::String &desc) {
+
 	Common::SharedPtr<Common::OutSaveFile> out(_saveFileMan->openForSaving(saveFileName, false));
 
 	ISaveWriter *oldWriter = _saveWriter;
@@ -102,12 +108,16 @@ bool MTropolisEngine::promptSave(ISaveWriter *writer, const Graphics::Surface *s
 	return true;
 }
 
+bool MTropolisEngine::namedSave(ISaveWriter *writer, const Graphics::Surface *screenshotOverride, const Common::String &fileName) {
+	return save(writer, screenshotOverride, getUnpromptedSaveFileName(fileName), fileName);
+}
+
 bool MTropolisEngine::promptLoad(ISaveReader *reader) {
 	Common::String desc;
 	int slot;
 
 	{
-		Common::SharedPtr<GUI::SaveLoadChooser> dialog(new GUI::SaveLoadChooser(_("Restore game:"), _("Restore"), false));
+		Common::SharedPtr<GUI::SaveLoadChooser> dialog(new GUI::SaveLoadChooser(false));
 		slot = dialog->runModalWithCurrentTarget();
 	}
 
@@ -115,7 +125,16 @@ bool MTropolisEngine::promptLoad(ISaveReader *reader) {
 		return true;
 
 	Common::String saveFileName = getSaveStateName(slot);
+
+	return load(reader, saveFileName);
+}
+
+bool MTropolisEngine::load(ISaveReader *reader, const Common::String &saveFileName) {
 	Common::SharedPtr<Common::InSaveFile> in(_saveFileMan->openForLoading(saveFileName));
+	if (!in) {
+		warning("An error occurred while attempting to open save file '%s'", saveFileName.c_str());
+		return false;
+	}
 
 	uint32 signature = in->readUint32BE();
 	uint32 saveFileVersion = in->readUint32BE();
@@ -143,6 +162,14 @@ bool MTropolisEngine::promptLoad(ISaveReader *reader) {
 		return false;
 	}
 
+	if (saveFileVersion < kEarliestSupportedSaveFileVersion) {
+		GUI::MessageDialog dialog(_("Saved game was created with an earlier, incompatible version of ScummVM. Unable to load."));
+		dialog.runModal();
+
+		warning("An error occurred while reading file '%s'", saveFileName.c_str());
+		return false;
+	}
+
 	if (!reader->readSave(in.get(), saveFileVersion)) {
 		GUI::MessageDialog dialog(_("Failed to load save, an error occurred when reading the save game data."));
 		dialog.runModal();
@@ -152,6 +179,14 @@ bool MTropolisEngine::promptLoad(ISaveReader *reader) {
 	}
 
 	return true;
+}
+
+Common::String MTropolisEngine::getUnpromptedSaveFileName(const Common::String &fileName) {
+	return _targetName + "." + toCaseInsensitive(fileName);
+}
+
+bool MTropolisEngine::namedLoad(ISaveReader *reader, const Common::String &fileName) {
+	return load(reader, getUnpromptedSaveFileName(fileName));
 }
 
 bool MTropolisEngine::autoSave(ISaveWriter *writer) {
@@ -170,9 +205,9 @@ bool MTropolisEngine::autoSave(ISaveWriter *writer) {
 }
 
 const Graphics::Surface *MTropolisEngine::getSavegameScreenshot() const {
-	const Graphics::Surface *screenshotOverride = _runtime->getSaveScreenshotOverride().get();
+	const Graphics::ManagedSurface *screenshotOverride = _runtime->getSaveScreenshotOverride().get();
 	if (screenshotOverride)
-		return screenshotOverride;
+		return &screenshotOverride->rawSurface();
 	else {
 		Window *mainWindow = _runtime->getMainWindow().lock().get();
 		if (!mainWindow)
@@ -217,7 +252,7 @@ bool MTropolisEngine::canSaveAutosaveCurrently() {
 	return canSaveGameStateCurrently();
 }
 
-bool MTropolisEngine::canSaveGameStateCurrently() {
+bool MTropolisEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	if (!_runtime->isIdle())
 		return false;
 

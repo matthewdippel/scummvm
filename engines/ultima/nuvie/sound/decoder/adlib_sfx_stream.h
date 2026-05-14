@@ -22,7 +22,7 @@
 #ifndef NUVIE_SOUND_MIXER_DECODER_ADLIB_SFX_STREAM_H
 #define NUVIE_SOUND_MIXER_DECODER_ADLIB_SFX_STREAM_H
 
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 #include "ultima/nuvie/sound/adplug/opl_class.h"
 #include "audio/audiostream.h"
 
@@ -33,16 +33,14 @@ class OriginFXAdLibDriver;
 class Configuration;
 
 
-using Std::string;
-
 class AdLibSfxStream : public Audio::RewindableAudioStream {
 public:
 	AdLibSfxStream() {
-		opl = NULL;
+		opl = nullptr;
 		duration = 0;
 	}
 
-	AdLibSfxStream(Configuration *cfg, int rate, uint8 channel, sint8 note, uint8 velocity, uint8 program_number, uint32 d);
+	AdLibSfxStream(const Configuration *cfg, int rate, uint8 channel, sint8 note, uint8 velocity, uint8 program_number, uint32 d);
 	~AdLibSfxStream() override;
 
 	int readBuffer(sint16 *buffer, const int numSamples) override;

@@ -147,9 +147,10 @@ public:
 	void pitchBend(int16 bend) override;
 	void pitchBendFactor(byte value) override;
 	void transpose(int8 value) override;
+	void detune(int16 value) override;
 
 	void priority(byte value) override;
-	void sysEx_customInstrument(uint32 type, const byte *instr) override {}
+	void sysEx_customInstrument(uint32 type, const byte *instr, uint32 dataSize) override {}
 
 	int getPriority() const { return _priority; }
 	SoundChannel_Amiga *getChannel() const { return _out; }
@@ -164,6 +165,7 @@ private:
 	uint8 _program;
 	int8 _modulation;
 	int8 _transpose;
+	int8 _detune;
 	int16 _pitchBend;
 	uint8 _pitchBendSensitivity;
 	uint16 _volume;
@@ -475,7 +477,7 @@ SoundChannel_Amiga *SoundChannel_Amiga::_channels[4] = { nullptr, nullptr, nullp
 const int8 SoundChannel_Amiga::_muteData[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
 IMusePart_Amiga::IMusePart_Amiga(IMuseDriver_Amiga *driver, int id) : _driver(driver), _id(id), _allocated(false), _out(nullptr), _priority(0), _program(0),
-	_pitchBend(0), _pitchBendSensitivity(2), _volume(0), _modulation(0), _transpose(0), _sustain(false) {
+	_pitchBend(0), _pitchBendSensitivity(2), _volume(0), _modulation(0), _transpose(0), _detune(0), _sustain(false) {
 }
 
 bool IMusePart_Amiga::allocate() {
@@ -524,7 +526,7 @@ void IMusePart_Amiga::noteOn(byte note, byte velocity) {
 
 	chan->connect(this);
 	// The velocity parameter is ignored here.
-	chan->noteOn(note, _volume, _program, _transpose, (_pitchBend * _pitchBendSensitivity) >> 6);
+	chan->noteOn(note, _volume, _program, _transpose, ((_pitchBend * _pitchBendSensitivity) >> 6) + _detune);
 }
 
 void IMusePart_Amiga::controlChange(byte control, byte value) {
@@ -557,19 +559,25 @@ void IMusePart_Amiga::programChange(byte program) {
 void IMusePart_Amiga::pitchBend(int16 bend) {
 	_pitchBend = bend;
 	for (SoundChannel_Amiga *cur = _out; cur; cur = cur->next())
-		cur->transposePitchBend(_transpose, (_pitchBend * _pitchBendSensitivity) >> 6);
+		cur->transposePitchBend(_transpose, ((_pitchBend * _pitchBendSensitivity) >> 6) + _detune);
 }
 
 void IMusePart_Amiga::pitchBendFactor(byte value) {
 	_pitchBendSensitivity = value;
 	for (SoundChannel_Amiga *cur = _out; cur; cur = cur->next())
-		cur->transposePitchBend(_transpose, (_pitchBend * _pitchBendSensitivity) >> 6);
+		cur->transposePitchBend(_transpose, ((_pitchBend * _pitchBendSensitivity) >> 6) + _detune);
 }
 
 void IMusePart_Amiga::transpose(int8 value) {
 	_transpose = value << 1;
 	for (SoundChannel_Amiga *cur = _out; cur; cur = cur->next())
-		cur->transposePitchBend(_transpose, (_pitchBend * _pitchBendSensitivity) >> 6);
+		cur->transposePitchBend(_transpose, ((_pitchBend * _pitchBendSensitivity) >> 6) + _detune);
+}
+
+void IMusePart_Amiga::detune(int16 value) {
+	_detune = (int8)value;
+	for (SoundChannel_Amiga *cur = _out; cur; cur = cur->next())
+		cur->transposePitchBend(_transpose, ((_pitchBend * _pitchBendSensitivity) >> 6) + _detune);
 }
 
 void IMusePart_Amiga::priority(byte value) {
@@ -773,7 +781,7 @@ void IMuseDriver_Amiga::loadInstrument(int program) {
 	if (program == 128) {
 		// The hard-coded default instrument definitions and sample data are the same in MI2 and INDY4.
 		static const int8 defaultData[16] = { 0, 49, 90, 117, 127, 117, 90, 49, 0, -49, -90, -117, -127, -117, -90, -49 };
-		static Instrument_Amiga::Samples defaultSamples = { 428, 60, 0, 127, 33, 0, /*0, 0,*/16, 0, 0, 5, 300, 5, 100, defaultData };
+		static const Instrument_Amiga::Samples defaultSamples = { 428, 60, 0, 127, 33, 0, /*0, 0,*/16, 0, 0, 5, 300, 5, 100, defaultData };
 		_instruments[128].numBlocks = 1;
 		memcpy(&_instruments[128].samples[0], &defaultSamples, sizeof(Instrument_Amiga::Samples));
 	}
@@ -794,7 +802,7 @@ void IMuseDriver_Amiga::loadInstrument(int program) {
 	}
 
 	for (int fileNo = 1; fileNo != -1 && !ims.isOpen(); ) {
-		if (!ims.open(Common::String::format("amiga%d.ims", fileNo))) {
+		if (!ims.open(Common::Path(Common::String::format("amiga%d.ims", fileNo)))) {
 			_missingFiles |= (1 << (fileNo - 1));
 			return;
 		}

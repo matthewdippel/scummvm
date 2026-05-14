@@ -22,7 +22,7 @@
 #ifndef NUVIE_CORE_COMMAND_BAR_H
 #define NUVIE_CORE_COMMAND_BAR_H
 
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 #include "ultima/nuvie/gui/widgets/gui_widget.h"
 #include "ultima/nuvie/misc/call_back.h"
 
@@ -51,12 +51,16 @@ protected:
 	Game *game;
 	Events *event;
 	Font *font;
-	Tile *icon[13];
+	const Tile *icon[13];
 	U6Shape *background; // used to display the WoU command bar backgrounds
 
+	U6Shape *lever_up;	  // The lever in the up state (MD only)
+	U6Shape *lever_down;  // The lever in the down state (MD only)
+
 	sint8 selected_action; // underlined icon (-1 = none)
+	sint8 active_action_num; // the last action that was activated (for MD levers)
 	bool combat_mode; // state of combat icon
-	Std::string wind; // wind direction
+	Common::String wind; // wind direction
 	void fill_square(uint8 pal_index);
 
 	uint8 bg_color, font_color;
@@ -72,22 +76,26 @@ public:
 	virtual bool init_buttons();
 
 	void Display(bool full_redraw) override;
-	GUI_status MouseDown(int x, int y, Shared::MouseButton button) override;
+	GUI_status MouseDown(int x, int y, Events::MouseButton button) override;
 	void update() {
 		update_display = true;
 	}
 
 	void select_action(sint8 activate);
 	void set_combat_mode(bool mode);
-//    void set_wind(Std::string dir)        { wind = dir; update_display = true; }
+//    void set_wind(Common::String dir)        { wind = dir; update_display = true; }
 	void set_selected_action(sint8 action) {
 		selected_action = action;
 		update_display = true;
 	}
 	bool try_selected_action(sint8 command_num = -1);
-	sint8 get_selected_action() {
+	sint8 get_selected_action() const {
 		return selected_action;
 	}
+
+	// Called when a mode is being changed from here
+	// *or* keyboard - so MD can update levers
+	void on_new_action(EventMode action);
 
 	GUI_status callback(uint16 msg, GUI_CallBack *caller, void *data) override {
 		return GUI_PASS;

@@ -25,6 +25,7 @@
 #include "common/array.h"
 #include "common/rect.h"
 #include "common/scummsys.h"
+#include "graphics/palette.h"
 
 #include "image/image_decoder.h"
 
@@ -59,12 +60,10 @@ public:
 	~PICTDecoder();
 
 	// ImageDecoder API
-	bool loadStream(Common::SeekableReadStream &stream);
-	void destroy();
-	const Graphics::Surface *getSurface() const { return _outputSurface; }
-	const byte *getPalette() const { return _palette; }
-	int getPaletteSize() const { return 256; }
-	uint16 getPaletteColorCount() const { return _paletteColorCount; }
+	bool loadStream(Common::SeekableReadStream &stream) override;
+	void destroy() override;
+	const Graphics::Surface *getSurface() const override { return _outputSurface; }
+	const Graphics::Palette &getPalette() const override { return _palette; }
 
 	struct PixMap {
 		uint32 baseAddr;
@@ -84,18 +83,22 @@ public:
 		uint32 pmReserved;
 	};
 
-	static PixMap readPixMap(Common::SeekableReadStream &stream, bool hasBaseAddr = true);
+	static PixMap readRowBytes(Common::SeekableReadStream &stream, bool hasBaseAddr = true);
+	static PixMap readPixMap(Common::SeekableReadStream &stream, bool hasBaseAddr = true, bool hasRowBytes = true);
 
 private:
 	Common::Rect _imageRect;
-	byte _palette[256 * 3];
-	uint16 _paletteColorCount;
+	Graphics::Palette _palette;
+	byte _penPattern[8];
+	Common::Point _currentPenPosition;
 	Graphics::Surface *_outputSurface;
 	bool _continueParsing;
 	int _version;
 
 	// Utility Functions
-	void unpackBitsRect(Common::SeekableReadStream &stream, bool withPalette);
+	void unpackBitsRectOrRgn(Common::SeekableReadStream &stream, bool compressed, bool hasRegion);
+	void unpackBits(Common::SeekableReadStream &stream, bool compressed, bool hasRegion);
+	void unpackBitsRect(Common::SeekableReadStream &stream, bool withPalette, PixMap pixMap);
 	void unpackBitsLine(byte *out, uint32 length, Common::SeekableReadStream *stream, byte bitsPerPixel, byte bytesPerPixel);
 	void skipBitsRect(Common::SeekableReadStream &stream, bool withPalette);
 	void decodeCompressedQuickTime(Common::SeekableReadStream &stream);
@@ -119,10 +122,16 @@ private:
 	DECLARE_OPCODE(o_txFont);
 	DECLARE_OPCODE(o_txFace);
 	DECLARE_OPCODE(o_pnSize);
+	DECLARE_OPCODE(o_pnPat);
 	DECLARE_OPCODE(o_txSize);
 	DECLARE_OPCODE(o_txRatio);
 	DECLARE_OPCODE(o_versionOp);
+	DECLARE_OPCODE(o_shortLine);
+	DECLARE_OPCODE(o_shortLineFrom);
 	DECLARE_OPCODE(o_longText);
+	DECLARE_OPCODE(o_bitsRgn);
+	DECLARE_OPCODE(o_packBitsRgn);
+	DECLARE_OPCODE(o_shortComment);
 	DECLARE_OPCODE(o_longComment);
 	DECLARE_OPCODE(o_opEndPic);
 	DECLARE_OPCODE(o_headerOp);

@@ -48,9 +48,9 @@ struct BdfFontData {
 	BdfBoundingBox defaultBox;
 	int ascent;
 
-	int firstCharacter;
+	uint firstCharacter;
 	int defaultCharacter;
-	int numCharacters;
+	uint numCharacters;
 
 	const byte *const *bitmaps;
 	const byte *advances;
@@ -74,9 +74,9 @@ public:
 	int getFontSize() const;
 
 	static BdfFont *loadFont(Common::SeekableReadStream &stream);
-	static bool cacheFontData(const BdfFont &font, const Common::String &filename);
+	static bool cacheFontData(const BdfFont &font, const Common::Path &filename);
 	static BdfFont *loadFromCache(Common::SeekableReadStream &stream);
-	static BdfFont *scaleFont(BdfFont *src, int newSize);
+	static BdfFont *scaleFont(const BdfFont *src, int newSize);
 private:
 	int mapToIndex(uint32 ch) const;
 

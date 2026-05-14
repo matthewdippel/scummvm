@@ -27,7 +27,7 @@
 #include "common/substream.h"
 #include "common/textconsole.h"
 #include "common/memstream.h"
-#include "common/unzip.h"
+#include "common/compression/unzip.h"
 
 #include "draci/sound.h"
 #include "draci/draci.h"
@@ -203,6 +203,16 @@ void ZipSoundArchive::openArchive(const char *path, const char *extension, Sound
 		Common::ArchiveMemberList files;
 		_archive->listMembers(files);
 		_sampleCount = files.size();
+
+		// The sample files are in the form ####.mp3 but not all numbers are used so we need to
+		// iterate the archive and find the last file
+		for (auto &file : files) {
+			Common::String filename = file->getName();
+			filename.erase(filename.size() - 4);  // remove .mp3 extension
+			uint file_number = atoi(filename.c_str());
+			if(file_number > _sampleCount)		// finds the last file (numerically)
+				_sampleCount = file_number;
+		}
 		debugC(1, kDraciArchiverDebugLevel, "Capacity %d", _sampleCount);
 	} else {
 		debugC(1, kDraciArchiverDebugLevel, "Failed");
@@ -222,8 +232,8 @@ void ZipSoundArchive::clearCache() {
 	// Just deallocate the link-list of (very short) headers for each
 	// dubbed sentence played in the current location.  If the callers have
 	// not called .close() on any of the items, call them now.
-	for (Common::List<SoundSample>::iterator it = _cache.begin(); it != _cache.end(); ++it) {
-		it->close();
+	for (auto &sample : _cache) {
+		sample.close();
 	}
 	_cache.clear();
 }
@@ -248,7 +258,7 @@ SoundSample *ZipSoundArchive::getSample(int i, uint freq) {
 	sample._frequency = freq ? freq : _defaultFreq;
 	sample._format = _format;
 	// Read in the file (without the file header)
-	Common::String filename = Common::String::format("%d.%s", i+1, _extension);
+	Common::Path filename(Common::String::format("%d.%s", i+1, _extension));
 	sample._stream = _archive->createReadStreamForMember(filename);
 	if (!sample._stream) {
 		debugC(2, kDraciArchiverDebugLevel, "Doesn't exist");

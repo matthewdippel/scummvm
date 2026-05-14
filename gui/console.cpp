@@ -28,6 +28,7 @@
 #include "base/version.h"
 
 #include "common/system.h"
+#include "common/util.h"
 
 #include "graphics/fontman.h"
 
@@ -71,6 +72,7 @@ ConsoleDialog::ConsoleDialog(float widthPercent, float heightPercent)
 
 	_caretVisible = false;
 	_caretTime = 0;
+	_selectionTime = 0;
 
 	_slideMode = kNoSlideMode;
 	_slideTime = 0;
@@ -96,23 +98,22 @@ ConsoleDialog::~ConsoleDialog() {
 }
 
 void ConsoleDialog::init() {
-	const int screenW = g_system->getOverlayWidth();
-	const int screenH = g_system->getOverlayHeight();
+	const Common::Rect safeArea = g_system->getSafeOverlayArea();
 
 	_font = &g_gui.getFont(ThemeEngine::kFontStyleConsole);
 
 	_leftPadding = g_gui.xmlEval()->getVar("Globals.Console.Padding.Left", 0);
 	_rightPadding = g_gui.xmlEval()->getVar("Globals.Console.Padding.Right", 0);
-	_topPadding = g_gui.xmlEval()->getVar("Globals.Console.Padding.Top", 0);
+	_topPadding = MAX(g_gui.xmlEval()->getVar("Globals.Console.Padding.Top", 0), (int)safeArea.top);
 	_bottomPadding = g_gui.xmlEval()->getVar("Globals.Console.Padding.Bottom", 0);
 
 	// Calculate the real width/height (rounded to char/line multiples)
-	_w = (uint16)(_widthPercent * screenW);
-	_h = (uint16)((_heightPercent * screenH - 2) / kConsoleLineHeight);
+	_w = (uint16)(_widthPercent * safeArea.width());
+	_h = (uint16)((_heightPercent * safeArea.height() - 2) / kConsoleLineHeight);
 
 	_w = _w - _w / 20;
-	_h = _h * kConsoleLineHeight + 2;
-	_x = _w / 40;
+	_h = _h * kConsoleLineHeight + 2 + safeArea.top;
+	_x = MAX(_w / 40, (int)safeArea.left);
 
 	// Set scrollbar dimensions
 	int scrollBarWidth = g_gui.xmlEval()->getVar("Globals.Scrollbar.Width", 0);
@@ -121,6 +122,35 @@ void ConsoleDialog::init() {
 	_pageWidth = (_w - scrollBarWidth - 2 - _leftPadding - _topPadding - scrollBarWidth) / kConsoleCharWidth;
 	_linesPerPage = (_h - 2 - _topPadding - _bottomPadding) / kConsoleLineHeight;
 	_linesInBuffer = kBufferSize / kCharsPerLine;
+
+	_isDragging = false;
+
+	_selBegin = -1;
+	_selEnd = -1;
+
+	_scrollDirection = 0;
+
+	resetPrompt();
+}
+
+void ConsoleDialog::setPrompt(Common::String prompt) {
+	_prompt = prompt;
+}
+
+void ConsoleDialog::resetPrompt() {
+	_prompt = PROMPT;
+}
+
+void ConsoleDialog::clearBuffer() {
+	// Reset the line buffer.
+	memset(_buffer, ' ', kBufferSize);
+
+	// Along with a few key vars.
+	_currentPos = 0;
+	_scrollLine = _linesPerPage - 1;
+	_firstLineInBuffer = 0;
+
+	updateScrollBuffer();
 }
 
 void ConsoleDialog::slideUpAndClose() {
@@ -137,14 +167,13 @@ void ConsoleDialog::open() {
 	// visible screen area, then shift it down in handleTickle() over a
 	// certain period of time.
 
-	const int screenW = g_system->getOverlayWidth();
-	const int screenH = g_system->getOverlayHeight();
+	const Common::Rect safeArea = g_system->getSafeOverlayArea();
 
 	// Calculate the real width/height (rounded to char/line multiples)
-	uint16 w = (uint16)(_widthPercent * screenW);
-	uint16 h = (uint16)((_heightPercent * screenH - 2) / kConsoleLineHeight);
+	uint16 w = (uint16)(_widthPercent * safeArea.width());
+	uint16 h = (uint16)((_heightPercent * safeArea.height() - 2) / kConsoleLineHeight);
 
-	h = h * kConsoleLineHeight + 2;
+	h = h * kConsoleLineHeight + 2 + safeArea.top;
 	w = w - w / 20;
 
 	if (_w != w || _h != h)
@@ -159,7 +188,7 @@ void ConsoleDialog::open() {
 	if ((_promptStartPos == -1) || (_currentPos > _promptEndPos)) {
 		// we print a prompt, if this is the first time we are called or if the
 		//  engine wrote onto us since the last call
-		print(PROMPT);
+		print(_prompt.c_str());
 		_promptStartPos = _promptEndPos = _currentPos;
 	}
 
@@ -172,8 +201,8 @@ void ConsoleDialog::close() {
 	Dialog::close();
 }
 
-void ConsoleDialog::drawDialog(DrawLayer layerToDraw) {
-	Dialog::drawDialog(layerToDraw);
+void ConsoleDialog::drawDialog(DrawLayer layerToDraw, bool resetClipping) {
+	Dialog::drawDialog(layerToDraw, resetClipping);
 
 	for (int line = 0; line < _linesPerPage; line++)
 		drawLine(line);
@@ -192,9 +221,13 @@ void ConsoleDialog::drawLine(int line) {
 		int l = (start + line) % _linesInBuffer;
 		byte c = buffer(l * kCharsPerLine + column);
 #else
-		byte c = buffer((start + line) * kCharsPerLine + column);
+		int idx = (start + line) * kCharsPerLine + column;
+		byte c = buffer(idx);
 #endif
-		g_gui.theme()->drawChar(Common::Rect(x, y, x+kConsoleCharWidth, y+kConsoleLineHeight), c, _font);
+		if (idx >= MIN(_selBegin, _selEnd) && idx < MAX(_selBegin, _selEnd))
+			g_gui.theme()->drawChar(Common::Rect(x, y, x + kConsoleCharWidth, y + kConsoleLineHeight), c, _font, ThemeEngine::kFontColorNormal, ThemeEngine::kTextInversionFocus);
+		else
+			g_gui.theme()->drawChar(Common::Rect(x, y, x + kConsoleCharWidth, y + kConsoleLineHeight), c, _font);
 		x += kConsoleCharWidth;
 	}
 }
@@ -217,7 +250,17 @@ void ConsoleDialog::handleTickle() {
 		_caretTime = time + kCaretBlinkTime;
 		drawCaret(_caretVisible);
 	}
-
+	if (_selectionTime < time) {
+		_selectionTime += kDraggingTime;
+		if (_isDragging && _scrollDirection != 0) {
+			handleMouseWheel(0, 0, -_scrollDirection);
+			_selEnd -= kCharsPerLine * _scrollDirection;
+			if (clampSelection(_selEnd))
+				// Scrolled as far as possible. Don't re-execute this block
+				// unnecessarily.
+				_scrollDirection = 0;
+		}
+	}
 	// Perform the "slide animation".
 	if (_slideMode != kNoSlideMode) {
 		const float tmp = (float)(g_system->getMillis() - _slideTime) / kConsoleSlideDownDuration;
@@ -237,7 +280,7 @@ void ConsoleDialog::handleTickle() {
 			//_slideMode = kNoSlideMode;
 			close();
 		} else
-			g_gui.scheduleTopDialogRedraw();
+			g_gui.scheduleFullRedraw();
 	}
 
 	_scrollBar->handleTickle();
@@ -283,7 +326,7 @@ void ConsoleDialog::handleKeyDown(Common::KeyState state) {
 				keepRunning = (*_callbackProc)(this, userInput.c_str(), _callbackRefCon);
 		}
 
-		print(PROMPT);
+		print(_prompt.c_str());
 		_promptStartPos = _promptEndPos = _currentPos;
 
 		g_gui.scheduleTopDialogRedraw();
@@ -478,6 +521,10 @@ void ConsoleDialog::defaultKeyDownHandler(Common::KeyState &state) {
 	if (state.hasFlags(Common::KBD_CTRL)) {
 		specialKeys(state.keycode);
 	} else if ((state.ascii >= 32 && state.ascii <= 127) || (state.ascii >= 160 && state.ascii <= 255)) {
+		_selBegin = -1;
+		_selEnd = -1;
+		drawDialog(kDrawLayerForeground);
+
 		for (int i = _promptEndPos - 1; i >= _currentPos; i--)
 			buffer(i + 1) = buffer(i);
 		_promptEndPos++;
@@ -512,6 +559,52 @@ void ConsoleDialog::handleCommand(CommandSender *sender, uint32 cmd, uint32 data
 	}
 }
 
+void ConsoleDialog::handleOtherEvent(const Common::Event &evt) {
+	if (evt.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START) {
+		switch (evt.customType) {
+		case kActionCopy: {
+			if (_selBegin == -1 || _selEnd == -1) {
+				Common::String userInput = getUserInput();
+				if (!userInput.empty())
+					g_system->setTextInClipboard(userInput);
+			} else {
+				Common::String str;
+				Common::String whitespaces; // for dealing with trailing whitespaces
+				for (int i = MIN(_selBegin, _selEnd); i < MAX(_selBegin, _selEnd); i++) {
+					if (i % kCharsPerLine != kCharsPerLine - 1) {
+						if (buffer(i) == ' ') {
+							whitespaces += buffer(i); // to deal with trailing whitespaces
+						} else {
+							str += whitespaces;
+							str += buffer(i);
+							whitespaces.clear();
+						}
+					} else {
+						whitespaces.clear();
+						str += "\n";
+					}
+				}
+				g_system->setTextInClipboard(str);
+			}
+		} break;
+		case kActionPaste:
+			if (g_system->hasTextInClipboard()) {
+				Common::U32String text = g_system->getTextFromClipboard();
+				insertIntoPrompt(text.encode().c_str());
+				scrollToCurrent();
+				drawLine(pos2line(_currentPos));
+
+				_selBegin = -1;
+				_selEnd = -1;
+				drawDialog(kDrawLayerForeground);
+			}
+			break;
+		default:
+			break;
+		}
+	}
+}
+
 void ConsoleDialog::specialKeys(Common::KeyCode keycode) {
 	switch (keycode) {
 	case Common::KEYCODE_a:
@@ -535,21 +628,6 @@ void ConsoleDialog::specialKeys(Common::KeyCode keycode) {
 	case Common::KEYCODE_w:
 		killLastWord();
 		g_gui.scheduleTopDialogRedraw();
-		break;
-	case Common::KEYCODE_v:
-		if (g_system->hasTextInClipboard()) {
-			Common::U32String text = g_system->getTextFromClipboard();
-			insertIntoPrompt(text.encode().c_str());
-			scrollToCurrent();
-			drawLine(pos2line(_currentPos));
-		}
-		break;
-	case Common::KEYCODE_c:
-		{
-			Common::String userInput = getUserInput();
-			if (!userInput.empty())
-				g_system->setTextInClipboard(userInput);
-		}
 		break;
 	default:
 		break;
@@ -749,8 +827,7 @@ int ConsoleDialog::vprintFormat(int dummy, const char *format, va_list argptr) {
 	const int size = buf.size();
 
 	print(buf.c_str());
-	buf.trim();
-	debug("%s", buf.c_str());
+	debugN("%s", buf.c_str());
 
 	return size;
 }
@@ -769,8 +846,8 @@ void ConsoleDialog::printCharIntern(int c) {
 	else {
 		buffer(_currentPos) = (char)c;
 		_currentPos++;
-		if ((_scrollLine + 1) * kCharsPerLine == _currentPos) {
-			_scrollLine++;
+		if (_currentPos % kCharsPerLine == _pageWidth) {
+			nextLine();
 			updateScrollBuffer();
 		}
 	}
@@ -814,6 +891,88 @@ void ConsoleDialog::scrollToCurrent() {
 		updateScrollBuffer();
 		g_gui.scheduleTopDialogRedraw();
 	}
+}
+
+void ConsoleDialog::handleMouseDown(int x, int y, int button, int clickCount) {
+	Widget *w;
+
+	w = findWidget(x, y);
+
+	if (w) {
+		if (!(w->getFlags() & WIDGET_IGNORE_DRAG))
+			_dragWidget = w;
+
+		if (w != _focusedWidget && w->wantsFocus()) {
+			setFocusWidget(w);
+		}
+
+		w->handleMouseDown(x - (w->getAbsX() - _x), y - (w->getAbsY() - _y), button, clickCount);
+	} else if (_selBegin == -1 || _selEnd == -1) {
+		x = MIN(MAX(x, _leftPadding), kCharsPerLine * kConsoleCharWidth + _leftPadding);
+		y = MIN(MAX(y, _topPadding), (decltype(y))_h - kConsoleLineHeight);
+
+		int lineNumber = (y - _topPadding) / kConsoleLineHeight;
+		int ind = (x - _leftPadding) / kConsoleCharWidth;
+		_selBegin = (_scrollLine - _linesPerPage + 1 + lineNumber) * kCharsPerLine + ind;
+		clampSelection(_selBegin);
+		_selEnd = _selBegin;
+		_isDragging = true;
+	} else {
+		_selBegin = -1;
+		_selEnd = -1;
+		drawDialog(kDrawLayerForeground);
+	}
+}
+
+bool ConsoleDialog::clampSelection(int &sel) {
+	int oldSel = sel;
+	int lowerBound = 0;
+	int upperBound;
+
+	upperBound = MAX(_promptEndPos, _currentPos);
+	upperBound = MAX(upperBound, _linesPerPage * kCharsPerLine); // at least the whole first page
+	upperBound += kCharsPerLine - (upperBound % kCharsPerLine); // to end of line
+
+	sel = MAX(lowerBound, MIN(upperBound, sel));
+	return sel != oldSel;
+}
+
+void ConsoleDialog::handleMouseMoved(int x, int y, int button) {
+	if (!_isDragging)
+		Dialog::handleMouseMoved(x, y, button);
+	else {
+		int selEndPreviousMove = _selEnd;
+		x = MIN(MAX(x, _leftPadding), kCharsPerLine * kConsoleCharWidth + _leftPadding);
+		y = MIN(MAX(y, _topPadding), (decltype(y))_h - kConsoleLineHeight);
+		int lineNumber = (y - _topPadding) / kConsoleLineHeight;
+		lineNumber = MIN(lineNumber, _linesPerPage - 1);
+		int col = (x - _leftPadding) / kConsoleCharWidth;
+		_selEnd = (_scrollLine - _linesPerPage + 1 + lineNumber) * kCharsPerLine + col;
+		clampSelection(_selEnd);
+
+		if (_selEnd == selEndPreviousMove)
+			return;
+
+		if (lineNumber > _linesPerPage - 2)
+			_scrollDirection = -1;
+		else if (lineNumber < 1)
+			_scrollDirection = 1;
+		else
+			_scrollDirection = 0;
+
+		for (int i = MIN(_selEnd / kCharsPerLine, selEndPreviousMove / kCharsPerLine); i <= MAX(_selEnd / kCharsPerLine, selEndPreviousMove / kCharsPerLine); i++)
+			drawLine(i - _scrollBar->_currentPos / _scrollBar->_singleStep);
+	}
+}
+
+void ConsoleDialog::handleMouseUp(int x, int y, int button, int clickCount) {
+	Dialog::handleMouseUp(x, y, button, clickCount);
+	_isDragging = false;
+	if (_selBegin == _selEnd) {
+		_selBegin = -1;
+		_selEnd = -1;
+	}
+	_scrollDirection = 0;
 }
 
 } // End of namespace GUI

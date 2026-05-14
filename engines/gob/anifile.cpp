@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/stream.h"
@@ -58,7 +64,7 @@ ANIFile::ANIFile(GobEngine *vm, const Common::String &fileName,
 
 	Common::SeekableReadStream *ani = _vm->_dataIO->getFile(endianFileName);
 	if (ani) {
-		Common::SeekableSubReadStreamEndian sub(ani, 0, ani->size(), bigEndian, DisposeAfterUse::YES);
+		Common::SeekableReadStreamEndianWrapper sub(ani, bigEndian, DisposeAfterUse::YES);
 
 		// The big endian version pads a few fields to even size
 		_hasPadding = bigEndian;
@@ -75,7 +81,7 @@ ANIFile::~ANIFile() {
 		delete *l;
 }
 
-void ANIFile::load(Common::SeekableSubReadStreamEndian &ani, const Common::String &fileName) {
+void ANIFile::load(Common::SeekableReadStreamEndian &ani, const Common::String &fileName) {
 	ani.skip(2); // Unused
 
 	uint16 animationCount = ani.readUint16();
@@ -112,7 +118,7 @@ void ANIFile::load(Common::SeekableSubReadStreamEndian &ani, const Common::Strin
 }
 
 void ANIFile::loadAnimation(Animation &animation, FrameArray &frames,
-							Common::SeekableSubReadStreamEndian &ani) {
+							Common::SeekableReadStreamEndian &ani) {
 
 	// Animation properties
 
@@ -158,17 +164,17 @@ void ANIFile::loadAnimation(Animation &animation, FrameArray &frames,
 		area.left  = area.top    =  0x7FFF;
 		area.right = area.bottom = -0x7FFF;
 
-		for (ChunkList::const_iterator c = frame.begin(); c != frame.end(); ++c) {
+		for (const auto &c : frame) {
 			uint16 cL, cT, cR, cB;
 
-			if (!getCoordinates(c->layer, c->part, cL, cT, cR, cB))
+			if (!getCoordinates(c.layer, c.part, cL, cT, cR, cB))
 				continue;
 
 			const uint16 width  = cR - cL + 1;
 			const uint16 height = cB - cT + 1;
 
-			const uint16 l = c->x;
-			const uint16 t = c->y;
+			const uint16 l = c.x;
+			const uint16 t = c.y;
 			const uint16 r = l + width  - 1;
 			const uint16 b = t + height - 1;
 
@@ -185,7 +191,7 @@ void ANIFile::loadAnimation(Animation &animation, FrameArray &frames,
 	}
 }
 
-void ANIFile::loadFrames(FrameArray &frames, Common::SeekableSubReadStreamEndian &ani) {
+void ANIFile::loadFrames(FrameArray &frames, Common::SeekableReadStreamEndian &ani) {
 	uint32 curFrame = 0;
 
 	bool end = false;
@@ -233,7 +239,7 @@ void ANIFile::loadFrames(FrameArray &frames, Common::SeekableSubReadStreamEndian
 	}
 }
 
-CMPFile *ANIFile::loadLayer(Common::SeekableSubReadStreamEndian &ani) {
+CMPFile *ANIFile::loadLayer(Common::SeekableReadStreamEndian &ani) {
 	Common::String file = Util::setExtension(Util::readString(ani, 13), "");
 	if (_hasPadding)
 		ani.skip(1);

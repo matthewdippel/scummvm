@@ -40,24 +40,17 @@ public:
 	DesktopGump(int32 x, int32 y, int32 width, int32 height);
 	~DesktopGump() override;
 
+	void RenderSurfaceChanged() override;
+
 	void PaintThis(RenderSurface *surf, int32 lerp_factor, bool scaled) override;
 	void PaintChildren(RenderSurface *surf, int32 lerp_factor, bool scaled) override;
-
-	bool StartDraggingChild(Gump *gump, int32 mx, int32 my) override;
-	void DraggingChild(Gump *gump, int mx, int my) override;
-	void StopDraggingChild(Gump *gump) override;
 
 	bool loadData(Common::ReadStream *rs, uint32 version);
 	void saveData(Common::WriteStream *ws) override;
 
-	void RenderSurfaceChanged(RenderSurface *surf);
-
 	static void SetFadedModal(bool set) {
 		_fadedModal = set;
 	}
-
-protected:
-	void RenderSurfaceChanged() override;
 };
 
 } // End of namespace Ultima8

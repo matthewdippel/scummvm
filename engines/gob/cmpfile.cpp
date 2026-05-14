@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/stream.h"
@@ -150,7 +156,7 @@ void CMPFile::loadRXY(Common::SeekableReadStream &rxy) {
 	                 ((_vm->getEndiannessMethod() == kEndiannessMethodSystem) &&
 	                  (_vm->getEndianness() == kEndiannessBE));
 
-	Common::SeekableSubReadStreamEndian sub(&rxy, 0, rxy.size(), bigEndian, DisposeAfterUse::NO);
+	Common::SeekableReadStreamEndianWrapper sub(&rxy, bigEndian, DisposeAfterUse::NO);
 
 	_coordinates = new RXYFile(sub);
 

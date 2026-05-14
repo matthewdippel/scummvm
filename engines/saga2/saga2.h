@@ -30,7 +30,6 @@
 #include "engines/advancedDetector.h"
 #include "engines/engine.h"
 
-#include "saga2/console.h"
 #include "saga2/gfx.h"
 #include "saga2/idtypes.h"
 #include "saga2/weapons.h"
@@ -47,6 +46,7 @@ class MemoryWriteStreamDynamic;
 namespace Saga2 {
 
 class ContainerManager;
+class Console;
 class Timer;
 class TimerList;
 class BandList;
@@ -81,25 +81,25 @@ class CMapFeature;
 class AudioInterface;
 class PaletteManager;
 class ActorManager;
-class CalenderTime;
+class CalendarTime;
 class TileModeManager;
 struct SAGA2GameDescription;
 
 enum {
-	kDebugResources = 1 << 0,
-	kDebugActors    = 1 << 1,
-	kDebugScripts   = 1 << 2,
-	kDebugEventLoop = 1 << 3,
-	kDebugInit      = 1 << 4,
-	kDebugTiles     = 1 << 5,
-	kDebugPalettes  = 1 << 6,
-	kDebugLoading   = 1 << 7,
-	kDebugTimers    = 1 << 8,
-	kDebugPath      = 1 << 9,
-	kDebugTasks     = 1 << 10,
-	kDebugSound     = 1 << 11,
-	kDebugSaveload  = 1 << 12,
-	kDebugSensors   = 1 << 13
+	kDebugResources = 1,
+	kDebugActors,
+	kDebugScripts,
+	kDebugEventLoop,
+	kDebugInit,
+	kDebugTiles,
+	kDebugPalettes,
+	kDebugLoading,
+	kDebugTimers,
+	kDebugPath,
+	kDebugTasks,
+	kDebugSound,
+	kDebugSaveload,
+	kDebugSensors,
 };
 
 #define TICKSPERSECOND (728L/10L)
@@ -113,8 +113,8 @@ public:
 	bool hasFeature(EngineFeature f) const override;
 	const ADGameFileDescription *getFilesDescriptions() const;
 	int getGameId() const;
-	bool canLoadGameStateCurrently() override { return true; }
-	bool canSaveGameStateCurrently() override { return true; }
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override { return true; }
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override { return true; }
 	Common::Error loadGameStream(Common::SeekableReadStream *stream) override;
 	Common::Error saveGameStream(Common::WriteStream *stream, bool isAutosave = false) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave) override;
@@ -144,7 +144,7 @@ public:
 	AudioInterface *_audio;
 	PaletteManager *_pal;
 	ActorManager *_act;
-	CalenderTime *_calender;
+	CalendarTime *_calendar;
 	TileModeManager *_tmm;
 	ContainerManager *_cnm;
 

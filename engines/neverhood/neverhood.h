@@ -38,6 +38,15 @@ struct ADGameDescription;
 
 namespace Neverhood {
 
+enum NEVERHOODActions {
+	kActionNone,
+	kActionPause,
+	kActionQuit,
+	kActionSkipPartial,
+	kActionSkipFull,
+	kActionConfirm,
+};
+
 class GameModule;
 class GameVars;
 class ResourceMan;
@@ -50,6 +59,11 @@ struct NPoint;
 struct GameState {
 	int sceneNum;
 	int which;
+};
+
+struct SubtitleGlyph {
+	byte bitmap[16];
+	byte outline[16];
 };
 
 class NeverhoodEngine : public ::Engine {
@@ -112,8 +126,8 @@ public:
 
 	bool _isSaveAllowed;
 
-	bool canLoadGameStateCurrently() override { return _isSaveAllowed; }
-	bool canSaveGameStateCurrently() override { return _isSaveAllowed; }
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override { return _isSaveAllowed; }
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override { return _isSaveAllowed; }
 
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &description, bool isAutosave = false) override;
@@ -133,11 +147,19 @@ public:
 	void toggleSoundUpdate(bool state) { _updateSound = state; }
 	void toggleMusic(bool state) { _enableMusic = state; }
 	bool musicIsEnabled() { return _enableMusic; }
+	bool shouldOffsetFontNhc() const { return _nhcOffsetFont; }
+
+	const SubtitleGlyph *getSubfont() const {
+		return _haveSubtitles ? _subFont : nullptr;
+	}
 
 private:
 	bool _updateSound;
 	bool _enableMusic;
+	bool _nhcOffsetFont;
 
+	SubtitleGlyph _subFont[256];
+	bool _haveSubtitles;
 };
 
 } // End of namespace Neverhood

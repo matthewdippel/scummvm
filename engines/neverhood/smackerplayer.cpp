@@ -19,7 +19,6 @@
  *
  */
 
-#include "graphics/palette.h"
 #include "neverhood/gamemodule.h"
 #include "neverhood/smackerplayer.h"
 #include "neverhood/palette.h"
@@ -35,8 +34,30 @@ SmackerSurface::SmackerSurface(NeverhoodEngine *vm)
 }
 
 void SmackerSurface::draw() {
-	if (_smackerFrame && _visible && _drawRect.width > 0 && _drawRect.height > 0)
+	if (_smackerFrame && _visible && _drawRect.width > 0 && _drawRect.height > 0) {
 		_vm->_screen->drawSurface2(_smackerFrame, _drawRect, _clipRect, false, ++_version);
+		if (_subtitles && _subtitles->isValid()) {
+			_subtitles->renderFrame(frameNumber, 160);
+			const Graphics::Surface *bottom = _subtitles->getBottomSubs();
+			if (bottom) {
+				NDrawRect subDrawRect;
+				subDrawRect.x = _drawRect.x;
+				subDrawRect.y = _drawRect.y + _drawRect.height - 17;
+				subDrawRect.width = _drawRect.width;
+				subDrawRect.height = 16;
+				_vm->_screen->drawSurface2(bottom, subDrawRect, _clipRect, true, ++_version, nullptr, _subtitles->getSubtitleAlpha());
+			}
+			const Graphics::Surface *top = _subtitles->getTopSubs();
+			if (top) {
+				NDrawRect subDrawRect;
+				subDrawRect.x = _drawRect.x;
+				subDrawRect.y = _drawRect.y + 1;
+				subDrawRect.width = _drawRect.width;
+				subDrawRect.height = 16;
+				_vm->_screen->drawSurface2(top, subDrawRect, _clipRect, true, ++_version, nullptr, _subtitles->getSubtitleAlpha());
+			}
+		}
+	}
 }
 
 void SmackerSurface::setSmackerFrame(const Graphics::Surface *smackerFrame) {
@@ -70,8 +91,30 @@ SmackerDoubleSurface::SmackerDoubleSurface(NeverhoodEngine *vm)
 }
 
 void SmackerDoubleSurface::draw() {
-	if (_smackerFrame && _visible && _drawRect.width > 0 && _drawRect.height > 0)
+	if (_smackerFrame && _visible && _drawRect.width > 0 && _drawRect.height > 0) {
 		_vm->_screen->drawDoubleSurface2(_smackerFrame, _drawRect);
+		if (_subtitles && _subtitles->isValid()) {
+			_subtitles->renderFrame(frameNumber, 160);
+			const Graphics::Surface *bottom = _subtitles->getBottomSubs();
+			if (bottom) {
+				NDrawRect subDrawRect;
+				subDrawRect.x = _drawRect.x;
+				subDrawRect.y = _drawRect.y + _drawRect.height * 2 - 34;
+				subDrawRect.width = _drawRect.width;
+				subDrawRect.height = 16;
+				_vm->_screen->drawDoubleSurface2Alpha(bottom, subDrawRect, _subtitles->getSubtitleAlpha());
+			}
+			const Graphics::Surface *top = _subtitles->getTopSubs();
+			if (top) {
+				NDrawRect subDrawRect;
+				subDrawRect.x = _drawRect.x;
+				subDrawRect.y = _drawRect.y + 2;
+				subDrawRect.width = _drawRect.width;
+				subDrawRect.height = 16;
+				_vm->_screen->drawDoubleSurface2Alpha(top, subDrawRect, _subtitles->getSubtitleAlpha());
+			}
+		}
+	}
 }
 
 // NeverhoodSmackerDecoder
@@ -108,9 +151,9 @@ SmackerPlayer::SmackerPlayer(NeverhoodEngine *vm, Scene *scene, uint32 fileHash,
 	SetUpdateHandler(&SmackerPlayer::update);
 
 	if (_doubleSurface) {
-		_smackerSurface = new SmackerDoubleSurface(_vm);
+		_smackerSurface.reset(new SmackerDoubleSurface(_vm));
 	} else {
-		_smackerSurface = new SmackerSurface(_vm);
+		_smackerSurface.reset(new SmackerSurface(_vm));
 	}
 
 	open(fileHash, flag);
@@ -118,8 +161,7 @@ SmackerPlayer::SmackerPlayer(NeverhoodEngine *vm, Scene *scene, uint32 fileHash,
 
 SmackerPlayer::~SmackerPlayer() {
 	close();
-	delete _smackerSurface;
-	_smackerSurface = nullptr;
+	_smackerSurface.reset();
 }
 
 void SmackerPlayer::open(uint32 fileHash, bool keepLastFrame) {
@@ -133,6 +175,8 @@ void SmackerPlayer::open(uint32 fileHash, bool keepLastFrame) {
 	_smackerFirst = true;
 
 	_stream = _vm->_res->createStream(fileHash);
+
+	_smackerSurface->_subtitles.reset(new SubtitlePlayer(_vm, fileHash, 320));
 
 	_smackerDecoder = new NeverhoodSmackerDecoder();
 	_smackerDecoder->loadStream(_stream);
@@ -221,6 +265,8 @@ void SmackerPlayer::updateFrame() {
 		return;
 
 	const Graphics::Surface *smackerFrame = _smackerDecoder->decodeNextFrame();
+
+	_smackerSurface->frameNumber = _smackerDecoder->getCurFrame();
 
 	if (_smackerFirst) {
 		_smackerSurface->setSmackerFrame(smackerFrame);

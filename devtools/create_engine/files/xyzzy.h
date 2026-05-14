@@ -19,8 +19,8 @@
  *
  */
 
-#ifndef XYZZY_XYZZY_H
-#define XYZZY_XYZZY_H
+#ifndef XYZZY_H
+#define XYZZY_H
 
 #include "common/scummsys.h"
 #include "common/system.h"
@@ -74,10 +74,10 @@ public:
 		    (f == kSupportsReturnToLauncher);
 	};
 
-	bool canLoadGameStateCurrently() override {
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override {
 		return true;
 	}
-	bool canSaveGameStateCurrently() override {
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override {
 		return true;
 	}
 
@@ -87,11 +87,11 @@ public:
 	 */
 	Common::Error syncGame(Common::Serializer &s);
 
-	Common::Error saveGameStream(Common::WriteStream *stream, bool isAutosave = false) {
+	Common::Error saveGameStream(Common::WriteStream *stream, bool isAutosave = false) override {
 		Common::Serializer s(nullptr, stream);
 		return syncGame(s);
 	}
-	Common::Error loadGameStream(Common::SeekableReadStream *stream) {
+	Common::Error loadGameStream(Common::SeekableReadStream *stream) override {
 		Common::Serializer s(stream, nullptr);
 		return syncGame(s);
 	}
@@ -100,6 +100,6 @@ public:
 extern XyzzyEngine *g_engine;
 #define SHOULD_QUIT ::Xyzzy::g_engine->shouldQuit()
 
-} // namespace Xyzzy
+} // End of namespace Xyzzy
 
-#endif
+#endif // XYZZY_H

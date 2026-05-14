@@ -22,9 +22,8 @@
 #ifndef ULTIMA8_WORLD_CONTAINER_H
 #define ULTIMA8_WORLD_CONTAINER_H
 
+#include "common/list.h"
 #include "ultima/ultima8/world/item.h"
-#include "ultima/shared/std/containers.h"
-
 #include "ultima/ultima8/usecode/intrinsics.h"
 #include "ultima/ultima8/misc/classtype.h"
 
@@ -57,12 +56,12 @@ public:
 
 	//! Remove an item from the container. This does NOT update item.
 	//! \param item The item to remove
-	//! \return true if succesful, false if item wasn't in container
+	//! \return true if successful, false if item wasn't in container
 	virtual bool removeItem(Item *item);
 
 	//! Move an item to the end of the contents list
 	//! \param item The item to move
-	//! \return true if succesful, false if item isn't in this container
+	//! \return true if successful, false if item isn't in this container
 	virtual bool moveItemToEnd(Item *item);
 
 	//! Remove all contents, moving them to this container's
@@ -92,7 +91,7 @@ public:
 	//! A simpler search of the container which just gets the
 	//! items with a given shape family, optionally recursively.
 	//! \return The first item with that shape, or nullptr if nothing found.
-	void getItemsWithShapeFamily(Std::vector<Item *> &itemlist, uint16 family, bool recurse);
+	void getItemsWithShapeFamily(Common::Array<Item *> &itemlist, uint16 family, bool recurse);
 
 	//! Get the weight of the container and its contents
 	//! \return weight
@@ -114,7 +113,7 @@ public:
 	//! Destroy self
 	void destroy(bool delnow = false) override;
 
-	void dumpInfo() const override;
+	Common::String dumpInfo() const override;
 
 	bool loadData(Common::ReadStream *rs, uint32 version);
 	void saveData(Common::WriteStream *ws) override;
@@ -123,7 +122,7 @@ public:
 	INTRINSIC(I_destroyContents);
 
 protected:
-	Std::list<Item *> _contents;
+	Common::List<Item *> _contents;
 };
 
 } // End of namespace Ultima8

@@ -326,7 +326,7 @@ private:
 	uint32 m_nCurrentZoom;                                 // 128 = scale of 1.0, 1 = x(1/128), 512 = scale of x4
 	uint32 m_nMinZoom;                                     // Minimum zoom level allowed for the Remora.
 	uint32 m_nMaxZoom;                                     // Maximum zoom level allowed for the Remora.
-	_barrier_slice *m_pSlices[REMORA_MAX_INCLUDED_SLICES]; // Slices of barriers for player's current height.
+	BarrierSlice *m_pSlices[REMORA_MAX_INCLUDED_SLICES];   // Slices of barriers for player's current height.
 	uint32 m_pnSlices[REMORA_MAX_INCLUDED_SLICES];         // Index of slice player is on.
 	int32 m_nIncludedCeiling;                              // Top coordinate of things to include in scan modes.
 	int32 m_nIncludedFloor;                                // Bottom coordinate of things to include in scan modes.
@@ -352,7 +352,7 @@ private:
 	// Clustering.
 	uint32 m_nRemoraClusterHash;
 
-	// These are here at the end to keep the data alligned.
+	// These are here at the end to keep the data aligned.
 	bool8 m_bModeChanged;       // Set to true when there is a mode change.
 	uint8 m_nNextAvailableRow;  // Last line text has been written to.
 	uint8 m_nFirstLineToDraw;   // Display from this point (to do scrolling).
@@ -501,7 +501,7 @@ inline void _remora::SetMinimumZoom(uint32 nZoom) {
 	m_nMinZoom = nZoom;
 }
 
-inline void _remora::NewEmail(const char *pcEmailID) { strcpy(m_pcEmailID, pcEmailID); }
+inline void _remora::NewEmail(const char *pcEmailID) { Common::strcpy_s(m_pcEmailID, pcEmailID); }
 
 inline void _remora::ResetFloorRanges() {
 	m_nNumFloorRangesSet = 0;

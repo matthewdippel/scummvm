@@ -20,7 +20,6 @@
  */
 
 #include "common/endian.h"
-#include "common/foreach.h"
 #include "common/savefile.h"
 #include "common/config-manager.h"
 
@@ -45,14 +44,14 @@ void Lua_Remastered::WidescreenCorrectionFactor() {
 void Lua_Remastered::GetFontDimensions() {
 	// Taken from Lua_v2 and modified
 	lua_Object fontObj = lua_getparam(1);
-	if (!lua_isuserdata(fontObj) || lua_tag(fontObj) != Font::getStaticTag())
+	if (!lua_isuserdata(fontObj))
 		return;
 
-	Font *font = Font::getPool().getObject(lua_getuserdata(fontObj));
+	Font *font = getfont(fontObj);
 
 	if (font) {
 		int32 h = font->getKernedHeight();
-		int32 w = font->getCharKernedWidth('w');
+		int32 w = font->getFontWidth();
 		lua_pushnumber(w);
 		lua_pushnumber(h);
 	} else {
@@ -177,7 +176,7 @@ void Lua_Remastered::QueryActiveHotspots() {
 	Math::Vector2d pos(g_grim->_cursorX*scaleX, g_grim->_cursorY*scaleY);
 	lua_Object result = lua_createtable();
 	int count = 0;
-	foreach (Hotspot *h, Hotspot::getPool()) {
+	for (Hotspot *h : Hotspot::getPool()) {
 		if (!h->_rect.containsPoint(pos)) {
 			continue;
 		}

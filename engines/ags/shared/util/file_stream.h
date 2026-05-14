@@ -24,6 +24,7 @@
 
 #include "common/savefile.h"
 #include "common/stream.h"
+#include "common/std/functional.h"
 #include "ags/shared/util/data_stream.h"
 #include "ags/shared/util/file.h" // TODO: extract filestream mode constants
 
@@ -33,6 +34,11 @@ namespace Shared {
 
 class FileStream : public DataStream {
 public:
+	struct CloseNotifyArgs {
+		String Filepath;
+		FileWorkMode WorkMode;
+	};
+
 	// Represents an open file object
 	// The constructor may raise std::runtime_error if
 	// - there is an issue opening the file (does not exist, locked, permissions, etc)
@@ -43,7 +49,9 @@ public:
 
 	FileWorkMode GetWorkMode() const { return _workMode; }
 
-	bool HasErrors() const override;
+	// Tells if there were errors during previous io operation(s);
+	// the call to GetError() *resets* the error record.
+	bool GetError() const override;
 	void Close() override;
 	bool Flush() override;
 
@@ -64,7 +72,7 @@ public:
 	size_t Write(const void *buffer, size_t size) override;
 	int32_t WriteByte(uint8_t b) override;
 
-	bool Seek(soff_t offset, StreamSeek origin) override;
+	soff_t Seek(soff_t offset, StreamSeek origin) override;
 
 private:
 	void Open(const String &file_name, FileOpenMode open_mode, FileWorkMode work_mode);

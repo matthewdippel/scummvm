@@ -27,7 +27,7 @@
 
 #define MAX_SAVES 99
 
-class UltimaMetaEngine : public AdvancedMetaEngine {
+class UltimaMetaEngine : public AdvancedMetaEngine<Ultima::UltimaGameDescription> {
 private:
 	/**
 	 * Gets the game Id given a target string
@@ -35,14 +35,20 @@ private:
 	static Common::String getGameId(const Common::String& target);
 public:
 	const char *getName() const override;
+	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override;
 
-	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override;
+	Common::Error createInstance(OSystem *syst, Engine **engine, const Ultima::UltimaGameDescription *desc) const override;
 	int getMaximumSaveSlot() const override;
 
 	/**
 	 * Return a list of all save states associated with the given target.
 	 */
 	SaveStateList listSaves(const char *target) const override;
+
+	/**
+	 * Return meta information from the specified save state.
+	 */
+	SaveStateDescriptor querySaveMetaInfos(const char *target, int slot) const override;
 
 	/**
 	 * Initialize keymaps

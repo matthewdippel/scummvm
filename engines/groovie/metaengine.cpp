@@ -25,34 +25,132 @@
 #include "common/system.h"
 #include "common/translation.h"
 
+#include "backends/keymapper/action.h"
+#include "backends/keymapper/keymapper.h"
+#include "backends/keymapper/standard-actions.h"
+
 #include "engines/advancedDetector.h"
 #include "groovie/detection.h"
 
 namespace Groovie {
 
-class GroovieMetaEngine : public AdvancedMetaEngine {
+static const ADExtraGuiOptionsMap optionsList[] = {
+	{
+		GAMEOPTION_T7G_FAST_MOVIE_SPEED,
+		{
+			_s("Fast movie speed"),
+			_s("Play movies at an increased speed"),
+			"fast_movie_speed",
+			false,
+			0,
+			0
+		}
+	},
+
+	{
+		GAMEOPTION_ORIGINAL_SAVELOAD,
+		{
+			_s("Use original save/load screens"),
+			_s("Use the original save/load screens instead of the ScummVM ones"),
+			"originalsaveload",
+			false,
+			0,
+			0
+		}
+	},
+
+	{
+		GAMEOPTION_EASIER_AI,
+		{
+			_s("Easier AI"),
+			_s("Decrease the difficulty of AI puzzles"),
+			"easier_ai",
+			false,
+			0,
+			0
+		}
+	},
+
+	{
+		GAMEOPTION_EASIER_AI_DEFAULT,
+		{
+			_s("Easier AI"),
+			_s("Decrease the difficulty of AI puzzles"),
+			"easier_ai",
+			true,
+			0,
+			0
+		}
+	},
+
+	{
+		GAMEOPTION_FINAL_HOUR,
+		{
+			_s("Updated Credits Music"),
+			_s("Play the song The Final Hour during the credits instead of reusing MIDI songs"),
+			"credits_music",
+			false,
+			0,
+			0
+		}
+	},
+
+	{
+		GAMEOPTION_SLIMHOTSPOTS,
+		{
+			_s("Slim Left/Right Hotspots"),
+			_s("Shrinks the hotspots on the left and right sides for exiting puzzles"),
+			"slim_hotspots",
+			true,
+			0,
+			0
+		}
+	},
+
+	{
+		GAMEOPTION_SPEEDRUN,
+		{
+			_s("Speedrun Mode"),
+			_s("Affects the controls for fast forwarding the game"),
+			"speedrun_mode",
+			false,
+			0,
+			0
+		}
+	},
+
+	AD_EXTRA_GUI_OPTIONS_TERMINATOR
+};
+
+class GroovieMetaEngine : public AdvancedMetaEngine<GroovieGameDescription> {
 public:
 	const char *getName() const override {
 		return "groovie";
 	}
 
-	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *gd) const override;
+	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override {
+		return optionsList;
+	}
+
+	Common::Error createInstance(OSystem *syst, Engine **engine, const GroovieGameDescription *gd) const override;
 	bool hasFeature(MetaEngineFeature f) const override;
 
 	SaveStateList listSaves(const char *target) const override;
 	int getMaximumSaveSlot() const override;
-	void removeSaveState(const char *target, int slot) const override;
+	bool removeSaveState(const char *target, int slot) const override;
 	SaveStateDescriptor querySaveMetaInfos(const char *target, int slot) const override;
 	int getAutosaveSlot() const override;
+
+	Common::KeymapArray initKeymaps(const char *target) const override;
 };
 
-Common::Error GroovieMetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *gd) const {
+Common::Error GroovieMetaEngine::createInstance(OSystem *syst, Engine **engine, const GroovieGameDescription *gd) const {
 #ifndef ENABLE_GROOVIE2
-	if (((const GroovieGameDescription *)gd)->version != kGroovieT7G)
+	if (gd->version != kGroovieT7G)
 		return Common::Error(Common::kUnsupportedGameidError, _s("GroovieV2 support is not compiled in"));
 #endif
 
-	*engine = new GroovieEngine(syst, (const GroovieGameDescription *)gd);
+	*engine = new GroovieEngine(syst,gd);
 	return Common::kNoError;
 }
 
@@ -73,14 +171,14 @@ int GroovieMetaEngine::getMaximumSaveSlot() const {
 	return SaveLoad::getMaximumSlot();
 }
 
-void GroovieMetaEngine::removeSaveState(const char *target, int slot) const {
+bool GroovieMetaEngine::removeSaveState(const char *target, int slot) const {
 	if (!SaveLoad::isSlotValid(slot)) {
 		// Invalid slot, do nothing
-		return;
+		return false;
 	}
 
 	Common::String filename = SaveLoad::getSlotSaveName(target, slot);
-	g_system->getSavefileManager()->removeSavefile(filename);
+	return g_system->getSavefileManager()->removeSavefile(filename);
 }
 
 SaveStateDescriptor GroovieMetaEngine::querySaveMetaInfos(const char *target, int slot) const {
@@ -94,6 +192,36 @@ SaveStateDescriptor GroovieMetaEngine::querySaveMetaInfos(const char *target, in
 
 int GroovieMetaEngine::getAutosaveSlot() const {
 	return GroovieEngine::AUTOSAVE_SLOT;
+}
+
+Common::KeymapArray GroovieMetaEngine::initKeymaps(const char *target) const {
+	using namespace Common;
+	using namespace Groovie;
+
+	Keymap *engineKeyMap = new Keymap(Keymap::kKeymapTypeGame, "groovie-engine", _("Groovie engine"));
+
+	Action *act;
+
+	act = new Action(kStandardActionLeftClick, _("Left click"));
+	act->setLeftClickEvent();
+	act->addDefaultInputMapping("MOUSE_LEFT");
+	act->addDefaultInputMapping("JOY_A");
+	engineKeyMap->addAction(act);
+
+	act = new Action(kStandardActionRightClick, _("Right click"));
+	act->setRightClickEvent();
+	act->addDefaultInputMapping("MOUSE_RIGHT");
+	act->addDefaultInputMapping("JOY_B");
+	engineKeyMap->addAction(act);
+
+	act = new Action("SKIPORFAST", _("Skip or fast forward scene"));
+	act->setCustomEngineActionEvent(kActionSkip);
+	act->addDefaultInputMapping("ESCAPE");
+	act->addDefaultInputMapping("SPACE");
+	act->addDefaultInputMapping("JOY_X");
+	engineKeyMap->addAction(act);
+
+	return Keymap::arrayOf(engineKeyMap);
 }
 
 } // End of namespace Groovie

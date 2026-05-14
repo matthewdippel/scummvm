@@ -32,6 +32,7 @@
 
 #include "backends/platform/ios7/ios7_keyboard.h"
 #include "backends/platform/ios7/ios7_common.h"
+#include "backends/platform/ios7/ios7_game_controller.h"
 
 #include "common/list.h"
 
@@ -40,83 +41,50 @@ typedef struct {
 	GLfloat u,v;
 } GLVertex;
 
-@interface iPhoneView : UIView {
-	VideoContext _videoContext;
+uint getSizeNextPOT(uint size);
 
+@interface iPhoneView : UIView {
 	Common::List<InternalEvent> _events;
 	NSLock *_eventLock;
 	SoftKeyboard *_keyboardView;
-	BOOL _keyboardVisible;
-
+	Common::List<GameController*> _controllers;
+#if TARGET_OS_IOS
+	UIInterfaceOrientation _currentOrientation;
+#endif
 	UIBackgroundTaskIdentifier _backgroundSaveStateTask;
 
-	EAGLContext *_context;
+	EAGLContext *_mainContext;
+	EAGLContext *_openGLContext;
 	GLuint _viewRenderbuffer;
-	GLuint _viewFramebuffer;
-	GLuint _screenTexture;
-	GLuint _overlayTexture;
-	GLuint _mouseCursorTexture;
-
-	GLuint _vertexShader;
-	GLuint _fragmentShader;
-
-	GLuint _vertexBuffer;
-
-	GLuint _screenSizeSlot;
-	GLuint _textureSlot;
-	GLuint _shakeXSlot;
-	GLuint _shakeYSlot;
-
-	GLuint _positionSlot;
-	GLuint _textureCoordSlot;
 
 	GLint _renderBufferWidth;
 	GLint _renderBufferHeight;
-
-	GLVertex _gameScreenCoords[4];
-	CGRect _gameScreenRect;
-
-	GLVertex _overlayCoords[4];
-	CGRect _overlayRect;
-
-	GLVertex _mouseCoords[4];
-
-	GLint _mouseHotspotX, _mouseHotspotY;
-	GLint _mouseWidth, _mouseHeight;
-	GLfloat _mouseScaleX, _mouseScaleY;
-
-	int _scaledShakeXOffset;
-	int _scaledShakeYOffset;
-
-	UITouch *_firstTouch;
-	UITouch *_secondTouch;
 }
+
+@property (nonatomic, assign) BOOL isInGame;
+@property (nonatomic, assign) UIInterfaceOrientationMask supportedScreenOrientations;
 
 - (id)initWithFrame:(struct CGRect)frame;
 
-- (VideoContext *)getVideoContext;
+- (uint)createOpenGLContext;
+- (void)destroyOpenGLContext;
+- (void)refreshScreen;
+- (int)getScreenWidth;
+- (int)getScreenHeight;
 
-- (void)createScreenTexture;
 - (void)initSurface;
-- (void)setViewTransformation;
 
-- (void)setGraphicsMode;
-
-- (void)updateSurface;
-- (void)updateMainSurface;
-- (void)updateOverlaySurface;
-- (void)updateMouseSurface;
-- (void)clearColorBuffer;
-
-- (void)notifyMouseMove;
-- (void)updateMouseCursorScaling;
-- (void)updateMouseCursor;
-
-- (void)deviceOrientationChanged:(UIDeviceOrientation)orientation;
+#if TARGET_OS_IOS
+- (void)interfaceOrientationChanged:(UIInterfaceOrientation)orientation;
+- (void)updateTouchMode;
+- (BOOL)isiOSAppOnMac;
+#endif
 
 - (void)showKeyboard;
 - (void)hideKeyboard;
 - (BOOL)isKeyboardShown;
+
+- (void)handleMainMenuKey;
 
 - (void)applicationSuspend;
 - (void)applicationResume;
@@ -128,8 +96,11 @@ typedef struct {
 - (void) beginBackgroundSaveStateTask;
 - (void) endBackgroundSaveStateTask;
 
+- (void)addEvent:(InternalEvent)event;
 - (bool)fetchEvent:(InternalEvent *)event;
 
+- (bool)isGamepadControllerSupported;
+- (void)virtualController:(bool)connect;
 @end
 
 #endif

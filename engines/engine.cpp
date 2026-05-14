@@ -19,12 +19,6 @@
  *
  */
 
-#if defined(WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include "backends/platform/sdl/win32/win32_wrapper.h"
-#endif
-
 #include "engines/engine.h"
 #include "engines/dialogs.h"
 #include "engines/util.h"
@@ -52,16 +46,19 @@
 #include "base/version.h"
 
 #include "gui/gui-manager.h"
+#include "gui/chooser.h"
 #include "gui/debugger.h"
 #include "gui/dialog.h"
 #include "gui/EventRecorder.h"
 #include "gui/message.h"
 #include "gui/saveload.h"
+#include "gui/unknown-game-dialog.h"
 
 #include "audio/mixer.h"
 
 #include "graphics/cursorman.h"
 #include "graphics/fontman.h"
+#include "graphics/paletteman.h"
 #include "graphics/pixelformat.h"
 #include "image/bmp.h"
 
@@ -69,6 +66,7 @@
 
 // FIXME: HACK for error()
 Engine *g_engine = 0;
+bool Engine::_quitRequested;
 
 // Output formatter for debug() and error() which invokes
 // the errorString method of the active engine, if any.
@@ -118,7 +116,7 @@ void ChainedGamesManager::clear() {
 	_chainedGames.clear();
 }
 
-void ChainedGamesManager::push(const Common::String target, const int slot) {
+void ChainedGamesManager::push(const Common::String &target, const int slot) {
 	Game game;
 	game.target = target;
 	game.slot = slot;
@@ -146,8 +144,10 @@ Engine::Engine(OSystem *syst)
 		_eventMan(_system->getEventManager()),
 		_saveFileMan(_system->getSavefileManager()),
 		_targetName(ConfMan.getActiveDomainName()),
+		_metaEngine(nullptr),
 		_pauseLevel(0),
 		_pauseStartTime(0),
+		_pauseScreenChangeID(-1),
 		_saveSlotToLoad(-1),
 		_autoSaving(false),
 		_engineStartTime(_system->getMillis()),
@@ -157,6 +157,7 @@ Engine::Engine(OSystem *syst)
 		_lastAutosaveTime(_system->getMillis()) {
 
 	g_engine = this;
+	_quitRequested = false;
 	Common::setErrorOutputFormatter(defaultOutputFormatter);
 	Common::setErrorHandler(defaultErrorHandler);
 
@@ -176,17 +177,45 @@ Engine::Engine(OSystem *syst)
 	//
 	// If an engine only used CursorMan.replaceCursor and no cursor has
 	// been setup before, then replaceCursor just uses pushCursor. This
-	// means that that the engine's cursor is never again removed from
+	// means that the engine's cursor is never again removed from
 	// CursorMan. Hence we setup a fake cursor here and remove it again
 	// in the destructor.
 	CursorMan.pushCursor(NULL, 0, 0, 0, 0, 0);
 	// Note: Using this dummy palette will actually disable cursor
 	// palettes till the user enables it again.
 	CursorMan.pushCursorPalette(NULL, 0, 0);
+
+	// If we go from engine A to engine B via launcher, the palette
+	// is not touched during this process, since our GUI is 16-bit
+	// or 32-bit.
+	//
+	// This may lead to residual palette entries held in the backend
+	// from a previous engine. Here we make sure we reset the palette.
+	byte dummyPalette[768];
+	memset(dummyPalette, 0, 768);
+	g_system->getPaletteManager()->setPalette(dummyPalette, 0, 256);
+
+	defaultSyncSoundSettings();
+
+	// Register original bug fixes as defaults...
+	ConfMan.registerDefault("enhancements", kEnhGameBreakingBugFixes | kEnhGrp1);
+	if (!ConfMan.hasKey("enhancements", _targetName)) {
+		if (ConfMan.hasKey("enable_enhancements", _targetName) && ConfMan.getBool("enable_enhancements", _targetName)) {
+			// Was the "enable_enhancements" key previously set to true?
+			// Convert it to a full activation of the enhancement flags then!
+			ConfMan.setInt("enhancements", kEnhGameBreakingBugFixes | kEnhGrp1 | kEnhGrp2 | kEnhGrp3 | kEnhGrp4);
+		}
+	}
+
+	_activeEnhancements = (int32)ConfMan.getInt("enhancements");
 }
 
 Engine::~Engine() {
 	_mixer->stopAll();
+
+	// Flush any pending remaining events
+	Common::Event evt;
+	while (g_system->getEventManager()->pollEvent(evt)) {}
 
 	delete _debugger;
 	delete _mainMenuDialog;
@@ -198,34 +227,58 @@ Engine::~Engine() {
 }
 
 void Engine::initializePath(const Common::FSNode &gamePath) {
-	SearchMan.addDirectory(gamePath.getPath(), gamePath, 0, 4);
+	SearchMan.addDirectory(gamePath, 0, 4);
 }
 
-void initCommonGFX() {
+bool Engine::enhancementEnabled(int32 cls) {
+	return _activeEnhancements & cls;
+}
+
+void initCommonGFX(bool is3D) {
 	const Common::ConfigManager::Domain *gameDomain = ConfMan.getActiveDomain();
 
 	// Any global or command line settings already have been applied at the time
 	// we get here, so we only do something if the game domain overrides those
 	// values
-	if (gameDomain) {
-		if (gameDomain->contains("aspect_ratio"))
-			g_system->setFeatureState(OSystem::kFeatureAspectRatioCorrection, ConfMan.getBool("aspect_ratio"));
+	if (!gameDomain)
+		return;
 
-		if (gameDomain->contains("fullscreen"))
-			g_system->setFeatureState(OSystem::kFeatureFullscreenMode, ConfMan.getBool("fullscreen"));
+	if (gameDomain->contains("aspect_ratio"))
+		g_system->setFeatureState(OSystem::kFeatureAspectRatioCorrection, ConfMan.getBool("aspect_ratio"));
 
-		if (gameDomain->contains("filtering"))
-			g_system->setFeatureState(OSystem::kFeatureFilteringMode, ConfMan.getBool("filtering"));
+	if (gameDomain->contains("fullscreen"))
+		g_system->setFeatureState(OSystem::kFeatureFullscreenMode, ConfMan.getBool("fullscreen"));
 
-		if (gameDomain->contains("stretch_mode"))
-			g_system->setStretchMode(ConfMan.get("stretch_mode").c_str());
+	if (gameDomain->contains("vsync"))
+		g_system->setFeatureState(OSystem::kFeatureVSync, ConfMan.getBool("vsync"));
 
-		if (gameDomain->contains("scaler") || gameDomain->contains("scale_factor"))
-			g_system->setScaler(ConfMan.get("scaler").c_str(), ConfMan.getInt("scale_factor"));
+	if (gameDomain->contains("stretch_mode"))
+		g_system->setStretchMode(ConfMan.get("stretch_mode").c_str());
 
-		if (gameDomain->contains("shader"))
-			g_system->setShader(ConfMan.get("shader").c_str());
-	}
+	if (gameDomain->contains("rotation_mode"))
+		g_system->setRotationMode(ConfMan.getInt("rotation_mode"));
+
+	if (gameDomain->contains("shader"))
+		g_system->setShader(ConfMan.getPath("shader"));
+
+	// Stop here for hardware-accelerated 3D games
+	if (is3D)
+		return;
+
+	// Set up filtering, scaling for 2D games
+	if (gameDomain->contains("filtering"))
+		g_system->setFeatureState(OSystem::kFeatureFilteringMode, ConfMan.getBool("filtering"));
+
+	if (gameDomain->contains("scaler") || gameDomain->contains("scale_factor"))
+		g_system->setScaler(ConfMan.get("scaler").c_str(), ConfMan.getInt("scale_factor"));
+
+	// TODO: switching between OpenGL and SurfaceSDL is quite fragile
+	// and the SDL backend doesn't really need this so leave it out
+	// for now to avoid regressions
+#ifndef SDL_BACKEND
+	if (gameDomain->contains("gfx_mode"))
+		g_system->setGraphicsMode(ConfMan.get("gfx_mode").c_str());
+#endif
 }
 
 // Please leave the splash screen in working order for your releases, even if they're commercial.
@@ -274,7 +327,7 @@ void splashScreen() {
 	screen.free();
 
 	// Draw logo
-	Graphics::Surface *logo = bitmap.getSurface()->convertTo(g_system->getOverlayFormat(), bitmap.getPalette());
+	Graphics::Surface *logo = bitmap.getSurface()->convertTo(g_system->getOverlayFormat(), bitmap.getPalette().data(), bitmap.getPalette().size());
 	if (scaleFactor != 1.0f) {
 		Graphics::Surface *tmp = logo->scale(int16(logo->w * scaleFactor), int16(logo->h * scaleFactor), true);
 		logo->free();
@@ -312,30 +365,7 @@ void initGraphicsModes(const Graphics::ModeList &modes) {
 	g_system->initSizeHint(modes);
 }
 
-void initGraphics(int width, int height, const Graphics::PixelFormat *format) {
-
-	g_system->beginGFXTransaction();
-
-		initCommonGFX();
-#ifdef USE_RGB_COLOR
-		if (format)
-			g_system->initSize(width, height, format);
-		else {
-			Graphics::PixelFormat bestFormat = g_system->getSupportedFormats().front();
-			g_system->initSize(width, height, &bestFormat);
-		}
-#else
-		g_system->initSize(width, height);
-#endif
-
-	OSystem::TransactionError gfxError = g_system->endGFXTransaction();
-
-	if (!splash && !GUI::GuiManager::instance()._launched)
-		splashScreen();
-
-	if (gfxError == OSystem::kTransactionSuccess)
-		return;
-
+static void warnTransactionFailures(OSystem::TransactionError gfxError, int width, int height) {
 	// Error out on size switch failure
 	if (gfxError & OSystem::kTransactionSizeChangeFailed) {
 		Common::U32String message;
@@ -346,14 +376,12 @@ void initGraphics(int width, int height, const Graphics::PixelFormat *format) {
 	}
 
 	// Just show warnings then these occur:
-#ifdef USE_RGB_COLOR
 	if (gfxError & OSystem::kTransactionFormatNotSupported) {
 		Common::U32String message = _("Could not initialize color format.");
 
 		GUI::MessageDialog dialog(message);
 		dialog.runModal();
 	}
-#endif
 
 	if (gfxError & OSystem::kTransactionModeSwitchFailed) {
 		Common::U32String message;
@@ -385,6 +413,58 @@ void initGraphics(int width, int height, const Graphics::PixelFormat *format) {
 		GUI::MessageDialog dialog(_("Could not apply filtering setting."));
 		dialog.runModal();
 	}
+
+	if (gfxError & OSystem::kTransactionShaderChangeFailed) {
+		GUI::MessageDialog dialog(_("Could not apply shader setting."));
+		dialog.runModal();
+	}
+}
+
+/**
+ * Inits any of the modes in "modes". "modes" is in the order of preference.
+ * Return value is index in modes of resulting mode.
+ */
+int initGraphicsAny(const Graphics::ModeWithFormatList &modes, int start) {
+	int candidate = -1;
+	OSystem::TransactionError gfxError = OSystem::kTransactionSizeChangeFailed;
+	int last_width = 0, last_height = 0;
+
+	for (candidate = start; candidate < (int)modes.size(); candidate++) {
+		g_system->beginGFXTransaction();
+		initCommonGFX(false);
+		if (modes[candidate].hasFormat)
+			g_system->initSize(modes[candidate].width, modes[candidate].height, &modes[candidate].format);
+		else {
+			Graphics::PixelFormat bestFormat = g_system->getSupportedFormats().front();
+			g_system->initSize(modes[candidate].width, modes[candidate].height, &bestFormat);
+		}
+		last_width = modes[candidate].width;
+		last_height = modes[candidate].height;
+
+		gfxError = g_system->endGFXTransaction();
+
+		if (!splash && !GUI::GuiManager::instance()._launched)
+			splashScreen();
+
+		if (gfxError == OSystem::kTransactionSuccess)
+			return candidate;
+
+		// If error is related to resolution, continue
+		if (gfxError & (OSystem::kTransactionSizeChangeFailed | OSystem::kTransactionFormatNotSupported))
+			continue;
+
+		break;
+	}
+
+	warnTransactionFailures(gfxError, last_width, last_height);
+
+	return candidate;
+}
+
+void initGraphics(int width, int height, const Graphics::PixelFormat *format) {
+	Graphics::ModeWithFormatList modes;
+	modes.push_back(Graphics::ModeWithFormat(width, height, format));
+	initGraphicsAny(modes);
 }
 
 /**
@@ -396,14 +476,12 @@ void initGraphics(int width, int height, const Graphics::PixelFormat *format) {
  *					or PixelFormat::createFormatCLUT8() if no matching formats were found.
  */
 inline Graphics::PixelFormat findCompatibleFormat(const Common::List<Graphics::PixelFormat> &backend, const Common::List<Graphics::PixelFormat> &frontend) {
-#ifdef USE_RGB_COLOR
-	for (Common::List<Graphics::PixelFormat>::const_iterator i = backend.begin(); i != backend.end(); ++i) {
-		for (Common::List<Graphics::PixelFormat>::const_iterator j = frontend.begin(); j != frontend.end(); ++j) {
-			if (*i == *j)
-				return *i;
+	for (const auto &back : backend) {
+		for (auto &front : frontend) {
+			if (back == front)
+				return back;
 		}
 	}
-#endif
 	return Graphics::PixelFormat::createFormatCLUT8();
 }
 
@@ -421,11 +499,17 @@ void initGraphics(int width, int height) {
 void initGraphics3d(int width, int height) {
 	g_system->beginGFXTransaction();
 		g_system->setGraphicsMode(0, OSystem::kGfxModeRender3d);
+		initCommonGFX(true);
 		g_system->initSize(width, height);
-		g_system->setFeatureState(OSystem::kFeatureFullscreenMode, ConfMan.getBool("fullscreen")); // TODO: Replace this with initCommonGFX()
-		g_system->setFeatureState(OSystem::kFeatureAspectRatioCorrection, ConfMan.getBool("aspect_ratio")); // TODO: Replace this with initCommonGFX()
-		g_system->setStretchMode(ConfMan.get("stretch_mode").c_str()); // TODO: Replace this with initCommonGFX()
-	g_system->endGFXTransaction();
+	OSystem::TransactionError gfxError = g_system->endGFXTransaction();
+
+	if (!splash && !GUI::GuiManager::instance()._launched) {
+		Common::Event event;
+		(void)g_system->getEventManager()->pollEvent(event);
+		splashScreen();
+	}
+
+	warnTransactionFailures(gfxError, width, height);
 }
 
 void GUIErrorMessageWithURL(const Common::U32String &msg, const char *url) {
@@ -443,7 +527,7 @@ void GUIErrorMessage(const Common::String &msg, const char *url) {
 void GUIErrorMessage(const Common::U32String &msg, const char *url) {
 	g_system->setWindowCaption(_("Error"));
 	g_system->beginGFXTransaction();
-		initCommonGFX();
+		initCommonGFX(false);
 		g_system->initSize(320, 200);
 	if (g_system->endGFXTransaction() == OSystem::kTransactionSuccess) {
 		if (url) {
@@ -469,12 +553,12 @@ void GUIErrorMessageFormat(const char *fmt, ...) {
 	GUIErrorMessage(msg);
 }
 
-void GUIErrorMessageFormat(Common::U32String fmt, ...) {
-	Common::U32String msg("");
+void GUIErrorMessageFormatU32StringPtr(const Common::U32String *fmt, ...) {
+	Common::U32String msg;
 
 	va_list va;
 	va_start(va, fmt);
-	Common::U32String::vformat(fmt.begin(), fmt.end(), msg, va);
+	Common::U32String::vformat(fmt->begin(), fmt->end(), msg, va);
 	va_end(va);
 
 	GUIErrorMessage(msg);
@@ -496,38 +580,22 @@ bool Engine::existExtractedCDAudioFiles(uint track) {
  * @return			true, if this case is applicable and the warning is displayed
  */
 bool Engine::isDataAndCDAudioReadFromSameCD() {
-#if defined(WIN32)
-	// It is a known bug under Windows that games that play CD audio cause
-	// ScummVM to crash if the data files are read from the same CD. Check
-	// if this appears to be the case and issue a warning.
-
 	// If we can find a compressed audio track, then it should be ok even
 	// if it's running from CD.
-	char driveLetter;
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
-	if (!gameDataDir.getPath().empty()) {
-		driveLetter = gameDataDir.getPath()[0];
-	} else {
-		// That's it! I give up!
-		Common::FSNode currentDir(".");
-		if (!currentDir.getPath().empty()) {
-			driveLetter = currentDir.getPath()[0];
-		} else {
-			return false;
-		}
+	if (existExtractedCDAudioFiles()) {
+		return false;
 	}
 
-	if (Win32::isDriveCD(driveLetter)) {
+	if (g_system->getAudioCDManager()->isDataAndCDAudioReadFromSameCD()) {
 		GUI::MessageDialog dialog(
 			_("You appear to be playing this game directly\n"
 			"from the CD. This is known to cause problems,\n"
 			"and it is therefore recommended that you copy\n"
 			"the data files to your hard disk instead.\n"
-			"See the documentation (CD audio) for details."), _("OK"));
+			"See the documentation (CD audio) for details."));
 		dialog.runModal();
 		return true;
 	}
-#endif // defined(WIN32)
 	return false;
 }
 
@@ -547,7 +615,7 @@ void Engine::warnMissingExtractedCDAudio() {
 		"tracks need to be ripped from the CD using\n"
 		"an appropriate CD audio extracting tool in\n"
 		"order to listen to the game's music.\n"
-		"See the documentation (CD audio) for details."), _("OK"));
+		"See the documentation (CD audio) for details."));
 	dialog.runModal();
 }
 
@@ -570,26 +638,29 @@ bool Engine::warnBeforeOverwritingAutosave() {
 	if (!desc.isValid() || desc.isAutosave())
 		return true;
 	Common::U32StringArray altButtons;
-	altButtons.push_back(_("Overwrite"));
-	altButtons.push_back(_("Cancel autosave"));
+	altButtons.push_back(_("Delete"));
+	altButtons.push_back(_("Skip autosave"));
 	const Common::U32String message = Common::U32String::format(
-				_("WARNING: The autosave slot has a saved game named %S. "
-				  "You can either move the existing save to a new slot, "
-				  "Overwrite the existing save, "
-				  "or cancel autosave (will not prompt again until restart)"), desc.getDescription().c_str());
+				_("WARNING: The autosave slot contains a saved game named %s, and an autosave is pending.\n"
+				  "Please move this saved game to a new slot, or delete it if it's no longer needed.\n"
+				  "Alternatively, you can skip the autosave (will prompt again in 5 minutes)."), desc.getDescription().c_str());
 	GUI::MessageDialog warn(message, _("Move"), altButtons);
 	switch (runDialog(warn)) {
 	case GUI::kMessageOK:
-		if (!getMetaEngine()->copySaveFileToFreeSlot(_targetName.c_str(), getAutosaveSlot())) {
-			GUI::MessageDialog error(_("ERROR: Could not copy the savegame to a new slot"));
-			error.runModal();
-			return false;
+		if (getMetaEngine()->copySaveFileToFreeSlot(_targetName.c_str(), getAutosaveSlot())) {
+				g_system->getSavefileManager()->removeSavefile(
+							getMetaEngine()->getSavegameFile(getAutosaveSlot(), _targetName.c_str()));
+		} else {
+				GUI::MessageDialog error(_("ERROR: Could not copy the savegame to a new slot"));
+				error.runModal();
+				return false;
 		}
 		return true;
-	case GUI::kMessageAlt: // Overwrite
+	case GUI::kMessageAlt: // Delete
+		g_system->getSavefileManager()->removeSavefile(
+					getMetaEngine()->getSavegameFile(getAutosaveSlot(), _targetName.c_str()));
 		return true;
-	case GUI::kMessageAlt + 1: // Cancel autosave
-		_autosaveInterval = 0;
+	case GUI::kMessageAlt + 1: // Skip autosave
 		return false;
 	default: // Hitting Escape returns -1. On this case, don't save but do prompt again later.
 		return false;
@@ -619,9 +690,9 @@ void Engine::saveAutosaveIfEnabled() {
 		saveFlag = false;
 	}
 
-	if (saveFlag) {
-		_lastAutosaveTime = _system->getMillis();
-	} else {
+	_lastAutosaveTime = _system->getMillis();
+
+	if (!saveFlag) {
 		// Set the next autosave interval to be in 5 minutes, rather than whatever
 		// full autosave interval the user has selected
 		_lastAutosaveTime += ((5 * 60 - _autosaveInterval) * 1000);
@@ -640,6 +711,7 @@ PauseToken Engine::pauseEngine() {
 
 	if (_pauseLevel == 1) {
 		_pauseStartTime = _system->getMillis();
+		_pauseScreenChangeID = g_system->getScreenChangeID();
 		pauseEngineIntern(true);
 	}
 
@@ -652,6 +724,13 @@ void Engine::resumeEngine() {
 	_pauseLevel--;
 
 	if (_pauseLevel == 0) {
+		if (_pauseScreenChangeID != g_system->getScreenChangeID()) {
+			// Inject a screen change event in the event loop for the engine
+			Common::Event ev;
+			ev.type = Common::EVENT_SCREEN_CHANGED;
+			g_system->getEventManager()->pushEvent(ev);
+		}
+		_pauseScreenChangeID = -1;
 		pauseEngineIntern(false);
 		_engineStartTime += _system->getMillis() - _pauseStartTime;
 		_pauseStartTime = 0;
@@ -729,6 +808,49 @@ bool Engine::warnUserAboutUnsupportedGame(Common::String msg) {
 	return true;
 }
 
+bool Engine::warnUserAboutUnsupportedAddOn(Common::String addOnName) {
+	if (ConfMan.getBool("enable_unsupported_addon_warning")) {
+		Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
+		if (ttsMan != nullptr) {
+			ttsMan->pushState();
+			g_gui.initTextToSpeech();
+		}
+
+		Common::U32String messageFormat = _("WARNING: the game you are about to start contains the add-on \"%s\""
+			" which is not yet fully supported by ScummVM. As such, it is likely to be unstable, and any saved"
+			" game you make might not work in future versions of ScummVM.");
+
+		Common::U32String message = Common::U32String::format(messageFormat, addOnName.c_str());
+
+		GUI::MessageDialog alert(message, _("Start anyway"), _("Cancel"));
+		int status = alert.runModal();
+
+		if (ttsMan != nullptr)
+			ttsMan->popState();
+
+		return status == GUI::kMessageOK;
+	}
+
+	return true;
+}
+
+void Engine::errorAddingAddOnWithoutBaseGame(Common::String addOnName, Common::String gameId) {
+	Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
+	if (ttsMan != nullptr) {
+		ttsMan->pushState();
+		g_gui.initTextToSpeech();
+	}
+
+	Common::U32String messageFormat = _("The game \"%s\" you are trying to add is an add-on for \"%s\" that cannot be run independently."
+		" Please copy the add-on contents into a subdirectory of the base game, and start the base game itself.");
+	Common::U32String message = Common::U32String::format(messageFormat, addOnName.c_str(), gameId.c_str());
+
+	GUI::MessageDialog(message).runModal();
+
+	if (ttsMan != nullptr)
+		ttsMan->popState();
+}
+
 void Engine::errorUnsupportedGame(Common::String extraMsg) {
 	Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
 	if (ttsMan != nullptr) {
@@ -775,6 +897,10 @@ void Engine::setGameToLoadSlot(int slot) {
 }
 
 void Engine::syncSoundSettings() {
+	defaultSyncSoundSettings();
+}
+
+void Engine::defaultSyncSoundSettings() {
 	// Sync the engine with the config manager
 	int soundVolumeMusic = ConfMan.getInt("music_volume");
 	int soundVolumeSFX = ConfMan.getInt("sfx_volume");
@@ -844,7 +970,7 @@ Common::Error Engine::loadGameStream(Common::SeekableReadStream *stream) {
 	return Common::kReadingFailed;
 }
 
-bool Engine::canLoadGameStateCurrently() {
+bool Engine::canLoadGameStateCurrently(Common::U32String *msg) {
 	// Do not allow loading by default
 	return false;
 }
@@ -857,7 +983,7 @@ Common::Error Engine::saveGameState(int slot, const Common::String &desc, bool i
 
 	Common::Error result = saveGameStream(saveFile, isAutosave);
 	if (result.getCode() == Common::kNoError) {
-		getMetaEngine()->appendExtendedSave(saveFile, getTotalPlayTime() / 1000, desc, isAutosave);
+		getMetaEngine()->appendExtendedSave(saveFile, getTotalPlayTime(), desc, isAutosave);
 
 		saveFile->finalize();
 	}
@@ -871,7 +997,7 @@ Common::Error Engine::saveGameStream(Common::WriteStream *stream, bool isAutosav
 	return Common::kWritingFailed;
 }
 
-bool Engine::canSaveGameStateCurrently() {
+bool Engine::canSaveGameStateCurrently(Common::U32String *msg) {
 	// Do not allow saving by default
 	return false;
 }
@@ -882,7 +1008,7 @@ bool Engine::loadGameDialog() {
 		return false;
 	}
 
-	GUI::SaveLoadChooser *dialog = new GUI::SaveLoadChooser(_("Load game:"), _("Load"), false);
+	GUI::SaveLoadChooser *dialog = new GUI::SaveLoadChooser(false);
 
 	int slotNum;
 	{
@@ -911,7 +1037,7 @@ bool Engine::saveGameDialog() {
 		return false;
 	}
 
-	GUI::SaveLoadChooser *dialog = new GUI::SaveLoadChooser(_("Save game:"), _("Save"), true);
+	GUI::SaveLoadChooser *dialog = new GUI::SaveLoadChooser(true);
 	int slotNum;
 	{
 		PauseToken pt = pauseEngine();
@@ -942,11 +1068,13 @@ void Engine::quitGame() {
 
 	event.type = Common::EVENT_QUIT;
 	g_system->getEventManager()->pushEvent(event);
+	_quitRequested = true;
 }
 
 bool Engine::shouldQuit() {
 	Common::EventManager *eventMan = g_system->getEventManager();
-	return (eventMan->shouldQuit() || eventMan->shouldReturnToLauncher());
+	return eventMan->shouldQuit() || eventMan->shouldReturnToLauncher()
+		|| _quitRequested;
 }
 
 GUI::Debugger *Engine::getOrCreateDebugger() {
@@ -957,23 +1085,6 @@ GUI::Debugger *Engine::getOrCreateDebugger() {
 
 	return _debugger;
 }
-
-/*
-EnginePlugin *Engine::getMetaEnginePlugin() const {
-	return EngineMan.findPlugin(ConfMan.get("engineid"));
-}
-
-*/
-
-MetaEngineDetection &Engine::getMetaEngineDetection() {
-	const Plugin *plugin = EngineMan.findPlugin(ConfMan.get("engineid"));
-	assert(plugin);
-	return plugin->get<MetaEngineDetection>();
-}
-
-PauseToken::PauseToken() : _engine(nullptr) {}
-
-PauseToken::PauseToken(Engine *engine) : _engine(engine) {}
 
 void PauseToken::operator=(const PauseToken &t2) {
 	if (_engine) {
@@ -1005,7 +1116,6 @@ PauseToken::~PauseToken() {
 	}
 }
 
-#if __cplusplus >= 201103L
 PauseToken::PauseToken(PauseToken &&t2) : _engine(t2._engine) {
 	t2._engine = nullptr;
 }
@@ -1017,4 +1127,159 @@ void PauseToken::operator=(PauseToken &&t2) {
 	_engine = t2._engine;
 	t2._engine = nullptr;
 }
-#endif
+
+bool Engine::gameTypeHasAddOns() const {
+	return false;
+}
+
+bool Engine::dirCanBeGameAddOn(const Common::FSDirectory &) const {
+	return true;
+}
+
+bool Engine::dirMustBeGameAddOn(const Common::FSDirectory &) const {
+	return false;
+}
+
+Common::ErrorCode Engine::updateAddOns(const MetaEngine *metaEngine) const {
+	const Plugin *detectionPlugin = EngineMan.findDetectionPlugin(metaEngine->getName());
+	if (!detectionPlugin) {
+		warning("Engine plugin for %s not present. Add-ons detection is disabled", metaEngine->getName());
+		return Common::kNoError;
+	}
+
+	// List already registered add-ons for this game, and detect removed ones
+	Common::ConfigManager::DomainMap::iterator iter = ConfMan.beginGameDomains();
+	Common::HashMap<Common::Path, Common::String, Common::Path::IgnoreCase_Hash, Common::Path::IgnoreCase_EqualTo> existingAddOnsPaths;
+
+	bool anyAddOnRemoved = false;
+	for (; iter != ConfMan.endGameDomains(); ++iter) {
+		Common::String name(iter->_key);
+		Common::ConfigManager::Domain &dom = iter->_value;
+
+		Common::String parent;
+		if (dom.tryGetVal("parent", parent) && parent == ConfMan.getActiveDomainName()) {
+			// Existing add-on, check if its path still exists
+			Common::Path addOnPath(Common::Path::fromConfig(dom.getVal("path")));
+			if (addOnPath.empty() || !Common::FSNode(addOnPath).isDirectory()) {
+				// Path does not exist, remove the add-on
+				debug("Removing entry of deleted add-on '%s' (former path: '%s')",
+					  name.c_str(),
+					  addOnPath.toString(Common::Path::kNativeSeparator).c_str());
+
+				ConfMan.removeGameDomain(name);
+				anyAddOnRemoved = true;
+			} else {
+				existingAddOnsPaths[addOnPath] = name;
+			}
+		}
+	}
+
+	if (anyAddOnRemoved)
+		ConfMan.flushToDisk();
+
+	// Look for newly added add-ons
+	bool anyAddOnAdded = false;
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
+	Common::FSList subdirNodes;
+	gameDataDir.getChildren(subdirNodes, Common::FSNode::kListDirectoriesOnly);
+	for (const Common::FSNode &subdirNode : subdirNodes) {
+		Common::FSDirectory subdir(subdirNode);
+		if (dirCanBeGameAddOn(subdir)) {
+			Common::FSList files;
+			if (!subdirNode.getChildren(files, Common::FSNode::kListAll))
+				continue;
+
+			ADCacheMan.clear();
+
+			DetectedGames detectedGames = detectionPlugin->get<MetaEngineDetection>().detectGames(files);
+			DetectedGames detectedAddOns;
+			for (DetectedGame &game : detectedGames) {
+				if (game.isAddOn) {
+					detectedAddOns.push_back(game);
+				}
+			}
+
+			int idx = 0;
+			if (detectedAddOns.empty()) {
+				if (dirMustBeGameAddOn(subdir)) {
+					Common::U32String msgFormat(_("The directory '%s' looks like an add-on for the game '%s', but ScummVM could not find any matching add-on in it."));
+					Common::U32String msg = Common::U32String::format(msgFormat,
+																	  subdirNode.getPath().toString(Common::Path::kNativeSeparator).c_str(),
+																	  ConfMan.getActiveDomainName().c_str());
+
+					GUI::MessageDialog alert(msg);
+					alert.runModal();
+				}
+
+				continue;
+			} else if (detectedAddOns.size() == 1) {
+				// Exact match
+				idx = 0;
+			} else {
+				// Display the candidates to the user and let her/him pick one
+				Common::U32StringArray list;
+				for (idx = 0; idx < (int)detectedAddOns.size(); idx++) {
+					Common::U32String description = detectedAddOns[idx].description;
+
+					if (detectedAddOns[idx].hasUnknownFiles) {
+						description += Common::U32String(" - ");
+						// Unknown game variant
+						description += _("Unknown variant");
+					}
+
+					list.push_back(description);
+				}
+
+				Common::U32String msgFormat(_("Directory '%s' matches several add-ons, please pick one."));
+				Common::U32String msg = Common::U32String::format(msgFormat,
+																  subdirNode.getPath().toString(Common::Path::kNativeSeparator).c_str());
+
+				GUI::ChooserDialog dialog(msg);
+				dialog.setList(list);
+				idx = dialog.runModal();
+				if (idx < 0)
+					return Common::kUserCanceled;
+			}
+
+			if (0 <= idx && idx < (int)detectedAddOns.size()) {
+				DetectedGame &selectedAddOn = detectedAddOns[idx];
+				selectedAddOn.path = subdirNode.getPath();
+				selectedAddOn.shortPath = subdirNode.getDisplayName();
+
+				if (selectedAddOn.hasUnknownFiles) {
+					debug("Detected an unknown variant of add-on '%s' (path: '%s')",
+						  selectedAddOn.gameId.c_str(),
+						  subdirNode.getPath().toString(Common::Path::kNativeSeparator).c_str());
+					GUI::UnknownGameDialog dialog(selectedAddOn);
+					dialog.runModal();
+					continue; // Do not create an entry for unknown variants
+				}
+
+				if (selectedAddOn.gameSupportLevel != kStableGame) {
+					if (!warnUserAboutUnsupportedAddOn(selectedAddOn.description)) {
+						return Common::kUserCanceled;
+					}
+				}
+
+				Common::String addOnName;
+				if (existingAddOnsPaths.tryGetVal(subdirNode.getPath(), addOnName)) {
+					debug("Detected existing add-on '%s' (path: '%s')",
+						  addOnName.c_str(),
+						  subdirNode.getPath().toString(Common::Path::kNativeSeparator).c_str());
+				} else {
+					Common::String domain = EngineMan.createTargetForGame(selectedAddOn);
+					debug("Detected new add-on '%s' (path: '%s')",
+						  domain.c_str(),
+						  subdirNode.getPath().toString(Common::Path::kNativeSeparator).c_str());
+					ConfMan.set("parent", ConfMan.getActiveDomainName(), domain);
+					anyAddOnAdded = true;
+				}
+			}
+		}
+	}
+
+	if (anyAddOnAdded)
+		ConfMan.flushToDisk();
+
+	return Common::kNoError;
+}

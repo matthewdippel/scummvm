@@ -1,5 +1,27 @@
+/* ScummVM - Graphic Adventure Engine
+ *
+ * ScummVM is the legal property of its developers, whose names
+ * are too numerous to list here. Please refer to the COPYRIGHT
+ * file distributed with this source distribution.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
+
 package org.scummvm.scummvm;
 
+import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
@@ -7,7 +29,6 @@ import android.text.Editable;
 import android.text.InputType;
 import android.text.Selection;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.PointerIcon;
@@ -15,7 +36,6 @@ import android.view.SurfaceView;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
-import android.annotation.TargetApi;
 
 public class EditableSurfaceView extends SurfaceView {
 	final Context _context;
@@ -303,7 +323,7 @@ public class EditableSurfaceView extends SurfaceView {
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
 			// Android N (Nougat) is Android 7.0
 			//SurfaceView main_surface = findViewById(R.id.main_surface);
-			int type = show ? PointerIcon.TYPE_DEFAULT : PointerIcon.TYPE_NULL;
+			int type = show ? PointerIcon.TYPE_ARROW : PointerIcon.TYPE_NULL;
 			// https://stackoverflow.com/a/55482761
 			//Log.d(ScummVM.LOG_TAG, "captureMouse::showSystemMouseCursor3a");
 			setPointerIcon(PointerIcon.getSystemIcon(_context, type));
@@ -335,10 +355,10 @@ public class EditableSurfaceView extends SurfaceView {
 			if (_mouseIsInCapturedState) {
 				return PointerIcon.getSystemIcon(_context, PointerIcon.TYPE_NULL);
 			} else {
-				return PointerIcon.getSystemIcon(_context, PointerIcon.TYPE_DEFAULT);
+				return PointerIcon.getSystemIcon(_context, PointerIcon.TYPE_ARROW);
 			}
 		} else {
-			return PointerIcon.getSystemIcon(_context, PointerIcon.TYPE_DEFAULT);
+			return PointerIcon.getSystemIcon(_context, PointerIcon.TYPE_ARROW);
 		}
 	}
 

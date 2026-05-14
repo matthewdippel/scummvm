@@ -21,6 +21,7 @@
 
 #include "common/ptr.h"
 #include "common/stream.h"
+#include "common/system.h"
 #include "common/textconsole.h"
 
 #include "graphics/wincursor.h"
@@ -30,7 +31,7 @@ namespace Graphics {
 /** A Windows cursor. */
 class WinCursor : public Cursor {
 public:
-	WinCursor();
+	WinCursor(uint16 hotspotX, uint16 hotspotY);
 	~WinCursor();
 
 	/** Return the cursor's width. */
@@ -45,6 +46,7 @@ public:
 	byte getKeyColor() const override;
 
 	const byte *getSurface() const override { return _surface; }
+	const byte *getMask() const override { return _mask; }
 
 	const byte *getPalette() const override { return _palette; }
 	byte getPaletteStartIndex() const override { return 0; }
@@ -54,7 +56,10 @@ public:
 	bool readFromStream(Common::SeekableReadStream &stream);
 
 private:
+	WinCursor() = delete;
+
 	byte *_surface;
+	byte *_mask;
 	byte _palette[256 * 3];
 
 	uint16 _width;    ///< The cursor's width.
@@ -67,12 +72,13 @@ private:
 	void clear();
 };
 
-WinCursor::WinCursor() {
+WinCursor::WinCursor(uint16 hotspotX, uint16 hotspotY) {
 	_width    = 0;
 	_height   = 0;
-	_hotspotX = 0;
-	_hotspotY = 0;
-	_surface  = 0;
+	_hotspotX = hotspotX;
+	_hotspotY = hotspotY;
+	_surface  = nullptr;
+	_mask     = nullptr;
 	_keyColor = 0;
 	memset(_palette, 0, 256 * 3);
 }
@@ -104,8 +110,8 @@ byte WinCursor::getKeyColor() const {
 bool WinCursor::readFromStream(Common::SeekableReadStream &stream) {
 	clear();
 
-	_hotspotX = stream.readUint16LE();
-	_hotspotY = stream.readUint16LE();
+	const bool supportOpacity = g_system->hasFeature(OSystem::kFeatureCursorMask);
+	const bool supportInvert = g_system->hasFeature(OSystem::kFeatureCursorMaskInvert);
 
 	// Check header size
 	if (stream.readUint32LE() != 40)
@@ -144,8 +150,10 @@ bool WinCursor::readFromStream(Common::SeekableReadStream &stream) {
 	if (numColors == 0)
 		numColors = 1 << bitsPerPixel;
 
+	// Skip number of important colors
+	stream.skip(4);
+
 	// Reading the palette
-	stream.seek(40 + 4);
 	for (uint32 i = 0 ; i < numColors; i++) {
 		_palette[i * 3 + 2] = stream.readByte();
 		_palette[i * 3 + 1] = stream.readByte();
@@ -161,6 +169,8 @@ bool WinCursor::readFromStream(Common::SeekableReadStream &stream) {
 	// Parse the XOR map
 	const byte *src = initialSource;
 	_surface = new byte[_width * _height];
+	if (supportOpacity)
+		_mask = new byte[_width * _height];
 	byte *dest = _surface + _width * (_height - 1);
 	uint32 imagePitch = _width * bitsPerPixel / 8;
 
@@ -223,9 +233,36 @@ bool WinCursor::readFromStream(Common::SeekableReadStream &stream) {
 	src += andWidth * (_height - 1);
 
 	for (uint32 y = 0; y < _height; y++) {
-		for (uint32 x = 0; x < _width; x++)
-			if (src[x / 8] & (1 << (7 - x % 8)))
-				_surface[y * _width + x] = _keyColor;
+		for (uint32 x = 0; x < _width; x++) {
+			byte &surfaceByte = _surface[y * _width + x];
+			if (src[x / 8] & (1 << (7 - x % 8))) {
+				const byte *paletteEntry = &_palette[surfaceByte * 3];
+
+				// Per WDDM spec, white with 1 in the AND mask is inverted, any other color with 1 is transparent.
+				// Riven depends on this behavior for proper cursor transparency, since it uses cursors where the
+				// transparent pixels have a non-zero non-black color.
+				const bool isTransparent = (paletteEntry[0] != 255 || paletteEntry[1] != 255 || paletteEntry[2] != 255);
+
+				if (_mask) {
+					byte &maskByte = _mask[y * _width + x];
+
+					if (isTransparent) {
+						maskByte = 0;
+					} else {
+						// Inverted, if the backend supports invert then emit an inverted pixel, otherwise opaque
+						maskByte = supportInvert ? kCursorMaskInvert : kCursorMaskOpaque;
+					}
+				} else {
+					// Don't support mask or invert, leave this as opaque if it's XOR so it's visible
+					if (isTransparent)
+						surfaceByte = _keyColor;
+				}
+			} else {
+				// Opaque pixel
+				if (_mask)
+					_mask[y * _width + x] = kCursorMaskOpaque;
+			}
+		}
 
 		src -= andWidth;
 	}
@@ -235,7 +272,8 @@ bool WinCursor::readFromStream(Common::SeekableReadStream &stream) {
 }
 
 void WinCursor::clear() {
-	delete[] _surface; _surface = 0;
+	delete[] _surface; _surface = nullptr;
+	delete[] _mask; _mask = nullptr;
 }
 
 WinCursorGroup::WinCursorGroup() {
@@ -274,11 +312,14 @@ WinCursorGroup *WinCursorGroup::createCursorGroup(Common::WinResources *exe, con
 			return 0;
 		}
 
-		WinCursor *cursor = new WinCursor();
-		if (!cursor->readFromStream(*cursorStream)) {
-			delete cursor;
+		uint16 hotspotX = cursorStream->readUint16LE();
+		uint16 hotspotY = cursorStream->readUint16LE();
+
+		Cursor *cursor = loadWindowsCursorFromDIB(*cursorStream, hotspotX, hotspotY);
+
+		if (!cursor) {
 			delete group;
-			return 0;
+			return nullptr;
 		}
 
 		CursorItem item;
@@ -409,6 +450,16 @@ public:
 
 Cursor *makeBusyWinCursor() {
 	return new BusyWinCursor();
+}
+
+Cursor *loadWindowsCursorFromDIB(Common::SeekableReadStream &stream, uint16 hotspotX, uint16 hotspotY) {
+	WinCursor *cursor = new WinCursor(hotspotX, hotspotY);
+	if (!cursor->readFromStream(stream)) {
+		delete cursor;
+		return nullptr;
+	}
+
+	return cursor;
 }
 
 } // End of namespace Graphics

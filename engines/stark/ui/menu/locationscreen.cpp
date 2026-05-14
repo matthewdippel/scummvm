@@ -228,7 +228,7 @@ void StaticLocationWidget::setupSounds(int16 enterSound, int16 clickSound) {
 	}
 }
 
-void StaticLocationWidget::setTextColor(const Color &textColor) {
+void StaticLocationWidget::setTextColor(const Gfx::Color &textColor) {
 	if (!_renderEntry) return;
 
 	VisualText *text = _renderEntry->getText();
@@ -242,7 +242,7 @@ void StaticLocationWidget::onScreenChanged() {
 
 	VisualText *text = _renderEntry->getText();
 	if (text) {
-		text->resetTexture();
+		text->reset();
 	}
 }
 

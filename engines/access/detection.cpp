@@ -40,17 +40,17 @@ static const DebugChannelDef debugFlagList[] = {
 
 #include "access/detection_tables.h"
 
-class AccessMetaEngineDetection : public AdvancedMetaEngineDetection {
+class AccessMetaEngineDetection : public AdvancedMetaEngineDetection<Access::AccessGameDescription> {
 public:
-	AccessMetaEngineDetection() : AdvancedMetaEngineDetection(Access::gameDescriptions, sizeof(Access::AccessGameDescription), AccessGames) {
+	AccessMetaEngineDetection() : AdvancedMetaEngineDetection(Access::gameDescriptions, AccessGames) {
 		_maxScanDepth = 3;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "access";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Access";
 	}
 

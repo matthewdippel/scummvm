@@ -28,12 +28,13 @@
 #include "common/system.h"
 #include "common/savefile.h"
 #include "common/serializer.h"
-#include "common/translation.h"
 
 #include "engines/advancedDetector.h"
 
 static const DebugChannelDef debugFlagList[] = {
 	{BladeRunner::kDebugScript, "Script", "Debug the scripts"},
+	{BladeRunner::kDebugSound, "Sound", "Debug the sound"},
+	{BladeRunner::kDebugAnimation, "Animation", "Debug the model animations"},
 	DEBUG_CHANNEL_END
 };
 
@@ -46,84 +47,18 @@ static const PlainGameDescriptor bladeRunnerGames[] = {
 	{nullptr, nullptr}
 };
 
-static const ADExtraGuiOptionsMap optionsList[] = {
-	{
-		GAMEOPTION_SITCOM,
-		{
-			_s("Sitcom mode"),
-			_s("Game will add laughter after actor's line or narration"),
-			"sitcom",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_SHORTY,
-		{
-			_s("Shorty mode"),
-			_s("Game will shrink the actors and make their voices high pitched"),
-			"shorty",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_FRAMELIMITER_NODELAYMILLIS,
-		{
-			_s("Frame limiter high performance mode"),
-			_s("This mode may result in high CPU usage! It avoids use of delayMillis() function."),
-			"nodelaymillisfl",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_FRAMELIMITER_FPS,
-		{
-			_s("Max frames per second limit"),
-			_s("This mode targets a maximum of 120 fps. When disabled, the game targets 60 fps"),
-			"frames_per_secondfl",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_DISABLE_STAMINA_DRAIN,
-		{
-			_s("Disable McCoy's quick stamina drain"),
-			_s("When running, McCoy won't start slowing down as soon as the player stops clicking the mouse"),
-			"disable_stamina_drain",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_SHOW_SUBS_IN_CRAWL,
-		{
-			_s("Show subtitles during text crawl"),
-			_s("During the intro cutscene, show subtitles during the text crawl"),
-			"use_crawl_subs",
-			true,
-			0,
-			0
-		}
-	},
-	AD_EXTRA_GUI_OPTIONS_TERMINATOR
+static const char *const directoryGlobs[] = {
+	"BASE",
+	nullptr
 };
-
 } // End of namespace BladeRunner
 
-class BladeRunnerMetaEngineDetection : public AdvancedMetaEngineDetection {
+class BladeRunnerMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
 	BladeRunnerMetaEngineDetection();
 
-	const char *getEngineId() const override;
 	const char *getName() const override;
+	const char *getEngineName() const override;
 	const char *getOriginalCopyright() const override;
 	const DebugChannelDef *getDebugChannels() const override;
 };
@@ -131,9 +66,7 @@ public:
 BladeRunnerMetaEngineDetection::BladeRunnerMetaEngineDetection()
 	: AdvancedMetaEngineDetection(
 		BladeRunner::gameDescriptions,
-		sizeof(BladeRunner::gameDescriptions[0]),
-		BladeRunner::bladeRunnerGames,
-		BladeRunner::optionsList) {
+		BladeRunner::bladeRunnerGames) {
 		// Setting this, allows the demo files to be copied in the BladeRunner
 		// game data folder and be detected and subsequently launched without
 		// any issues (eg. like ScummVM launching Blade Runner instead of the demo).
@@ -143,13 +76,15 @@ BladeRunnerMetaEngineDetection::BladeRunnerMetaEngineDetection()
 		// and expects ScummVM to detect both, offer a choice on which to add,
 		// and finally launch the proper one depending on which was added.
 		_flags = kADFlagUseExtraAsHint;
-}
-
-const char *BladeRunnerMetaEngineDetection::getEngineId() const {
-	return "bladerunner";
+		_maxScanDepth = 2;
+		_directoryGlobs = BladeRunner::directoryGlobs;
 }
 
 const char *BladeRunnerMetaEngineDetection::getName() const {
+	return "bladerunner";
+}
+
+const char *BladeRunnerMetaEngineDetection::getEngineName() const {
 	return "Blade Runner";
 }
 

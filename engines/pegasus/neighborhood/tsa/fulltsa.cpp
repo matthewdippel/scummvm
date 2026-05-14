@@ -619,7 +619,7 @@ enum {
 void RipTimer::initImage() {
 	_middle = -1;
 
-	_timerImage.getImageFromPICTResource(((PegasusEngine *)g_engine)->_resFork, kLeftRipPICTID);
+	_timerImage.getImageFromPICTResource(g_vm->_resFork, kLeftRipPICTID);
 
 	Common::Rect r;
 	_timerImage.getSurfaceBounds(r);
@@ -664,7 +664,7 @@ void RipTimer::timeChanged(const TimeValue newTime) {
 	}
 
 	if (newTime == getStop())
-		((PegasusEngine *)g_engine)->die(kDeathUncreatedInTSA);
+		g_vm->die(kDeathUncreatedInTSA);
 }
 
 FullTSA::FullTSA(InputHandler *nextHandler, PegasusEngine *owner) : Neighborhood(nextHandler, owner, "Full TSA", kFullTSAID),
@@ -733,8 +733,8 @@ void FullTSA::flushGameState() {
 	GameState.setTSAFuseTimeLimit(_utilityFuse.getTimeRemaining());
 }
 
-Common::String FullTSA::getBriefingMovie() {
-	Common::String movieName = Neighborhood::getBriefingMovie();
+Common::Path FullTSA::getBriefingMovie() {
+	Common::Path movieName = Neighborhood::getBriefingMovie();
 
 	if (movieName.empty()) {
 		RoomID room = GameState.getCurrentRoom();
@@ -791,8 +791,8 @@ Common::String FullTSA::getBriefingMovie() {
 	return movieName;
 }
 
-Common::String FullTSA::getEnvScanMovie() {
-	Common::String movieName = Neighborhood::getEnvScanMovie();
+Common::Path FullTSA::getEnvScanMovie() {
+	Common::Path movieName = Neighborhood::getEnvScanMovie();
 
 	if (movieName.empty()) {
 		switch (GameState.getTSAState()) {
@@ -859,11 +859,11 @@ uint FullTSA::getNumHints() {
 	return numHints;
 }
 
-Common::String FullTSA::getHintMovie(uint hintNum) {
-	Common::String movieName = Neighborhood::getHintMovie(hintNum);
+Common::Path FullTSA::getHintMovie(uint hintNum) {
+	Common::Path movieName = Neighborhood::getHintMovie(hintNum);
 
 	if (movieName.empty())
-		movieName = Common::String::format("Images/AI/TSA/XT20NH%d", hintNum);
+		movieName = Common::Path(Common::String::format("Images/AI/TSA/XT20NH%d", hintNum));
 
 	return movieName;
 }
@@ -3525,7 +3525,7 @@ void FullTSA::doSolve() {
 	}
 }
 
-void FullTSA::updateCursor(const Common::Point where, const Hotspot *cursorSpot) {
+void FullTSA::updateCursor(const Common::Point &where, const Hotspot *cursorSpot) {
 	if (cursorSpot) {
 		switch (cursorSpot->getObjectID()) {
 		case kTSA0BEastMonitorSpotID:
@@ -3548,11 +3548,11 @@ void FullTSA::updateCursor(const Common::Point where, const Hotspot *cursorSpot)
 	Neighborhood::updateCursor(where, cursorSpot);
 }
 
-Common::String FullTSA::getNavMovieName() {
+Common::Path FullTSA::getNavMovieName() {
 	return "Images/TSA/Full TSA.movie";
 }
 
-Common::String FullTSA::getSoundSpotsName() {
+Common::Path FullTSA::getSoundSpotsName() {
 	return "Sounds/TSA/TSA Spots";
 }
 

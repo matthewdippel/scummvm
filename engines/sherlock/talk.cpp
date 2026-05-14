@@ -88,7 +88,7 @@ void Statement::load(Common::SeekableReadStream &s, bool isRoseTattoo) {
 /*----------------------------------------------------------------*/
 
 TalkHistoryEntry::TalkHistoryEntry() {
-	Common::fill(&_data[0], &_data[16], false);
+	Common::fill(&_data[0], &_data[32], false);
 }
 
 /*----------------------------------------------------------------*/
@@ -130,7 +130,7 @@ Talk::Talk(SherlockEngine *vm) : _vm(vm) {
 	_talkHistory.resize(IS_ROSE_TATTOO ? 1500 : 500);
 }
 
-void Talk::talkTo(const Common::String filename) {
+void Talk::talkTo(const Common::String &filename) {
 	Events &events = *_vm->_events;
 	Inventory &inv = *_vm->_inventory;
 	Journal &journal = *_vm->_journal;
@@ -176,8 +176,11 @@ void Talk::talkTo(const Common::String filename) {
 	if (people[HOLMES]._walkCount || (!people[HOLMES]._walkTo.empty() &&
 			(IS_SERRATED_SCALPEL || people._allowWalkAbort))) {
 		// Only interrupt if trying to do an action, and not just if player is walking around the scene
-		if (people._allowWalkAbort)
+		if (people._allowWalkAbort) {
 			abortFlag = true;
+			// an arrow zone might have been clicked before the interrupt, cancel the scene transition
+			ui._exitZone = -1;
+		}
 
 		people[HOLMES].gotoStand();
 	}
@@ -271,6 +274,7 @@ void Talk::talkTo(const Common::String filename) {
 			ui.clearInfo();
 			ui.banishWindow(false);
 			ui._key = -1;
+			ui._action = kActionNone;
 			break;
 
 		case FILES_MODE:
@@ -296,7 +300,8 @@ void Talk::talkTo(const Common::String filename) {
 	screen.resetDisplayBounds();
 	events._pressed = events._released = false;
 	loadTalkFile(filename);
-	ui._selector = ui._oldSelector = ui._key = ui._oldKey = -1;
+	ui._selector = ui._oldSelector = ui._key = -1;
+	ui._action = ui._oldAction = kActionNone;
 
 	// Find the first statement that has the correct flags
 	int select = -1;
@@ -424,7 +429,7 @@ void Talk::talkTo(const Common::String filename) {
 					_talkHistory[_converseNum][select] = true;
 				}
 
-				ui._key = ui._oldKey = 'T'; // FIXME: I'm not sure what to do here, I need ScalpelUI->_hotkeyTalk
+				ui._action = ui._oldAction = kActionScalpelTalk;
 				ui._temp = ui._oldTemp = 0;
 				ui._menuMode = TALK_MODE;
 				_talkToFlag = 2;
@@ -450,6 +455,7 @@ void Talk::talkTo(const Common::String filename) {
 	_talkStealth = 0;
 	events._pressed = events._released = events._oldButtons = 0;
 	events.clearKeyboard();
+	events.clearActions();
 
 	if (savedBounds.bottom == SHERLOCK_SCREEN_HEIGHT)
 		screen.resetDisplayBounds();
@@ -587,8 +593,8 @@ void Talk::loadTalkFile(const Common::String &filename) {
 	}
 
 	const char *chP = strchr(filename.c_str(), '.');
-	Common::String talkFile = chP ? Common::String(filename.c_str(), chP) + ".tlk" :
-		Common::String(filename.c_str(), filename.c_str() + 7) + ".tlk";
+	Common::Path talkFile = chP ? Common::Path(Common::String(filename.c_str(), chP)).appendInPlace(".tlk") :
+		Common::Path(Common::String(filename.c_str(), filename.c_str() + 7)).appendInPlace(".tlk");
 
 	// Create the base of the sound filename used for talking in Rose Tattoo
 	if (IS_ROSE_TATTOO && _scriptMoreFlag != 1)
@@ -615,7 +621,7 @@ void Talk::stripVoiceCommands() {
 	for (uint sIdx = 0; sIdx < _statements.size(); ++sIdx) {
 		Statement &statement = _statements[sIdx];
 
-		// Scan for an sound effect byte, which indicates to play a sound
+		// Scan for a sound effect byte, which indicates to play a sound
 		for (uint idx = 0; idx < statement._reply.size(); ++idx) {
 			if (statement._reply[idx] == (char)_opcodes[OP_SFX_COMMAND]) {
 				// Replace instruction character with a space, and delete the
@@ -700,6 +706,7 @@ void Talk::doScript(const Common::String &script) {
 	if (_scriptMoreFlag) {
 		_scriptMoreFlag = 0;
 		str = _scriptStart + _scriptSaveIndex;
+		assert(str <= _scriptEnd);
 	}
 
 	// Check if the script begins with a Stealh Mode Active command
@@ -773,8 +780,19 @@ void Talk::doScript(const Common::String &script) {
 			_endStr = true;
 		} else if (c == '{') {
 			// Start of comment, so skip over it
-			while (*str++ != '}')
-				;
+			if (Fonts::isBig5()) {
+				while (*str && *str != '}') {
+					if ((*str & 0x80) && str[1])
+						str += 2;
+					else
+						str++;
+				}
+				if (*str)
+					str++;
+			} else {
+				while (*str++ != '}')
+					;
+			}
 		} else if (isOpcode(c)) {
 			// the original interpreter checked for c being >= 0x80
 			// and if that is the case, it tried to process it as opcode, BUT ALSO ALWAYS skipped over it
@@ -865,7 +883,7 @@ int Talk::waitForMore(int delay) {
 	// Handle playing any speech associated with the text being displayed
 	switchSpeaker();
 	if (sound._speechOn && IS_ROSE_TATTOO) {
-		sound.playSpeech(sound._talkSoundFile);
+		sound.playSpeech(Common::Path(sound._talkSoundFile));
 		sound._talkSoundFile.setChar(sound._talkSoundFile.lastChar() + 1, sound._talkSoundFile.size() - 1);
 	}
 	playingSpeech = sound.isSpeechPlaying();
@@ -885,9 +903,9 @@ int Talk::waitForMore(int delay) {
 			events.pollEventsAndWait();
 			events.setButtonState();
 
-			if (events.kbHit()) {
-				Common::KeyState keyState = events.getKey();
-				if (keyState.keycode == Common::KEYCODE_ESCAPE) {
+			if (events.actionHit()) {
+				Common::CustomEventType action = events.getAction();
+				if (action == kActionTattooSkipProlog) {
 					if (IS_ROSE_TATTOO && static_cast<Tattoo::TattooEngine *>(_vm)->_runningProlog) {
 						// Skip out of the introduction
 						_vm->setFlags(-76);
@@ -896,7 +914,13 @@ int Talk::waitForMore(int delay) {
 					}
 					break;
 
-				} else if (Common::isPrint(keyState.ascii))
+				} else if (action != kActionNone)
+					key2 = action;
+			}
+
+			if (events.kbHit()) {
+				Common::KeyState keyState = events.getKey();
+				if (Common::isPrint(keyState.ascii))
 					key2 = keyState.keycode;
 			}
 
@@ -964,11 +988,19 @@ void Talk::popStack() {
 }
 
 void Talk::synchronize(Serializer &s) {
+	// Since save version 6: each TalkHistoryEntry now holds 32 flags
+	const int numFlags = s.getVersion() > 5 ? 32 : 16;
+	const auto flagSize = sizeof _talkHistory[0]._data[0];
+
 	for (uint idx = 0; idx < _talkHistory.size(); ++idx) {
 		TalkHistoryEntry &he = _talkHistory[idx];
 
-		for (int flag = 0; flag < 16; ++flag)
+		for (int flag = 0; flag < numFlags; ++flag)
 			s.syncAsByte(he._data[flag]);
+
+		// For old saves with less than 32 flags we zero the rest
+		if (s.isLoading() && numFlags < 32)
+			memset(he._data + flagSize * 16, 0, flagSize * 16);
 	}
 }
 

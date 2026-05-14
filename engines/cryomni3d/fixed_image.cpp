@@ -23,6 +23,7 @@
 
 #include "common/file.h"
 #include "common/system.h"
+#include "graphics/palette.h"
 #include "graphics/surface.h"
 #include "image/image_decoder.h"
 
@@ -69,7 +70,7 @@ void ZonFixedImage::run(const CallbackFunctor *callback) {
 }
 
 // Just pass a const char * for zone because it's for workarounds and constructing a null String at almost each load call is inefficient
-void ZonFixedImage::load(const Common::String &image, const char *zone) {
+void ZonFixedImage::load(const Common::Path &image, const char *zone) {
 	_imageSurface = nullptr;
 	delete _imageDecoder;
 	_imageDecoder = nullptr;
@@ -80,8 +81,8 @@ void ZonFixedImage::load(const Common::String &image, const char *zone) {
 	}
 	_imageSurface = _imageDecoder->getSurface();
 
-	const Common::String &zoneFName = zone == nullptr ? image : zone;
-	loadZones(zoneFName);
+	Common::Path zonePath(zone ? image.getParent().appendComponent(zone) : image);
+	loadZones(zonePath);
 
 #if 0
 	// This is not correct but to debug zones I think it's OK
@@ -107,22 +108,28 @@ void ZonFixedImage::load(const Common::String &image, const char *zone) {
 }
 
 void ZonFixedImage::display() const {
-	_engine.setupPalette(_imageDecoder->getPalette(), _imageDecoder->getPaletteStartIndex(),
-	                     _imageDecoder->getPaletteColorCount());
+	_engine.setupPalette(_imageDecoder->getPalette().data(), 0,
+	                     _imageDecoder->getPalette().size());
 
 	g_system->copyRectToScreen(_imageSurface->getPixels(), _imageSurface->pitch, 0, 0,
 	                           _imageSurface->w, _imageSurface->h);
 	g_system->updateScreen();
 }
 
-void ZonFixedImage::loadZones(const Common::String &image) {
+void ZonFixedImage::loadZones(const Common::Path &image) {
 	_zones.clear();
 
-	Common::String fname(_engine.prepareFileName(image, "zon"));
+	Common::String fname(image.baseName());
+	int lastDotPos = fname.findLastOf('.');
+	assert(lastDotPos > -1);
+	fname.erase(lastDotPos + 1);
+	fname += "zon";
+
+	Common::Path zonPath = image.getParent().appendComponent(fname);
 
 	Common::File zonFile;
-	if (!zonFile.open(fname)) {
-		error("Can't open ZON file '%s'", fname.c_str());
+	if (!zonFile.open(zonPath)) {
+		error("Can't open ZON file '%s'", zonPath.toString(Common::Path::kNativeSeparator).c_str());
 	}
 
 	int32 zonesNumber = zonFile.size() / 26;

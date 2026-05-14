@@ -23,6 +23,7 @@
 #define ULTIMA_SPRITES_H
 
 #include "common/array.h"
+#include "common/path.h"
 #include "graphics/managed_surface.h"
 #include "ultima/shared/core/rect.h"
 
@@ -102,7 +103,7 @@ protected:
 	 * @param w				Width of tiles
 	 * @param h				Height of files
 	 */
-	void load(const Common::String &name, uint bpp, uint16 w = 16, uint16 h = 16);
+	void load(const Common::Path &name, uint bpp, uint16 w = 16, uint16 h = 16);
 public:
 	/**
 	 * Destructor

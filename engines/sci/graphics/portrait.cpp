@@ -26,14 +26,15 @@
 #include "sci/sci.h"
 #include "sci/event.h"
 #include "sci/engine/state.h"
+#include "sci/graphics/drivers/gfxdriver.h"
 #include "sci/graphics/screen.h"
-#include "sci/graphics/palette.h"
+#include "sci/graphics/palette16.h"
 #include "sci/graphics/portrait.h"
 #include "sci/sound/audio.h"
 
 namespace Sci {
 
-Portrait::Portrait(ResourceManager *resMan, EventManager *event, GfxScreen *screen, GfxPalette *palette, AudioPlayer *audio, Common::String resourceName)
+Portrait::Portrait(ResourceManager *resMan, EventManager *event, GfxScreen *screen, GfxPalette *palette, AudioPlayer *audio, const Common::String &resourceName)
 	: _resMan(resMan), _event(event), _screen(screen), _palette(palette), _audio(audio), _resourceName(resourceName) {
 	init();
 }
@@ -83,7 +84,7 @@ void Portrait::init() {
 	// 4 bytes appended, seem to be random
 	//   9E11120E for alex
 	//   9E9E9E9E for vizier
-	Common::String fileName = "actors/" + _resourceName + ".bin";
+	Common::Path fileName("actors/" + _resourceName + ".bin", '/');
 	Common::SeekableReadStream *file = SearchMan.createReadStreamForMember(fileName);
 
 	if (!file) {
@@ -92,7 +93,7 @@ void Portrait::init() {
 		if (!file)
 			error("portrait %s.bin not found", _resourceName.c_str());
 	}
-	_fileData->allocateFromStream(*file, Common::kSpanMaxSize, fileName);
+	_fileData->allocateFromStream(*file, Common::kSpanMaxSize, fileName.toString('/'));
 	delete file;
 
 	if (strncmp((const char *)_fileData->getUnsafeDataAt(0, 3), "WIN", 3)) {
@@ -119,13 +120,11 @@ void Portrait::init() {
 
 	// Read all bitmaps
 	uint16 bitmapNr;
-	uint16 bytesPerLine;
-
 	for (bitmapNr = 0; bitmapNr < _bitmaps.size(); bitmapNr++) {
 		PortraitBitmap &curBitmap = _bitmaps[bitmapNr];
 		curBitmap.width = data.getUint16LEAt(2);
 		curBitmap.height = data.getUint16LEAt(4);
-		bytesPerLine = data.getUint16LEAt(6);
+		uint16 bytesPerLine = data.getUint16LEAt(6);
 		if (bytesPerLine < curBitmap.width)
 			error("kPortrait: bytesPerLine larger than actual width");
 		curBitmap.extraBytesPerLine = bytesPerLine - curBitmap.width;
@@ -158,7 +157,6 @@ void Portrait::init() {
 	// raw lip-sync frame table follows
 	uint32 lipSyncDataTableSize;
 	uint32 lipSyncDataTableLastOffset;
-	byte   lipSyncData;
 	uint16 lipSyncDataNr;
 	uint16 lipSyncCurOffset;
 
@@ -177,7 +175,7 @@ void Portrait::init() {
 		_lipSyncDataOffsetTable[lipSyncDataNr] = lipSyncCurOffset;
 
 		// Look for end of ID-frame data
-		lipSyncData = *data++; lipSyncCurOffset++;
+		byte lipSyncData = *data++; lipSyncCurOffset++;
 		while (lipSyncData != 0xFF && lipSyncCurOffset < lipSyncDataTableLastOffset) {
 			// Either terminator (0xFF) or frame-data (1 byte tick count and 1 byte bitmap ID)
 			data++;
@@ -248,8 +246,7 @@ void Portrait::doit(Common::Point position, uint16 resourceId, uint16 noun, uint
 	_palette->set(&_portraitPalette, false, true);
 
 	// Draw base bitmap
-	drawBitmap(0);
-	bitsShow();
+	drawBitmap(0, true);
 
 	// Start playing audio...
 	_audio->stopAudio();
@@ -268,7 +265,6 @@ void Portrait::doit(Common::Point position, uint16 resourceId, uint16 noun, uint
 	byte raveLipSyncTicks;
 	byte raveLipSyncBitmapNr;
 	int timerPosition = 0;
-	int timerPositionWithin = 0;
 	int curPosition;
 	SciEvent curEvent;
 	bool userAbort = false;
@@ -315,7 +311,7 @@ void Portrait::doit(Common::Point position, uint16 resourceId, uint16 noun, uint
 			// lip sync data is
 			//  Tick:Byte, Bitmap-Nr:BYTE
 			//  Tick = 0xFF is the terminator for the data
-			timerPositionWithin = timerPosition;
+			int timerPositionWithin = timerPosition;
 			raveLipSyncTicks = *raveLipSyncData++;
 			while (raveLipSyncData.size() && raveLipSyncTicks != 0xFF) {
 				if (raveLipSyncTicks)
@@ -345,9 +341,8 @@ void Portrait::doit(Common::Point position, uint16 resourceId, uint16 noun, uint
 				raveLipSyncBitmapNr--;
 
 				if (raveLipSyncBitmapNr < _bitmaps.size()) {
-					drawBitmap(0);
-					drawBitmap(raveLipSyncBitmapNr);
-					bitsShow();
+					drawBitmap(0, false);
+					drawBitmap(raveLipSyncBitmapNr, true);
 				} else {
 					warning("kPortrait: rave lip sync data tried to draw non-existent bitmap %d", raveLipSyncBitmapNr);
 				}
@@ -395,9 +390,8 @@ void Portrait::doit(Common::Point position, uint16 resourceId, uint16 noun, uint
 			// Display animation bitmap
 			if (syncCue < _bitmapCount) {
 				if (syncCue)
-					drawBitmap(0); // Draw base bitmap first to get valid animation frame
-				drawBitmap(syncCue);
-				bitsShow();
+					drawBitmap(0, false); // Draw base bitmap first to get valid animation frame
+				drawBitmap(syncCue, true);
 			} else {
 				warning("kPortrait: sync information tried to draw non-existent %d", syncCue);
 			}
@@ -406,8 +400,7 @@ void Portrait::doit(Common::Point position, uint16 resourceId, uint16 noun, uint
 #endif
 
 	// Reset the portrait bitmap to "closed mouth" state (rave.dll seems to do the same)
-	drawBitmap(0);
-	bitsShow();
+	drawBitmap(0, true);
 	if (userAbort) {
 		_audio->stopAudio();
 	}
@@ -423,14 +416,13 @@ void Portrait::doit(Common::Point position, uint16 resourceId, uint16 noun, uint
 int16 Portrait::raveGetTicks(Resource *resource, uint *offset) {
 	uint curOffset = *offset;
 	SciSpan<const byte> curData = resource->subspan(curOffset);
-	byte curByte;
 	uint16 curValue = 0;
 
 	if (curOffset >= resource->size())
 		return -1;
 
 	while (curOffset < resource->size()) {
-		curByte = *curData++; curOffset++;
+		byte curByte = *curData++; curOffset++;
 		if ( curByte == ' ' )
 			break;
 		if ( (curByte >= '0') && (curByte <= '9') ) {
@@ -448,11 +440,10 @@ int16 Portrait::raveGetTicks(Resource *resource, uint *offset) {
 uint16 Portrait::raveGetID(Resource *resource, uint *offset) {
 	uint curOffset = *offset;
 	SciSpan<const byte> curData = resource->subspan(curOffset);
-	byte curByte = 0;
 	uint16 curValue = 0;
 
 	while (curOffset < resource->size()) {
-		curByte = *curData++; curOffset++;
+		byte curByte = *curData++; curOffset++;
 		if ( curByte == ' ' )
 			break;
 		if (!curValue) {
@@ -468,49 +459,35 @@ uint16 Portrait::raveGetID(Resource *resource, uint *offset) {
 
 // Searches for a specific lip sync ID and returns pointer to lip sync data or NULL in case ID was not found
 SciSpan<const byte> Portrait::raveGetLipSyncData(const uint16 raveID) {
-	uint lipSyncIDNr = 0;
 	SciSpan<const byte> lipSyncIDPtr = _lipSyncIDTable;
-	byte lipSyncIDByte1, lipSyncIDByte2;
-	uint16 lipSyncID;
 
 	lipSyncIDPtr++; // skip over first byte
-	while (lipSyncIDNr < _lipSyncIDCount) {
-		lipSyncIDByte1 = *lipSyncIDPtr++;
-		lipSyncIDByte2 = *lipSyncIDPtr++;
-		lipSyncID = (lipSyncIDByte1 << 8) | lipSyncIDByte2;
+	for (uint lipSyncIDNr = 0; lipSyncIDNr < _lipSyncIDCount; lipSyncIDNr++) {
+		byte lipSyncIDByte1 = *lipSyncIDPtr++;
+		byte lipSyncIDByte2 = *lipSyncIDPtr++;
+		uint16 lipSyncID = (lipSyncIDByte1 << 8) | lipSyncIDByte2;
 
 		if (lipSyncID == raveID) {
 			return _lipSyncData.subspan(_lipSyncDataOffsetTable[lipSyncIDNr]);
 		}
 
-		lipSyncIDNr++;
 		lipSyncIDPtr += 2; // ID is every 4 bytes
 	}
 	return SciSpan<const byte>();
 }
 
-void Portrait::drawBitmap(uint16 bitmapNr) {
+void Portrait::drawBitmap(uint16 bitmapNr, bool show) {
 	uint16 bitmapHeight = _bitmaps[bitmapNr].height;
 	uint16 bitmapWidth = _bitmaps[bitmapNr].width;
-	Common::Point bitmapPosition = _position;
-
-	bitmapPosition.x += _bitmaps[bitmapNr].displaceX;
-	bitmapPosition.y += _bitmaps[bitmapNr].displaceY;
+	Common::Point pos = _screen->gfxDriver()->getRealCoords(_position);
+	pos.x += _bitmaps[bitmapNr].displaceX;
+	pos.y += _bitmaps[bitmapNr].displaceY;
 
 	const byte *data = _bitmaps[bitmapNr].rawBitmap.getUnsafeDataAt(0, bitmapWidth * bitmapHeight);
-	for (int y = 0; y < bitmapHeight; y++) {
-		for (int x = 0; x < bitmapWidth; x++) {
-			_screen->putPixelOnDisplay(bitmapPosition.x + x, bitmapPosition.y + y, _portraitPalette.mapping[*data++]);
-		}
-		data += _bitmaps[bitmapNr].extraBytesPerLine;
-	}
-}
+	_screen->copyHiResRectToScreen(data, bitmapWidth + _bitmaps[bitmapNr].extraBytesPerLine, pos.x, pos.y, bitmapWidth, bitmapHeight, _portraitPalette.mapping);
 
-void Portrait::bitsShow() {
-	Common::Rect bitmapRect = Common::Rect(_width, _height);
-	bitmapRect.moveTo(_position.x, _position.y);
-	_screen->copyDisplayRectToScreen(bitmapRect);
-	g_system->updateScreen();
+	if (show)
+		g_system->updateScreen();
 }
 
 } // End of namespace Sci

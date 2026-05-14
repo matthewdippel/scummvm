@@ -94,12 +94,15 @@ const uint16 invalidCode = 0xFFFD;
 static bool cjk_tables_loaded = false;
 static const uint16 *windows932ConversionTable = 0;
 static const uint16 *windows932ReverseConversionTable = 0;
+static const uint16 *windows936ConversionTable = 0;
+static const uint16 *windows936ReverseConversionTable = 0;
 static const uint16 *windows949ConversionTable = 0;
 static const uint16 *windows949ReverseConversionTable = 0;
 static const uint16 *windows950ConversionTable = 0;
 static uint16 *windows950ReverseConversionTable = 0;
 static const uint16 *johabConversionTable = 0;
 static const uint16 *johabReverseConversionTable = 0;
+static const uint16 *traditional2SimplifiedChineseConversionTable = 0;
 
 static const uint16 *loadCJKTable(File &f, int idx, size_t sz) {
 	f.seek(16 + idx * 4);
@@ -112,6 +115,23 @@ static const uint16 *loadCJKTable(File &f, int idx, size_t sz) {
 		res[i] = FROM_LE_16(res[i]);
 #endif
 	return res;
+}
+
+static void loadChineseT2S(File &f) {
+	f.seek(16 + 5 * 4);
+	uint32 off = f.readUint32LE();
+	f.seek(off);
+	uint16 *res = new uint16[0x10000];
+	for (uint i = 0; i < 0x10000; i++) {
+		res[i] = i;
+	}
+	uint32 num_entries = f.readUint32LE();
+	for (uint i = 0; i < num_entries; i++) {
+		uint16 t = f.readUint16LE();
+		uint16 s = f.readUint16LE();
+		res[t] = s;
+	}
+	traditional2SimplifiedChineseConversionTable = res;
 }
 
 static void loadCJKTables() {
@@ -135,8 +155,11 @@ static void loadCJKTables() {
 		return;
 	}
 
+	int ver = f.readUint32LE();
+	int num_tables = f.readUint32LE();
+
 	// Version and number of tables.
-	if (f.readUint32LE() != 0 || f.readUint32LE() < 3) {
+	if (ver != 0 || num_tables < 3) {
 		warning("encoding.dat is of incompatible version. Support for CJK is disabled");
 		return;
 	}
@@ -144,7 +167,12 @@ static void loadCJKTables() {
 	windows932ConversionTable = loadCJKTable(f, 0, 47 * 192);
 	windows949ConversionTable = loadCJKTable(f, 1, 0x7e * 0xb2);
 	windows950ConversionTable = loadCJKTable(f, 2, 89 * 157);
-	johabConversionTable = loadCJKTable(f, 3, 80 * 188);
+	if (num_tables >= 4)
+		johabConversionTable = loadCJKTable(f, 3, 80 * 188);
+	if (num_tables >= 5)
+		windows936ConversionTable = loadCJKTable(f, 4, 126 * 190);
+	if (num_tables >= 6)
+		loadChineseT2S(f);
 }
 
 void releaseCJKTables() {
@@ -153,6 +181,10 @@ void releaseCJKTables() {
 	windows932ConversionTable = 0;
 	delete[] windows932ReverseConversionTable;
 	windows932ReverseConversionTable = 0;
+	delete[] windows936ConversionTable;
+	windows936ConversionTable = 0;
+	delete[] windows936ReverseConversionTable;
+	windows936ReverseConversionTable = 0;
 	delete[] windows949ConversionTable;
 	windows949ConversionTable = 0;
 	delete[] windows949ReverseConversionTable;
@@ -165,6 +197,8 @@ void releaseCJKTables() {
 	johabConversionTable = 0;
 	delete[] johabReverseConversionTable;
 	johabReverseConversionTable = 0;
+	delete[] traditional2SimplifiedChineseConversionTable;
+	traditional2SimplifiedChineseConversionTable = 0;
 }
 
 void U32String::decodeWindows932(const char *src, uint32 len) {
@@ -220,6 +254,49 @@ void U32String::decodeWindows932(const char *src, uint32 len) {
 
 		// Main range
 		uint16 val = windows932ConversionTable[highidx * 192 + lowidx];
+		operator+=(val ? val : invalidCode);
+	}
+}
+
+void U32String::decodeWindows936(const char *src, uint32 len) {
+	ensureCapacity(len, false);
+
+	if (!cjk_tables_loaded)
+		loadCJKTables();
+
+	for (uint i = 0; i < len;) {
+		uint8 high = src[i++];
+
+		if ((high & 0x80) == 0x00) {
+			operator+=(high);
+			continue;
+		}
+
+		// Euro symbol
+		if (high == 0x80) {
+			operator+=(0x20ac);
+			continue;
+		}
+
+		if (high == 0xff) {
+			operator+=(invalidCode);
+			continue;
+		}
+
+		uint8 low = src[i++];
+		if (low < 0x40 || low == 0x7f || low == 0xff) {
+			operator+=(invalidCode);
+			continue;
+		}
+		uint8 lowidx = low > 0x7f ? low - 0x41 : low - 0x40;
+		uint8 highidx = high - 0x81;
+
+		if (!windows936ConversionTable) {
+			operator+=(invalidCode);
+			continue;
+		}
+
+		uint16 val = windows936ConversionTable[highidx * 190 + lowidx];
 		operator+=(val ? val : invalidCode);
 	}
 }
@@ -446,6 +523,67 @@ StringEncodingResult String::encodeWindows932(const U32String &src, char errorCh
 		}
 
 		uint16 rev = windows932ReverseConversionTable[point];
+		if (rev != 0) {
+			operator+=(rev >> 8);
+			operator+=(rev & 0xff);
+			continue;
+		}
+
+		// This codepage contains cyrillic, so no need to transliterate
+
+		operator+=(errorChar);
+		encodingResult = kStringEncodingResultHasErrors;
+		continue;
+	}
+
+	return encodingResult;
+}
+
+StringEncodingResult String::encodeWindows936(const U32String &src, char errorChar) {
+	StringEncodingResult encodingResult = kStringEncodingResultSucceeded;
+
+	ensureCapacity(src.size() * 2, false);
+
+	if (!cjk_tables_loaded)
+		loadCJKTables();
+
+	if (!windows936ReverseConversionTable && windows936ConversionTable) {
+		uint16 *rt = new uint16[0x10000]();
+		for (uint highidx = 0; highidx < 190; highidx++) {
+			uint8 high = highidx + 0x81;
+			for (uint lowidx = 0; lowidx < 192; lowidx++) {
+				uint8 low = lowidx + 0x40;
+				if (low >= 0x7f)
+					low++;
+				uint16 unicode = windows936ConversionTable[highidx * 190 + lowidx];
+
+				rt[unicode] = (high << 8) | low;
+			}
+		}
+		windows936ReverseConversionTable = rt;
+	}
+
+	for (uint i = 0; i < src.size();) {
+		uint32 point = src[i++];
+
+		if (point < 0x80) {
+			operator+=(point);
+			continue;
+		}
+
+		if (point > 0x10000) {
+			operator+=(errorChar);
+			encodingResult = kStringEncodingResultHasErrors;
+			continue;
+		}
+
+		if (!windows936ReverseConversionTable) {
+			operator+=(errorChar);
+			encodingResult = kStringEncodingResultHasErrors;
+			continue;
+		}
+
+		uint16 rev = windows936ReverseConversionTable[point];
 		if (rev != 0) {
 			operator+=(rev >> 8);
 			operator+=(rev & 0xff);
@@ -882,6 +1020,7 @@ getConversionTable(CodePage page) {
 	// Multibyte encodings. Can't be represented in simple table way
 	case kUtf8:
 	case kWindows932:
+	case kWindows936:
 	case kWindows949:
 	case kWindows950:
 	case kJohab:
@@ -1010,6 +1149,8 @@ StringEncodingResult String::encodeInternal(const U32String &src, CodePage page,
 		return encodeUTF8(src, errorChar);
 	case kWindows932:
 		return encodeWindows932(src, errorChar);
+	case kWindows936:
+		return encodeWindows936(src, errorChar);
 	case kWindows949:
 		return encodeWindows949(src, errorChar);
 	case kWindows950:
@@ -1050,6 +1191,9 @@ void U32String::decodeInternal(const char *str, uint32 len, CodePage page) {
 	case kWindows932:
 		decodeWindows932(str, len);
 		break;
+	case kWindows936:
+		decodeWindows936(str, len);
+		break;
 	case kWindows949:
 		decodeWindows949(str, len);
 		break;
@@ -1089,6 +1233,24 @@ StringEncodingResult U32String::encode(String &outString, CodePage page, char er
 	}
 
 	return outString.encodeInternal(*this, page, errorChar);
+}
+
+U32String U32String::transcodeChineseT2S() const {
+	if (!cjk_tables_loaded)
+		loadCJKTables();
+
+	if (!traditional2SimplifiedChineseConversionTable)
+		return *this;
+
+	U32String simplified;
+	for (uint32 i = 0; i < size(); i++) {
+		uint32 ch = _str[i];
+		if (ch >= 0x10000)
+			simplified += ch;
+		else
+			simplified += traditional2SimplifiedChineseConversionTable[ch];
+	}
+	return simplified;
 }
 
 } // End of namespace Common

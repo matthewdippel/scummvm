@@ -21,13 +21,10 @@
 
 #include "base/plugins.h"
 #include "common/file.h"
-#include "common/translation.h"
 
 #include "engines/advancedDetector.h"
 
 #include "drascula/detection.h"
-
-#define GAMEOPTION_ORIGINAL_SAVELOAD      GUIO_GAMEOPTIONS1
 
 static const PlainGameDescriptor drasculaGames[] = {
 	{"drascula", "Drascula: The Vampire Strikes Back"},
@@ -56,7 +53,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::EN_ANY,
 			Common::kPlatformDOS,
 			GF_PACKED,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -73,7 +70,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::FR_FRA,
 			Common::kPlatformDOS,
 			GF_PACKED,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -90,7 +87,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::FR_FRA,
 			Common::kPlatformDOS,
 			GF_PACKED,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -107,7 +104,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::DE_DEU,
 			Common::kPlatformDOS,
 			GF_PACKED,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -120,7 +117,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::IT_ITA,
 			Common::kPlatformDOS,
 			GF_PACKED,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -137,7 +134,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::IT_ITA,
 			Common::kPlatformDOS,
 			GF_PACKED,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -150,7 +147,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::ES_ESP,
 			Common::kPlatformDOS,
 			GF_PACKED,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -167,7 +164,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::ES_ESP,
 			Common::kPlatformDOS,
 			GF_PACKED,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -184,7 +181,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::RU_RUS,
 			Common::kPlatformDOS,
 			GF_PACKED,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -199,7 +196,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::EN_ANY,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -212,7 +209,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::FR_FRA,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -225,7 +222,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::FR_FRA,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -238,7 +235,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::DE_DEU,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -251,7 +248,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::IT_ITA,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -264,7 +261,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::IT_ITA,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
@@ -277,7 +274,7 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::ES_ESP,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 	{
@@ -289,39 +286,24 @@ static const DrasculaGameDescription gameDescriptions[] = {
 			Common::RU_RUS,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GUIO_LINKSPEECHTOSFX)
+			GUIO2(GAMEOPTION_TTS, GUIO_LINKSPEECHTOSFX)
 		},
 	},
 
 	{ AD_TABLE_END_MARKER }
 };
 
-static const ADExtraGuiOptionsMap optionsList[] = {
-	{
-		GAMEOPTION_ORIGINAL_SAVELOAD,
-		{
-			_s("Use original save/load screens"),
-			_s("Use the original save/load screens instead of the ScummVM ones"),
-			"originalsaveload",
-			false,
-			0,
-			0
-		}
-	},
-	AD_EXTRA_GUI_OPTIONS_TERMINATOR
-};
-
-class DrasculaMetaEngineDetection : public AdvancedMetaEngineDetection {
+class DrasculaMetaEngineDetection : public AdvancedMetaEngineDetection<Drascula::DrasculaGameDescription> {
 public:
-	DrasculaMetaEngineDetection() : AdvancedMetaEngineDetection(Drascula::gameDescriptions, sizeof(Drascula::DrasculaGameDescription), drasculaGames, Drascula::optionsList) {
+	DrasculaMetaEngineDetection() : AdvancedMetaEngineDetection(Drascula::gameDescriptions, drasculaGames) {
 		_guiOptions = GUIO2(GUIO_NOMIDI, GAMEOPTION_ORIGINAL_SAVELOAD);
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "drascula";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Drascula: The Vampire Strikes Back";
 	}
 

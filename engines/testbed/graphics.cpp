@@ -19,9 +19,12 @@
  *
  */
 
+#include "common/archive.h"
+#include "common/config-manager.h"
 #include "common/events.h"
 #include "common/list.h"
 #include "common/random.h"
+#include "common/zip-set.h"
 
 #include "engines/engine.h"
 
@@ -30,9 +33,11 @@
 
 #include "graphics/cursorman.h"
 #include "graphics/fontman.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/surface.h"
 #include "graphics/VectorRendererSpec.h"
+
+#include "graphics/fonts/bdf.h"
 
 namespace Testbed {
 
@@ -56,12 +61,14 @@ GFXTestSuite::GFXTestSuite() {
 
 	// Mouse Layer tests (Palettes and movements)
 	addTest("PalettizedCursors", &GFXtests::palettizedCursors);
+	addTest("AlphaCursors", &GFXtests::alphaCursors);
+	addTest("MaskedCursors", &GFXtests::maskedCursors);
 	addTest("MouseMovements", &GFXtests::mouseMovements);
 	// FIXME: Scaled cursor crash with odd dimmensions
 	addTest("ScaledCursors", &GFXtests::scaledCursors);
 
 	// Effects
-	addTest("shakingEffect", &GFXtests::shakingEffect);
+	addTest("ShakingEffect", &GFXtests::shakingEffect);
 	// addTest("focusRectangle", &GFXtests::focusRectangle);
 
 	// Overlay
@@ -70,6 +77,9 @@ GFXTestSuite::GFXTestSuite() {
 	// Specific Tests:
 	addTest("PaletteRotation", &GFXtests::paletteRotation);
 	addTest("cursorTrailsInGUI", &GFXtests::cursorTrails);
+	
+	// Shader compatibility test
+	addTest("ShaderCompatibility", &GFXtests::shaderCompatibility, false);
 }
 
 void GFXTestSuite::prepare() {
@@ -331,10 +341,8 @@ void GFXtests::setupMouseLoop(bool disableCursorPalette, const char *gfxModeName
 			// Move estimated rect to (20, 20)
 			estimatedCursorRect.moveTo(20, 20);
 
-			Graphics::Surface *screen = g_system->lockScreen();
 			GFXTestSuite::setCustomColor(255, 0, 0);
-			screen->fillRect(estimatedCursorRect, 2);
-			g_system->unlockScreen();
+			g_system->fillScreen(estimatedCursorRect, 2);
 			g_system->updateScreen();
 		}
 
@@ -722,6 +730,302 @@ TestExitStatus GFXtests::palettizedCursors() {
 }
 
 /**
+ * Tests Alpha cursors.
+ * Method: Create a purple colored cursor with alpha transparency, should be able to move it. Once you click test terminates
+ */
+TestExitStatus GFXtests::alphaCursors() {
+
+	Testsuite::clearScreen();
+	Common::String info = "Alpha Cursors test.\n "
+		"Here you should expect to see a purple mouse cursor rendered with mouse graphics.\n"
+		"You would be able to move the cursor. The cursor should be round, and the background should be visible underneath it.\n"
+		"The test finishes when mouse (L/R) is clicked.";
+
+
+	if (Testsuite::handleInteractiveInput(info, "OK", "Skip", kOptionRight)) {
+		Testsuite::logPrintf("Info! Skipping test : Alpha Cursors\n");
+		return kTestSkipped;
+	}
+
+	TestExitStatus passed = kTestPassed;
+	bool isFeaturePresent = g_system->hasFeature(OSystem::kFeatureCursorAlpha);
+
+	if (isFeaturePresent) {
+		const uint32 cursorData[] = {
+			0xFF00FF00, 0xFF00FF00, 0xFF00FF00, 0xFF00FF3F, 0xFF00FF00, 0xFF00FF00, 0xFF00FF00,
+			0xFF00FF00, 0xFF00FF3F, 0xFF00FF5F, 0xFF00FF7F, 0xFF00FF5F, 0xFF00FF3F, 0xFF00FF00,
+			0xFF00FF00, 0xFF00FF5F, 0xFF00FF7F, 0xFF00FF9F, 0xFF00FF7F, 0xFF00FF5F, 0xFF00FF00,
+			0xFF00FF3F, 0xFF00FF7F, 0xFF00FF9F, 0xFF00FFBF, 0xFF00FF9F, 0xFF00FF7F, 0xFF00FF3F,
+			0xFF00FF00, 0xFF00FF5F, 0xFF00FF7F, 0xFF00FF9F, 0xFF00FF7F, 0xFF00FF5F, 0xFF00FF00,
+			0xFF00FF00, 0xFF00FF3F, 0xFF00FF5F, 0xFF00FF7F, 0xFF00FF5F, 0xFF00FF3F, 0xFF00FF00,
+			0xFF00FF00, 0xFF00FF00, 0xFF00FF00, 0xFF00FF3F, 0xFF00FF00, 0xFF00FF00, 0xFF00FF00
+		};
+
+		Graphics::PixelFormat format(4, 8, 8, 8, 8, 24, 16, 8, 0);
+		CursorMan.replaceCursor(cursorData, 7, 7, 3, 3, 0, false, &format);
+		CursorMan.showMouse(true);
+
+		bool waitingForClick = true;
+		while (waitingForClick) {
+			Common::Event event;
+			while (g_system->getEventManager()->pollEvent(event)) {
+				if (event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN) {
+					waitingForClick = false;
+				}
+			}
+
+			g_system->delayMillis(10);
+			g_system->updateScreen();
+		}
+
+		if (Testsuite::handleInteractiveInput("Which color did the cursor appear to you?", "Purple", "Any other", kOptionRight)) {
+			Testsuite::logDetailedPrintf("Couldn't use alpha transparency for rendering cursor\n");
+			passed = kTestFailed;
+		}
+
+		if (Testsuite::handleInteractiveInput("Which shape did the cursor appear to you?", "Round", "Any other", kOptionRight)) {
+			Testsuite::logDetailedPrintf("Couldn't use alpha transparency for rendering cursor\n");
+			passed = kTestFailed;
+		}
+
+		if (!Testsuite::handleInteractiveInput("     Did test run as was described?     ")) {
+			passed = kTestFailed;
+		}
+
+		// Done with cursors, make them invisible, any other test the could simply make it visible
+		CursorMan.showMouse(false);
+	} else {
+		Testsuite::displayMessage("feature not supported");
+	}
+
+	return passed;
+}
+
+/**
+ * Tests Masked cursors.
+ * Method: Create a cursor with a transparent, mask, inverted, and color-inverted areas, it should behave properly over colored areas. Once you click test terminates
+ */
+TestExitStatus GFXtests::maskedCursors() {
+
+	Testsuite::clearScreen();
+	Common::String info = "Masked cursors test.  If masked cursors are enabled, you should see a cursor with 4 sections:\n"
+						  "T for transparent, O for opaque, I for inverted, C for colorized inverted.\n"
+						  "If the I or C letters are absent, then that type of masking is unsupported";
+
+	if (Testsuite::handleInteractiveInput(info, "OK", "Skip", kOptionRight)) {
+		Testsuite::logPrintf("Info! Skipping test : Masked Cursors\n");
+		return kTestSkipped;
+	}
+
+	TestExitStatus passed = kTestPassed;
+	bool isFeaturePresent = g_system->hasFeature(OSystem::kFeatureCursorMask);
+	bool haveCursorPalettes = g_system->hasFeature(OSystem::kFeatureCursorPalette);
+	bool haveCursorAlpha = g_system->hasFeature(OSystem::kFeatureCursorAlpha);
+
+	g_system->delayMillis(1000);
+
+	if (isFeaturePresent) {
+		const byte cursorLeftColData[] = {
+			1, 1, 1,
+			0, 1, 0,
+			0, 1, 0,
+			0, 0, 0,
+
+			0, 1, 0,
+			1, 0, 1,
+			0, 1, 0,
+			0, 0, 0,
+
+			0, 1, 0,
+			0, 1, 0,
+			0, 1, 0,
+			0, 0, 0,
+
+			0, 1, 1,
+			1, 0, 0,
+			0, 1, 1,
+			0, 0, 0,
+		};
+
+		byte cursorData[16 * 16];
+		byte maskData[16 * 16];
+
+		for (int y = 0; y < 16; y++) {
+			for (int x = 0; x < 16; x++) {
+				// Fill cursor and mask with white transparent
+				cursorData[y * 16 + x] = 3;
+				maskData[y * 16 + x] = kCursorMaskTransparent;
+			}
+		}
+
+		for (int y = 12; y < 16; y++) {
+			for (int x = 5; x < 16; x++) {
+				// Fill color mask part with red
+				cursorData[y * 16 + x] = 2;
+			}
+		}
+
+		// Fill T O I C graphic
+		for (int y = 0; y < 16; y++)
+			for (int x = 0; x < 3; x++)
+				if (cursorLeftColData[y * 3 + x])
+					maskData[y * 16 + x + 1] = kCursorMaskOpaque;
+
+		// Fill middle column
+		for (int y = 0; y < 16; y++) {
+			for (int x = 0; x < 5; x++) {
+				maskData[y * 16 + x + 5] = kCursorMaskOpaque;
+			}
+		}
+
+		bool haveInverted = g_system->hasFeature(OSystem::kFeatureCursorMaskInvert);
+		bool haveColorXorBlend = g_system->hasFeature(OSystem::kFeatureCursorMaskPaletteXorColorXnor);
+
+		// Fill middle column
+		for (int y = 0; y < 16; y++) {
+			for (int x = 0; x < 4; x++) {
+				maskData[y * 16 + x + 5] = kCursorMaskOpaque;
+			}
+		}
+
+		for (int x = 0; x < 5; x++) {
+			for (int y = 0; y < 4; y++) {
+				maskData[(y + 0) * 16 + x + 11] = kCursorMaskTransparent;
+				maskData[(y + 4) * 16 + x + 11] = kCursorMaskOpaque;
+				maskData[(y + 8) * 16 + x + 11] = kCursorMaskInvert;
+				maskData[(y + 12) * 16 + x + 11] = kCursorMaskPaletteXorColorXnor;
+			}
+		}
+
+		// Mask out unsupported types
+		if (!haveInverted) {
+			for (int y = 8; y < 12; y++)
+				for (int x = 0; x < 16; x++)
+					maskData[y * 16 + x] = kCursorMaskTransparent;
+		}
+
+		if (!haveColorXorBlend) {
+			for (int y = 12; y < 16; y++)
+				for (int x = 0; x < 16; x++)
+					maskData[y * 16 + x] = kCursorMaskTransparent;
+		}
+
+		byte oldPalette[256 * 3];
+		g_system->getPaletteManager()->grabPalette(oldPalette, 0, 256);
+
+		byte newPalette[] = {0, 0, 0, 255, 255, 255, 255, 0, 0, 255, 255, 255};
+
+		g_system->getPaletteManager()->setPalette(newPalette, 0, 4);
+
+		if (haveCursorPalettes)
+			CursorMan.replaceCursorPalette(newPalette, 0, 4);
+
+		CursorMan.replaceCursor(cursorData, 16, 16, 1, 1, 0, false, nullptr, maskData);
+		CursorMan.showMouse(true);
+
+		bool waitingForClick = true;
+		while (waitingForClick) {
+			Common::Event event;
+			while (g_system->getEventManager()->pollEvent(event)) {
+				if (event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN) {
+					waitingForClick = false;
+				}
+			}
+
+			g_system->delayMillis(10);
+			g_system->updateScreen();
+		}
+
+		g_system->getPaletteManager()->setPalette(oldPalette, 0, 256);
+
+		if (!Testsuite::handleInteractiveInput("Was the part of the cursor to the right of the 'T' transparent?", "Yes", "No", kOptionLeft)) {
+			return kTestFailed;
+		}
+
+		if (!Testsuite::handleInteractiveInput("Was the part of the cursor to the right of the 'O' opaque?", "Yes", "No", kOptionLeft)) {
+			return kTestFailed;
+		}
+
+		if (haveInverted) {
+			if (!Testsuite::handleInteractiveInput("Was the part of the cursor to the right of the 'I' inverted?", "Yes", "No", kOptionLeft)) {
+				return kTestFailed;
+			}
+		}
+
+		if (haveColorXorBlend) {
+			if (!Testsuite::handleInteractiveInput("Was the part of the cursor to the right of the 'C' inverted according to the color to the left of it?", "Yes", "No", kOptionLeft)) {
+				return kTestFailed;
+			}
+		}
+
+		Common::String rgbInfo = "Try again with a cursor using RGB data?";
+
+		if (!Testsuite::handleInteractiveInput(rgbInfo, "OK", "Skip", kOptionRight)) {
+			if (haveCursorAlpha) {
+				g_system->delayMillis(500);
+
+				Graphics::PixelFormat rgbaFormat = Graphics::createPixelFormat<8888>();
+
+				uint32 rgbaCursorData[16 * 16];
+				for (uint i = 0; i < 16 * 16; i++) {
+					byte colorByte = cursorData[i];
+					byte r = newPalette[colorByte * 3 + 0];
+					byte g = newPalette[colorByte * 3 + 1];
+					byte b = newPalette[colorByte * 3 + 2];
+
+					rgbaCursorData[i] = rgbaFormat.ARGBToColor(255, r, g, b);
+				}
+
+				CursorMan.replaceCursor(rgbaCursorData, 16, 16, 1, 1, 0, false, &rgbaFormat, maskData);
+
+				waitingForClick = true;
+				while (waitingForClick) {
+					Common::Event event;
+					while (g_system->getEventManager()->pollEvent(event)) {
+						if (event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN) {
+							waitingForClick = false;
+						}
+					}
+
+					g_system->delayMillis(10);
+					g_system->updateScreen();
+				}
+
+				if (!Testsuite::handleInteractiveInput("Was the part of the cursor to the right of the 'T' transparent?", "Yes", "No", kOptionLeft)) {
+					return kTestFailed;
+				}
+
+				if (!Testsuite::handleInteractiveInput("Was the part of the cursor to the right of the 'O' opaque?", "Yes", "No", kOptionLeft)) {
+					return kTestFailed;
+				}
+
+				if (haveInverted) {
+					if (!Testsuite::handleInteractiveInput("Was the part of the cursor to the right of the 'I' inverted?", "Yes", "No", kOptionLeft)) {
+						return kTestFailed;
+					}
+				}
+
+				if (haveColorXorBlend) {
+					if (!Testsuite::handleInteractiveInput("Was the part of the cursor to the right of the 'C' inverted according to the color to the left of it?", "Yes", "No", kOptionLeft)) {
+						return kTestFailed;
+					}
+				}
+			} else {
+				Testsuite::displayMessage("feature not supported");
+			}
+		}
+
+		CursorMan.showMouse(false);
+	} else {
+		Testsuite::displayMessage("feature not supported");
+	}
+
+	g_system->delayMillis(500);
+
+	return passed;
+}
+
+/**
  * Tests automated mouse movements. "Warp" functionality provided by the backend.
  */
 
@@ -740,11 +1044,9 @@ TestExitStatus GFXtests::mouseMovements() {
 	}
 
 	// Draw Rectangle
-	Graphics::Surface *screen = g_system->lockScreen();
 	// Ensure that 2 represents red in current palette
 	GFXTestSuite::setCustomColor(255, 0, 0);
-	screen->fillRect(Common::Rect::center(106, 106, 14, 14), 2);
-	g_system->unlockScreen();
+	g_system->fillScreen(Common::Rect::center(106, 106, 14, 14), 2);
 
 	// Testing Mouse Movements now!
 	Common::Point pt(0, 10);
@@ -798,6 +1100,31 @@ TestExitStatus GFXtests::copyRectToScreen() {
 	uint y = g_system->getHeight() / 2 - 10;
 
 	g_system->copyRectToScreen(buffer, 40, x, y, 40, 20);
+
+	x = 10;
+	y = 10;
+
+	Graphics::Surface *screen = g_system->lockScreen();
+
+	const char *text = "d";
+	const Graphics::BdfFont *origFont = (const Graphics::BdfFont *)FontMan.getFontByName("helvB12.bdf");
+
+	for (int i = origFont->getFontHeight(); i <= 20; i++) {
+
+		//const Graphics::BdfFont *font = Graphics::BdfFont::scaleFont(origFont, i);
+		const Graphics::BdfFont *font = origFont;
+		int width = font->getStringWidth(text);
+
+		Common::Rect bbox = font->getBoundingBox(text, x, y, g_system->getWidth());
+		screen->frameRect(bbox, 15);
+
+		font->drawString(screen, text, x, y, width, kColorCustom);
+
+		x += width + 1;
+	}
+
+	g_system->unlockScreen();
+
 	g_system->updateScreen();
 	g_system->delayMillis(1000);
 
@@ -989,38 +1316,42 @@ TestExitStatus GFXtests::shakingEffect() {
 		case 0:
 			direction = "vertical";
 			shakeXOffset = 0;
-			shakeYOffset = 25;
+			shakeYOffset = 10;
 			break;
 		case 1:
 			direction = "horizontal";
-			shakeXOffset = 25;
+			shakeXOffset = 10;
 			shakeYOffset = 0;
 			break;
 		default:
 			direction = "diagonal";
-			shakeXOffset = 25;
-			shakeYOffset = 25;
+			shakeXOffset = 10;
+			shakeYOffset = 10;
 			break;
 		}
 
-		Testsuite::writeOnScreen(Common::String::format("If Shaking Effect works, this should shake %s", direction.c_str()), pt);
-		int times = 15;
+		Testsuite::writeOnScreen(Common::String::format("If Shaking Effect works, this should shake %s", direction.c_str()), pt, kWriteDrawFrame);
+		int times = 8;
 		while (times--) {
 			g_system->setShakePos(shakeXOffset, shakeYOffset);
-			g_system->delayMillis(50);
+			g_system->delayMillis(100);
 			g_system->updateScreen();
 			g_system->setShakePos(0, 0);
-			g_system->delayMillis(50);
+			g_system->delayMillis(100);
 			g_system->updateScreen();
+			shakeXOffset = -shakeXOffset;
+			shakeYOffset = -shakeYOffset;
 		}
 		g_system->delayMillis(1500);
 
 		if (Testsuite::handleInteractiveInput("Did the Shaking test work as you were expecting?", "Yes", "No", kOptionRight)) {
 			Testsuite::logDetailedPrintf("Shaking Effect didn't work");
+			Testsuite::clearEntireScreen();
 			return kTestFailed;
 		}
 	}
 
+	Testsuite::clearEntireScreen();
 	return kTestPassed;
 }
 
@@ -1037,7 +1368,6 @@ TestExitStatus GFXtests::focusRectangle() {
 
 	const Graphics::Font &font(*FontMan.getFontByUsage(Graphics::FontManager::kConsoleFont));
 
-	Graphics::Surface *screen = g_system->lockScreen();
 	int screenHeight = g_system->getHeight();
 	int screenWidth = g_system->getWidth();
 
@@ -1045,11 +1375,13 @@ TestExitStatus GFXtests::focusRectangle() {
 	int width = screenWidth / 2;
 
 	Common::Rect rectLeft(0, 0, width, height * 2);
-	screen->fillRect(rectLeft, kColorWhite);
-	font.drawString(screen, "Focus 1", rectLeft.left, rectLeft.top, width, kColorBlack, Graphics::kTextAlignLeft);
+	g_system->fillScreen(rectLeft, kColorWhite);
 
 	Common::Rect rectRight(screenWidth - width, screenHeight - height * 2 , screenWidth, screenHeight);
-	screen->fillRect(rectRight, kColorWhite);
+	g_system->fillScreen(rectRight, kColorWhite);
+
+	Graphics::Surface *screen = g_system->lockScreen();
+	font.drawString(screen, "Focus 1", rectLeft.left, rectLeft.top, width, kColorBlack, Graphics::kTextAlignLeft);
 	font.drawString(screen, "Focus 2", rectRight.left, rectRight.top, width, kColorBlack, Graphics::kTextAlignRight);
 	g_system->unlockScreen();
 	g_system->updateScreen();
@@ -1297,7 +1629,7 @@ TestExitStatus GFXtests::pixelFormats(Common::List<Graphics::PixelFormat> &pfLis
 			showPixelFormat(Graphics::PixelFormat::createFormatCLUT8(), iter->aLoss);
 
 			Common::Point pt(0, 170);
-			Testsuite::writeOnScreen("Example displayed with Pixel Format CLUT8", pt, false);
+			Testsuite::writeOnScreen("Example displayed with Pixel Format CLUT8", pt, kWriteNoFlag);
 
 			Common::String tutorial;
 			tutorial = Common::String::format("Testing a group of Pixel Formats with %d-bit alpha channel.\nPlease, memorize the pattern displayed in the frame above.", 8 - iter->aLoss);
@@ -1321,7 +1653,7 @@ TestExitStatus GFXtests::pixelFormats(Common::List<Graphics::PixelFormat> &pfLis
 		Common::Point pt(0, 170);
 		Common::String msg;
 		msg = Common::String::format("Testing Pixel Format %s, %d of %d", iter->toString().c_str(), numFormatsTested, pfList.size());
-		Testsuite::writeOnScreen(msg, pt, true);
+		Testsuite::writeOnScreen(msg, pt, kWriteRGBColors);
 
 		g_system->delayMillis(500);
 
@@ -1382,7 +1714,7 @@ void GFXtests::showPixelFormat(const Graphics::PixelFormat &pf, uint aLoss) {
 
 	const uint nTones = nLevels * (nLevels - 1) / 2;
 	const uint paletteSize = nStdColors + nColors * nTones;
-	STATIC_ASSERT(paletteSize < 256, cant_fit_all_the_tones_into_CLUT8_palettes);
+	static_assert(paletteSize < 256, "can't fit all the tones into CLUT8 palettes");
 
 	uint level[nLevels];
 	for (uint i = 0; i < nLevels - 1; i++) {
@@ -1405,6 +1737,7 @@ void GFXtests::showPixelFormat(const Graphics::PixelFormat &pf, uint aLoss) {
 	Graphics::Surface *screen = g_system->lockScreen();
 	Graphics::ManagedSurface dstSurface(screen->w, screen->h, screen->format);
 	dstSurface.blitFrom(*screen);
+	g_system->unlockScreen();
 
 
 	// Init palette, if we are demonstating a CLUT8 preview
@@ -1511,8 +1844,82 @@ void GFXtests::showPixelFormat(const Graphics::PixelFormat &pf, uint aLoss) {
 
 	g_system->copyRectToScreen(dstSurface.getPixels(), dstSurface.pitch, 0, 0,
 	                           dstSurface.w, dstSurface.h);
-	g_system->unlockScreen();
 	g_system->updateScreen();
+}
+
+TestExitStatus GFXtests::shaderCompatibility() {
+	// Check if shaders are supported
+	if (!g_system->hasFeature(OSystem::kFeatureShaders)) {
+		Testsuite::logPrintf("Info! Shaders are not supported on this platform.\n");
+		return kTestSkipped;
+	}
+
+	Testsuite::logPrintf("Info! Testing all available shaders from shaders.dat\n");
+
+	// List all shader files
+	Common::ArchiveMemberList files;
+	Common::SearchSet shaderSet;
+	const char *kFileMask = "*.glslp";
+
+	// Get the shaders archive
+	Common::generateZipSet(shaderSet, "shaders.dat", "shaders*.dat");
+	shaderSet.listMatchingMembers(files, kFileMask, true);
+	Common::sort(files.begin(), files.end(), Common::ArchiveMemberListComparator());
+
+	Common::StringArray brokenShaders;
+	int totalShaders = 0;
+	int workingShaders = 0;
+
+	Testsuite::logPrintf("Testing %d shader(s)...\n", files.size());
+
+	// Test each shader
+	for (auto &file : files) {
+		totalShaders++;
+		g_system->beginGFXTransaction();
+		Common::Path filename = Common::Path(file->getPathInArchive().toString().decode());
+		Testsuite::logDetailedPrintf("Testing shader: '%s'\n", filename.toString().c_str());
+		g_system->setShader(filename);
+		OSystem::TransactionError gfxError = g_system->endGFXTransaction();
+		if (gfxError & OSystem::kTransactionShaderChangeFailed) {
+			Testsuite::logDetailedPrintf("  Failed: Shader '%s' is incompatible\n", filename.toString().c_str());
+			brokenShaders.push_back(file->getPathInArchive().toString().decode());
+		} else {
+			Testsuite::logDetailedPrintf("  Passed: Shader '%s' loaded successfully\n", filename.toString().c_str());
+			workingShaders++;
+		}
+	}
+
+	// Reset shader to configured value
+	g_system->beginGFXTransaction();
+	g_system->setShader(ConfMan.getPath("shader"));
+	g_system->endGFXTransaction();
+
+	// Report results
+	Testsuite::logPrintf("\nShader Test Results:\n");
+	Testsuite::logPrintf("  Total shaders tested: %d\n", totalShaders);
+	Testsuite::logPrintf("  Working shaders: %d\n", workingShaders);
+	Testsuite::logPrintf("  Broken shaders: %d\n", brokenShaders.size());
+
+	if (!brokenShaders.empty()) {
+		Common::String listStr = "";
+		for (Common::String &shader : brokenShaders) {
+			listStr += shader + " ";
+		}
+		Testsuite::logPrintf("\nBroken shaders in archive, remove with:\n");
+		Testsuite::logPrintf("  zip -d shaders.dat %s\n", listStr.c_str());
+
+		// Also print to warning for visibility
+		warning("Broken shaders in archive, remove with: zip -d shaders.dat %s", listStr.c_str());
+	}
+
+	// Test passes if all shaders work, fails if any are broken
+	if (brokenShaders.empty()) {
+		Testsuite::logPrintf("\nAll shaders are compatible!\n");
+		return kTestPassed;
+	} else {
+		Testsuite::logPrintf("\nSome shaders are incompatible.\n");
+		return kTestFailed;
+	}
 }
 
 } // End of namespace Testbed

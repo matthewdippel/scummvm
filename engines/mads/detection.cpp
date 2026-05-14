@@ -24,7 +24,6 @@
 #include "common/str-array.h"
 #include "engines/advancedDetector.h"
 #include "common/system.h"
-#include "common/translation.h"
 
 #include "mads/detection.h"
 #include "mads/mads.h"
@@ -33,6 +32,7 @@ static const PlainGameDescriptor MADSGames[] = {
 	{"dragonsphere", "Dragonsphere"},
 	{"nebular", "Rex Nebular and the Cosmic Gender Bender"},
 	{"phantom", "Return of the Phantom"},
+	{"forest", "Once Upon a Forest"},
 	{nullptr, nullptr}
 };
 
@@ -40,110 +40,23 @@ static const DebugChannelDef debugFlagList[] = {
 	{MADS::kDebugPath, "Path", "Pathfinding debug level"},
 	{MADS::kDebugScripts, "scripts", "Game scripts"},
 	{MADS::kDebugGraphics, "graphics", "Graphics handling"},
+	{MADS::kDebugConversations, "conv", "Game conversations"},
 	DEBUG_CHANNEL_END
 };
 
-#define GAMEOPTION_EASY_MOUSE          GUIO_GAMEOPTIONS1
-#define GAMEOPTION_ANIMATED_INVENTORY  GUIO_GAMEOPTIONS2
-#define GAMEOPTION_ANIMATED_INTERFACE  GUIO_GAMEOPTIONS3
-#define GAMEOPTION_NAUGHTY_MODE        GUIO_GAMEOPTIONS4
-//#define GAMEOPTION_GRAPHICS_DITHERING  GUIO_GAMEOPTIONS5
-
-#ifdef USE_TTS
-#define GAMEOPTION_TTS_NARRATOR 	GUIO_GAMEOPTIONS5
-#endif
-
 #include "mads/detection_tables.h"
 
-static const ADExtraGuiOptionsMap optionsList[] = {
-	{
-		GAMEOPTION_EASY_MOUSE,
-		{
-			_s("Easy mouse interface"),
-			_s("Shows object names when hovering the mouse over them"),
-			"EasyMouse",
-			true,
-			0,
-			0
-		}
-	},
-
-	{
-		GAMEOPTION_ANIMATED_INVENTORY,
-		{
-			_s("Animated inventory items"),
-			_s("Animated inventory items"),
-			"InvObjectsAnimated",
-			true,
-			0,
-			0
-		}
-	},
-
-	{
-		GAMEOPTION_ANIMATED_INTERFACE,
-		{
-			_s("Animated game interface"),
-			_s("Animated game interface"),
-			"TextWindowAnimated",
-			true,
-			0,
-			0
-		}
-	},
-
-	{
-		GAMEOPTION_NAUGHTY_MODE,
-		{
-			_s("Naughty game mode"),
-			_s("Naughty game mode"),
-			"NaughtyMode",
-			true,
-			0,
-			0
-		}
-	},
-
-	/*{
-		GAMEOPTION_GRAPHICS_DITHERING,
-		{
-			_s("Graphics dithering"),
-			_s("Graphics dithering"),
-			"GraphicsDithering",
-			true,
-			0,
-			0
-		}
-	},*/
-
-#ifdef USE_TTS
-	{
-		GAMEOPTION_TTS_NARRATOR,
-		{
-			_s("TTS Narrator"),
-			_s("Use TTS to read the descriptions (if TTS is available)"),
-			"tts_narrator",
-			false,
-			0,
-			0
-		}
-	},
-#endif
-
-	AD_EXTRA_GUI_OPTIONS_TERMINATOR
-};
-
-class MADSMetaEngineDetection : public AdvancedMetaEngineDetection {
+class MADSMetaEngineDetection : public AdvancedMetaEngineDetection<MADS::MADSGameDescription> {
 public:
-	MADSMetaEngineDetection() : AdvancedMetaEngineDetection(MADS::gameDescriptions, sizeof(MADS::MADSGameDescription), MADSGames, optionsList) {
+	MADSMetaEngineDetection() : AdvancedMetaEngineDetection(MADS::gameDescriptions, MADSGames) {
 		_maxScanDepth = 3;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "mads";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "MADS";
 	}
 

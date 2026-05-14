@@ -63,7 +63,9 @@ bool ItemSelectionProcess::selectNextItem(bool grab) {
 	if (!mainactor || !currentmap)
 		return false;
 
-	mainactor->getCentre(_ax, _ay, _az);
+	Point3 pt = mainactor->getCentre();
+	_ax = pt.x;
+	_ay = pt.y;
 	_az = mainactor->getZ();
 
 	UCList uclist(2);
@@ -71,7 +73,7 @@ bool ItemSelectionProcess::selectNextItem(bool grab) {
 	currentmap->areaSearch(&uclist, script, sizeof(script),
 						   mainactor, 0x200, false);
 
-	Std::vector<Item *> candidates;
+	Common::Array<Item *> candidates;
 
 	for (unsigned int i = 0; i < uclist.getSize(); ++i) {
 		ObjId itemid = uclist.getuint16(i);
@@ -91,10 +93,9 @@ bool ItemSelectionProcess::selectNextItem(bool grab) {
 			family == ShapeInfo::SF_CRUINVITEM ||
 			(info && (info->_flags & ShapeInfo::SI_CRU_SELECTABLE))) {
 
-			int32 cx, cy, cz;
-			item->getCentre(cx, cy, cz);
+			Point3 c = item->getCentre();
 			int32 iz = item->getZ();
-			if (abs(cx - _ax) > 0x100 || abs(cy - _ay) > 0x100 ||
+			if (abs(c.x - _ax) > 0x100 || abs(c.y - _ay) > 0x100 ||
 				(iz - _az) >= 0x50 || (_az - iz) >= 0x18)
 				continue;
 
@@ -129,10 +130,8 @@ bool ItemSelectionProcess::selectNextItem(bool grab) {
 	if (_selectedItem) {
 		// Pick the next item
 		int offset = 0;
-		for (Std::vector<Item *>::const_iterator iter = candidates.begin();
-			 iter != candidates.end();
-			 offset++, iter++) {
-			ObjId num = (*iter)->getObjId();
+		for (const auto *c : candidates) {
+			ObjId num = c->getObjId();
 			if (_selectedItem == num) {
 				offset++;
 				break;
@@ -171,9 +170,8 @@ void ItemSelectionProcess::avatarMoved() {
 
 	// Only clear if actor has moved a little
 	if (item && mainactor) {
-		int32 ax, ay, az;
-		mainactor->getCentre(ax, ay, az);
-		uint32 range = MAX(abs(ax - _ax), MAX(abs(ay - _ay), abs(az - _az)));
+		Point3 a = mainactor->getCentre();
+		uint32 range = MAX(abs(a.x - _ax), MAX(abs(a.y - _ay), abs(a.z - _az)));
 		if (range > 16)
 			clearSelection();
 	}
@@ -192,16 +190,15 @@ void ItemSelectionProcess::clearSelection() {
 
 void ItemSelectionProcess::putItemSelectionOnItem(Item *item) {
 	assert(item);
-	int32 x, y, z;
 
 	clearSelection();
 
-	item->getCentre(x, y, z);
+	Point3 pt = item->getCentre();
 	_selectedItem = item->getObjId();
 
 	Item *sprite = ItemFactory::createItem(SELECTOR_SHAPE, 0, 0, Item::FLG_DISPOSABLE,
 										   0, 0, Item::EXT_SPRITE, true);
-	sprite->move(x, y, z);
+	sprite->move(pt);
 	setItemNum(sprite->getObjId());
 }
 
@@ -220,7 +217,7 @@ bool ItemSelectionProcess::loadData(Common::ReadStream *rs, uint32 version) {
 	_ax = rs->readSint32LE();
 	_ay = rs->readSint32LE();
 	_az = rs->readSint32LE();
-	_type = 1; // should be persistant but older savegames may not know that.
+	_type = 1; // should be persistent but older savegames may not know that.
 	return true;
 }
 

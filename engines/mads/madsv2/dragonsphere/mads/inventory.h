@@ -1,0 +1,61 @@
+/* ScummVM - Graphic Adventure Engine
+ *
+ * ScummVM is the legal property of its developers, whose names
+ * are too numerous to list here. Please refer to the COPYRIGHT
+ * file distributed with this source distribution.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
+
+#ifndef MADS_DRAGONSPHERE_MADS_INVENTORY_H
+#define MADS_DRAGONSPHERE_MADS_INVENTORY_H
+
+#include "common/scummsys.h"
+
+namespace MADS {
+namespace MADSV2 {
+namespace Dragonsphere {
+
+enum {
+	bird_figurine    =  1,
+	shieldstone      =  3,
+	sword            =  4,
+	goblet           =  5,
+	bone             =  6,
+	fruit            =  7,
+	pid_doll         =  8,
+	key_crown        = 13,
+	statue           = 15,
+	soul_egg         = 17,
+	magic_belt       = 18,
+	amulet           = 19,
+	crystal_ball     = 29,
+	soptus_soporific = 31,
+	shifter_ring     = 32,
+	tentacle_parts   = 36,
+	rare_coin        = 38,
+	crystal_flower   = 39,
+	ruby_ring        = 41,
+	gold_nugget      = 42,
+	magic_music_box  = 43,
+	emerald          = 44,
+	piece_of_paper   = 45
+};
+
+} // namespace Dragonsphere
+} // namespace MADSV2
+} // namespace MADS
+
+#endif

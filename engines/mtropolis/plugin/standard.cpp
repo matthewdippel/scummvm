@@ -22,11 +22,16 @@
 #include "common/random.h"
 #include "common/config-manager.h"
 #include "common/file.h"
+#include "common/macresman.h"
+#include "common/translation.h"
 
-#include "audio/mididrv.h"
-#include "audio/midiplayer.h"
-#include "audio/midiparser.h"
-#include "audio/midiparser_smf.h"
+#include "gui/dialog.h"
+#include "gui/imagealbum-dialog.h"
+
+#include "graphics/palette.h"
+
+#include "image/bmp.h"
+#include "image/pict.h"
 
 #include "mtropolis/miniscript.h"
 #include "mtropolis/plugin/standard.h"
@@ -38,1524 +43,7 @@ namespace MTropolis {
 
 namespace Standard {
 
-class MultiMidiPlayer;
-
-// I guess this follows QuickTime quirks, but basically, mTropolis pipes multiple inputs to a single
-// output device, and is totally cool with multiple devices stomping each other.
-//
-// Obsidian actually has a timer that plays a MIDI file that fires AllNoteOff on every channel every
-// 30 seconds, presumably to work around stuck notes, along with workarounds for the workaround,
-// i.e. the intro sequence has a silent part exactly 30 seconds in timed to sync up with the mute.
-//
-// NOTE: Due to SharedPtr not currently being atomic, MidiFilePlayers MUST BE DESTROYED ON THE
-// MAIN THREAD so there is no contention over the file refcount.
-class MidiFilePlayer {
-public:
-	virtual ~MidiFilePlayer();
-};
-
-class MidiNotePlayer {
-public:
-	virtual ~MidiNotePlayer();
-};
-
-class MidiCombinerSource : public MidiDriver_BASE {
-public:
-	virtual ~MidiCombinerSource();
-
-	// Do not call this directly, it's not thread-safe, expose via MultiMidiPlayer
-	virtual void setVolume(uint8 volume) = 0;
-	virtual void detach() = 0;
-};
-
-MidiCombinerSource::~MidiCombinerSource() {
-}
-
-class MidiCombiner {
-public:
-	virtual ~MidiCombiner();
-
-	virtual Common::SharedPtr<MidiCombinerSource> createSource() = 0;
-};
-
-MidiCombiner::~MidiCombiner() {
-}
-
-class MidiParser_MTropolis : public MidiParser_SMF {
-public:
-	MidiParser_MTropolis(bool hasTempoOverride, double tempoOverride, uint16 mutedTracks);
-
-	void setTempo(uint32 tempo) override;
-
-	void setTempoOverride(double tempoOverride);
-	void setMutedTracks(uint16 mutedTracks);
-
-protected:
-	bool processEvent(const EventInfo &info, bool fireEvents) override;
-
-private:
-	double _tempoOverride;
-	uint16 _mutedTracks;
-	bool _hasTempoOverride;
-};
-
-MidiParser_MTropolis::MidiParser_MTropolis(bool hasTempoOverride, double tempoOverride, uint16 mutedTracks)
-	: _hasTempoOverride(hasTempoOverride), _tempoOverride(tempoOverride), _mutedTracks(mutedTracks) {
-}
-
-void MidiParser_MTropolis::setTempo(uint32 tempo) {
-	if (_hasTempoOverride)
-		return;
-
-	MidiParser_SMF::setTempo(tempo);
-}
-
-void MidiParser_MTropolis::setTempoOverride(double tempoOverride) {
-	_hasTempoOverride = true;
-
-	if (tempoOverride < 1.0)
-		tempoOverride = 1.0;
-
-	_tempoOverride = tempoOverride;
-
-	uint32 convertedTempo = static_cast<uint32>(60000000.0 / tempoOverride);
-
-	MidiParser_SMF::setTempo(convertedTempo);
-}
-
-void MidiParser_MTropolis::setMutedTracks(uint16 mutedTracks) {
-	_mutedTracks = mutedTracks;
-}
-
-bool MidiParser_MTropolis::processEvent(const EventInfo &info, bool fireEvents) {
-	if ((info.event & 0xf0) == MidiDriver_BASE::MIDI_COMMAND_NOTE_ON) {
-		int track = _noteChannelToTrack[info.event & 0xf];
-		if (track >= 0 && (_mutedTracks & (1 << track)))
-			return true;
-	}
-
-	return MidiParser_SMF::processEvent(info, fireEvents);
-}
-
-class MidiFilePlayerImpl : public MidiFilePlayer {
-public:
-	explicit MidiFilePlayerImpl(const Common::SharedPtr<MidiCombinerSource> &outputDriver, const Common::SharedPtr<Data::Standard::MidiModifier::EmbeddedFile> &file, uint32 baseTempo, bool hasTempoOverride, double tempoOverride, uint8 volume, bool loop, uint16 mutedTracks);
-	~MidiFilePlayerImpl();
-
-	// Do not call any of these directly since they're not thread-safe, expose them via MultiMidiPlayer
-	void stop();
-	void play();
-	void pause();
-	void resume();
-	void setVolume(uint8 volume);
-	void setLoop(bool loop);
-	void setTempoOverride(double tempo);
-	void setMutedTracks(uint16 mutedTracks);
-	void detach();
-	void onTimer();
-
-private:
-	Common::SharedPtr<Data::Standard::MidiModifier::EmbeddedFile> _file;
-	Common::SharedPtr<MidiParser_MTropolis> _parser;
-	Common::SharedPtr<MidiCombinerSource> _outputDriver;
-	uint16 _mutedTracks;
-	bool _loop;
-};
-
-class MidiNotePlayerImpl : public MidiNotePlayer {
-public:
-	explicit MidiNotePlayerImpl(const Common::SharedPtr<MidiCombinerSource> &outputDriver, uint32 timerRate);
-	~MidiNotePlayerImpl();
-
-	// Do not call any of these directly since they're not thread-safe, expose them via MultiMidiPlayer
-	void onTimer();
-	void play(uint8 volume, uint8 channel, uint8 program, uint8 note, uint8 velocity, double duration);
-	void stop();
-	void detach();
-
-private:
-	Common::SharedPtr<MidiCombinerSource> _outputDriver;
-	uint64 _durationRemaining;
-	uint32 _timerRate;
-	uint8 _channel;
-	uint8 _note;
-	uint8 _volume;
-	uint8 _program;
-
-	bool _initialized;
-};
-
-class MultiMidiPlayer : public Audio::MidiPlayer {
-public:
-	explicit MultiMidiPlayer(bool useDynamicMidiMixer);
-	~MultiMidiPlayer();
-
-	MidiFilePlayer *createFilePlayer(const Common::SharedPtr<Data::Standard::MidiModifier::EmbeddedFile> &file, bool hasTempoOverride, double tempoOverride, uint8 volume, bool loop, uint16 mutedTracks);
-	MidiNotePlayer *createNotePlayer();
-	void deleteFilePlayer(MidiFilePlayer *player);
-	void deleteNotePlayer(MidiNotePlayer *player);
-
-	Common::SharedPtr<MidiCombinerSource> createSource();
-
-	void setPlayerVolume(MidiFilePlayer *player, uint8 volume);
-	void setPlayerLoop(MidiFilePlayer *player, bool loop);
-	void setPlayerTempo(MidiFilePlayer *player, double tempo);
-	void setPlayerMutedTracks(MidiFilePlayer *player, uint16 mutedTracks);
-	void stopPlayer(MidiFilePlayer *player);
-	void playPlayer(MidiFilePlayer *player);
-	void pausePlayer(MidiFilePlayer *player);
-	void resumePlayer(MidiFilePlayer *player);
-
-	void playNote(MidiNotePlayer *player, uint8 volume, uint8 channel, uint8 program, uint8 note, uint8 velocity, double duration);
-	void stopNote(MidiNotePlayer *player);
-
-	uint32 getBaseTempo() const;
-
-	void send(uint32 b) override;
-
-private:
-	void onTimer() override;
-
-	static void timerCallback(void *refCon);
-
-	Common::Mutex _mutex;
-	Common::Array<Common::SharedPtr<MidiFilePlayerImpl> > _filePlayers;
-	Common::Array<Common::SharedPtr<MidiNotePlayerImpl> > _notePlayers;
-	Common::SharedPtr<MidiCombiner> _combiner;
-};
-
-MidiFilePlayer::~MidiFilePlayer() {
-}
-
-MidiNotePlayer::~MidiNotePlayer() {
-}
-
-MidiFilePlayerImpl::MidiFilePlayerImpl(const Common::SharedPtr<MidiCombinerSource> &outputDriver, const Common::SharedPtr<Data::Standard::MidiModifier::EmbeddedFile> &file, uint32 baseTempo, bool hasTempoOverride, double tempo, uint8 volume, bool loop, uint16 mutedTracks)
-	: _file(file), _outputDriver(outputDriver), _parser(nullptr), _loop(loop), _mutedTracks(mutedTracks) {
-	Common::SharedPtr<MidiParser_MTropolis> parser(new MidiParser_MTropolis(hasTempoOverride, tempo, mutedTracks));
-
-	if (file->contents.size() != 0 && parser->loadMusic(&file->contents[0], file->contents.size())) {
-		_parser = parser;
-
-		parser->setTrack(0);
-		parser->startPlaying();
-		parser->setMidiDriver(outputDriver.get());
-		parser->setTimerRate(baseTempo);
-		parser->property(MidiParser::mpAutoLoop, loop ? 1 : 0);
-	}
-}
-
-MidiFilePlayerImpl::~MidiFilePlayerImpl() {
-	assert(!_parser); // Call detach first!
-}
-
-void MidiFilePlayerImpl::stop() {
-	_parser->stopPlaying();
-}
-
-void MidiFilePlayerImpl::play() {
-	_parser->startPlaying();
-}
-
-void MidiFilePlayerImpl::pause() {
-	_parser->pausePlaying();
-}
-
-void MidiFilePlayerImpl::resume() {
-	_parser->resumePlaying();
-}
-
-void MidiFilePlayerImpl::setVolume(uint8 volume) {
-	_outputDriver->setVolume(volume);
-}
-
-void MidiFilePlayerImpl::setMutedTracks(uint16 mutedTracks) {
-	_mutedTracks = mutedTracks;
-	_parser->setMutedTracks(mutedTracks);
-}
-
-void MidiFilePlayerImpl::setLoop(bool loop) {
-	_loop = loop;
-	_parser->property(MidiParser::mpAutoLoop, loop ? 1 : 0);
-}
-
-void MidiFilePlayerImpl::setTempoOverride(double tempo) {
-	_parser->setTempoOverride(tempo);
-}
-
-void MidiFilePlayerImpl::detach() {
-	if (_parser) {
-		_parser->setMidiDriver(nullptr);
-		_parser.reset();
-	}
-
-	if (_outputDriver) {
-		_outputDriver->detach();
-		_outputDriver.reset();
-	}
-}
-
-void MidiFilePlayerImpl::onTimer() {
-	if (_parser)
-		_parser->onTimer();
-}
-
-MidiNotePlayerImpl::MidiNotePlayerImpl(const Common::SharedPtr<MidiCombinerSource> &outputDriver, uint32 timerRate)
-	: _timerRate(timerRate), _durationRemaining(0), _outputDriver(outputDriver), _channel(0), _note(0), _program(0), _initialized(false) {
-}
-
-MidiNotePlayerImpl::~MidiNotePlayerImpl() {
-}
-
-void MidiNotePlayerImpl::onTimer() {
-	if (_durationRemaining > 0) {
-		if (_durationRemaining <= _timerRate) {
-			stop();
-			assert(_durationRemaining == 0);
-		} else {
-			_durationRemaining -= _timerRate;
-		}
-	}
-}
-
-void MidiNotePlayerImpl::play(uint8 volume, uint8 channel, uint8 program, uint8 note, uint8 velocity, double duration) {
-	if (duration < 0.000001)
-		return;
-
-	if (_durationRemaining)
-		stop();
-
-	_initialized = true;
-
-	_durationRemaining = static_cast<uint64>(duration * 1000000);
-	_channel = channel;
-	_note = note;
-	_volume = volume;
-
-	const uint16 hpVolume = volume * 0x3fff / 100;
-
-	_outputDriver->send(MidiDriver_BASE::MIDI_COMMAND_PROGRAM_CHANGE | _channel, program, 0);
-	_outputDriver->send(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE | _channel, MidiDriver_BASE::MIDI_CONTROLLER_EXPRESSION, 127);
-	_outputDriver->send(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE | _channel, MidiDriver_BASE::MIDI_CONTROLLER_REVERB, 0);
-	_outputDriver->send(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE | _channel, MidiDriver_BASE::MIDI_CONTROLLER_VOLUME, (hpVolume >> 7) & 0x7f);
-	_outputDriver->send(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE | _channel, MidiDriver_BASE::MIDI_CONTROLLER_VOLUME + 32, hpVolume & 0x7f);
-	_outputDriver->send(MidiDriver_BASE::MIDI_COMMAND_NOTE_ON | _channel, note, velocity);
-}
-
-void MidiNotePlayerImpl::stop() {
-	if (!_durationRemaining)
-		return;
-
-	_durationRemaining = 0;
-	_outputDriver->send(MidiDriver_BASE::MIDI_COMMAND_NOTE_OFF | _channel, _note, 0);
-}
-
-void MidiNotePlayerImpl::detach() {
-	if (_outputDriver) {
-		if (_durationRemaining)
-			stop();
-
-		_outputDriver->detach();
-		_outputDriver.reset();
-	}
-}
-
-// Simple combiner - Behaves "QuickTime-like" and all commands are passed through directly.
-// This applies volume by modulating note velocity.
-class MidiCombinerSimple;
-
-class MidiCombinerSourceSimple : public MidiCombinerSource {
-public:
-	explicit MidiCombinerSourceSimple(MidiCombinerSimple *combiner);
-
-	void setVolume(uint8 volume) override;
-	void detach() override;
-	void send(uint32 b) override;
-
-private:
-	MidiCombinerSimple *_combiner;
-	uint8 _volume;
-};
-
-class MidiCombinerSimple : public MidiCombiner {
-public:
-	explicit MidiCombinerSimple(MidiDriver_BASE *outputDriver);
-
-	Common::SharedPtr<MidiCombinerSource> createSource() override;
-
-	void send(uint32 b);
-
-private:
-	MidiDriver_BASE *_outputDriver;
-};
-
-
-MidiCombinerSourceSimple::MidiCombinerSourceSimple(MidiCombinerSimple *combiner) : _combiner(combiner), _volume(255) {
-}
-
-void MidiCombinerSourceSimple::setVolume(uint8 volume) {
-	_volume = volume;
-}
-
-void MidiCombinerSourceSimple::detach() {
-}
-
-void MidiCombinerSourceSimple::send(uint32 b) {
-	byte command = (b & 0xF0);
-
-	if (command == MIDI_COMMAND_NOTE_ON || command == MIDI_COMMAND_NOTE_OFF) {
-		byte velocity = (b >> 16) & 0xFF;
-		velocity = (velocity * _volume * 257 + 256) >> 16;
-		b = (b & 0xff00ffff) | (velocity << 16);
-	}
-
-	_combiner->send(b);
-}
-
-MidiCombinerSimple::MidiCombinerSimple(MidiDriver_BASE *outputDriver) : _outputDriver(outputDriver) {
-}
-
-Common::SharedPtr<MidiCombinerSource> MidiCombinerSimple::createSource() {
-	return Common::SharedPtr<MidiCombinerSource>(new MidiCombinerSourceSimple(this));
-}
-
-void MidiCombinerSimple::send(uint32 b) {
-	_outputDriver->send(b);
-}
-
-
-// Dynamic combiner - Dynamic channel allocation, accurate volume control
-class MidiCombinerDynamic;
-
-class MidiCombinerSourceDynamic : public MidiCombinerSource {
-public:
-	MidiCombinerSourceDynamic(MidiCombinerDynamic *combiner, uint sourceID);
-	~MidiCombinerSourceDynamic();
-
-	void setVolume(uint8 volume) override;
-	void send(uint32 b) override;
-
-	void detach() override;
-
-private:
-	MidiCombinerDynamic *_combiner;
-	uint _sourceID;
-};
-
-class MidiCombinerDynamic : public MidiCombiner {
-public:
-	MidiCombinerDynamic(MidiDriver_BASE *outputDriver);
-
-	Common::SharedPtr<MidiCombinerSource> createSource() override;
-
-	void deallocateSource(uint sourceID);
-
-	void setSourceVolume(uint sourceID, uint8 volume);
-	void sendFromSource(uint sourceID, uint32 b);
-	void sendFromSource(uint sourceID, uint8 cmd, uint8 channel, uint8 param1, uint8 param2);
-
-private:
-	static const uint kMSBMask = 0x3f80u;
-	static const uint kLSBMask = 0x7fu;
-	static const uint kLRControllerStart = 64;
-	static const uint kSostenutoOnThreshold = 64;
-	static const uint kSustainOnThreshold = 64;
-
-	enum DataEntryState {
-		kDataEntryStateNone,
-		kDataEntryStateRPN,
-		kDataEntryStateNRPN,
-	};
-
-	struct MidiChannelState {
-		MidiChannelState();
-
-		void reset();
-		void softReset();	// Executes changes corresponding to Reset All Controllers message
-
-		uint16 _program;
-		uint16 _aftertouch;
-		uint16 _pitchBend;
-		uint16 _rpnNumber;
-		uint16 _nrpnNumber;
-		DataEntryState _dataEntryState;
-
-		uint16 _hrControllers[32];
-		uint8 _lrControllers[32];
-
-		uint16 _registeredParams[5];
-	};
-
-	struct SourceChannelState {
-		SourceChannelState();
-		void reset();
-
-		MidiChannelState _midiChannelState;
-	};
-
-	struct SourceState {
-		SourceState();
-
-		void allocate();
-		void deallocate();
-
-		SourceChannelState _sourceChannelState[MidiDriver_BASE::MIDI_CHANNEL_COUNT];
-		uint16 _root4MasterVolume;
-		bool _isAllocated;
-	};
-
-	struct OutputChannelState {
-		OutputChannelState();
-
-		bool _hasSource;
-		bool _volumeIsAmbiguous;
-		uint _sourceID;
-		uint _channelID;
-		uint _noteOffCounter;
-
-		MidiChannelState _midiChannelState;
-
-		uint _numActiveNotes;
-	};
-
-	struct MidiActiveNote {
-		uint8 _outputChannel;
-		uint16 _tone;
-		bool _affectedBySostenuto;
-
-		// If either of these are set, then the note is off, but is sustained by a pedal
-		bool _isSustainedBySustain;
-		bool _isSustainedBySostenuto;
-	};
-
-	void doNoteOn(uint sourceID, uint8 channel, uint8 param1, uint8 param2);
-	void doNoteOff(uint sourceID, uint8 channel, uint8 param1, uint8 param2);
-	void doPolyphonicAftertouch(uint sourceID, uint8 channel, uint8 param1, uint8 param2);
-	void doControlChange(uint sourceID, uint8 channel, uint8 param1, uint8 param2);
-	void doProgramChange(uint sourceID, uint8 channel, uint8 param1, uint8 param2);
-	void doChannelAftertouch(uint sourceID, uint8 channel, uint8 param1, uint8 param2);
-	void doPitchBend(uint sourceID, uint8 channel, uint8 param1, uint8 param2);
-
-	void doHighRangeControlChange(uint sourceID, uint8 channel, uint8 hrParam, uint16 value);
-	void doLowRangeControlChange(uint sourceID, uint8 channel, uint8 lrParam, uint8 value);
-
-	void doDataEntry(uint sourceID, uint8 channel, int16 existingValueMask, int16 offset);
-	void doChannelMode(uint sourceID, uint8 channel, uint8 param1, uint8 param2);
-	void doAllNotesOff(uint sourceID, uint8 channel, uint8 param2);
-	void doAllSoundOff(uint sourceID, uint8 channel, uint8 param2);
-	void doResetAllControllers(uint sourceID, uint8 channel, uint8 param2);
-
-	void sendToOutput(uint8 command, uint8 channel, uint8 param1, uint8 param2);
-
-	void syncSourceConfiguration(uint outputChannel, OutputChannelState &outChState, const SourceState &sourceState, const SourceChannelState &sourceChState);
-	void syncSourceHRController(uint outputChannel, OutputChannelState &outChState, const SourceState &sourceState, const SourceChannelState &sourceChState, uint hrController);
-	void syncSourceLRController(uint outputChannel, OutputChannelState &outChState, const SourceChannelState &sourceChState, uint lrController);
-	void syncSourceRegisteredParam(uint outputChannel, OutputChannelState &outChState, const SourceChannelState &sourceChState, uint rpn);
-
-	void tryCleanUpUnsustainedNote(uint noteIndex);
-
-	Common::Array<SourceState> _sources;
-	Common::Array<MidiActiveNote> _notes;
-	OutputChannelState _outputChannels[MidiDriver_BASE::MIDI_CHANNEL_COUNT];
-	uint _noteOffCounter;
-
-	MidiDriver_BASE *_outputDriver;
-
-	Common::SharedPtr<Common::DumpFile> _dumpFile;
-	int _eventCounter;
-};
-
-MidiCombinerSourceDynamic::MidiCombinerSourceDynamic(MidiCombinerDynamic *combiner, uint sourceID) : _combiner(combiner), _sourceID(sourceID) {
-}
-
-MidiCombinerSourceDynamic::~MidiCombinerSourceDynamic() {
-	assert(_combiner == nullptr);	// Call detach first!
-}
-
-void MidiCombinerSourceDynamic::detach() {
-	_combiner->deallocateSource(_sourceID);
-	_combiner = nullptr;
-}
-
-void MidiCombinerSourceDynamic::setVolume(uint8 volume) {
-	_combiner->setSourceVolume(_sourceID, volume);
-}
-
-void MidiCombinerSourceDynamic::send(uint32 b) {
-	_combiner->sendFromSource(_sourceID, b);
-}
-
-MidiCombinerDynamic::MidiCombinerDynamic(MidiDriver_BASE *outputDriver) : _outputDriver(outputDriver), _noteOffCounter(1) {
-#if 0
-	_dumpFile.reset(new Common::DumpFile());
-	_dumpFile->open("mididump.csv");
-	_dumpFile->writeString("event\ttime\tchannel\tcmd\tparam1\tparam2\n");
-#endif
-
-	_eventCounter = 0;
-}
-
-Common::SharedPtr<MidiCombinerSource> MidiCombinerDynamic::createSource() {
-	uint sourceID = _sources.size();
-
-	for (uint i = 0; i < _sources.size(); i++) {
-		if (!_sources[i]._isAllocated) {
-			sourceID = i;
-			break;
-		}
-	}
-
-	if (sourceID == _sources.size())
-		_sources.push_back(SourceState());
-
-	_sources[sourceID].allocate();
-
-	return Common::SharedPtr<MidiCombinerSource>(new MidiCombinerSourceDynamic(this, sourceID));
-}
-
-void MidiCombinerDynamic::deallocateSource(uint sourceID) {
-	for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-		OutputChannelState &ch = _outputChannels[i];
-		if (!ch._hasSource || ch._sourceID != sourceID)
-			continue;
-
-		// Stop any outputs and release sustain
-		sendFromSource(sourceID, MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, i, MidiDriver_BASE::MIDI_CONTROLLER_SUSTAIN, 0);
-		sendFromSource(sourceID, MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, i, MidiDriver_BASE::MIDI_CONTROLLER_SOSTENUTO, 0);
-		sendFromSource(sourceID, MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, i, MidiDriver_BASE::MIDI_CONTROLLER_ALL_NOTES_OFF, 0);
-
-		ch._hasSource = false;
-		assert(ch._numActiveNotes == 0);
-	}
-
-	_sources[sourceID].deallocate();
-}
-
-void MidiCombinerDynamic::setSourceVolume(uint sourceID, uint8 volume) {
-	SourceState &src = _sources[sourceID];
-	src._root4MasterVolume = static_cast<uint16>(floor(sqrt(sqrt(volume)) * 16400.0));
-
-	for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-		OutputChannelState &ch = _outputChannels[i];
-		if (!ch._hasSource || ch._sourceID != sourceID)
-			continue;
-
-		// Synchronize volume control
-		syncSourceHRController(i, ch, src, src._sourceChannelState[ch._channelID], MidiDriver_BASE::MIDI_CONTROLLER_VOLUME);
-	}
-}
-
-void MidiCombinerDynamic::sendFromSource(uint sourceID, uint32 b) {
-	uint8 cmd = static_cast<uint8>(b & 0xf0);
-	uint8 channel = static_cast<uint8>(b & 0x0f);
-	uint8 param1 = static_cast<uint8>((b >> 8) & 0xff);
-	uint8 param2 = static_cast<uint8>((b >> 16) & 0xff);
-
-	sendFromSource(sourceID, cmd, channel, param1, param2);
-}
-
-void MidiCombinerDynamic::sendFromSource(uint sourceID, uint8 cmd, uint8 channel, uint8 param1, uint8 param2) {
-	switch (cmd) {
-	case MidiDriver_BASE::MIDI_COMMAND_NOTE_ON:
-		doNoteOn(sourceID, channel, param1, param2);
-		break;
-	case MidiDriver_BASE::MIDI_COMMAND_NOTE_OFF:
-		doNoteOff(sourceID, channel, param1, param2);
-		break;
-	case MidiDriver_BASE::MIDI_COMMAND_POLYPHONIC_AFTERTOUCH:
-		doPolyphonicAftertouch(sourceID, channel, param1, param2);
-		break;
-	case MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE:
-		doControlChange(sourceID, channel, param1, param2);
-		break;
-	case MidiDriver_BASE::MIDI_COMMAND_PROGRAM_CHANGE:
-		doProgramChange(sourceID, channel, param1, param2);
-		break;
-	case MidiDriver_BASE::MIDI_COMMAND_CHANNEL_AFTERTOUCH:
-		doChannelAftertouch(sourceID, channel, param1, param2);
-		break;
-	case MidiDriver_BASE::MIDI_COMMAND_PITCH_BEND:
-		doPitchBend(sourceID, channel, param1, param2);
-		break;
-	case MidiDriver_BASE::MIDI_COMMAND_SYSTEM:
-		break;
-	}
-}
-
-void MidiCombinerDynamic::doNoteOn(uint sourceID, uint8 channel, uint8 param1, uint8 param2) {
-	uint outputChannel = 0;
-
-	if (channel == MidiDriver_BASE::MIDI_RHYTHM_CHANNEL) {
-		outputChannel = MidiDriver_BASE::MIDI_RHYTHM_CHANNEL;
-	} else {
-		bool foundChannel = false;
-
-		// Find an existing exactly-matching channel
-		for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-			OutputChannelState &ch = _outputChannels[i];
-			if (ch._hasSource && ch._sourceID == sourceID && ch._channelID == channel) {
-				foundChannel = true;
-				outputChannel = i;
-				break;
-			}
-		}
-
-		if (!foundChannel) {
-			// Find an inactive channel
-			for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-				if (i == MidiDriver_BASE::MIDI_RHYTHM_CHANNEL)
-					continue;
-
-				if (!_outputChannels[i]._hasSource) {
-					foundChannel = true;
-					outputChannel = i;
-					break;
-				}
-			}
-		}
-
-		if (!foundChannel) {
-			uint bestOffCounter = 0xffffffffu;
-
-			// Find the channel that went quiet the longest time ago
-			for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-				if (i == MidiDriver_BASE::MIDI_RHYTHM_CHANNEL)
-					continue;
-
-				if (_outputChannels[i]._numActiveNotes == 0 && _outputChannels[i]._noteOffCounter < bestOffCounter) {
-					foundChannel = true;
-					outputChannel = i;
-					bestOffCounter = _outputChannels[i]._noteOffCounter;
-				}
-			}
-		}
-
-		// All eligible channels are playing already
-		if (!foundChannel)
-			return;
-	}
-
-	OutputChannelState &ch = _outputChannels[outputChannel];
-
-	if (!ch._hasSource || ch._sourceID != sourceID || ch._channelID != channel) {
-		ch._sourceID = sourceID;
-		ch._channelID = channel;
-		ch._hasSource = true;
-
-		const SourceState &sourceState = _sources[sourceID];
-		syncSourceConfiguration(outputChannel, ch, sourceState, sourceState._sourceChannelState[channel]);
-	}
-
-	sendToOutput(MidiDriver_BASE::MIDI_COMMAND_NOTE_ON, outputChannel, param1, param2);
-
-	MidiActiveNote note;
-	note._outputChannel = outputChannel;
-	note._tone = param1;
-	note._affectedBySostenuto = (ch._midiChannelState._lrControllers[MidiDriver_BASE::MIDI_CONTROLLER_SOSTENUTO - kLRControllerStart] >= kSostenutoOnThreshold);
-	note._isSustainedBySostenuto = false;
-	note._isSustainedBySustain = false;
-	_notes.push_back(note);
-
-	ch._numActiveNotes++;
-}
-
-void MidiCombinerDynamic::doNoteOff(uint sourceID, uint8 channel, uint8 param1, uint8 param2) {
-	for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-		OutputChannelState &ch = _outputChannels[i];
-
-		if (ch._hasSource && ch._sourceID == sourceID && ch._channelID == channel) {
-			sendToOutput(MidiDriver_BASE::MIDI_COMMAND_NOTE_OFF, i, param1, param2);
-
-			for (uint ani = 0; ani < _notes.size(); ani++) {
-				MidiActiveNote &note = _notes[ani];
-				if (note._outputChannel == i && note._tone == param1 && !note._isSustainedBySostenuto && !note._isSustainedBySustain) {
-					if (ch._midiChannelState._lrControllers[MidiDriver_BASE::MIDI_CONTROLLER_SUSTAIN - kLRControllerStart] >= kSustainOnThreshold)
-						note._isSustainedBySustain = true;
-
-					if (note._affectedBySostenuto && ch._midiChannelState._lrControllers[MidiDriver_BASE::MIDI_CONTROLLER_SOSTENUTO - kLRControllerStart] >= kSostenutoOnThreshold)
-						note._isSustainedBySostenuto = true;
-
-					tryCleanUpUnsustainedNote(ani);
-					break;
-				}
-			}
-
-			break;
-		}
-	}
-}
-
-void MidiCombinerDynamic::doPolyphonicAftertouch(uint sourceID, uint8 channel, uint8 param1, uint8 param2) {
-	for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-		const OutputChannelState &ch = _outputChannels[i];
-
-		if (ch._hasSource && ch._sourceID == sourceID && ch._channelID == channel) {
-			sendToOutput(MidiDriver_BASE::MIDI_COMMAND_POLYPHONIC_AFTERTOUCH, i, param1, param2);
-			break;
-		}
-	}
-}
-
-void MidiCombinerDynamic::doControlChange(uint sourceID, uint8 channel, uint8 param1, uint8 param2) {
-	SourceState &src = _sources[sourceID];
-	SourceChannelState &sch = src._sourceChannelState[channel];
-
-	if (param1 == MidiDriver_BASE::MIDI_CONTROLLER_DATA_ENTRY_MSB) {
-		doDataEntry(sourceID, channel, kLSBMask, param2 << 7);
-		return;
-	} else if (param1 == MidiDriver_BASE::MIDI_CONTROLLER_DATA_ENTRY_LSB) {
-		doDataEntry(sourceID, channel, kMSBMask, param2);
-		return;
-	} else if (param1 < 32) {
-		uint16 ctrl = ((sch._midiChannelState._hrControllers[param1] & kLSBMask) | ((param2 & 0x7f)) << 7);
-		doHighRangeControlChange(sourceID, channel, param1, ctrl);
-		return;
-	} else if (param1 < 64) {
-		uint16 ctrl = ((sch._midiChannelState._hrControllers[param1 - 32] & kMSBMask) | (param2 & 0x7f));
-		doHighRangeControlChange(sourceID, channel, param1 - 32, ctrl);
-		return;
-	} else if (param1 < 96) {
-		doLowRangeControlChange(sourceID, channel, param1 - 64, param2);
-		return;
-	}
-
-	switch (param1) {
-	case 96:
-		// Data increment
-		doDataEntry(sourceID, channel, 0x3fff, 1);
-		break;
-	case 97:
-		// Data decrement
-		doDataEntry(sourceID, channel, 0x3fff, -1);
-		break;
-	case 98:
-		// NRPN LSB
-		sch._midiChannelState._nrpnNumber = ((sch._midiChannelState._nrpnNumber & kMSBMask) | (param2 & 0x7f));
-		sch._midiChannelState._dataEntryState = kDataEntryStateNRPN;
-		break;
-	case 99:
-		// NRPN MSB
-		sch._midiChannelState._nrpnNumber = ((sch._midiChannelState._nrpnNumber & kLSBMask) | ((param2 & 0x7f) << 7));
-		sch._midiChannelState._dataEntryState = kDataEntryStateNRPN;
-		break;
-	case 100:
-		// RPN LSB
-		sch._midiChannelState._rpnNumber = ((sch._midiChannelState._rpnNumber & kMSBMask) | (param2 & 0x7f));
-		sch._midiChannelState._dataEntryState = kDataEntryStateRPN;
-		break;
-	case 101:
-		// RPN MSB
-		sch._midiChannelState._rpnNumber = ((sch._midiChannelState._rpnNumber & kLSBMask) | ((param2 & 0x7f) << 7));
-		sch._midiChannelState._dataEntryState = kDataEntryStateRPN;
-		break;
-	default:
-		if (param1 >= 120 && param1 < 128)
-			doChannelMode(sourceID, channel, param1, param2);
-		break;
-	};
-}
-
-void MidiCombinerDynamic::doProgramChange(uint sourceID, uint8 channel, uint8 param1, uint8 param2) {
-	for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-		OutputChannelState &ch = _outputChannels[i];
-
-		if (ch._hasSource && ch._sourceID == sourceID && ch._channelID == channel) {
-			sendToOutput(MidiDriver_BASE::MIDI_COMMAND_PROGRAM_CHANGE, i, param1, param2);
-			ch._midiChannelState._program = param1;
-			break;
-		}
-	}
-
-	_sources[sourceID]._sourceChannelState[channel]._midiChannelState._program = param1;
-}
-
-void MidiCombinerDynamic::doChannelAftertouch(uint sourceID, uint8 channel, uint8 param1, uint8 param2) {
-	for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-		OutputChannelState &ch = _outputChannels[i];
-
-		if (ch._hasSource && ch._sourceID == sourceID && ch._channelID == channel) {
-			sendToOutput(MidiDriver_BASE::MIDI_COMMAND_CHANNEL_AFTERTOUCH, i, param1, param2);
-			ch._midiChannelState._aftertouch = param1;
-			break;
-		}
-	}
-}
-
-void MidiCombinerDynamic::doPitchBend(uint sourceID, uint8 channel, uint8 param1, uint8 param2) {
-	uint16 pitchBend = (param1 & 0x7f) | ((param2 & 0x7f) << 7);
-	for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-		OutputChannelState &ch = _outputChannels[i];
-
-		if (ch._hasSource && ch._sourceID == sourceID && ch._channelID == channel) {
-			sendToOutput(MidiDriver_BASE::MIDI_COMMAND_PITCH_BEND, i, param1, param2);
-			ch._midiChannelState._pitchBend = pitchBend;
-			break;
-		}
-	}
-
-	_sources[sourceID]._sourceChannelState[channel]._midiChannelState._pitchBend = pitchBend;
-}
-
-void MidiCombinerDynamic::doHighRangeControlChange(uint sourceID, uint8 channel, uint8 hrParam, uint16 value) {
-	SourceState &src = _sources[sourceID];
-	SourceChannelState &srcCh = src._sourceChannelState[channel];
-	srcCh._midiChannelState._hrControllers[hrParam] = value;
-
-	for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-		OutputChannelState &ch = _outputChannels[i];
-
-		if (ch._hasSource && ch._sourceID == sourceID && ch._channelID == channel) {
-			syncSourceHRController(i, ch, src, srcCh, hrParam);
-			break;
-		}
-	}
-}
-
-void MidiCombinerDynamic::doLowRangeControlChange(uint sourceID, uint8 channel, uint8 lrParam, uint8 value) {
-	SourceChannelState &srcCh = _sources[sourceID]._sourceChannelState[channel];
-	srcCh._midiChannelState._lrControllers[lrParam] = value;
-
-	for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-		OutputChannelState &ch = _outputChannels[i];
-
-		if (ch._hasSource && ch._sourceID == sourceID && ch._channelID == channel) {
-			if (lrParam == MidiDriver_BASE::MIDI_CONTROLLER_SUSTAIN - kLRControllerStart && value < kSustainOnThreshold) {
-				for (uint rni = _notes.size(); rni > 0; rni--) {
-					uint noteIndex = rni - 1;
-					MidiActiveNote &note = _notes[noteIndex];
-					if (note._isSustainedBySustain) {
-						note._isSustainedBySustain = false;
-						tryCleanUpUnsustainedNote(noteIndex);
-					}
-				}
-			} else if (lrParam == MidiDriver_BASE::MIDI_CONTROLLER_SOSTENUTO - kLRControllerStart && value < kSostenutoOnThreshold) {
-				for (uint rni = _notes.size(); rni > 0; rni--) {
-					uint noteIndex = rni - 1;
-					MidiActiveNote &note = _notes[noteIndex];
-					if (note._isSustainedBySostenuto) {
-						note._isSustainedBySostenuto = false;
-						tryCleanUpUnsustainedNote(noteIndex);
-					}
-				}
-			}
-
-			syncSourceLRController(i, ch, srcCh, lrParam);
-			break;
-		}
-	}
-}
-
-void MidiCombinerDynamic::doDataEntry(uint sourceID, uint8 channel, int16 existingValueMask, int16 offset) {
-	SourceChannelState &srcCh = _sources[sourceID]._sourceChannelState[channel];
-
-	if (srcCh._midiChannelState._dataEntryState == kDataEntryStateRPN && srcCh._midiChannelState._rpnNumber < ARRAYSIZE(srcCh._midiChannelState._registeredParams)) {
-		int32 rp = srcCh._midiChannelState._registeredParams[srcCh._midiChannelState._rpnNumber];
-		rp &= existingValueMask;
-		rp += offset;
-
-		srcCh._midiChannelState._registeredParams[srcCh._midiChannelState._rpnNumber] = (rp & existingValueMask) + offset;
-
-		for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-			OutputChannelState &ch = _outputChannels[i];
-
-			if (ch._hasSource && ch._sourceID == sourceID && ch._channelID == channel) {
-				syncSourceRegisteredParam(i, ch, srcCh, srcCh._midiChannelState._rpnNumber);
-				break;
-			}
-		}
-	}
-}
-
-void MidiCombinerDynamic::doChannelMode(uint sourceID, uint8 channel, uint8 param1, uint8 param2) {
-	// Remap omni/poly/mono modes to all notes off, since we don't do anything with omni/poly
-	switch (param1) {
-	case MidiDriver_BASE::MIDI_CONTROLLER_OMNI_OFF:
-	case MidiDriver_BASE::MIDI_CONTROLLER_OMNI_ON:
-	case MidiDriver_BASE::MIDI_CONTROLLER_MONO_ON:
-	case MidiDriver_BASE::MIDI_CONTROLLER_POLY_ON:
-	case MidiDriver_BASE::MIDI_CONTROLLER_ALL_NOTES_OFF:
-		doAllNotesOff(sourceID, channel, param2);
-		break;
-	case MidiDriver_BASE::MIDI_CONTROLLER_ALL_SOUND_OFF:
-		doAllSoundOff(sourceID, channel, param2);
-		break;
-	case MidiDriver_BASE::MIDI_CONTROLLER_RESET_ALL_CONTROLLERS:
-		doResetAllControllers(sourceID, channel, param2);
-		break;
-	case 122: // Local control (ignore)
-	default:
-		break;
-	}
-}
-
-void MidiCombinerDynamic::doAllNotesOff(uint sourceID, uint8 channel, uint8 param2) {
-	uint outputChannel = 0;
-	bool foundChannel = false;
-
-	for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-		OutputChannelState &ch = _outputChannels[i];
-		if (ch._hasSource && ch._sourceID == sourceID && ch._channelID == channel) {
-			foundChannel = true;
-			outputChannel = i;
-			break;
-		}
-	}
-
-	if (!foundChannel)
-		return;
-
-	OutputChannelState &ch = _outputChannels[outputChannel];
-
-	bool sustainOn = (ch._midiChannelState._lrControllers[MidiDriver_BASE::MIDI_CONTROLLER_SUSTAIN - kLRControllerStart] >= kSustainOnThreshold);
-	bool sostenutoOn = (ch._midiChannelState._lrControllers[MidiDriver_BASE::MIDI_CONTROLLER_SOSTENUTO - kLRControllerStart] >= kSostenutoOnThreshold);
-
-	for (uint rni = _notes.size(); rni > 0; rni--) {
-		uint noteIndex = rni - 1;
-		MidiActiveNote &note = _notes[noteIndex];
-		if (note._outputChannel == outputChannel) {
-			if (note._affectedBySostenuto && sostenutoOn)
-				note._isSustainedBySostenuto = true;
-			if (sustainOn)
-				note._isSustainedBySustain = true;
-
-			tryCleanUpUnsustainedNote(noteIndex);
-		}
-	}
-
-	sendToOutput(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, outputChannel, MidiDriver_BASE::MIDI_CONTROLLER_ALL_NOTES_OFF, param2);
-}
-
-void MidiCombinerDynamic::doAllSoundOff(uint sourceID, uint8 channel, uint8 param2) {
-	uint outputChannel = 0;
-	bool foundChannel = false;
-
-	for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-		OutputChannelState &ch = _outputChannels[i];
-		if (ch._hasSource && ch._sourceID == sourceID && ch._channelID == channel) {
-			foundChannel = true;
-			outputChannel = i;
-			break;
-		}
-	}
-
-	if (!foundChannel)
-		return;
-
-	OutputChannelState &ch = _outputChannels[outputChannel];
-
-	for (uint rni = _notes.size(); rni > 0; rni--) {
-		uint noteIndex = rni - 1;
-		MidiActiveNote &note = _notes[noteIndex];
-		if (note._outputChannel == outputChannel) {
-			note._isSustainedBySostenuto = false;
-			note._isSustainedBySustain = false;
-
-			tryCleanUpUnsustainedNote(noteIndex);
-		}
-	}
-
-	sendToOutput(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, outputChannel, MidiDriver_BASE::MIDI_CONTROLLER_ALL_SOUND_OFF, param2);
-	ch._noteOffCounter = 0;	// All sound is off so this can be recycled quickly
-}
-
-void MidiCombinerDynamic::doResetAllControllers(uint sourceID, uint8 channel, uint8 param2) {
-	SourceChannelState &srcCh = _sources[sourceID]._sourceChannelState[channel];
-
-	srcCh._midiChannelState.softReset();
-
-	uint outputChannel = 0;
-	bool foundChannel = false;
-
-	for (uint i = 0; i < ARRAYSIZE(_outputChannels); i++) {
-		OutputChannelState &ch = _outputChannels[i];
-		if (ch._hasSource && ch._sourceID == sourceID && ch._channelID == channel) {
-			foundChannel = true;
-			outputChannel = i;
-			break;
-		}
-	}
-
-	if (!foundChannel)
-		return;
-
-	OutputChannelState &ch = _outputChannels[outputChannel];
-	ch._midiChannelState.softReset();
-
-	// Release all sustained notes
-	for (uint rni = _notes.size(); rni > 0; rni--) {
-		uint noteIndex = rni - 1;
-		MidiActiveNote &note = _notes[noteIndex];
-		if (note._outputChannel == outputChannel) {
-			if (note._isSustainedBySostenuto || note._isSustainedBySustain) {
-				note._isSustainedBySostenuto = false;
-				note._isSustainedBySustain = false;
-				tryCleanUpUnsustainedNote(noteIndex);
-			}
-		}
-	}
-
-	sendToOutput(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, outputChannel, MidiDriver_BASE::MIDI_CONTROLLER_RESET_ALL_CONTROLLERS, 0);
-}
-
-void MidiCombinerDynamic::sendToOutput(uint8 command, uint8 channel, uint8 param1, uint8 param2) {
-	uint32 output = static_cast<uint32>(command) | static_cast<uint32>(channel) | static_cast<uint32>(param1 << 8) | static_cast<uint32>(param2 << 16);
-
-	if (_dumpFile) {
-		const int timestamp = g_system->getMillis(true);
-
-		const char *cmdName = "Unknown Command";
-		switch (command) {
-		case MidiDriver_BASE::MIDI_COMMAND_CHANNEL_AFTERTOUCH:
-			cmdName = "ChannelAftertouch";
-			break;
-		case MidiDriver_BASE::MIDI_COMMAND_NOTE_OFF:
-			cmdName = "NoteOff";
-			break;
-		case MidiDriver_BASE::MIDI_COMMAND_NOTE_ON:
-			cmdName = "NoteOn";
-			break;
-		case MidiDriver_BASE::MIDI_COMMAND_POLYPHONIC_AFTERTOUCH:
-			cmdName = "PolyAftertouch";
-			break;
-		case MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE:
-			cmdName = "ControlChange";
-			break;
-		case MidiDriver_BASE::MIDI_COMMAND_PROGRAM_CHANGE:
-			cmdName = "ProgramChange";
-			break;
-		case MidiDriver_BASE::MIDI_COMMAND_PITCH_BEND:
-			cmdName = "PitchBend";
-			break;
-		case MidiDriver_BASE::MIDI_COMMAND_SYSTEM:
-			cmdName = "System";
-			break;
-		default:
-			cmdName = "Unknown";
-		}
-
-		if (command == MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE) {
-			Common::String ctrlName = "Unknown";
-
-			switch (param1) {
-			case MidiDriver_BASE::MIDI_CONTROLLER_BANK_SELECT_MSB:
-				ctrlName = "BankSelect";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_MODULATION:
-				ctrlName = "Modulation";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_DATA_ENTRY_MSB:
-				ctrlName = "DataEntryMSB";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_VOLUME:
-				ctrlName = "VolumeMSB";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_VOLUME + 32:
-				ctrlName = "VolumeLSB";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_BALANCE:
-				ctrlName = "Balance";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_PANNING:
-				ctrlName = "Panning";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_EXPRESSION:
-				ctrlName = "Expression";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_BANK_SELECT_LSB:
-				ctrlName = "BankSelectLSB";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_DATA_ENTRY_LSB:
-				ctrlName = "DataEntryLSB";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_SUSTAIN:
-				ctrlName = "Sustain";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_PORTAMENTO:
-				ctrlName = "Portamento";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_SOSTENUTO:
-				ctrlName = "Sostenuto";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_SOFT:
-				ctrlName = "Soft";
-				break;
-
-			case MidiDriver_BASE::MIDI_CONTROLLER_REVERB:
-				ctrlName = "Reverb";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_CHORUS:
-				ctrlName = "Chorus";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_RPN_LSB:
-				ctrlName = "RPNLSB";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_RPN_MSB:
-				ctrlName = "RPNMSB";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_ALL_SOUND_OFF:
-				ctrlName = "AllSoundOff";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_RESET_ALL_CONTROLLERS:
-				ctrlName = "ResetAllControllers";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_ALL_NOTES_OFF:
-				ctrlName = "AllNotesOff";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_OMNI_ON:
-				ctrlName = "OmniOn";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_OMNI_OFF:
-				ctrlName = "OmniOff";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_MONO_ON:
-				ctrlName = "MonoOn";
-				break;
-			case MidiDriver_BASE::MIDI_CONTROLLER_POLY_ON:
-				ctrlName = "PolyOn";
-				break;
-			default:
-				ctrlName = Common::String::format("Unknown%02x", static_cast<int>(param1));
-			}
-
-			_dumpFile->writeString(Common::String::format("%i\t%i\t%i\t%s\t%s\t%i\n", _eventCounter, timestamp, static_cast<int>(channel), cmdName, ctrlName.c_str(), static_cast<int>(param2)));
-		} else
-			_dumpFile->writeString(Common::String::format("%i\t%i\t%i\t%s\t%i\t%i\n", _eventCounter, timestamp, static_cast<int>(channel), cmdName, static_cast<int>(param1), static_cast<int>(param2)));
-
-		_eventCounter++;
-	}
-
-	_outputDriver->send(output);
-}
-
-void MidiCombinerDynamic::syncSourceConfiguration(uint outputChannel, OutputChannelState &outChState, const SourceState &srcState, const SourceChannelState &sourceChState) {
-	const MidiChannelState &srcMidiChState = sourceChState._midiChannelState;
-	MidiChannelState &outState = outChState._midiChannelState;
-
-	if (outState._program != srcMidiChState._program) {
-		outState._program = srcMidiChState._program;
-		sendToOutput(MidiDriver_BASE::MIDI_COMMAND_PROGRAM_CHANGE, outputChannel, srcMidiChState._program, 0);
-	}
-
-	if (outState._aftertouch != srcMidiChState._aftertouch) {
-		outState._aftertouch = srcMidiChState._aftertouch;
-		sendToOutput(MidiDriver_BASE::MIDI_COMMAND_CHANNEL_AFTERTOUCH, outputChannel, srcMidiChState._aftertouch, 0);
-	}
-
-	if (outState._pitchBend != srcMidiChState._pitchBend) {
-		outState._pitchBend = srcMidiChState._pitchBend;
-		sendToOutput(MidiDriver_BASE::MIDI_COMMAND_PITCH_BEND, outputChannel, (srcMidiChState._pitchBend & kLSBMask), (srcMidiChState._pitchBend & kMSBMask) >> 7);
-	}
-
-	for (uint i = 0; i < ARRAYSIZE(srcMidiChState._hrControllers); i++)
-		syncSourceHRController(outputChannel, outChState, srcState, sourceChState, i);
-
-	for (uint i = 0; i < ARRAYSIZE(srcMidiChState._lrControllers); i++)
-		syncSourceLRController(outputChannel, outChState, sourceChState, i);
-
-	for (uint i = 0; i < ARRAYSIZE(srcMidiChState._registeredParams); i++)
-		syncSourceRegisteredParam(outputChannel, outChState, sourceChState, i);
-}
-
-void MidiCombinerDynamic::syncSourceHRController(uint outputChannel, OutputChannelState &outChState, const SourceState &srcState, const SourceChannelState &sourceChState, uint hrController) {
-	const MidiChannelState &srcMidiChState = sourceChState._midiChannelState;
-	MidiChannelState &outState = outChState._midiChannelState;
-
-	uint16 effectiveValue = srcMidiChState._hrControllers[hrController];
-
-	if (hrController == MidiDriver_BASE::MIDI_CONTROLLER_VOLUME) {
-		// GM volume to gain control is 40*log10(V/127)
-		// This means linear scale is (volume/0x3f80)^4
-		// To modulate the volume linearly, we must multiply the volume by the 4th root
-		// of the volume.
-		uint32 effectiveValueScaled = static_cast<uint32>(srcState._root4MasterVolume) * static_cast<uint32>(effectiveValue);
-		effectiveValueScaled += (effectiveValueScaled >> 16) + 1u;
-		effectiveValue = static_cast<uint16>(effectiveValueScaled >> 16);
-	}
-
-	if (outState._hrControllers[hrController] == effectiveValue)
-		return;
-
-	uint16 deltaBits = (outState._hrControllers[hrController] ^ effectiveValue);
-
-	if (deltaBits & kMSBMask)
-		sendToOutput(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, outputChannel, hrController, (effectiveValue & kMSBMask) >> 7);
-	if (deltaBits & kLSBMask)
-		sendToOutput(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, outputChannel, hrController + 32, effectiveValue & kLSBMask);
-
-	outState._hrControllers[hrController] = effectiveValue;
-}
-
-void MidiCombinerDynamic::syncSourceLRController(uint outputChannel, OutputChannelState &outChState, const SourceChannelState &sourceChState, uint lrController) {
-	const MidiChannelState &srcState = sourceChState._midiChannelState;
-	MidiChannelState &outState = outChState._midiChannelState;
-
-	if (outState._lrControllers[lrController] == srcState._lrControllers[lrController])
-		return;
-
-	sendToOutput(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, outputChannel, lrController + kLRControllerStart, srcState._lrControllers[lrController] & kLSBMask);
-
-	outState._lrControllers[lrController] = srcState._lrControllers[lrController];
-}
-
-void MidiCombinerDynamic::syncSourceRegisteredParam(uint outputChannel, OutputChannelState &outChState, const SourceChannelState &sourceChState, uint rpn) {
-	const MidiChannelState &srcState = sourceChState._midiChannelState;
-	MidiChannelState &outState = outChState._midiChannelState;
-
-	if (outState._registeredParams[rpn] == srcState._registeredParams[rpn])
-		return;
-
-	outState._registeredParams[rpn] = srcState._registeredParams[rpn];
-
-	if (outState._dataEntryState != kDataEntryStateRPN || outState._rpnNumber != srcState._rpnNumber) {
-		outState._dataEntryState = kDataEntryStateRPN;
-		outState._rpnNumber = srcState._rpnNumber;
-		sendToOutput(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, outputChannel, MidiDriver_BASE::MIDI_CONTROLLER_RPN_LSB, rpn & kLSBMask);
-		sendToOutput(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, outputChannel, MidiDriver_BASE::MIDI_CONTROLLER_RPN_MSB, (rpn & kMSBMask) >> 7);
-	}
-
-	sendToOutput(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, outputChannel, MidiDriver_BASE::MIDI_CONTROLLER_DATA_ENTRY_LSB, srcState._registeredParams[rpn] & kLSBMask);
-	sendToOutput(MidiDriver_BASE::MIDI_COMMAND_CONTROL_CHANGE, outputChannel, MidiDriver_BASE::MIDI_CONTROLLER_DATA_ENTRY_MSB, (srcState._registeredParams[rpn] & kMSBMask) >> 7);
-}
-
-void MidiCombinerDynamic::tryCleanUpUnsustainedNote(uint noteIndex) {
-	MidiActiveNote &note = _notes[noteIndex];
-
-	if (!note._isSustainedBySostenuto && !note._isSustainedBySustain) {
-		OutputChannelState &outCh = _outputChannels[note._outputChannel];
-		assert(outCh._numActiveNotes > 0);
-		outCh._numActiveNotes--;
-		if (!outCh._numActiveNotes)
-			outCh._noteOffCounter = _noteOffCounter++;
-
-		_notes.remove_at(noteIndex);
-	}
-}
-
-MidiCombinerDynamic::MidiChannelState::MidiChannelState() {
-	reset();
-}
-
-void MidiCombinerDynamic::MidiChannelState::reset() {
-	_program = 0;
-	_aftertouch = 0;
-	_pitchBend = 0x2000;
-
-	for (uint i = 0; i < ARRAYSIZE(_hrControllers); i++)
-		_hrControllers[i] = 0;
-	for (uint i = 0; i < ARRAYSIZE(_lrControllers); i++)
-		_lrControllers[i] = 0;
-	for (uint i = 0; i < ARRAYSIZE(_registeredParams); i++)
-		_registeredParams[i] = 0;
-
-	_hrControllers[MidiDriver_BASE::MIDI_CONTROLLER_BALANCE] = (64 << 7);
-	_hrControllers[MidiDriver_BASE::MIDI_CONTROLLER_PANNING] = (64 << 7);
-	_hrControllers[MidiDriver_BASE::MIDI_CONTROLLER_VOLUME] = (127 << 7);
-
-	_dataEntryState = kDataEntryStateNone;
-	_rpnNumber = 0;
-	_nrpnNumber = 0;
-}
-
-void MidiCombinerDynamic::MidiChannelState::softReset() {
-	_hrControllers[MidiDriver_BASE::MIDI_CONTROLLER_MODULATION] = 0;
-	_lrControllers[MidiDriver_BASE::MIDI_CONTROLLER_SUSTAIN - kLRControllerStart] = 0;
-	_lrControllers[MidiDriver_BASE::MIDI_CONTROLLER_PORTAMENTO - kLRControllerStart] = 0;
-	_lrControllers[MidiDriver_BASE::MIDI_CONTROLLER_SOSTENUTO - kLRControllerStart] = 0;
-	_lrControllers[MidiDriver_BASE::MIDI_CONTROLLER_SOFT - kLRControllerStart] = 0;
-	_dataEntryState = kDataEntryStateNone;
-	_rpnNumber = 0;
-	_nrpnNumber = 0;
-	_aftertouch = 0;
-	_hrControllers[MidiDriver_BASE::MIDI_CONTROLLER_EXPRESSION] = (127 << 7);
-	_pitchBend = (64 << 7);
-}
-
-MidiCombinerDynamic::SourceChannelState::SourceChannelState() {
-	reset();
-}
-
-void MidiCombinerDynamic::SourceChannelState::reset() {
-}
-
-MidiCombinerDynamic::SourceState::SourceState() : _isAllocated(false), _root4MasterVolume(0xffffu) {
-}
-
-void MidiCombinerDynamic::SourceState::allocate() {
-	_isAllocated = true;
-}
-
-void MidiCombinerDynamic::SourceState::deallocate() {
-	_isAllocated = false;
-}
-
-MidiCombinerDynamic::OutputChannelState::OutputChannelState() : _sourceID(0), _volumeIsAmbiguous(true), _channelID(0), _hasSource(false), _noteOffCounter(0), _numActiveNotes(0) {
-}
-
-MultiMidiPlayer::MultiMidiPlayer(bool dynamicMidiMixer) {
-	if (dynamicMidiMixer)
-		_combiner.reset(new MidiCombinerDynamic(this));
-	else
-		_combiner.reset(new MidiCombinerSimple(this));
-
-	createDriver(MDT_MIDI | MDT_ADLIB | MDT_PREFER_GM);
-
-	if (_driver->open() != 0) {
-		_driver->close();
-		delete _driver;
-		_driver = nullptr;
-		return;
-	}
-
-	_driver->setTimerCallback(this, &timerCallback);
-}
-
-MultiMidiPlayer::~MultiMidiPlayer() {
-	Common::StackLock lock(_mutex);
-	_filePlayers.clear();
-	_notePlayers.clear();
-}
-
-void MultiMidiPlayer::timerCallback(void *refCon) {
-	static_cast<MultiMidiPlayer *>(refCon)->onTimer();
-}
-
-void MultiMidiPlayer::onTimer() {
-	Common::StackLock lock(_mutex);
-
-	for (const Common::SharedPtr<MidiFilePlayerImpl> &player : _filePlayers)
-		player->onTimer();
-
-	for (const Common::SharedPtr<MidiNotePlayerImpl> &player : _notePlayers)
-		player->onTimer();
-}
-
-MidiFilePlayer *MultiMidiPlayer::createFilePlayer(const Common::SharedPtr<Data::Standard::MidiModifier::EmbeddedFile> &file, bool hasTempoOverride, double tempoOverride, uint8 volume, bool loop, uint16 mutedTracks) {
-	Common::SharedPtr<MidiCombinerSource> combinerSource = createSource();
-	Common::SharedPtr<MidiFilePlayerImpl> filePlayer(new MidiFilePlayerImpl(combinerSource, file, getBaseTempo(), hasTempoOverride, tempoOverride, volume, loop, mutedTracks));
-
-	{
-		Common::StackLock lock(_mutex);
-		combinerSource->setVolume(volume);
-		_filePlayers.push_back(filePlayer);
-	}
-
-	return filePlayer.get();
-}
-
-MidiNotePlayer *MultiMidiPlayer::createNotePlayer() {
-	Common::SharedPtr<MidiCombinerSource> combinerSource = createSource();
-	Common::SharedPtr<MidiNotePlayerImpl> notePlayer(new MidiNotePlayerImpl(combinerSource, getBaseTempo()));
-
-	{
-		Common::StackLock lock(_mutex);
-		_notePlayers.push_back(notePlayer);
-	}
-
-	return notePlayer.get();
-}
-
-Common::SharedPtr<MidiCombinerSource> MultiMidiPlayer::createSource() {
-	Common::StackLock lock(_mutex);
-	return _combiner->createSource();
-}
-
-void MultiMidiPlayer::deleteFilePlayer(MidiFilePlayer *player) {
-	Common::SharedPtr<MidiFilePlayerImpl> ref;
-
-	for (Common::Array<Common::SharedPtr<MidiFilePlayerImpl> >::iterator it = _filePlayers.begin(), itEnd = _filePlayers.end(); it != itEnd; ++it) {
-		if (it->get() == player) {
-			{
-				Common::StackLock lock(_mutex);
-				ref = *it;
-				_filePlayers.erase(it);
-				ref->stop();
-			}
-			break;
-		}
-	}
-
-	if (ref)
-		ref->detach();
-}
-
-void MultiMidiPlayer::deleteNotePlayer(MidiNotePlayer *player) {
-	Common::SharedPtr<MidiNotePlayerImpl> ref;
-
-	for (Common::Array<Common::SharedPtr<MidiNotePlayerImpl> >::iterator it = _notePlayers.begin(), itEnd = _notePlayers.end(); it != itEnd; ++it) {
-		if (it->get() == player) {
-			{
-				Common::StackLock lock(_mutex);
-				ref = *it;
-				_notePlayers.erase(it);
-				ref->stop();
-			}
-			break;
-		}
-	}
-
-	if (ref)
-		ref->detach();
-}
-
-void MultiMidiPlayer::setPlayerVolume(MidiFilePlayer *player, uint8 volume) {
-	Common::StackLock lock(_mutex);
-	static_cast<MidiFilePlayerImpl *>(player)->setVolume(volume);
-}
-
-void MultiMidiPlayer::setPlayerLoop(MidiFilePlayer *player, bool loop) {
-	Common::StackLock lock(_mutex);
-	static_cast<MidiFilePlayerImpl *>(player)->setLoop(loop);
-}
-
-void MultiMidiPlayer::setPlayerTempo(MidiFilePlayer *player, double tempo) {
-	Common::StackLock lock(_mutex);
-	static_cast<MidiFilePlayerImpl *>(player)->setTempoOverride(tempo);
-}
-
-void MultiMidiPlayer::setPlayerMutedTracks(MidiFilePlayer *player, uint16 mutedTracks) {
-	Common::StackLock lock(_mutex);
-	static_cast<MidiFilePlayerImpl *>(player)->setMutedTracks(mutedTracks);
-}
-
-void MultiMidiPlayer::stopPlayer(MidiFilePlayer *player) {
-	Common::StackLock lock(_mutex);
-	static_cast<MidiFilePlayerImpl *>(player)->stop();
-}
-
-void MultiMidiPlayer::playPlayer(MidiFilePlayer *player) {
-	Common::StackLock lock(_mutex);
-	static_cast<MidiFilePlayerImpl *>(player)->play();
-}
-
-void MultiMidiPlayer::pausePlayer(MidiFilePlayer *player) {
-	Common::StackLock lock(_mutex);
-	static_cast<MidiFilePlayerImpl *>(player)->pause();
-}
-
-void MultiMidiPlayer::resumePlayer(MidiFilePlayer *player) {
-	Common::StackLock lock(_mutex);
-	static_cast<MidiFilePlayerImpl *>(player)->resume();
-}
-
-void MultiMidiPlayer::playNote(MidiNotePlayer *player, uint8 volume, uint8 channel, uint8 program, uint8 note, uint8 velocity, double duration) {
-	Common::StackLock lock(_mutex);
-	static_cast<MidiNotePlayerImpl *>(player)->play(volume, channel, program, note, velocity, duration);
-}
-
-void MultiMidiPlayer::stopNote(MidiNotePlayer *player) {
-	Common::StackLock lock(_mutex);
-	static_cast<MidiNotePlayerImpl *>(player)->stop();
-}
-
-uint32 MultiMidiPlayer::getBaseTempo() const {
-	return _driver->getBaseTempo();
-}
-
-void MultiMidiPlayer::send(uint32 b) {
-	_driver->send(b);
-}
-
-CursorModifier::CursorModifier() {
+CursorModifier::CursorModifier() : _cursorID(0) {
 }
 
 bool CursorModifier::respondsToEvent(const Event &evt) const {
@@ -1568,15 +56,32 @@ VThreadState CursorModifier::consumeMessage(Runtime *runtime, const Common::Shar
 		runtime->setModifierCursorOverride(_cursorID);
 	}
 	if (_removeWhen.respondsTo(msg->getEvent())) {
+		// This doesn't call "disable" because the behavior is actually different.
+		// Disabling a cursor modifier doesn't seem to remove it.
 		runtime->clearModifierCursorOverride();
 	}
 	return kVThreadReturn;
 }
 
+void CursorModifier::disable(Runtime *runtime) {
+}
+
 bool CursorModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::CursorModifier &data) {
-	if (!_applyWhen.load(data.applyWhen) || !_removeWhen.load(data.removeWhen))
+	if (data.applyWhen.type != Data::PlugInTypeTaggedValue::kEvent || data.cursorIDAsLabel.type != Data::PlugInTypeTaggedValue::kLabel)
 		return false;
-	_cursorID = data.cursorID;
+
+	if (!_applyWhen.load(data.applyWhen.value.asEvent))
+		return false;
+
+	if (data.haveRemoveWhen) {
+		if (!_removeWhen.load(data.removeWhen.value.asEvent))
+			return false;
+	}
+
+	if (data.cursorIDAsLabel.type != Data::PlugInTypeTaggedValue::kLabel)
+		return false;
+
+	_cursorID = data.cursorIDAsLabel.value.asLabel.labelID;
 
 	return true;
 }
@@ -1588,6 +93,9 @@ Common::SharedPtr<Modifier> CursorModifier::shallowClone() const {
 
 const char *CursorModifier::getDefaultName() const {
 	return "Cursor Modifier";
+}
+
+STransCtModifier::STransCtModifier() : _transitionType(0), _transitionDirection(0), _steps(0), _duration(0), _fullScreen(false) {
 }
 
 bool STransCtModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::STransCtModifier &data) {
@@ -1636,9 +144,13 @@ VThreadState STransCtModifier::consumeMessage(Runtime *runtime, const Common::Sh
 		}
 	}
 	if (_disableWhen.respondsTo(msg->getEvent()))
-		runtime->setSceneTransitionEffect(false, nullptr);
+		disable(runtime);
 
 	return kVThreadReturn;
+}
+
+void STransCtModifier::disable(Runtime *runtime) {
+	runtime->setSceneTransitionEffect(false, nullptr);
 }
 
 bool STransCtModifier::readAttribute(MiniscriptThread *thread, DynamicValue &result, const Common::String &attrib) {
@@ -1660,10 +172,10 @@ bool STransCtModifier::readAttribute(MiniscriptThread *thread, DynamicValue &res
 
 MiniscriptInstructionOutcome STransCtModifier::writeRefAttribute(MiniscriptThread *thread, DynamicValueWriteProxy &result, const Common::String &attrib) {
 	if (attrib == "rate") {
-		DynamicValueWriteFuncHelper<STransCtModifier, &STransCtModifier::scriptSetRate>::create(this, result);
+		DynamicValueWriteFuncHelper<STransCtModifier, &STransCtModifier::scriptSetRate, true>::create(this, result);
 		return kMiniscriptInstructionOutcomeContinue;
 	} else if (attrib == "steps") {
-		DynamicValueWriteFuncHelper<STransCtModifier, &STransCtModifier::scriptSetSteps>::create(this, result);
+		DynamicValueWriteFuncHelper<STransCtModifier, &STransCtModifier::scriptSetSteps, true>::create(this, result);
 		return kMiniscriptInstructionOutcomeContinue;
 	}
 
@@ -1712,8 +224,79 @@ MiniscriptInstructionOutcome STransCtModifier::scriptSetSteps(MiniscriptThread *
 	return kMiniscriptInstructionOutcomeContinue;
 }
 
-MediaCueMessengerModifier::MediaCueMessengerModifier() : _isActive(false) {
+MediaCueMessengerModifier::CueSourceUnion::CueSourceUnion() : asUnset(0) {
+}
+
+MediaCueMessengerModifier::CueSourceUnion::~CueSourceUnion() {
+}
+
+template<class T, T (MediaCueMessengerModifier::CueSourceUnion::*TMember)>
+void MediaCueMessengerModifier::CueSourceUnion::construct(const T &value) {
+	T *field = &(this->*TMember);
+	new (field) T(value);
+}
+
+template<class T, T (MediaCueMessengerModifier::CueSourceUnion::*TMember)>
+void MediaCueMessengerModifier::CueSourceUnion::destruct() {
+	T *field = &(this->*TMember);
+	field->~T();
+}
+
+MediaCueMessengerModifier::MediaCueMessengerModifier() : _isActive(false), _cueSourceType(kCueSourceInvalid) {
 	_mediaCue.sourceModifier = this;
+}
+
+MediaCueMessengerModifier::MediaCueMessengerModifier(const MediaCueMessengerModifier &other)
+	: Modifier(other), _cueSourceType(other._cueSourceType), _cueSourceModifier(other._cueSourceModifier), _enableWhen(other._enableWhen), _disableWhen(other._disableWhen), _mediaCue(other._mediaCue), _isActive(other._isActive) {
+	_cueSource.destruct<uint64, &CueSourceUnion::asUnset>();
+
+	switch (_cueSourceType) {
+	case kCueSourceInteger:
+		_cueSource.construct<int32, &CueSourceUnion::asInt>(other._cueSource.asInt);
+		break;
+	case kCueSourceIntegerRange:
+		_cueSource.construct<IntRange, &CueSourceUnion::asIntRange>(other._cueSource.asIntRange);
+		break;
+	case kCueSourceVariableReference:
+		_cueSource.construct<uint32, &CueSourceUnion::asVarRefGUID>(other._cueSource.asVarRefGUID);
+		break;
+	case kCueSourceLabel:
+		_cueSource.construct<Label, &CueSourceUnion::asLabel>(other._cueSource.asLabel);
+		break;
+	case kCueSourceString:
+		_cueSource.construct<Common::String, &CueSourceUnion::asString>(other._cueSource.asString);
+		break;
+	default:
+		_cueSource.construct<uint64, &CueSourceUnion::asUnset>(0);
+		break;
+	}
+}
+
+MediaCueMessengerModifier::~MediaCueMessengerModifier() {
+	destructCueSource();
+}
+
+void MediaCueMessengerModifier::destructCueSource() {
+	switch (_cueSourceType) {
+	case kCueSourceInteger:
+		_cueSource.destruct<int32, &CueSourceUnion::asInt>();
+		break;
+	case kCueSourceIntegerRange:
+		_cueSource.destruct<IntRange, &CueSourceUnion::asIntRange>();
+		break;
+	case kCueSourceVariableReference:
+		_cueSource.destruct<uint32, &CueSourceUnion::asVarRefGUID>();
+		break;
+	case kCueSourceLabel:
+		_cueSource.destruct<Label, &CueSourceUnion::asLabel>();
+		break;
+	case kCueSourceString:
+		_cueSource.destruct<Common::String, &CueSourceUnion::asString>();
+		break;
+	default:
+		_cueSource.destruct<uint64, &CueSourceUnion::asUnset>();
+		break;
+	}
 }
 
 bool MediaCueMessengerModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::MediaCueMessengerModifier &data) {
@@ -1746,26 +329,40 @@ bool MediaCueMessengerModifier::load(const PlugInModifierLoaderContext &context,
 	if (!_mediaCue.send.load(data.sendEvent, messageFlags, data.with, data.destination))
 		return false;
 
+	destructCueSource();
+
 	switch (data.executeAt.type) {
 	case Data::PlugInTypeTaggedValue::kInteger:
+		_cueSource.construct<int32, &CueSourceUnion::asInt>(data.executeAt.value.asInt);
 		_cueSourceType = kCueSourceInteger;
-		_cueSource.asInt = data.executeAt.value.asInt;
 		break;
-	case Data::PlugInTypeTaggedValue::kIntegerRange:
-		_cueSourceType = kCueSourceIntegerRange;
-		if (!_cueSource.asIntRange.load(data.executeAt.value.asIntRange))
-			return false;
-		break;
+	case Data::PlugInTypeTaggedValue::kIntegerRange: {
+			IntRange intRange;
+			if (!intRange.load(data.executeAt.value.asIntRange))
+				return false;
+
+			_cueSource.construct<IntRange, &CueSourceUnion::asIntRange>(intRange);
+			_cueSourceType = kCueSourceIntegerRange;
+		} break;
 	case Data::PlugInTypeTaggedValue::kVariableReference:
+		_cueSource.construct<uint32, &CueSourceUnion::asVarRefGUID>(data.executeAt.value.asVarRefGUID);
 		_cueSourceType = kCueSourceVariableReference;
-		_cueSource.asVarRefGUID = data.executeAt.value.asVarRefGUID;
 		break;
-	case Data::PlugInTypeTaggedValue::kLabel:
-		_cueSourceType = kCueSourceLabel;
-		if (!_cueSource.asLabel.load(data.executeAt.value.asLabel))
-			return false;
+	case Data::PlugInTypeTaggedValue::kLabel: {
+			Label label;
+			if (!label.load(data.executeAt.value.asLabel))
+				return false;
+
+			_cueSource.construct<Label, &CueSourceUnion::asLabel>(label);
+			_cueSourceType = kCueSourceLabel;
+		} break;
+	case Data::PlugInTypeTaggedValue::kString:
+		_cueSource.construct<Common::String, &CueSourceUnion::asString>(data.executeAt.value.asString);
+		_cueSourceType = kCueSourceString;
 		break;
 	default:
+		_cueSource.construct<uint64, &CueSourceUnion::asUnset>(0);
+		_cueSourceType = kCueSourceInvalid;
 		return false;
 	}
 
@@ -1808,7 +405,7 @@ VThreadState MediaCueMessengerModifier::consumeMessage(Runtime *runtime, const C
 					}
 
 					DynamicValue value;
-					static_cast<VariableModifier *>(modifier)->varGetValue(nullptr, value);
+					static_cast<VariableModifier *>(modifier)->varGetValue(value);
 
 					switch (value.getType()) {
 					case DynamicValueTypes::kInteger:
@@ -1837,16 +434,28 @@ VThreadState MediaCueMessengerModifier::consumeMessage(Runtime *runtime, const C
 		}
 	}
 	if (_disableWhen.respondsTo(msg->getEvent())) {
-		if (_isActive) {
-			Structural *owner = findStructuralOwner();
-			if (owner && owner->isElement())
-				static_cast<Element *>(owner)->removeMediaCue(&_mediaCue);
-
-			_isActive = false;
-		}
+		disable(runtime);
 	}
 
 	return kVThreadReturn;
+}
+
+void MediaCueMessengerModifier::disable(Runtime *runtime) {
+	if (_isActive) {
+		Structural *owner = findStructuralOwner();
+		if (owner && owner->isElement())
+			static_cast<Element *>(owner)->removeMediaCue(&_mediaCue);
+
+		_isActive = false;
+	}
+}
+
+Modifier *MediaCueMessengerModifier::getMediaCueModifier() {
+	return this;
+}
+
+Common::WeakPtr<Modifier> MediaCueMessengerModifier::getMediaCueTriggerSource() const {
+	return _cueSourceModifier;
 }
 
 Common::SharedPtr<Modifier> MediaCueMessengerModifier::shallowClone() const {
@@ -1877,7 +486,7 @@ void MediaCueMessengerModifier::visitInternalReferences(IStructuralReferenceVisi
 	_mediaCue.send.visitInternalReferences(visitor);
 }
 
-ObjectReferenceVariableModifier::ObjectReferenceVariableModifier() : _setToSourceParentWhen(Event::create()) {
+ObjectReferenceVariableModifier::ObjectReferenceVariableModifier() : VariableModifier(Common::SharedPtr<VariableStorage>(new ObjectReferenceVariableStorage())) {
 }
 
 bool ObjectReferenceVariableModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::ObjectReferenceVariableModifier &data) {
@@ -1887,36 +496,36 @@ bool ObjectReferenceVariableModifier::load(const PlugInModifierLoaderContext &co
 	if (!_setToSourceParentWhen.load(data.setToSourceParentWhen.value.asEvent))
 		return false;
 
+	ObjectReferenceVariableStorage *storage = static_cast<ObjectReferenceVariableStorage *>(_storage.get());
+
 	if (data.objectPath.type == Data::PlugInTypeTaggedValue::kString)
-		_objectPath = data.objectPath.str;
+		storage->_objectPath = data.objectPath.value.asString;
 	else if (data.objectPath.type != Data::PlugInTypeTaggedValue::kNull)
 		return false;
 
-	_object.reset();
+	storage->_object.reset();
 
 	return true;
-}
-
-Common::SharedPtr<ModifierSaveLoad> ObjectReferenceVariableModifier::getSaveLoad() {
-	return Common::SharedPtr<ModifierSaveLoad>(new SaveLoad(this));
 }
 
 // Object reference variables are somewhat unusual in that they don't store a simple value,
 // they instead have "object" and "path" attributes AND as a value, they resolve to the
 // modifier itself.
 bool ObjectReferenceVariableModifier::readAttribute(MiniscriptThread *thread, DynamicValue &result, const Common::String &attrib) {
+	ObjectReferenceVariableStorage *storage = static_cast<ObjectReferenceVariableStorage *>(_storage.get());
+
 	if (attrib == "path") {
-		result.setString(_objectPath);
+		result.setString(storage->_objectPath);
 		return true;
 	}
 	if (attrib == "object") {
-		if (_object.object.expired())
+		if (storage->_object.object.expired())
 			resolve(thread->getRuntime());
 
-		if (_object.object.expired())
+		if (storage->_object.object.expired())
 			result.clear();
 		else
-			result.setObject(_object);
+			result.setObject(storage->_object);
 		return true;
 	}
 
@@ -1925,7 +534,7 @@ bool ObjectReferenceVariableModifier::readAttribute(MiniscriptThread *thread, Dy
 
 MiniscriptInstructionOutcome ObjectReferenceVariableModifier::writeRefAttribute(MiniscriptThread *thread, DynamicValueWriteProxy &result, const Common::String &attrib) {
 	if (attrib == "path") {
-		DynamicValueWriteFuncHelper<ObjectReferenceVariableModifier, &ObjectReferenceVariableModifier::scriptSetPath>::create(this, result);
+		DynamicValueWriteFuncHelper<ObjectReferenceVariableModifier, &ObjectReferenceVariableModifier::scriptSetPath, true>::create(this, result);
 		return kMiniscriptInstructionOutcomeContinue;
 	}
 	if (attrib == "object") {
@@ -1939,8 +548,6 @@ MiniscriptInstructionOutcome ObjectReferenceVariableModifier::writeRefAttribute(
 }
 
 bool ObjectReferenceVariableModifier::varSetValue(MiniscriptThread *thread, const DynamicValue &value) {
-	// Somewhat strangely, setting an object reference variable to something sets the path or object,
-	// but getting the variable returns the modifier
 	switch (value.getType()) {
 	case DynamicValueTypes::kNull:
 	case DynamicValueTypes::kObject:
@@ -1952,16 +559,18 @@ bool ObjectReferenceVariableModifier::varSetValue(MiniscriptThread *thread, cons
 	}
 }
 
-void ObjectReferenceVariableModifier::varGetValue(MiniscriptThread *thread, DynamicValue &dest) const {
-	dest.setObject(this->getSelfReference());
+void ObjectReferenceVariableModifier::varGetValue(DynamicValue &dest) const {
+	dest.setObject(getSelfReference());
 }
 
 #ifdef MTROPOLIS_DEBUG_ENABLE
 void ObjectReferenceVariableModifier::debugInspect(IDebugInspectionReport *report) const {
 	VariableModifier::debugInspect(report);
 
-	report->declareDynamic("path", _objectPath);
-	report->declareDynamic("fullPath", _fullPath);
+	ObjectReferenceVariableStorage *storage = static_cast<ObjectReferenceVariableStorage *>(_storage.get());
+
+	report->declareDynamic("path", storage->_objectPath);
+	report->declareDynamic("fullPath", storage->_fullPath);
 }
 #endif
 
@@ -1977,17 +586,21 @@ MiniscriptInstructionOutcome ObjectReferenceVariableModifier::scriptSetPath(Mini
 	if (value.getType() != DynamicValueTypes::kString)
 		return kMiniscriptInstructionOutcomeFailed;
 
-	_objectPath = value.getString();
-	_object.reset();
+	ObjectReferenceVariableStorage *storage = static_cast<ObjectReferenceVariableStorage *>(_storage.get());
+
+	storage->_objectPath = value.getString();
+	storage->_object.reset();
 
 	return kMiniscriptInstructionOutcomeContinue;
 }
 
 MiniscriptInstructionOutcome ObjectReferenceVariableModifier::scriptSetObject(MiniscriptThread *thread, const DynamicValue &value) {
+	ObjectReferenceVariableStorage *storage = static_cast<ObjectReferenceVariableStorage *>(_storage.get());
+
 	if (value.getType() == DynamicValueTypes::kNull) {
-		_object.reset();
-		_objectPath.clear();
-		_fullPath.clear();
+		storage->_object.reset();
+		storage->_objectPath.clear();
+		storage->_fullPath.clear();
 
 		return kMiniscriptInstructionOutcomeContinue;
 	} else if (value.getType() == DynamicValueTypes::kObject) {
@@ -1995,11 +608,11 @@ MiniscriptInstructionOutcome ObjectReferenceVariableModifier::scriptSetObject(Mi
 		if (!obj)
 			return scriptSetObject(thread, DynamicValue());
 
-		if (!computeObjectPath(obj.get(), _fullPath))
+		if (!computeObjectPath(obj.get(), storage->_fullPath))
 			return scriptSetObject(thread, DynamicValue());
 
-		_objectPath = _fullPath;
-		_object.object = obj;
+		storage->_objectPath = storage->_fullPath;
+		storage->_object.object = obj;
 
 		return kMiniscriptInstructionOutcomeContinue;
 	} else
@@ -2007,52 +620,60 @@ MiniscriptInstructionOutcome ObjectReferenceVariableModifier::scriptSetObject(Mi
 }
 
 MiniscriptInstructionOutcome ObjectReferenceVariableModifier::scriptObjectRefAttrib(MiniscriptThread *thread, DynamicValueWriteProxy &proxy, const Common::String &attrib) {
+	ObjectReferenceVariableStorage *storage = static_cast<ObjectReferenceVariableStorage *>(_storage.get());
+
 	resolve(thread->getRuntime());
 
-	if (_object.object.expired()) {
+	if (storage->_object.object.expired()) {
 		thread->error("Attempted to reference an attribute of an object variable object, but the reference is dead");
 		return kMiniscriptInstructionOutcomeFailed;
 	}
 
-	return _object.object.lock()->writeRefAttribute(thread, proxy, attrib);
+	return storage->_object.object.lock()->writeRefAttribute(thread, proxy, attrib);
 }
 
 MiniscriptInstructionOutcome ObjectReferenceVariableModifier::scriptObjectRefAttribIndexed(MiniscriptThread *thread, DynamicValueWriteProxy &proxy, const Common::String &attrib, const DynamicValue &index) {
+	ObjectReferenceVariableStorage *storage = static_cast<ObjectReferenceVariableStorage *>(_storage.get());
+
 	resolve(thread->getRuntime());
 
-	if (_object.object.expired()) {
+	if (storage->_object.object.expired()) {
 		thread->error("Attempted to reference an attribute of an object variable object, but the reference is dead");
 		return kMiniscriptInstructionOutcomeFailed;
 	}
 
-	return _object.object.lock()->writeRefAttributeIndexed(thread, proxy, attrib, index);
+	return storage->_object.object.lock()->writeRefAttributeIndexed(thread, proxy, attrib, index);
 }
 
 void ObjectReferenceVariableModifier::resolve(Runtime *runtime) {
-	if (!_object.object.expired())
+	ObjectReferenceVariableStorage *storage = static_cast<ObjectReferenceVariableStorage *>(_storage.get());
+
+	if (!storage->_object.object.expired())
 		return;
 
-	_fullPath.clear();
-	_object.reset();
+	storage->_fullPath.clear();
+	storage->_object.reset();
 
-	if (_objectPath.size() == 0)
+	if (storage->_objectPath.size() == 0)
 		return;
 
-	if (_objectPath[0] == '/')
+	if (storage->_objectPath[0] == '/')
 		resolveAbsolutePath(runtime);
-	else if (_objectPath[0] == '.')
-		resolveRelativePath(this, _objectPath, 0);
+	else if (storage->_objectPath[0] == '.')
+		resolveRelativePath(runtime, this, storage->_objectPath, 0);
 	else
 		warning("Object reference variable had an unknown path format");
 
-	if (!_object.object.expired()) {
-		if (!computeObjectPath(_object.object.lock().get(), _fullPath)) {
-			_object.reset();
+	if (!storage->_object.object.expired()) {
+		if (!computeObjectPath(storage->_object.object.lock().get(), storage->_fullPath)) {
+			storage->_object.reset();
 		}
 	}
 }
 
-void ObjectReferenceVariableModifier::resolveRelativePath(RuntimeObject *obj, const Common::String &path, size_t startPos) {
+void ObjectReferenceVariableModifier::resolveRelativePath(Runtime *runtime, RuntimeObject *obj, const Common::String &path, size_t startPos) {
+	ObjectReferenceVariableStorage *storage = static_cast<ObjectReferenceVariableStorage *>(_storage.get());
+
 	bool haveNextLevel = true;
 	size_t nextLevelPos = startPos;
 
@@ -2074,6 +695,8 @@ void ObjectReferenceVariableModifier::resolveRelativePath(RuntimeObject *obj, co
 			obj = getObjectParent(obj);
 			if (obj == nullptr)
 				return;
+
+			continue;
 		}
 
 		const Common::Array<Common::SharedPtr<Modifier> > *modifierChildren = nullptr;
@@ -2081,6 +704,10 @@ void ObjectReferenceVariableModifier::resolveRelativePath(RuntimeObject *obj, co
 
 		if (obj->isStructural()) {
 			Structural *structural = static_cast<Structural *>(obj);
+
+			if (structural->getSceneLoadState() == Structural::SceneLoadState::kSceneNotLoaded)
+				runtime->hotLoadScene(structural);
+
 			modifierChildren = &structural->getModifiers();
 			structuralChildren = &structural->getChildren();
 		} else if (obj->isModifier()) {
@@ -2114,11 +741,13 @@ void ObjectReferenceVariableModifier::resolveRelativePath(RuntimeObject *obj, co
 			return;
 	}
 
-	_object.object = obj->getSelfReference();
+	storage->_object.object = obj->getSelfReference();
 }
 
 void ObjectReferenceVariableModifier::resolveAbsolutePath(Runtime *runtime) {
-	assert(_objectPath[0] == '/');
+	ObjectReferenceVariableStorage *storage = static_cast<ObjectReferenceVariableStorage *>(_storage.get());
+
+	assert(storage->_objectPath[0] == '/');
 
 	RuntimeObject *project = this;
 	for (;;) {
@@ -2136,7 +765,7 @@ void ObjectReferenceVariableModifier::resolveAbsolutePath(Runtime *runtime) {
 	bool foundPrefix = false;
 
 	if (runtime->getHacks().ignoreMismatchedProjectNameInObjectLookups) {
-		size_t slashOffset = _objectPath.findFirstOf('/', 1);
+		size_t slashOffset = storage->_objectPath.findFirstOf('/', 1);
 		if (slashOffset != Common::String::npos) {
 			prefixEnd = slashOffset;
 			foundPrefix = true;
@@ -2147,7 +776,7 @@ void ObjectReferenceVariableModifier::resolveAbsolutePath(Runtime *runtime) {
 			"/<project>"};
 
 		for (const Common::String &prefix : projectPrefixes) {
-			if (_objectPath.size() >= prefix.size() && caseInsensitiveEqual(_objectPath.substr(0, prefix.size()), prefix)) {
+			if (storage->_objectPath.size() >= prefix.size() && caseInsensitiveEqual(storage->_objectPath.substr(0, prefix.size()), prefix)) {
 				prefixEnd = prefix.size();
 				foundPrefix = true;
 				break;
@@ -2159,15 +788,15 @@ void ObjectReferenceVariableModifier::resolveAbsolutePath(Runtime *runtime) {
 		return;
 
 	// If the object path is longer, then there must be a slash separator, otherwise this doesn't match the project
-	if (prefixEnd == _objectPath.size()) {
-		_object = ObjectReference(project->getSelfReference());
+	if (prefixEnd == storage->_objectPath.size()) {
+		storage->_object = ObjectReference(project->getSelfReference());
 		return;
 	}
 
-	if (_objectPath[prefixEnd] != '/')
+	if (storage->_objectPath[prefixEnd] != '/')
 		return;
 
-	return resolveRelativePath(project, _objectPath, prefixEnd + 1);
+	return resolveRelativePath(runtime, project, storage->_objectPath, prefixEnd + 1);
 }
 
 bool ObjectReferenceVariableModifier::computeObjectPath(RuntimeObject *obj, Common::String &outPath) {
@@ -2218,22 +847,36 @@ MiniscriptInstructionOutcome ObjectReferenceVariableModifier::ObjectWriteInterfa
 	return static_cast<ObjectReferenceVariableModifier *>(objectRef)->scriptObjectRefAttribIndexed(thread, proxy, attrib, index);
 }
 
-ObjectReferenceVariableModifier::SaveLoad::SaveLoad(ObjectReferenceVariableModifier *modifier) : _modifier(modifier) {
-	_objectPath = _modifier->_objectPath;
+ObjectReferenceVariableStorage::SaveLoad::SaveLoad(ObjectReferenceVariableStorage *storage) : _storage(storage) {
+	_objectPath = _storage->_objectPath;
 }
 
-void ObjectReferenceVariableModifier::SaveLoad::commitLoad() const {
-	_modifier->_object.reset();
-	_modifier->_fullPath.clear();
-	_modifier->_objectPath = _objectPath;
+
+
+
+ObjectReferenceVariableStorage::ObjectReferenceVariableStorage() {
 }
 
-void ObjectReferenceVariableModifier::SaveLoad::saveInternal(Common::WriteStream *stream) const {
+Common::SharedPtr<ModifierSaveLoad> ObjectReferenceVariableStorage::getSaveLoad(Runtime *runtime) {
+	return Common::SharedPtr<ModifierSaveLoad>(new SaveLoad(this));
+}
+
+Common::SharedPtr<VariableStorage> ObjectReferenceVariableStorage::clone() const {
+	return Common::SharedPtr<VariableStorage>(new ObjectReferenceVariableStorage(*this));
+}
+
+void ObjectReferenceVariableStorage::SaveLoad::commitLoad() const {
+	_storage->_object.reset();
+	_storage->_fullPath.clear();
+	_storage->_objectPath = _objectPath;
+}
+
+void ObjectReferenceVariableStorage::SaveLoad::saveInternal(Common::WriteStream *stream) const {
 	stream->writeUint32BE(_objectPath.size());
 	stream->writeString(_objectPath);
 }
 
-bool ObjectReferenceVariableModifier::SaveLoad::loadInternal(Common::ReadStream *stream, uint32 saveFileVersion) {
+bool ObjectReferenceVariableStorage::SaveLoad::loadInternal(Common::ReadStream *stream, uint32 saveFileVersion) {
 	uint32 stringLen = stream->readUint32BE();
 	if (stream->err())
 		return false;
@@ -2253,464 +896,215 @@ bool ObjectReferenceVariableModifier::SaveLoad::loadInternal(Common::ReadStream 
 	return true;
 }
 
-MidiModifier::MidiModifier() : _plugIn(nullptr), _filePlayer(nullptr), _notePlayer(nullptr), _mutedTracks(0),
-	_singleNoteChannel(0), _singleNoteNote(0), _runtime(nullptr), _volume(100) {
-}
-
-MidiModifier::~MidiModifier() {
-	if (_filePlayer)
-		_plugIn->getMidi()->deleteFilePlayer(_filePlayer);
-
-	if (_notePlayer)
-		_plugIn->getMidi()->deleteNotePlayer(_notePlayer);
-}
-
-bool MidiModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::MidiModifier &data) {
-	_plugIn = static_cast<StandardPlugIn *>(context.plugIn);
-
-	if (data.executeWhen.type != Data::PlugInTypeTaggedValue::kEvent)
-		return false;
-
-	if (!_executeWhen.load(data.executeWhen.value.asEvent))
-		return false;
-
-	if (data.terminateWhen.type != Data::PlugInTypeTaggedValue::kEvent)
-		return false;
-
-	if (!_terminateWhen.load(data.terminateWhen.value.asEvent))
-		return false;
-
-	if (data.embeddedFlag) {
-		_mode = kModeFile;
-		_embeddedFile = data.embeddedFile;
-
-		_modeSpecific.file.loop = (data.modeSpecific.embedded.loop != 0);
-		_modeSpecific.file.overrideTempo = (data.modeSpecific.embedded.overrideTempo != 0);
-		_volume = data.modeSpecific.embedded.volume;
-
-		if (data.embeddedFadeIn.type != Data::PlugInTypeTaggedValue::kFloat
-			|| data.embeddedFadeOut.type != Data::PlugInTypeTaggedValue::kFloat
-			|| data.embeddedTempo.type != Data::PlugInTypeTaggedValue::kFloat)
-			return false;
-
-		_modeSpecific.file.fadeIn = data.embeddedFadeIn.value.asFloat.toXPFloat().toDouble();
-		_modeSpecific.file.fadeOut = data.embeddedFadeOut.value.asFloat.toXPFloat().toDouble();
-		_modeSpecific.file.tempo = data.embeddedTempo.value.asFloat.toXPFloat().toDouble();
-	} else {
-		_mode = kModeSingleNote;
-
-		if (data.singleNoteDuration.type != Data::PlugInTypeTaggedValue::kFloat)
-			return false;
-
-		_modeSpecific.singleNote.channel = data.modeSpecific.singleNote.channel;
-		_modeSpecific.singleNote.note = data.modeSpecific.singleNote.note;
-		_modeSpecific.singleNote.velocity = data.modeSpecific.singleNote.velocity;
-		_modeSpecific.singleNote.program = data.modeSpecific.singleNote.program;
-		_modeSpecific.singleNote.duration = data.singleNoteDuration.value.asFloat.toXPFloat().toDouble();
-
-		_volume = 100;
-	}
-
-	return true;
-}
-
-bool MidiModifier::respondsToEvent(const Event &evt) const {
-	return _executeWhen.respondsTo(evt) || _terminateWhen.respondsTo(evt);
-}
-
-VThreadState MidiModifier::consumeMessage(Runtime *runtime, const Common::SharedPtr<MessageProperties> &msg) {
-	if (_executeWhen.respondsTo(msg->getEvent())) {
-		if (_mode == kModeFile) {
-			if (_embeddedFile) {
-				debug(2, "MIDI (%x '%s'): Playing embedded file", getStaticGUID(), getName().c_str());
-
-				const double tempo = _modeSpecific.file.overrideTempo ? _modeSpecific.file.tempo : 120.0;
-				if (!_filePlayer)
-					_filePlayer = _plugIn->getMidi()->createFilePlayer(_embeddedFile, _modeSpecific.file.overrideTempo, tempo, getBoostedVolume(runtime) * 255 / 100, _modeSpecific.file.loop, _mutedTracks);
-				_plugIn->getMidi()->playPlayer(_filePlayer);
-			} else {
-				debug(2, "MIDI (%x '%s'): Digested execute event but don't have anything to play", getStaticGUID(), getName().c_str());
-			}
-		} else if (_mode == kModeSingleNote) {
-			playSingleNote();
-		}
-	}
-	if (_terminateWhen.respondsTo(msg->getEvent())) {
-		if (_filePlayer) {
-			_plugIn->getMidi()->deleteFilePlayer(_filePlayer);
-			_filePlayer = nullptr;
-		}
-		if (_notePlayer) {
-			_plugIn->getMidi()->deleteNotePlayer(_notePlayer);
-			_notePlayer = nullptr;
-		}
-	}
-
-	return kVThreadReturn;
-}
-
-void MidiModifier::playSingleNote() {
-	if (!_notePlayer)
-		_notePlayer = _plugIn->getMidi()->createNotePlayer();
-	_plugIn->getMidi()->playNote(_notePlayer, _volume, _modeSpecific.singleNote.channel, _modeSpecific.singleNote.program, _modeSpecific.singleNote.note, _modeSpecific.singleNote.velocity, _modeSpecific.singleNote.duration);
-}
-
-void MidiModifier::stopSingleNote() {
-	if (_notePlayer)
-		_plugIn->getMidi()->stopNote(_notePlayer);
-}
-
-bool MidiModifier::readAttribute(MiniscriptThread *thread, DynamicValue &result, const Common::String &attrib) {
-	if (attrib == "volume") {
-		result.setInt(_volume);
-		return true;
-	}
-
-	return Modifier::readAttribute(thread, result, attrib);
-}
-
-MiniscriptInstructionOutcome MidiModifier::writeRefAttribute(MiniscriptThread *thread, DynamicValueWriteProxy &result, const Common::String &attrib) {
-	if (attrib == "volume") {
-		DynamicValueWriteFuncHelper<MidiModifier, &MidiModifier::scriptSetVolume>::create(this, result);
-		return kMiniscriptInstructionOutcomeContinue;
-	} else if (attrib == "notevelocity") {
-		DynamicValueWriteFuncHelper<MidiModifier, &MidiModifier::scriptSetNoteVelocity>::create(this, result);
-		return kMiniscriptInstructionOutcomeContinue;
-	} else if (attrib == "noteduration") {
-		DynamicValueWriteFuncHelper<MidiModifier, &MidiModifier::scriptSetNoteDuration>::create(this, result);
-		return kMiniscriptInstructionOutcomeContinue;
-	} else if (attrib == "notenum") {
-		DynamicValueWriteFuncHelper<MidiModifier, &MidiModifier::scriptSetNoteNum>::create(this, result);
-		return kMiniscriptInstructionOutcomeContinue;
-	} else if (attrib == "loop") {
-		DynamicValueWriteFuncHelper<MidiModifier, &MidiModifier::scriptSetLoop>::create(this, result);
-		return kMiniscriptInstructionOutcomeContinue;
-	} else if (attrib == "playnote") {
-		DynamicValueWriteFuncHelper<MidiModifier, &MidiModifier::scriptSetPlayNote>::create(this, result);
-		return kMiniscriptInstructionOutcomeContinue;
-	} else if (attrib == "tempo") {
-		DynamicValueWriteFuncHelper<MidiModifier, &MidiModifier::scriptSetTempo>::create(this, result);
-		return kMiniscriptInstructionOutcomeContinue;
-	}
-
-	return Modifier::writeRefAttribute(thread, result, attrib);
-}
-
-MiniscriptInstructionOutcome MidiModifier::writeRefAttributeIndexed(MiniscriptThread *thread, DynamicValueWriteProxy &result, const Common::String &attrib, const DynamicValue &index) {
-	if (attrib == "mutetrack") {
-		int32 asInteger = 0;
-		if (!index.roundToInt(asInteger) || asInteger < 1) {
-			thread->error("Invalid index for mutetrack");
-			return kMiniscriptInstructionOutcomeFailed;
-		}
-
-		result.pod.objectRef = this;
-		result.pod.ptrOrOffset = asInteger - 1;
-		result.pod.ifc = DynamicValueWriteInterfaceGlue<MuteTrackProxyInterface>::getInstance();
-
-		return kMiniscriptInstructionOutcomeContinue;
-	}
-
-	return Modifier::writeRefAttributeIndexed(thread, result, attrib, index);
-}
-
-
-uint MidiModifier::getBoostedVolume(Runtime *runtime) const {
-	uint boostedVolume = (_volume * runtime->getHacks().midiVolumeScale) >> 8;
-	if (boostedVolume > 100)
-		boostedVolume = 100;
-	return boostedVolume;
-}
-
-Common::SharedPtr<Modifier> MidiModifier::shallowClone() const {
-	Common::SharedPtr<MidiModifier> clone(new MidiModifier(*this));
-
-	clone->_notePlayer = nullptr;
-	clone->_filePlayer = nullptr;
-
-	return clone;
-}
-
-const char *MidiModifier::getDefaultName() const {
-	return "MIDI Modifier";
-}
-
-MiniscriptInstructionOutcome MidiModifier::scriptSetVolume(MiniscriptThread *thread, const DynamicValue &value) {
-	int32 asInteger = 0;
-	if (!value.roundToInt(asInteger))
-		return kMiniscriptInstructionOutcomeFailed;
-
-	if (asInteger < 0)
-		asInteger = 0;
-	else if (asInteger > 100)
-		asInteger = 100;
-
-	_volume = asInteger;
-
-	if (_mode == kModeFile) {
-		debug(2, "MIDI (%x '%s'): Changing volume to %i", getStaticGUID(), getName().c_str(), _volume);
-		if (_filePlayer)
-			_plugIn->getMidi()->setPlayerVolume(_filePlayer, getBoostedVolume(thread->getRuntime()) * 255 / 100);
-	}
-
-	return kMiniscriptInstructionOutcomeContinue;
-}
-
-MiniscriptInstructionOutcome MidiModifier::scriptSetNoteVelocity(MiniscriptThread *thread, const DynamicValue &value) {
-	int32 asInteger = 0;
-	if (!value.roundToInt(asInteger))
-		return kMiniscriptInstructionOutcomeFailed;
-
-	if (asInteger < 0)
-		asInteger = 0;
-	else if (asInteger > 127)
-		asInteger = 127;
-
-	if (_mode == kModeSingleNote) {
-		debug(2, "MIDI (%x '%s'): Changing note velocity to %i", getStaticGUID(), getName().c_str(), asInteger);
-		_modeSpecific.singleNote.velocity = asInteger;
-	}
-
-	return kMiniscriptInstructionOutcomeContinue;
-}
-
-MiniscriptInstructionOutcome MidiModifier::scriptSetNoteDuration(MiniscriptThread *thread, const DynamicValue &value) {
-	double asDouble = 0.0;
-	if (value.getType() == DynamicValueTypes::kFloat) {
-		asDouble = value.getFloat();
-	} else {
-		DynamicValue converted;
-		if (!value.convertToType(DynamicValueTypes::kFloat, converted))
-			return kMiniscriptInstructionOutcomeFailed;
-		asDouble = converted.getFloat();	
-	}
-
-	if (_mode == kModeSingleNote) {
-		debug(2, "MIDI (%x '%s'): Changing note duration to %g", getStaticGUID(), getName().c_str(), asDouble);
-		_modeSpecific.singleNote.duration = asDouble;
-	}
-
-	return kMiniscriptInstructionOutcomeContinue;
-}
-
-MiniscriptInstructionOutcome MidiModifier::scriptSetNoteNum(MiniscriptThread *thread, const DynamicValue &value) {
-	int32 asInteger = 0;
-	if (!value.roundToInt(asInteger))
-		return kMiniscriptInstructionOutcomeFailed;
-
-	if (asInteger < 0)
-		asInteger = 0;
-	else if (asInteger > 255)
-		asInteger = 255;
-
-	if (_mode == kModeSingleNote) {
-		debug(2, "MIDI (%x '%s'): Changing note number to %i", getStaticGUID(), getName().c_str(), asInteger);
-		_modeSpecific.singleNote.note = asInteger;
-	}
-
-	return kMiniscriptInstructionOutcomeContinue;
-}
-
-MiniscriptInstructionOutcome MidiModifier::scriptSetLoop(MiniscriptThread *thread, const DynamicValue &value) {
-	if (value.getType() != DynamicValueTypes::kBoolean)
-		return kMiniscriptInstructionOutcomeFailed;
-
-	if (_mode == kModeFile) {
-		const bool loop = value.getBool();
-
-		debug(2, "MIDI (%x '%s'): Changing loop state to %s", getStaticGUID(), getName().c_str(), loop ? "true" : "false");
-		if (_modeSpecific.file.loop != loop) {
-			_modeSpecific.file.loop = loop;
-
-			if (_filePlayer)
-				_plugIn->getMidi()->setPlayerLoop(_filePlayer, loop);
-		}
-	}
-
-	return kMiniscriptInstructionOutcomeContinue;
-}
-
-MiniscriptInstructionOutcome MidiModifier::scriptSetTempo(MiniscriptThread *thread, const DynamicValue &value) {
-	double tempo = 0.0;
-	if (value.getType() == DynamicValueTypes::kInteger)
-		tempo = value.getInt();
-	else if (value.getType() == DynamicValueTypes::kFloat)
-		tempo = value.getFloat();
-	else
-		return kMiniscriptInstructionOutcomeFailed;
-
-	if (_mode == kModeFile) {
-		debug(2, "MIDI (%x '%s'): Changing tempo to %g", getStaticGUID(), getName().c_str(), tempo);
-
-		if (_filePlayer)
-			_plugIn->getMidi()->setPlayerTempo(_filePlayer, tempo);
-
-	}
-
-	return kMiniscriptInstructionOutcomeContinue;
-}
-
-MiniscriptInstructionOutcome MidiModifier::scriptSetPlayNote(MiniscriptThread *thread, const DynamicValue &value) {
-	if (miniscriptEvaluateTruth(value))
-		playSingleNote();
-	else
-		stopSingleNote();
-
-	return kMiniscriptInstructionOutcomeContinue;
-}
-
-MiniscriptInstructionOutcome MidiModifier::scriptSetMuteTrack(MiniscriptThread *thread, size_t trackIndex, bool muted) {
-	if (trackIndex >= 16) {
-		thread->error("Invalid track index for mutetrack");
-		return kMiniscriptInstructionOutcomeFailed;
-	}
-
-	uint16 mutedTracks = _mutedTracks;
-	uint16 trackMask = 1 << trackIndex;
-
-	if (muted)
-		mutedTracks |= trackMask;
-	else
-		mutedTracks -= (mutedTracks & trackMask);
-
-	if (mutedTracks != _mutedTracks) {
-		_mutedTracks = mutedTracks;
-
-		if (_filePlayer)
-			_plugIn->getMidi()->setPlayerMutedTracks(_filePlayer, mutedTracks);
-	}
-
-	return kMiniscriptInstructionOutcomeContinue;
-}
-
-MiniscriptInstructionOutcome MidiModifier::MuteTrackProxyInterface::write(MiniscriptThread *thread, const DynamicValue &value, void *objectRef, uintptr ptrOrOffset) {
-	if (value.getType() != DynamicValueTypes::kBoolean) {
-		thread->error("Invalid type for mutetrack");
-		return kMiniscriptInstructionOutcomeFailed;
-	}
-
-	return static_cast<MidiModifier *>(objectRef)->scriptSetMuteTrack(thread, ptrOrOffset, value.getBool());
-}
-
-MiniscriptInstructionOutcome MidiModifier::MuteTrackProxyInterface::refAttrib(MiniscriptThread *thread, DynamicValueWriteProxy &proxy, void *objectRef, uintptr ptrOrOffset, const Common::String &attrib) {
-	return kMiniscriptInstructionOutcomeFailed;
-}
-
-MiniscriptInstructionOutcome MidiModifier::MuteTrackProxyInterface::refAttribIndexed(MiniscriptThread *thread, DynamicValueWriteProxy &proxy, void *objectRef, uintptr ptrOrOffset, const Common::String &attrib, const DynamicValue &index) {
-	return kMiniscriptInstructionOutcomeFailed;
-}
-
-ListVariableModifier::ListVariableModifier() : _list(new DynamicList()), _preferredContentType(DynamicValueTypes::kInteger) {
+ListVariableModifier::ListVariableModifier() : VariableModifier(Common::SharedPtr<VariableStorage>(new ListVariableStorage())) {
 }
 
 bool ListVariableModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::ListVariableModifier &data) {
-	if (!data.havePersistentData || data.numValues == 0)
-		return true;	// If the list is empty then we don't care, the actual value type is irrelevant because it can be reassigned
+	ListVariableStorage *storage = static_cast<ListVariableStorage *>(_storage.get());
 
-	DynamicValueTypes::DynamicValueType expectedType = DynamicValueTypes::kInvalid;
+	bool loadData = true;
+
+	storage->_preferredContentType = DynamicValueTypes::kInvalid;
 	switch (data.contentsType) {
 	case Data::Standard::ListVariableModifier::kContentsTypeInteger:
-		expectedType = DynamicValueTypes::kInteger;
+		storage->_preferredContentType = DynamicValueTypes::kInteger;
 		break;
 	case Data::Standard::ListVariableModifier::kContentsTypePoint:
-		expectedType = DynamicValueTypes::kPoint;
+		storage->_preferredContentType = DynamicValueTypes::kPoint;
 		break;
 	case Data::Standard::ListVariableModifier::kContentsTypeRange:
-		expectedType = DynamicValueTypes::kIntegerRange;
+		storage->_preferredContentType = DynamicValueTypes::kIntegerRange;
 		break;
 	case Data::Standard::ListVariableModifier::kContentsTypeFloat:
-		expectedType = DynamicValueTypes::kFloat;
+		storage->_preferredContentType = DynamicValueTypes::kFloat;
 		break;
 	case Data::Standard::ListVariableModifier::kContentsTypeString:
-		expectedType = DynamicValueTypes::kString;
+		storage->_preferredContentType = DynamicValueTypes::kString;
 		break;
 	case Data::Standard::ListVariableModifier::kContentsTypeObject:
+		storage->_preferredContentType = DynamicValueTypes::kObject;
 		if (data.persistentValuesGarbled) {
 			// Ignore and let the game fix it
-			return true;
 		} else {
-			warning("Object reference lists are not implemented");
-			return false;
+			warning("Loading object reference lists from data is not implemented");
 		}
+		loadData = false;
 		break;
 	case Data::Standard::ListVariableModifier::kContentsTypeVector:
-		expectedType = DynamicValueTypes::kVector;
+		storage->_preferredContentType = DynamicValueTypes::kVector;
 		break;
 	case Data::Standard::ListVariableModifier::kContentsTypeBoolean:
-		expectedType = DynamicValueTypes::kBoolean;
+		storage->_preferredContentType = DynamicValueTypes::kBoolean;
 		break;
 	default:
 		warning("Unknown list data type");
 		return false;
 	}
 
-	for (size_t i = 0; i < data.numValues; i++) {
-		DynamicValue dynValue;
-		if (!dynValue.load(data.values[i]))
-			return false;
+	storage->_list->forceType(storage->_preferredContentType);
 
-		if (dynValue.getType() != expectedType) {
-			warning("List mod initialization element had the wrong type");
-			return false;
-		}
+	if (loadData) {
+		if (!data.havePersistentData || data.numValues == 0)
+			return true;
 
-		if (!_list->setAtIndex(i, dynValue)) {
-			warning("Failed to initialize list modifier, value was rejected");
-			return false;
+		for (size_t i = 0; i < data.numValues; i++) {
+			DynamicValue dynValue;
+			if (!dynValue.loadConstant(data.values[i]))
+				return false;
+
+			if (dynValue.getType() != storage->_preferredContentType) {
+				warning("List mod initialization element had the wrong type");
+				return false;
+			}
+
+			if (!storage->_list->setAtIndex(i, dynValue)) {
+				warning("Failed to initialize list modifier, value was rejected");
+				return false;
+			}
 		}
 	}
-
-	_preferredContentType = expectedType;
 
 	return true;
 }
 
-Common::SharedPtr<ModifierSaveLoad> ListVariableModifier::getSaveLoad() {
-	return Common::SharedPtr<ModifierSaveLoad>(new SaveLoad(this));
+bool ListVariableModifier::isListVariable() const {
+	return true;
 }
 
 bool ListVariableModifier::varSetValue(MiniscriptThread *thread, const DynamicValue &value) {
-	if (value.getType() == DynamicValueTypes::kList)
-		_list = value.getList()->clone();
-	else {
-		if (!_list)
-			_list.reset(new DynamicList());
-		return _list->setAtIndex(0, value);
+	ListVariableStorage *storage = static_cast<ListVariableStorage *>(_storage.get());
+
+	if (value.getType() == DynamicValueTypes::kList) {
+		// Source value is a list.  In this case, it must be convertible, or an error occurs.
+		Common::SharedPtr<DynamicList> sourceList = value.getList();
+		Common::SharedPtr<DynamicList> newList(new DynamicList());
+
+		for (size_t i = 0; i < sourceList->getSize(); i++) {
+			DynamicValue sourceElement;
+			sourceList->getAtIndex(i, sourceElement);
+
+			DynamicValue convertedElement;
+
+			if (!sourceElement.convertToType(storage->_preferredContentType, convertedElement)) {
+				thread->error("Failed to convert list when assigning to a list variable");
+				return false;
+			}
+
+			newList->setAtIndex(i, convertedElement);
+		}
+
+		storage->_list = newList;
+	} else if (value.getType() == DynamicValueTypes::kObject) {
+		// Source value is an object.  In this case, it must be another list, otherwise this fails without an error.
+		RuntimeObject *obj = value.getObject().object.lock().get();
+		if (obj && obj->isModifier() && static_cast<Modifier *>(obj)->isVariable() && static_cast<VariableModifier *>(obj)->isListVariable()) {
+			Common::SharedPtr<DynamicList> sourceList = static_cast<ListVariableStorage *>(static_cast<ListVariableModifier *>(obj)->_storage.get())->_list;
+			Common::SharedPtr<DynamicList> newList(new DynamicList());
+
+			bool failed = false;
+			for (size_t i = 0; i < sourceList->getSize(); i++) {
+				DynamicValue sourceElement;
+				sourceList->getAtIndex(i, sourceElement);
+
+				DynamicValue convertedElement;
+
+				if (!sourceElement.convertToType(storage->_preferredContentType, convertedElement)) {
+					warning("Failed to convert list when assigning to a list variable.  (Non-fatal since it was directly assigned.)");
+					failed = true;
+					break;
+				}
+
+				newList->setAtIndex(i, convertedElement);
+			}
+
+			if (!failed)
+				storage->_list = newList;
+		}
+	} else {
+		// Source value is a non-list.  In this case, it must be exactly the correct type, except for numbers.
+
+		DynamicValue convertedValue;
+		if (value.convertToType(storage->_preferredContentType, convertedValue)) {
+			Common::SharedPtr<DynamicList> newList(new DynamicList());
+			newList->setAtIndex(0, convertedValue);
+			storage->_list = newList;
+		} else {
+			thread->error("Can't assign incompatible value type to a list variable");
+			return false;
+		}
 	}
 
 	return true;
 }
 
-void ListVariableModifier::varGetValue(MiniscriptThread *thread, DynamicValue &dest) const {
-	dest.setList(_list);
+void ListVariableModifier::varGetValue(DynamicValue &dest) const {
+	dest.setObject(this->getSelfReference());
 }
 
 bool ListVariableModifier::readAttribute(MiniscriptThread *thread, DynamicValue &result, const Common::String &attrib) {
+	ListVariableStorage *storage = static_cast<ListVariableStorage *>(_storage.get());
+
 	if (attrib == "count") {
-		result.setInt(_list->getSize());
+		result.setInt(storage->_list->getSize());
 		return true;
 	} else if (attrib == "random") {
-		if (_list->getSize() == 0)
+		if (storage->_list->getSize() == 0)
 			return false;
 
-		size_t index = thread->getRuntime()->getRandom()->getRandomNumber(_list->getSize() - 1);
-		return _list->getAtIndex(index, result);
+		size_t index = thread->getRuntime()->getRandom()->getRandomNumber(storage->_list->getSize() - 1);
+		return storage->_list->getAtIndex(index, result);
+	} else if (attrib == "shuffle") {
+		storage->_list = storage->_list->clone();
+
+		Common::RandomSource *rng = thread->getRuntime()->getRandom();
+
+		size_t listSize = storage->_list->getSize();
+		for (size_t i = 1; i < listSize; i++) {
+			size_t sourceIndex = i - 1;
+			size_t destIndex = sourceIndex + rng->getRandomNumber(static_cast<uint>(listSize - i));
+			if (sourceIndex != destIndex) {
+				DynamicValue srcValue;
+				DynamicValue destValue;
+				(void)storage->_list->getAtIndex(sourceIndex, srcValue);
+				(void)storage->_list->getAtIndex(destIndex, destValue);
+
+				(void)storage->_list->setAtIndex(destIndex, srcValue);
+				(void)storage->_list->setAtIndex(sourceIndex, destValue);
+			}
+		}
+
+		result.setInt(listSize);
+		return true;
 	}
 
 	return Modifier::readAttribute(thread, result, attrib);
 }
 
 bool ListVariableModifier::readAttributeIndexed(MiniscriptThread *thread, DynamicValue &result, const Common::String &attrib, const DynamicValue &index) {
+	ListVariableStorage *storage = static_cast<ListVariableStorage *>(_storage.get());
+
 	if (attrib == "value") {
 		size_t realIndex = 0;
-		return _list->dynamicValueToIndex(realIndex, index) && _list->getAtIndex(realIndex, result);
+		return storage->_list->dynamicValueToIndex(realIndex, index) && storage->_list->getAtIndex(realIndex, result);
+	} else if (attrib == "delete") {
+		size_t realIndex = 0;
+		if (!storage->_list->dynamicValueToIndex(realIndex, index))
+			return false;
+		if (!storage->_list->getAtIndex(realIndex, result))
+			return false;
+
+		storage->_list = storage->_list->clone();
+		storage->_list->deleteAtIndex(realIndex);
+
+		return true;
 	}
+
 	return Modifier::readAttributeIndexed(thread, result, attrib, index);
 }
 
 MiniscriptInstructionOutcome ListVariableModifier::writeRefAttribute(MiniscriptThread *thread, DynamicValueWriteProxy &writeProxy, const Common::String &attrib) {
 	if (attrib == "count") {
-		DynamicValueWriteFuncHelper<ListVariableModifier, &ListVariableModifier::scriptSetCount>::create(this, writeProxy);
+		DynamicValueWriteFuncHelper<ListVariableModifier, &ListVariableModifier::scriptSetCount, true>::create(this, writeProxy);
 		return kMiniscriptInstructionOutcomeContinue;
 	}
 
@@ -2718,13 +1112,15 @@ MiniscriptInstructionOutcome ListVariableModifier::writeRefAttribute(MiniscriptT
 }
 
 MiniscriptInstructionOutcome ListVariableModifier::writeRefAttributeIndexed(MiniscriptThread *thread, DynamicValueWriteProxy &writeProxy, const Common::String &attrib, const DynamicValue &index) {
+	ListVariableStorage *storage = static_cast<ListVariableStorage *>(_storage.get());
+
 	if (attrib == "value") {
 		size_t realIndex = 0;
-		if (!_list->dynamicValueToIndex(realIndex, index))
+		if (!storage->_list->dynamicValueToIndex(realIndex, index))
 			return kMiniscriptInstructionOutcomeFailed;
 
-		_list->createWriteProxyForIndex(realIndex, writeProxy);
-		writeProxy.containerList = _list;
+		storage->_list->createWriteProxyForIndex(realIndex, writeProxy);
+		writeProxy.containerList = storage->_list;
 		return kMiniscriptInstructionOutcomeContinue;
 	}
 	return kMiniscriptInstructionOutcomeFailed;
@@ -2734,28 +1130,30 @@ MiniscriptInstructionOutcome ListVariableModifier::writeRefAttributeIndexed(Mini
 void ListVariableModifier::debugInspect(IDebugInspectionReport *report) const {
 	VariableModifier::debugInspect(report);
 
-	size_t listSize = _list->getSize();
+	ListVariableStorage *storage = static_cast<ListVariableStorage *>(_storage.get());
+
+	size_t listSize = storage->_list->getSize();
 
 	for (size_t i = 0; i < listSize; i++) {
 		int cardinal = i + 1;
-		switch (_list->getType()) {
+		switch (storage->_list->getType()) {
 		case DynamicValueTypes::kInteger:
-			report->declareLoose(Common::String::format("[%i] = %i", cardinal, _list->getInt()[i]));
+			report->declareLoose(Common::String::format("[%i] = %i", cardinal, storage->_list->getInt()[i]));
 			break;
 		case DynamicValueTypes::kFloat:
-			report->declareLoose(Common::String::format("[%i] = %g", cardinal, _list->getFloat()[i]));
+			report->declareLoose(Common::String::format("[%i] = %g", cardinal, storage->_list->getFloat()[i]));
 			break;
 		case DynamicValueTypes::kPoint:
-			report->declareLoose(Common::String::format("[%i] = ", cardinal) + pointToString(_list->getPoint()[i]));
+			report->declareLoose(Common::String::format("[%i] = ", cardinal) + pointToString(storage->_list->getPoint()[i]));
 			break;
 		case DynamicValueTypes::kIntegerRange:
-			report->declareLoose(Common::String::format("[%i] = ", cardinal) + _list->getIntRange()[i].toString());
+			report->declareLoose(Common::String::format("[%i] = ", cardinal) + storage->_list->getIntRange()[i].toString());
 			break;
 		case DynamicValueTypes::kBoolean:
-			report->declareLoose(Common::String::format("[%i] = %s", cardinal, _list->getBool()[i] ? "true" : "false"));
+			report->declareLoose(Common::String::format("[%i] = %s", cardinal, storage->_list->getBool()[i] ? "true" : "false"));
 			break;
 		case DynamicValueTypes::kVector:
-			report->declareLoose(Common::String::format("[%i] = ", cardinal) + _list->getVector()[i].toString());
+			report->declareLoose(Common::String::format("[%i] = ", cardinal) + storage->_list->getVector()[i].toString());
 			break;
 		case DynamicValueTypes::kLabel:
 			report->declareLoose(Common::String::format("[%i] = Label?", cardinal));
@@ -2763,21 +1161,20 @@ void ListVariableModifier::debugInspect(IDebugInspectionReport *report) const {
 		case DynamicValueTypes::kEvent:
 			report->declareLoose(Common::String::format("[%i] = Event?", cardinal));
 			break;
-		case DynamicValueTypes::kVariableReference:
-			report->declareLoose(Common::String::format("[%i] = VarRef?", cardinal));
-			break;
-		case DynamicValueTypes::kIncomingData:
-			report->declareLoose(Common::String::format("[%i] = IncomingData??", cardinal));
-			break;
 		case DynamicValueTypes::kString:
-			report->declareLoose(Common::String::format("[%i] = ", cardinal) + _list->getString()[i]);
+			report->declareLoose(Common::String::format("[%i] = ", cardinal) + storage->_list->getString()[i]);
 			break;
 		case DynamicValueTypes::kList:
 			report->declareLoose(Common::String::format("[%i] = List", cardinal));
 			break;
-		case DynamicValueTypes::kObject:
-			report->declareLoose(Common::String::format("[%i] = Object?", cardinal));
-			break;
+		case DynamicValueTypes::kObject: {
+				RuntimeObject *obj = storage->_list->getObjectReference()[i].object.lock().get();
+
+				if (obj)
+					report->declareLoose(Common::String::format("[%i] = Object %x", cardinal, static_cast<uint>(obj->getRuntimeGUID())));
+				else
+					report->declareLoose(Common::String::format("[%i] = Object (Invalid)", cardinal));
+			} break;
 		default:
 			report->declareLoose(Common::String::format("[%i] = <BAD TYPE>", cardinal));
 			break;
@@ -2786,12 +1183,9 @@ void ListVariableModifier::debugInspect(IDebugInspectionReport *report) const {
 }
 #endif
 
-ListVariableModifier::ListVariableModifier(const ListVariableModifier &other) {
-	if (other._list)
-		_list = other._list->clone();
-}
-
 MiniscriptInstructionOutcome ListVariableModifier::scriptSetCount(MiniscriptThread *thread, const DynamicValue &value) {
+	ListVariableStorage *storage = static_cast<ListVariableStorage *>(_storage.get());
+
 	int32 asInteger = 0;
 	if (!value.roundToInt(asInteger)) {
 		thread->error("Tried to set a list variable count to something other than an integer");
@@ -2804,15 +1198,10 @@ MiniscriptInstructionOutcome ListVariableModifier::scriptSetCount(MiniscriptThre
 	}
 
 	size_t newSize = asInteger;
-	if (newSize > _list->getSize()) {
-		if (_list->getSize() == 0) {
-			thread->error("Restoring an empty list by setting its count isn't implemented");
-			return kMiniscriptInstructionOutcomeFailed;
-		}
-
-		_list->expandToMinimumSize(newSize);
-	} else if (newSize < _list->getSize()) {
-		_list->truncateToSize(newSize);
+	if (newSize > storage->_list->getSize()) {
+		storage->_list->expandToMinimumSize(newSize);
+	} else if (newSize < storage->_list->getSize()) {
+		storage->_list->truncateToSize(newSize);
 	}
 
 	return kMiniscriptInstructionOutcomeContinue;
@@ -2826,18 +1215,35 @@ const char *ListVariableModifier::getDefaultName() const {
 	return "List Variable";
 }
 
-ListVariableModifier::SaveLoad::SaveLoad(ListVariableModifier *modifier) : _modifier(modifier), _list(_modifier->_list) {
+ListVariableStorage::ListVariableStorage() : _preferredContentType(DynamicValueTypes::kInteger), _list(new DynamicList()) {
 }
 
-void ListVariableModifier::SaveLoad::commitLoad() const {
-	_modifier->_list = _list;
+Common::SharedPtr<ModifierSaveLoad> ListVariableStorage::getSaveLoad(Runtime *runtime) {
+	return Common::SharedPtr<ModifierSaveLoad>(new SaveLoad(this));
 }
 
-void ListVariableModifier::SaveLoad::saveInternal(Common::WriteStream *stream) const {
+Common::SharedPtr<VariableStorage> ListVariableStorage::clone() const {
+	ListVariableStorage *newInstance = new ListVariableStorage();
+	newInstance->_list = Common::SharedPtr<DynamicList>(new DynamicList(*_list));
+	newInstance->_preferredContentType = _preferredContentType;
+	return Common::SharedPtr<VariableStorage>(newInstance);
+}
+
+ListVariableStorage::SaveLoad::SaveLoad(ListVariableStorage *storage) : _storage(storage), _list(storage->_list) {
+}
+
+void ListVariableStorage::SaveLoad::commitLoad() const {
+	// We don't support deserializing object references (yet?), so just leave the existing values.
+	// In Obsidian at least, this doesn't matter.
+	if (_list->getType() != DynamicValueTypes::kObject)
+		_storage->_list = _list;
+}
+
+void ListVariableStorage::SaveLoad::saveInternal(Common::WriteStream *stream) const {
 	recursiveWriteList(_list.get(), stream);
 }
 
-bool ListVariableModifier::SaveLoad::loadInternal(Common::ReadStream *stream, uint32 saveFileVersion) {
+bool ListVariableStorage::SaveLoad::loadInternal(Common::ReadStream *stream, uint32 saveFileVersion) {
 	Common::SharedPtr<DynamicList> list = recursiveReadList(stream);
 	if (list) {
 		_list = list;
@@ -2847,7 +1253,7 @@ bool ListVariableModifier::SaveLoad::loadInternal(Common::ReadStream *stream, ui
 	}
 }
 
-void ListVariableModifier::SaveLoad::recursiveWriteList(DynamicList *list, Common::WriteStream *stream) {
+void ListVariableStorage::SaveLoad::recursiveWriteList(DynamicList *list, Common::WriteStream *stream) {
 	stream->writeUint32BE(list->getType());
 	stream->writeUint32BE(list->getSize());
 
@@ -2884,8 +1290,7 @@ void ListVariableModifier::SaveLoad::recursiveWriteList(DynamicList *list, Commo
 		case DynamicValueTypes::kBoolean:
 			stream->writeByte(list->getBool()[i] ? 1 : 0);
 			break;
-		case DynamicValueTypes::kList:
-			recursiveWriteList(list->getList()[i].get(), stream);
+		case DynamicValueTypes::kObject:
 			break;
 		default:
 			error("Can't figure out how to write a saved variable");
@@ -2894,7 +1299,7 @@ void ListVariableModifier::SaveLoad::recursiveWriteList(DynamicList *list, Commo
 	}
 }
 
-Common::SharedPtr<DynamicList> ListVariableModifier::SaveLoad::recursiveReadList(Common::ReadStream *stream) {
+Common::SharedPtr<DynamicList> ListVariableStorage::SaveLoad::recursiveReadList(Common::ReadStream *stream) {
 	Common::SharedPtr<DynamicList> list;
 	list.reset(new DynamicList());
 
@@ -2903,6 +1308,8 @@ Common::SharedPtr<DynamicList> ListVariableModifier::SaveLoad::recursiveReadList
 
 	if (stream->err())
 		return nullptr;
+
+	list->forceType(static_cast<DynamicValueTypes::DynamicValueType>(typeCode));
 
 	for (size_t i = 0; i < size; i++) {
 		DynamicValue val;
@@ -2953,11 +1360,8 @@ Common::SharedPtr<DynamicList> ListVariableModifier::SaveLoad::recursiveReadList
 				byte b = stream->readByte();
 				val.setBool(b != 0);
 			} break;
-		case DynamicValueTypes::kList: {
-				Common::SharedPtr<DynamicList> childList = recursiveReadList(stream);
-				if (!childList)
-					return nullptr;
-				val.setList(childList);
+		case DynamicValueTypes::kObject: {
+				val.setObject(Common::WeakPtr<RuntimeObject>());
 			} break;
 		default:
 			error("Can't figure out how to write a saved variable");
@@ -3017,6 +1421,48 @@ bool SysInfoModifier::readAttribute(MiniscriptThread *thread, DynamicValue &resu
 
 		result.setPoint(Common::Point(width, height));
 		return true;
+	} else if (attrib == "currentram") {
+		result.setInt(256 * 1024 * 1024);
+		return true;
+	} else if (attrib == "architecture") {
+		ProjectPlatform platform = thread->getRuntime()->getProject()->getPlatform();
+
+		if (platform == kProjectPlatformWindows)
+			result.setString("80x86");
+		else if (platform == kProjectPlatformMacintosh)
+			result.setString("PowerPC"); // MC680x0 for 68k
+		else {
+			thread->error("Couldn't resolve architecture");
+			return false;
+		}
+
+		return true;
+	} else if (attrib == "sysversion") {
+		ProjectPlatform platform = thread->getRuntime()->getProject()->getPlatform();
+
+		if (platform == kProjectPlatformMacintosh)
+			result.setString("9.0.4");
+		else if (platform == kProjectPlatformWindows)
+			result.setString("4.0");	// Windows version?  MindGym checks for < 4
+		else {
+			thread->error("Couldn't resolve architecture");
+			return false;
+		}
+
+		return true;
+	} else if (attrib == "processor" || attrib == "nativecpu") {
+		ProjectPlatform platform = thread->getRuntime()->getProject()->getPlatform();
+
+		if (platform == kProjectPlatformMacintosh)
+			result.setString("604");		// PowerPC 604
+		else if (platform == kProjectPlatformWindows)
+			result.setString("Pentium");
+		else {
+			thread->error("Couldn't resolve architecture");
+			return false;
+		}
+
+		return true;
 	}
 
 	return false;
@@ -3031,18 +1477,383 @@ const char *SysInfoModifier::getDefaultName() const {
 	return "SysInfo Modifier";
 }
 
+PanningModifier::PanningModifier() {
+}
+
+PanningModifier::~PanningModifier() {
+}
+
+bool PanningModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::PanningModifier &data) {
+	return true;
+}
+
+bool PanningModifier::respondsToEvent(const Event &evt) const {
+	return false;
+}
+
+VThreadState PanningModifier::consumeMessage(Runtime *runtime, const Common::SharedPtr<MessageProperties> &msg) {
+	return kVThreadReturn;
+}
+
+void PanningModifier::disable(Runtime *runtime) {
+}
+
+#ifdef MTROPOLIS_DEBUG_ENABLE
+void PanningModifier::debugInspect(IDebugInspectionReport *report) const {
+	Modifier::debugInspect(report);
+}
+#endif
+
+Common::SharedPtr<Modifier> PanningModifier::shallowClone() const {
+	return Common::SharedPtr<Modifier>(new PanningModifier(*this));
+}
+
+const char *PanningModifier::getDefaultName() const {
+	return "Panning Modifier"; // ???
+}
+
+FadeModifier::FadeModifier() {
+}
+
+FadeModifier::~FadeModifier() {
+}
+
+bool FadeModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::FadeModifier &data) {
+	return true;
+}
+
+void FadeModifier::disable(Runtime *runtime) {
+}
+
+Common::SharedPtr<Modifier> FadeModifier::shallowClone() const {
+	return Common::SharedPtr<Modifier>(new FadeModifier(*this));
+}
+
+const char *FadeModifier::getDefaultName() const {
+	return "Fade Modifier"; // ???
+}
+
+class PrintModifierImageSupplier : public GUI::ImageAlbumImageSupplier {
+public:
+	PrintModifierImageSupplier(const Common::String &inputPath, bool isMacVersion);
+
+	bool loadImageSlot(uint slot, const Graphics::Surface *&outSurface, bool &outHasPalette, Graphics::Palette &outPalette, GUI::ImageAlbumImageMetadata &outMetadata) override;
+	void releaseImageSlot(uint slot) override;
+	uint getNumSlots() const override;
+	Common::U32String getDefaultFileNameForSlot(uint slot) const override;
+	bool getFileFormatForImageSlot(uint slot, Common::FormatInfo::FormatID &outFormat) const override;
+	Common::SeekableReadStream *createReadStreamForSlot(uint slot) override;
+
+private:
+	Common::String _path;
+
+	Common::SharedPtr<Image::ImageDecoder> _decoder;
+	bool _isMacVersion;
+};
+
+PrintModifierImageSupplier::PrintModifierImageSupplier(const Common::String &inputPath, bool isMacVersion) : _path(inputPath), _isMacVersion(isMacVersion) {
+	if (isMacVersion)
+		_decoder.reset(new Image::PICTDecoder());
+	else
+		_decoder.reset(new Image::BitmapDecoder());
+}
+
+bool PrintModifierImageSupplier::loadImageSlot(uint slot, const Graphics::Surface *&outSurface, bool &outHasPalette, Graphics::Palette &outPalette, GUI::ImageAlbumImageMetadata &outMetadata) {
+	Common::ScopedPtr<Common::SeekableReadStream> dataStream(createReadStreamForSlot(slot));
+
+	if (!dataStream)
+		return false;
+
+	if (!_decoder->loadStream(*dataStream)) {
+		warning("Failed to decode print file");
+		return false;
+	}
+
+	dataStream.reset();
+
+	outSurface = _decoder->getSurface();
+	outHasPalette = _decoder->hasPalette();
+
+	if (_decoder->hasPalette())
+		outPalette.set(_decoder->getPalette(), 0, _decoder->getPalette().size());
+
+	outMetadata = GUI::ImageAlbumImageMetadata();
+	outMetadata._orientation = GUI::kImageAlbumImageOrientationLandscape;
+	outMetadata._viewTransformation = GUI::kImageAlbumViewTransformationRotate90CW;
+
+	return true;
+}
+
+void PrintModifierImageSupplier::releaseImageSlot(uint slot) {
+	_decoder->destroy();
+}
+
+uint PrintModifierImageSupplier::getNumSlots() const {
+	return 1;
+}
+
+Common::U32String PrintModifierImageSupplier::getDefaultFileNameForSlot(uint slot) const {
+	Common::String filename = _path;
+
+	size_t lastColonPos = filename.findLastOf(':');
+
+	if (lastColonPos != Common::String::npos)
+		filename = filename.substr(lastColonPos + 1);
+
+	size_t lastDotPos = filename.findLastOf('.');
+	if (lastDotPos != Common::String::npos)
+		filename = filename.substr(0, lastDotPos);
+
+	if (_isMacVersion)
+		filename += Common::U32String(".pict");
+	else
+		filename += Common::U32String(".bmp");
+
+	return filename.decode(Common::kASCII);
+}
+
+bool PrintModifierImageSupplier::getFileFormatForImageSlot(uint slot, Common::FormatInfo::FormatID &outFormat) const {
+	if (slot != 0)
+		return false;
+
+	if (_isMacVersion)
+		outFormat = Common::FormatInfo::kPICT;
+	else
+		outFormat = Common::FormatInfo::kBMP;
+
+	return true;
+}
+
+Common::SeekableReadStream *PrintModifierImageSupplier::createReadStreamForSlot(uint slot) {
+	if (slot != 0)
+		return nullptr;
+
+	size_t lastColonPos = _path.findLastOf(':');
+	Common::String filename;
+
+	if (lastColonPos == Common::String::npos)
+		filename = _path;
+	else
+		filename = _path.substr(lastColonPos + 1);
+
+	Common::Path path(Common::String("MPZ_MTI/") + filename);
+
+	if (_isMacVersion) {
+		// Color images have res fork data so we must load from the data fork
+		return Common::MacResManager::openFileOrDataFork(path);
+	} else {
+		// Win versions are just files
+		Common::File *f = new Common::File();
+
+		if (!f->open(path)) {
+			delete f;
+			return nullptr;
+		}
+		return f;
+	}
+}
+
+PrintModifier::PrintModifier() {
+}
+
+PrintModifier::~PrintModifier() {
+}
+
+bool PrintModifier::respondsToEvent(const Event &evt) const {
+	return _executeWhen.respondsTo(evt);
+}
+
+VThreadState PrintModifier::consumeMessage(Runtime *runtime, const Common::SharedPtr<MessageProperties> &msg) {
+	if (_executeWhen.respondsTo(msg->getEvent())) {
+		PrintModifierImageSupplier imageSupplier(_filePath, runtime->getProject()->getPlatform() == kProjectPlatformMacintosh);
+
+		Common::ScopedPtr<GUI::Dialog> dialog(GUI::createImageAlbumDialog(_("Image Viewer"), &imageSupplier, 0));
+		dialog->runModal();
+	}
+
+	return kVThreadReturn;
+}
+
+void PrintModifier::disable(Runtime *runtime) {
+}
+
+MiniscriptInstructionOutcome PrintModifier::writeRefAttribute(MiniscriptThread *thread, DynamicValueWriteProxy &writeProxy, const Common::String &attrib) {
+	if (attrib == "showdialog") {
+		// This is only ever set to "false"
+		DynamicValueWriteDiscardHelper::create(writeProxy);
+		return kMiniscriptInstructionOutcomeContinue;
+	} else if (attrib == "filepath") {
+		DynamicValueWriteStringHelper::create(&_filePath, writeProxy);
+		return kMiniscriptInstructionOutcomeContinue;
+	}
+
+	return Modifier::writeRefAttribute(thread, writeProxy, attrib);
+}
+
+bool PrintModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::PrintModifier &data) {
+	if (data.executeWhen.type != Data::PlugInTypeTaggedValue::kEvent)
+		return false;
+
+	if (data.filePath.type != Data::PlugInTypeTaggedValue::kString)
+		return false;
+
+	_filePath = data.filePath.value.asString;
+
+	if (!_executeWhen.load(data.executeWhen.value.asEvent))
+		return false;
+
+	return true;
+}
+
+#ifdef MTROPOLIS_DEBUG_ENABLE
+void PrintModifier::debugInspect(IDebugInspectionReport *report) const {
+}
+#endif
+
+Common::SharedPtr<Modifier> PrintModifier::shallowClone() const {
+	return Common::SharedPtr<Modifier>(new PrintModifier(*this));
+}
+
+const char *PrintModifier::getDefaultName() const {
+	return "Print Modifier";
+}
+
+NavigateModifier::NavigateModifier() {
+}
+
+NavigateModifier::~NavigateModifier() {
+}
+
+bool NavigateModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::NavigateModifier &data) {
+	return true;
+}
+
+bool NavigateModifier::respondsToEvent(const Event &evt) const {
+	return false;
+}
+
+VThreadState NavigateModifier::consumeMessage(Runtime *runtime, const Common::SharedPtr<MessageProperties> &msg) {
+	return kVThreadReturn;
+}
+
+void NavigateModifier::disable(Runtime *runtime) {
+}
+
+#ifdef MTROPOLIS_DEBUG_ENABLE
+void NavigateModifier::debugInspect(IDebugInspectionReport *report) const {
+	Modifier::debugInspect(report);
+}
+#endif
+
+Common::SharedPtr<Modifier> NavigateModifier::shallowClone() const {
+	return Common::SharedPtr<Modifier>(new NavigateModifier(*this));
+}
+
+const char *NavigateModifier::getDefaultName() const {
+	return "Navigate Modifier"; // ???
+}
+
+OpenTitleModifier::OpenTitleModifier()
+	/*: _addToReturnList(false) */ {
+}
+
+OpenTitleModifier::~OpenTitleModifier() {
+}
+
+bool OpenTitleModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::OpenTitleModifier &data) {
+	if (data.executeWhen.type != Data::PlugInTypeTaggedValue::kEvent || data.pathOrUrl.type != Data::PlugInTypeTaggedValue::kString || data.addToReturnList.type != Data::PlugInTypeTaggedValue::kInteger)
+		return false;
+
+	if (!_executeWhen.load(data.executeWhen.value.asEvent))
+		return false;
+
+	_pathOrUrl = data.pathOrUrl.value.asString;
+
+	//_addToReturnList = static_cast<bool>(data.addToReturnList.value.asInt);
+
+	return true;
+}
+
+bool OpenTitleModifier::respondsToEvent(const Event &evt) const {
+	return _executeWhen.respondsTo(evt);
+}
+
+VThreadState OpenTitleModifier::consumeMessage(Runtime *runtime, const Common::SharedPtr<MessageProperties> &msg) {
+#ifdef MTROPOLIS_DEBUG_ENABLE
+	if (Debugger *debugger = runtime->debugGetDebugger())
+		debugger->notify(kDebugSeverityWarning, "Open Title modifier was executed, which isn't implemented yet");
+#endif
+	return kVThreadReturn;
+}
+
+void OpenTitleModifier::disable(Runtime *runtime) {
+}
+
+#ifdef MTROPOLIS_DEBUG_ENABLE
+void OpenTitleModifier::debugInspect(IDebugInspectionReport *report) const {
+	Modifier::debugInspect(report);
+}
+#endif
+
+Common::SharedPtr<Modifier> OpenTitleModifier::shallowClone() const {
+	return Common::SharedPtr<Modifier>(new OpenTitleModifier(*this));
+}
+
+const char *OpenTitleModifier::getDefaultName() const {
+	return "Open Title Modifier"; // ???
+}
+
+OpenAppModifier::OpenAppModifier() {
+}
+
+OpenAppModifier::~OpenAppModifier() {
+}
+
+bool OpenAppModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::OpenAppModifier &data) {
+	return true;
+}
+
+bool OpenAppModifier::respondsToEvent(const Event &evt) const {
+	return false;
+}
+
+VThreadState OpenAppModifier::consumeMessage(Runtime *runtime, const Common::SharedPtr<MessageProperties> &msg) {
+	return kVThreadReturn;
+}
+
+void OpenAppModifier::disable(Runtime *runtime) {
+}
+
+#ifdef MTROPOLIS_DEBUG_ENABLE
+void OpenAppModifier::debugInspect(IDebugInspectionReport *report) const {
+	Modifier::debugInspect(report);
+}
+#endif
+
+Common::SharedPtr<Modifier> OpenAppModifier::shallowClone() const {
+	return Common::SharedPtr<Modifier>(new OpenAppModifier(*this));
+}
+
+const char *OpenAppModifier::getDefaultName() const {
+	return "Open App Modifier"; // ???
+}
+
 StandardPlugInHacks::StandardPlugInHacks() : allowGarbledListModData(false) {
 }
 
-StandardPlugIn::StandardPlugIn(bool useDynamicMidi)
+StandardPlugIn::StandardPlugIn()
 	: _cursorModifierFactory(this)
 	, _sTransCtModifierFactory(this)
 	, _mediaCueModifierFactory(this)
 	, _objRefVarModifierFactory(this)
-	, _midiModifierFactory(this)
 	, _listVarModifierFactory(this)
-	, _sysInfoModifierFactory(this) {
-	_midi.reset(new MultiMidiPlayer(useDynamicMidi));
+	, _sysInfoModifierFactory(this)
+	, _panningModifierFactory(this)
+	, _fadeModifierFactory(this)
+	, _printModifierFactory(this)
+	, _navigateModifierFactory(this)
+	, _openTitleModifierFactory(this)
+	, _openAppModifierFactory(this) {
 }
 
 StandardPlugIn::~StandardPlugIn() {
@@ -3053,9 +1864,15 @@ void StandardPlugIn::registerModifiers(IPlugInModifierRegistrar *registrar) cons
 	registrar->registerPlugInModifier("STransCt", &_sTransCtModifierFactory);
 	registrar->registerPlugInModifier("MediaCue", &_mediaCueModifierFactory);
 	registrar->registerPlugInModifier("ObjRefP", &_objRefVarModifierFactory);
-	registrar->registerPlugInModifier("MIDIModf", &_midiModifierFactory);
 	registrar->registerPlugInModifier("ListMod", &_listVarModifierFactory);
 	registrar->registerPlugInModifier("SysInfo", &_sysInfoModifierFactory);
+	registrar->registerPlugInModifier("Print", &_printModifierFactory);
+
+	registrar->registerPlugInModifier("panning", &_panningModifierFactory);
+	registrar->registerPlugInModifier("fade", &_fadeModifierFactory);
+	registrar->registerPlugInModifier("Navigate", &_navigateModifierFactory);
+	registrar->registerPlugInModifier("OpenTitle", &_openTitleModifierFactory);
+	registrar->registerPlugInModifier("openApp", &_openAppModifierFactory);
 }
 
 const StandardPlugInHacks &StandardPlugIn::getHacks() const {
@@ -3066,20 +1883,14 @@ StandardPlugInHacks &StandardPlugIn::getHacks() {
 	return _hacks;
 }
 
-MultiMidiPlayer *StandardPlugIn::getMidi() const {
-	return _midi.get();
-}
-
 } // End of namespace Standard
 
 namespace PlugIns {
 
 Common::SharedPtr<PlugIn> createStandard() {
-	const bool useDynamicMidi = ConfMan.getBool("mtropolis_mod_dynamic_midi");
-
-	return Common::SharedPtr<PlugIn>(new Standard::StandardPlugIn(useDynamicMidi));
+	return Common::SharedPtr<PlugIn>(new Standard::StandardPlugIn());
 }
 
-} // End of namespace MTropolis
+} // End of namespace PlugIns
 
 } // End of namespace MTropolis

@@ -39,7 +39,6 @@
 #include "hadesch/event.h"
 #include "hadesch/herobelt.h"
 #include "hadesch/persistent.h"
-#include "common/translation.h"
 
 #define _hs(x) (x)
 
@@ -48,6 +47,7 @@ struct ADGameDescription;
 namespace Common {
 class SeekableReadStream;
 class PEResources;
+class TranslationManager;
 }
 
 namespace Graphics {
@@ -75,7 +75,7 @@ public:
 	virtual bool handleCheat(const Common::String &cheat) {
 		return false;
 	}
-	virtual void handleUnclick(const Common::String &name, Common::Point pnt) {}
+	virtual void handleUnclick(const Common::String &name, const Common::Point &pnt) {}
 	virtual ~Handler() {}
 };
 
@@ -113,8 +113,8 @@ public:
 
 	bool hasFeature(EngineFeature f) const override;
 
-	bool canLoadGameStateCurrently() override { return true; }
-	bool canSaveGameStateCurrently() override { return _persistent._currentRoomId != 0; }
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override { return true; }
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override { return _persistent._currentRoomId != 0; }
 	Common::Error loadGameStream(Common::SeekableReadStream *stream) override;
 	Common::Error saveGameStream(Common::WriteStream *stream, bool isAutosave = false) override;
 
@@ -190,7 +190,7 @@ private:
 			  RoomId roomId);
 	Common::ErrorCode loadCursors();
 	bool handleGenericCheat(const Common::String &cheat);
-	Common::ErrorCode loadWindowsCursors(Common::PEResources *exe);
+	Common::ErrorCode loadWindowsCursors(const Common::ScopedPtr<Common::PEResources>& exe);
 
 	struct Timer {
 		int32 next_time;

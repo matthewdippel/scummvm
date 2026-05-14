@@ -36,17 +36,17 @@ typedef Matrix<3, 1> Vector3d;
 template<>
 class Matrix<3, 1> : public MatrixType<3, 1> {
 public:
+	Matrix();
+	Matrix(float lx, float ly, float lz);
+	Matrix(const MatrixBase<3, 1> &m);
+	Matrix(const float *data);
+
 	float& x() { return value(0); }
 	float x() const { return value(0); }
 	float& y() { return value(1); }
 	float y() const { return value(1); }
 	float& z() { return value(2); }
 	float z() const { return value(2); }
-
-	Matrix();
-	Matrix(float lx, float ly, float lz);
-	Matrix(const MatrixBase<3, 1> &m);
-	Matrix(const float *data);
 
 	/**
 	 * Set the value of the vector using three floats
@@ -94,7 +94,7 @@ public:
 	 * @return      The computed angle
 	 */
 	inline static Angle angle(const Vector3d& v1, const Vector3d& v2) {
-		return Angle::arcCosine(fminf(fmaxf(dotProduct(v1, v2) / (v1.getMagnitude() * v2.getMagnitude()), -1.0f), 1.0f));
+		return Angle::arcCosine(MIN(MAX(dotProduct(v1, v2) / (v1.getMagnitude() * v2.getMagnitude()), -1.0f), 1.0f));
 	}
 
 	/**
@@ -109,7 +109,7 @@ public:
 	 * Calculate vector length
 	 * @return      The computed length
 	 */
-	float length() {
+	float length() const {
 		return sqrtf(x() * x() + y() * y() + z() * z());
 	}
 

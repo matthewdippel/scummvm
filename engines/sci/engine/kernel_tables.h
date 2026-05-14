@@ -263,7 +263,7 @@ static const SciKernelMapSubEntry kGraph_subops[] = {
 	{ SIG_SCIALL,         12, MAP_CALL(GraphUpdateBox),            "iiii(i)",              kGraphUpdateBox_workarounds },
 	{ SIG_SCIALL,         13, MAP_CALL(GraphRedrawBox),            "iiii",                 kGraphRedrawBox_workarounds },
 	{ SIG_SCIALL,         14, MAP_CALL(GraphAdjustPriority),       "ii",                   NULL },
-	{ SIG_SCI11,          15, MAP_CALL(GraphSaveUpscaledHiresBox), "iiii",                 NULL }, // kq6 hires
+	{ SIG_SCI11,          15, MAP_CALL(GraphSaveUpscaledHiresBox), "iiii(i)",              NULL }, // kq6 hires
 	SCI_SUBOPENTRY_TERMINATOR
 };
 
@@ -527,7 +527,7 @@ static const SciKernelMapSubEntry kArray_subops[] = {
 	{ SIG_SCI32,           3, MAP_CALL(ArraySetElements),          "ri(.*)",               kArraySetElements_workarounds },
 	{ SIG_SCI32,           4, MAP_CALL(ArrayFree),                 "[r0]",                 NULL },
 	{ SIG_SCI32,           5, MAP_CALL(ArrayFill),                 "riii",                 kArrayFill_workarounds },
-	{ SIG_SCI32,           6, MAP_CALL(ArrayCopy),                 "ririi",                NULL },
+	{ SIG_SCI32,           6, MAP_CALL(ArrayCopy),                 "ri[r0]ii",             NULL },
 	// there is no subop 7
 	{ SIG_SCI32,           8, MAP_CALL(ArrayDuplicate),            "r",                    NULL },
 	{ SIG_SCI32,           9, MAP_CALL(ArrayGetData),              "[or0]",                NULL },
@@ -546,7 +546,7 @@ static const SciKernelMapSubEntry kString_subops[] = {
 	{ SIG_THRU_SCI21MID,   3, MAP_CALL(ArraySetElements),          "ri(i*)",               kArraySetElements_workarounds },
 	{ SIG_THRU_SCI21MID,   4, MAP_CALL(StringFree),                "[r0]",                 NULL },
 	{ SIG_THRU_SCI21MID,   5, MAP_CALL(ArrayFill),                 "riii",                 kArrayFill_workarounds },
-	{ SIG_THRU_SCI21MID,   6, MAP_CALL(ArrayCopy),                 "ririi",                NULL },
+	{ SIG_THRU_SCI21MID,   6, MAP_CALL(ArrayCopy),                 "ri[r0]ii",             NULL },
 	{ SIG_SCI32,           7, MAP_CALL(StringCompare),             "[r0][r0](i)",          NULL },
 
 	{ SIG_THRU_SCI21MID,   8, MAP_CALL(ArrayDuplicate),            "r",                    NULL },
@@ -646,7 +646,7 @@ static SciKernelMapEntry s_kernelMap[] = {
 	{ MAP_CALL(AddToEnd),          SIG_EVERYWHERE,           "ln",                    NULL,            NULL },
 	{ MAP_CALL(AddToFront),        SIG_EVERYWHERE,           "ln",                    NULL,            NULL },
 	{ MAP_CALL(AddToPic),          SIG_EVERYWHERE,           "[il](iiiiii)",          NULL,            NULL },
-	{ MAP_CALL(Animate),           SIG_EVERYWHERE,           "(l0)(i)",               NULL,            NULL },
+	{ MAP_CALL(Animate),           SIG_EVERYWHERE,           "(l0)(i)",               NULL,            kAnimate_workarounds },
 	{ MAP_CALL(AssertPalette),     SIG_EVERYWHERE,           "i",                     NULL,            NULL },
 	{ MAP_CALL(AvoidPath),         SIG_EVERYWHERE,           "ii(.*)",                NULL,            NULL },
 	{ MAP_CALL(BaseSetter),        SIG_SCI16, SIGFOR_ALL,    "o",                     NULL,            NULL },
@@ -702,7 +702,7 @@ static SciKernelMapEntry s_kernelMap[] = {
 	{ MAP_CALL(Empty),             SIG_EVERYWHERE,           "(.*)",                  NULL,            NULL },
 	{ MAP_CALL(EmptyList),         SIG_EVERYWHERE,           "l",                     NULL,            NULL },
 	{ "FClose", kFileIOClose,      SIG_EVERYWHERE,           "i",                     NULL,            NULL },
-	{ "FGets", kFileIOReadString,  SIG_EVERYWHERE,           "rii",                   NULL,            NULL },
+	{ "FGets", kFileIOReadString,  SIG_EVERYWHERE,           "rii",                   NULL,            kFileIOReadString_workarounds },
 	{ "FOpen", kFileIOOpen,        SIG_EVERYWHERE,           "ri",                    NULL,            NULL },
 	{ "FPuts", kFileIOWriteString, SIG_EVERYWHERE,           "ir",                    NULL,            NULL },
 	{ MAP_CALL(FileIO),            SIG_EVERYWHERE,           "i([.!]*)",              kFileIO_subops,  NULL },
@@ -727,7 +727,7 @@ static SciKernelMapEntry s_kernelMap[] = {
 #ifdef ENABLE_SCI32
 	{ "GetSaveFiles", kGetSaveFiles32, SIG_THRU_SCI21EARLY, SIGFOR_ALL, "rrr",        NULL,            NULL },
 #endif
-	{ MAP_CALL(GetSaveFiles),      SIG_EVERYWHERE,           "rrr",                   NULL,            NULL },
+	{ MAP_CALL(GetSaveFiles),      SIG_EVERYWHERE,           "rrr",                   NULL,            kGetSaveFiles_workarounds },
 	{ MAP_CALL(GetTime),           SIG_EVERYWHERE,           "(i)",                   NULL,            NULL },
 	{ MAP_CALL(GlobalToLocal),     SIG_SCI16, SIGFOR_ALL,    "o",                     NULL,            NULL },
 #ifdef ENABLE_SCI32
@@ -855,7 +855,7 @@ static SciKernelMapEntry s_kernelMap[] = {
 	{ MAP_CALL(UnLoad),            SIG_EVERYWHERE,           "i[ir!]",                NULL,            kUnLoad_workarounds },
 	// ^ We allow invalid references here (e.g. bug #6600), since they will be invalidated anyway by the call itself
 	{ MAP_CALL(ValidPath),         SIG_EVERYWHERE,           "r",                     NULL,            NULL },
-	{ MAP_CALL(Wait),              SIG_SCI16, SIGFOR_ALL,    "i",                     NULL,            NULL },
+	{ MAP_CALL(Wait),              SIG_SCI16, SIGFOR_ALL,    "i",                     NULL,            kWait_workarounds },
 
 	// Unimplemented SCI0-SCI1.1 unused functions, always mapped to kDummy
 	{ MAP_DUMMY(InspectObj),      SIG_EVERYWHERE,           "(.*)",                  NULL,            NULL },

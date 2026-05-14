@@ -53,8 +53,9 @@ void Rect::render(Graphics::Surface *surface, uint8 color) const {
 	surface->vLine(right, bottom, top, color);
 }
 
-void Object::load(byte *src) {
+void Object::load(byte *src, byte sceneId) {
 	_base = src;
+	_addr = src - g_engine->res->eseg.ptr(0);
 
 	id = *src++;
 
@@ -66,7 +67,28 @@ void Object::load(byte *src) {
 	actorOrientation = *src++;
 	enabled = *src++;
 	name = (const char *)src;
+	_nameSize = name.size() + 1;
+	src += _nameSize;
+
+	bool hasRealName = (sceneId == 6 && id == 4) ||
+						(sceneId == 23 && id == 2) ||
+						(sceneId == 20 && id == 13) ||
+						(sceneId == 32 && id == 1);
+	// Skip free space (if any) made for objects that have newName
+	if (hasRealName) {
+		while (*src == 0)
+			src++;
+	}
+
+	if (*src == 1)
+		_hasDefaultDescription = true;
+
 	description = parseDescription((const char *)src);
+
+	if (hasRealName) {
+		src += description.size() + 2;
+		_realName = (const char *)src;
+	}
 }
 
 void Object::save() const {
@@ -78,10 +100,10 @@ void Object::save() const {
 	_base[18] = enabled;
 }
 
-void Object::setName(const Common::String &newName) {
+void Object::setRealName() {
 	assert(_base != 0);
-	strcpy((char *)(_base + 19), newName.c_str());
-	name = newName;
+	Common::strcpy_s((char *)(_base + 19), _nameSize, _realName.c_str());
+	name = _realName;
 }
 
 void Object::dump(int level) const {
@@ -92,8 +114,7 @@ void Object::dump(int level) const {
 	     );
 }
 
-Common::String Object::parseDescription(const char *name) {
-	const char *desc = name + strlen(name) + 1;
+Common::String Object::parseDescription(const char *desc) {
 	if (*desc == 0)
 		return Common::String();
 
@@ -116,7 +137,7 @@ Common::String Object::parseDescription(const char *name) {
 	if (!result.empty())
 		result.deleteLastChar();
 	else
-		result = "Cool."; // FIXME - Use dsAddr_coolMsg ?
+		result = g_engine->parseMessage(g_engine->res->getMessageAddr(kCoolMsg));
 	return result;
 }
 

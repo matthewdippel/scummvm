@@ -27,7 +27,7 @@
 #include "common/array.h"
 #include "common/config-manager.h"
 #include "common/rect.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "cge/general.h"
 #include "cge/vga13h.h"
 #include "cge/bitmap.h"
@@ -171,9 +171,9 @@ void Sprite::setName(char *newName) {
 		_ext->_name = nullptr;
 	}
 	if (newName) {
-		_ext->_name = new char[strlen(newName) + 1];
-		assert(_ext->_name != nullptr);
-		strcpy(_ext->_name, newName);
+		size_t ln = strlen(newName) + 1;
+		_ext->_name = new char[ln];
+		Common::strcpy_s(_ext->_name, ln, newName);
 	}
 }
 

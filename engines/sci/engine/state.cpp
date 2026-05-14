@@ -66,8 +66,9 @@ static const uint16 s_halfWidthSJISMap[256] = {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
-EngineState::EngineState(SegManager *segMan)
-: _segMan(segMan),
+EngineState::EngineState(SegManager *segMan) :
+	_segMan(segMan),
+	_msgState(nullptr),
 	_dirseeker() {
 
 	reset(false);
@@ -104,13 +105,10 @@ void EngineState::reset(bool isRestoring) {
 
 	gcCountDown = 0;
 
-#ifdef ENABLE_SCI32
 	_eventCounter = 0;
-#endif
 	_paletteSetIntensityCounter = 0;
 	_throttleLastTime = 0;
 	_throttleTrigger = false;
-	_gameIsBenchmarking = false;
 
 	_lastSaveVirtualId = SAVEGAMEID_OFFICIALRANGE_START;
 	_lastSaveNewId = 0;
@@ -176,6 +174,11 @@ void EngineState::initGlobals() {
 	if (g_sci->getGameId() == GID_KQ5 && g_sci->isCD()) {
 		variables[VAR_GLOBAL][400].setOffset(g_sci->_features->useWindowsCursors());
 	}
+}
+
+void EngineState::initMessageState() {
+	delete _msgState;
+	_msgState = new MessageState(_segMan);
 }
 
 uint16 EngineState::currentRoomNumber() const {
@@ -249,11 +252,11 @@ Common::String SciEngine::getSciLanguageString(const Common::String &str, kLangu
 	}
 
 	if (foundLanguage == requestedLanguage) {
-		if (curChar2 == 'J') {
+		if (curChar2 == 'J' && g_sci->getGameId() != GID_PQ2) {
 			// Japanese including Kanji, displayed with system font
-			// Convert half-width characters to full-width equivalents
+			// Convert half-width characters to full-width equivalents.
+			// PQ2 does not do this.
 			Common::String fullWidth;
-			uint16 mappedChar;
 
 			textPtr += 2; // skip over language splitter
 
@@ -269,14 +272,14 @@ Common::String SciEngine::getSciLanguageString(const Common::String &str, kLangu
 
 				textPtr++;
 
-				mappedChar = s_halfWidthSJISMap[curChar];
+				uint16 mappedChar = s_halfWidthSJISMap[curChar];
 				if (mappedChar) {
 					fullWidth += mappedChar >> 8;
 					fullWidth += mappedChar & 0xFF;
 				} else {
 					// Copy double-byte character
 					curChar2 = *(textPtr++);
-					if (!curChar) {
+					if (!curChar2) {
 						error("SJIS character %02X is missing second byte", curChar);
 						break;
 					}
@@ -297,11 +300,7 @@ Common::String SciEngine::getSciLanguageString(const Common::String &str, kLangu
 }
 
 kLanguage SciEngine::getSciLanguage() {
-	kLanguage lang = (kLanguage)_resMan->getAudioLanguage();
-	if (lang != K_LANG_NONE)
-		return lang;
-
-	lang = K_LANG_ENGLISH;
+	kLanguage lang = K_LANG_ENGLISH;
 
 	if (SELECTOR(printLang) != -1) {
 		lang = (kLanguage)readSelectorValue(_gamestate->_segMan, _gameObjectAddress, SELECTOR(printLang));
@@ -404,6 +403,9 @@ SciCallOrigin EngineState::getCurrentCallOrigin() const {
 	Common::String curObjectName = _segMan->getObjectName(xs->sendp);
 	Common::String curMethodName;
 	const Script *localScript = _segMan->getScriptIfLoaded(xs->local_segment);
+	if (localScript == nullptr) {
+		error("current script not found at: %04x", xs->local_segment);
+	}
 	int curScriptNr = localScript->getScriptNumber();
 
 	Selector debugSelector = xs->debugSelector;
@@ -451,6 +453,25 @@ bool EngineState::callInStack(const reg_t object, const Selector selector) const
 	}
 
 	return false;
+}
+
+Common::String EngineState::getGameVersionFromGlobal() const {
+	// The version global was originally 28 but then became 27.
+	// When it was 28, 27 was a volume level, so differentiate by type.
+	reg_t versionRef = variables[VAR_GLOBAL][kGlobalVarVersionNew];
+	if (versionRef.isNumber()) {
+		versionRef = variables[VAR_GLOBAL][kGlobalVarVersionOld];
+	}
+#ifdef ENABLE_SCI32
+	// LSL7 and Phant2 store the version string as an object instead of a reference
+	if (_segMan->isObject(versionRef)) {
+		versionRef = readSelector(_segMan, versionRef, SELECTOR(data));
+	}
+#endif
+	if (versionRef.isPointer()) {
+		return _segMan->getString(versionRef);
+	}
+	return Common::String();
 }
 
 } // End of namespace Sci

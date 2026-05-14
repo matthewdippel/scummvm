@@ -82,7 +82,7 @@ using namespace AGS::Shared;
 using namespace AGS::Engine;
 
 bool engine_init_backend() {
-	_G(our_eip) = -199;
+	set_our_eip(-199);
 	_G(platform)->PreBackendInit();
 	// Initialize SDL
 	Debug::Printf(kDbgMsg_Info, "Initializing backend libs");
@@ -113,11 +113,11 @@ void winclosehook() {
 void engine_setup_window() {
 	Debug::Printf(kDbgMsg_Info, "Setting up window");
 
-	_G(our_eip) = -198;
-	sys_window_set_title(_GP(game).gamename);
+	set_our_eip(-198);
+	sys_window_set_title(_GP(game).gamename.GetCStr());
 	sys_window_set_icon();
 	sys_evt_set_quit_callback(winclosehook);
-	_G(our_eip) = -197;
+	set_our_eip(-197);
 }
 
 // Fills map with game settings, to e.g. let setup application(s)
@@ -138,8 +138,7 @@ static void fill_game_properties(StringOrderMap &map) {
 
 // Starts up setup application, if capable.
 // Returns TRUE if should continue running the game, otherwise FALSE.
-bool engine_run_setup(const ConfigTree &cfg, int &app_res) {
-	app_res = EXIT_NORMAL;
+bool engine_run_setup(const ConfigTree &cfg) {
 #if AGS_PLATFORM_OS_WINDOWS
 	{
 		Debug::Printf(kDbgMsg_Info, "Running Setup");
@@ -161,15 +160,10 @@ bool engine_run_setup(const ConfigTree &cfg, int &app_res) {
 		if (res != kSetup_RunGame)
 			return false;
 
-		// TODO: investigate if the full program restart may (should) be avoided
-
-		// Just re-reading the config file seems to cause a caching
-		// problem on Win9x, so let's restart the process.
-		sys_main_shutdown();
-		allegro_exit();
-		char quotedpath[MAX_PATH];
-		snprintf(quotedpath, MAX_PATH, "\"%s\"", _G(appPath).GetCStr());
-		_spawnl(_P_OVERLAY, _G(appPath), quotedpath, NULL);
+		// Start the game in the new process, and close the current one afterwards
+		String args = String::FromFormat("\"%s\"", appPath.GetCStr());
+		_spawnl(_P_NOWAIT, appPath.GetCStr(), args.GetCStr(), NULL);
+		return false;
 	}
 #endif
 	return true;
@@ -258,7 +252,7 @@ void engine_init_fonts() {
 }
 
 void engine_init_mouse() {
-	int res = minstalled();
+	int res = _GP(mouse).GetButtonCount();
 	if (res < 0)
 		Debug::Printf(kDbgMsg_Info, "Initializing mouse: failed");
 	else
@@ -271,13 +265,11 @@ void engine_locate_speech_pak() {
 }
 
 void engine_locate_audio_pak() {
-	_GP(play).separate_music_lib = false;
 	String music_file = _GP(game).GetAudioVOXName();
 	String music_filepath = find_assetlib(music_file);
 	if (!music_filepath.IsEmpty()) {
 		if (_GP(AssetMgr)->AddLibrary(music_filepath) == kAssetNoError) {
 			Debug::Printf(kDbgMsg_Info, "%s found and initialized.", music_file.GetCStr());
-			_GP(play).separate_music_lib = true;
 			_GP(ResPaths).AudioPak.Name = music_file;
 			_GP(ResPaths).AudioPak.Path = music_filepath;
 		} else {
@@ -318,12 +310,6 @@ void engine_init_keyboard() {
 	/* do nothing */
 }
 
-void engine_init_timer() {
-	Debug::Printf(kDbgMsg_Info, "Install timer");
-
-	skipMissedTicks();
-}
-
 void engine_init_audio() {
 #if !AGS_PLATFORM_SCUMMVM
 	if (usetup.audio_backend != 0) {
@@ -339,8 +325,6 @@ void engine_init_audio() {
 
 	if (!_GP(usetup).audio_enabled) {
 		// all audio is disabled
-		_GP(play).voice_avail = false;
-		_GP(play).separate_music_lib = false;
 		Debug::Printf(kDbgMsg_Info, "Audio is disabled");
 	}
 }
@@ -358,11 +342,6 @@ void engine_init_debug() {
 	}
 }
 
-void engine_init_rand() {
-	_GP(play).randseed = g_system->getMillis();
-	::AGS::g_vm->setRandomNumberSeed(_GP(play).randseed);
-}
-
 void engine_init_pathfinder() {
 	init_pathfinder(_G(loaded_game_file_version));
 }
@@ -375,7 +354,7 @@ void engine_pre_init_gfx() {
 
 int engine_load_game_data() {
 	Debug::Printf("Load game data");
-	_G(our_eip) = -17;
+	set_our_eip(-17);
 	HError err = load_game_file();
 	if (!err) {
 		_G(proper_exit) = 1;
@@ -387,7 +366,7 @@ int engine_load_game_data() {
 
 // Replace special tokens inside a user path option
 static void resolve_configured_path(String &option) {
-	option.Replace("$GAMENAME$", _GP(game).gamename);
+	option.Replace(Shared::String("$GAMENAME$"), _GP(game).gamename);
 }
 
 // Setup paths and directories that may be affected by user configuration
@@ -415,13 +394,13 @@ int check_write_access() {
 #if AGS_PLATFORM_SCUMMVM
 	return true;
 #else
-	if (_G(platform)->GetDiskFreeSpaceMB() < 2)
-		return 0;
 
-	_G(our_eip) = -1895;
+	set_our_eip(-1895);
 
 	// The Save Game Dir is the only place that we should write to
 	String svg_dir = get_save_game_directory();
+	if (platform->GetDiskFreeSpaceMB(svg_dir) < 2)
+		return 0;
 	String tempPath = String::FromFormat("%s""tmptest.tmp", svg_dir.GetCStr());
 	Stream *temp_s = Shared::File::CreateFile(tempPath);
 	if (!temp_s)
@@ -441,12 +420,12 @@ int check_write_access() {
 		return 0;
 #endif // AGS_PLATFORM_OS_ANDROID
 
-	_G(our_eip) = -1896;
+	set_our_eip(-1896);
 
 	temp_s->Write("just to test the drive free space", 30);
 	delete temp_s;
 
-	_G(our_eip) = -1897;
+	set_our_eip(-1897);
 
 	if (File::DeleteFile(tempPath))
 		return 0;
@@ -499,7 +478,9 @@ void show_preload() {
 		IDriverDependantBitmap *ddb = _G(gfxDriver)->CreateDDBFromBitmap(tsc, false, true);
 		ddb->SetStretch(view.GetWidth(), view.GetHeight());
 		_G(gfxDriver)->ClearDrawLists();
+		_G(gfxDriver)->BeginSpriteBatch(view);
 		_G(gfxDriver)->DrawSprite(0, 0, ddb);
+		_G(gfxDriver)->EndSpriteBatch();
 		render_to_screen();
 		_G(gfxDriver)->DestroyDDB(ddb);
 		delete splashsc;
@@ -522,13 +503,28 @@ int engine_init_sprites() {
 	}
 
 	if (_GP(usetup).SpriteCacheSize > 0)
-		_GP(spriteset).SetMaxCacheSize(_GP(usetup).SpriteCacheSize);
+		_GP(spriteset).SetMaxCacheSize(_GP(usetup).SpriteCacheSize * 1024);
+	Debug::Printf("Sprite cache set: %zu KB", _GP(spriteset).GetMaxCacheSize() / 1024);
 	return 0;
 }
 
+// TODO: this should not be a part of "engine_" function group,
+// move this elsewhere (InitGameState?).
 void engine_init_game_settings() {
-	_G(our_eip) = -7;
+	set_our_eip(-7);
 	Debug::Printf("Initialize game settings");
+
+	// Initialize randomizer
+	_GP(play).randseed = g_system->getMillis();
+	::AGS::g_vm->setRandomNumberSeed(_GP(play).randseed);
+
+	if (_GP(usetup).audio_enabled) {
+		_GP(play).separate_music_lib = !_GP(ResPaths).AudioPak.Name.IsEmpty();
+		_GP(play).voice_avail = _GP(ResPaths).VoiceAvail;
+	} else {
+		_GP(play).voice_avail = false;
+		_GP(play).separate_music_lib = false;
+	}
 
 	// Setup a text encoding mode depending on the game data hint
 	if (_GP(game).options[OPT_GAMETEXTENCODING] == 65001) // utf-8 codepage number
@@ -547,7 +543,7 @@ void engine_init_game_settings() {
 		// The cursor graphics are assigned to mousecurs[] and so cannot
 		// be removed from memory
 		if (_GP(game).mcurs[ee].pic >= 0)
-			_GP(spriteset).Precache(_GP(game).mcurs[ee].pic);
+			_GP(spriteset).PrecacheSprite(_GP(game).mcurs[ee].pic);
 
 		// just in case they typed an invalid view number in the editor
 		if (_GP(game).mcurs[ee].view >= _GP(game).numviews)
@@ -558,20 +554,12 @@ void engine_init_game_settings() {
 	}
 	// may as well preload the character gfx
 	if (_G(playerchar)->view >= 0)
-		precache_view(_G(playerchar)->view);
+		precache_view(_G(playerchar)->view, 0, Character_GetDiagonalWalking(_G(playerchar)) ? 8 : 4);
 
-	/*  dummygui.guiId = -1;
-	dummyguicontrol.guin = -1;
-	dummyguicontrol.objn = -1;*/
-
-	_G(our_eip) = -6;
-	//  _GP(game).chars[0].talkview=4;
-	//init_language_text(_GP(game).langcodes[0]);
+	set_our_eip(-6);
 
 	for (ee = 0; ee < MAX_ROOM_OBJECTS; ee++) {
 		_G(scrObj)[ee].id = ee;
-		// 64 bit: Using the id instead
-		// _G(scrObj)[ee].obj = NULL;
 	}
 
 	for (ee = 0; ee < _GP(game).numcharacters; ee++) {
@@ -600,11 +588,14 @@ void engine_init_game_settings() {
 		_GP(charextra)[ee].animwait = 0;
 	}
 
-	_G(our_eip) = -5;
+	set_our_eip(-5);
 	for (ee = 0; ee < _GP(game).numinvitems; ee++) {
 		if (_GP(game).invinfo[ee].flags & IFLG_STARTWITH) _G(playerchar)->inv[ee] = 1;
 		else _G(playerchar)->inv[ee] = 0;
 	}
+
+	//
+	// TODO: following big initialization sequence could be in GameState ctor
 	_GP(play).score = 0;
 	_GP(play).sierra_inv_color = 7;
 	// copy the value set by the editor
@@ -623,7 +614,7 @@ void engine_init_game_settings() {
 	_GP(play).debug_mode = _GP(game).options[OPT_DEBUGMODE];
 	_GP(play).inv_top = 0;
 	_GP(play).inv_numdisp = 0;
-	_GP(play).obsolete_inv_numorder = 0;
+	_GP(play).inv_numorder = 0;
 	_GP(play).text_speed = 15;
 	_GP(play).text_min_display_time_ms = 1000;
 	_GP(play).ignore_user_input_after_text_timeout_ms = 500;
@@ -645,6 +636,7 @@ void engine_init_game_settings() {
 	_GP(play).bg_frame_locked = 0;
 	_GP(play).bg_anim_delay = 0;
 	_GP(play).anim_background_speed = 0;
+	_GP(play).mouse_cursor_hidden = 0;
 	_GP(play).silent_midi = 0;
 	_GP(play).current_music_repeating = 0;
 	_GP(play).skip_until_char_stops = -1;
@@ -657,7 +649,6 @@ void engine_init_game_settings() {
 	_GP(play).temporarily_turned_off_character = -1;
 	_GP(play).inv_backwards_compatibility = 0;
 	_GP(play).gamma_adjustment = 100;
-	_GP(play).do_once_tokens.resize(0);
 	_GP(play).music_queue_size = 0;
 	_GP(play).shakesc_length = 0;
 	_GP(play).wait_counter = 0;
@@ -669,7 +660,7 @@ void engine_init_game_settings() {
 	_GP(play).digital_master_volume = 100;
 	_GP(play).screen_flipped = 0;
 	_GP(play).speech_mode = kSpeech_VoiceText;
-	_GP(play).cant_skip_speech = user_to_internal_skip_speech((SkipSpeechStyle)_GP(game).options[OPT_NOSKIPTEXT]);
+	_GP(play).speech_skip_style = user_to_internal_skip_speech((SkipSpeechStyle)_GP(game).options[OPT_NOSKIPTEXT]);
 	_GP(play).sound_volume = 255;
 	_GP(play).speech_volume = 255;
 	_GP(play).normal_font = 0;
@@ -724,6 +715,7 @@ void engine_init_game_settings() {
 	_GP(play).show_single_dialog_option = 0;
 	_GP(play).keep_screen_during_instant_transition = 0;
 	_GP(play).read_dialog_option_colour = -1;
+	_GP(play).stop_dialog_at_end = DIALOG_NONE;
 	_GP(play).speech_portrait_placement = 0;
 	_GP(play).speech_portrait_x = 0;
 	_GP(play).speech_portrait_y = 0;
@@ -739,7 +731,7 @@ void engine_init_game_settings() {
 	_GP(play).speech_textwindow_gui = _GP(game).options[OPT_TWCUSTOM];
 	if (_GP(play).speech_textwindow_gui == 0)
 		_GP(play).speech_textwindow_gui = -1;
-	snprintf(_GP(play).game_name, sizeof(_GP(play).game_name), "%s", _GP(game).gamename);
+	_GP(play).game_name = _GP(game).gamename;
 	_GP(play).lastParserEntry[0] = 0;
 	_GP(play).follow_change_room_timer = 150;
 	for (ee = 0; ee < MAX_ROOM_BGFRAMES; ee++)
@@ -751,18 +743,12 @@ void engine_init_game_settings() {
 
 	GUI::Options.DisabledStyle = static_cast<GuiDisableStyle>(_GP(game).options[OPT_DISABLEOFF]);
 	GUI::Options.ClipControls = _GP(game).options[OPT_CLIPGUICONTROLS] != 0;
+	// Force GUI metrics recalculation, accommodating for loaded fonts
+	GUI::MarkForFontUpdate(-1);
 
-	memset(&_GP(play).walkable_areas_on[0], 1, MAX_WALK_AREAS + 1);
+	memset(&_GP(play).walkable_areas_on[0], 1, MAX_WALK_AREAS);
 	memset(&_GP(play).script_timers[0], 0, MAX_TIMERS * sizeof(int));
 	memset(&_GP(play).default_audio_type_volumes[0], -1, MAX_AUDIO_TYPES * sizeof(int));
-
-	// reset graphical script vars (they're still used by some games)
-	for (ee = 0; ee < MAXGLOBALVARS; ee++)
-		_GP(play).globalvars[ee] = 0;
-	for (ee = 0; ee < MAXGSVALUES; ee++)
-		_GP(play).globalscriptvars[ee] = 0;
-	for (ee = 0; ee < MAXGLOBALSTRINGS; ee++)
-		_GP(play).globalstrings[ee][0] = 0;
 
 	if (!_GP(usetup).translation.IsEmpty())
 		Game_ChangeTranslation(_GP(usetup).translation.GetCStr());
@@ -770,8 +756,7 @@ void engine_init_game_settings() {
 	update_invorder();
 	_G(displayed_room) = -10;
 
-	_G(currentcursor) = 0;
-	_G(our_eip) = -4;
+	set_our_eip(-4);
 	_G(mousey) = 100; // stop icon bar popping up
 
 	// We use same variable to read config and be used at runtime for now,
@@ -783,7 +768,7 @@ void engine_init_game_settings() {
 
 void engine_setup_scsystem_auxiliary() {
 	// ScriptSystem::aci_version is only 10 chars long
-	Common::strlcpy(_GP(scsystem).aci_version, _G(EngineVersion).LongString.GetCStr(), 10);
+	snprintf(_GP(scsystem).aci_version, sizeof(_GP(scsystem).aci_version), "%s", _G(EngineVersion).LongString.GetCStr());
 	if (_GP(usetup).override_script_os >= 0) {
 		_GP(scsystem).os = _GP(usetup).override_script_os;
 	} else {
@@ -803,15 +788,6 @@ void engine_prepare_to_start_game() {
 			loadSaveGameOnStartup = get_save_game_path(slot);
 #endif
 	}
-}
-
-// TODO: move to test unit
-Bitmap *test_allegro_bitmap;
-IDriverDependantBitmap *test_allegro_ddb;
-void allegro_bitmap_test_init() {
-	test_allegro_bitmap = nullptr;
-	// Switched the test off for now
-	//test_allegro_bitmap = AllegroBitmap::CreateBitmap(320,200,32);
 }
 
 // Define location of the game data either using direct settings or searching
@@ -1079,9 +1055,8 @@ int initialize_engine(const ConfigTree &startup_opts) {
 	engine_prepare_config(cfg, startup_opts);
 	// Test if need to run built-in setup program (where available)
 	if (!_G(justTellInfo) && _G(justRunSetup)) {
-		int res;
-		if (!engine_run_setup(cfg, res))
-			return res;
+		if (!engine_run_setup(cfg))
+			return EXIT_NORMAL;
 	}
 	// Set up game options from user config
 	engine_set_config(cfg);
@@ -1090,67 +1065,61 @@ int initialize_engine(const ConfigTree &startup_opts) {
 		return EXIT_NORMAL;
 	}
 
-	_G(our_eip) = -190;
+	set_our_eip(-190);
 
 	//-----------------------------------------------------
 	// Init auxiliary data files and other directories, initialize asset manager
 	engine_init_user_directories();
 
-	_G(our_eip) = -191;
+	set_our_eip(-191);
 
 	engine_locate_speech_pak();
 
-	_G(our_eip) = -192;
+	set_our_eip(-192);
 
 	engine_locate_audio_pak();
 
-	_G(our_eip) = -193;
+	set_our_eip(-193);
 
 	engine_assign_assetpaths();
 
 	//-----------------------------------------------------
 	// Begin setting up systems
 
-	_G(our_eip) = -194;
+	set_our_eip(-194);
 
 	engine_init_fonts();
 
-	_G(our_eip) = -195;
+	set_our_eip(-195);
 
 	engine_init_keyboard();
 
-	_G(our_eip) = -196;
+	set_our_eip(-196);
 
 	engine_init_mouse();
 
-	_G(our_eip) = -197;
-
-	engine_init_timer();
-
-	_G(our_eip) = -198;
+	set_our_eip(-198);
 
 	engine_init_audio();
 
-	_G(our_eip) = -199;
+	set_our_eip(-199);
 
 	engine_init_debug();
 
-	_G(our_eip) = -10;
-
-	engine_init_rand();
+	set_our_eip(-10);
 
 	engine_init_pathfinder();
 
 	set_game_speed(40);
 
-	_G(our_eip) = -20;
-	_G(our_eip) = -19;
+	set_our_eip(-20);
+	set_our_eip(-19);
 
 	int res = engine_load_game_data();
 	if (res != 0)
 		return res;
 
-	_G(our_eip) = -189;
+	set_our_eip(-189);
 
 	res = engine_check_disk_space();
 	if (res != 0)
@@ -1163,9 +1132,7 @@ int initialize_engine(const ConfigTree &startup_opts) {
 	if (res != 0)
 		return res;
 
-	_G(our_eip) = -179;
-
-	engine_init_resolution_settings(_GP(game).GetGameRes());
+	set_our_eip(-179);
 
 	engine_adjust_for_rotation_settings();
 
@@ -1190,14 +1157,14 @@ int initialize_engine(const ConfigTree &startup_opts) {
 
 	engine_prepare_to_start_game();
 
-	allegro_bitmap_test_init();
-
 	initialize_start_and_play_game(_G(override_start_room), _G(loadSaveGameOnStartup));
 
 	return EXIT_NORMAL;
 }
 
 bool engine_try_set_gfxmode_any(const DisplayModeSetup &setup) {
+	const DisplayMode old_dm = _G(gfxDriver) ? _G(gfxDriver)->GetDisplayMode() : DisplayMode();
+
 	engine_shutdown_gfxmode();
 
 	sys_renderer_set_output(_GP(usetup).software_render_driver);
@@ -1207,7 +1174,7 @@ bool engine_try_set_gfxmode_any(const DisplayModeSetup &setup) {
 		setup, ColorDepthOption(_GP(game).GetColorDepth()));
 
 	if (res)
-		engine_post_gfxmode_setup(init_desktop);
+		engine_post_gfxmode_setup(init_desktop, old_dm);
 	// Make sure that we don't receive window events queued during init
 	sys_flush_events();
 	return res;
@@ -1230,10 +1197,14 @@ bool engine_try_switch_windowed_gfxmode() {
 	DisplayMode last_opposite_mode = setting.Dm;
 	FrameScaleDef frame = setting.Frame;
 
-	// If there are saved parameters for given mode (fullscreen/windowed)
-	// then use them, if there are not, get default setup for the new mode.
+	// Apply vsync in case it has been toggled at runtime
+	last_opposite_mode.Vsync = _GP(usetup).Screen.Params.VSync;
+
+	// If there are saved parameters for given mode (fullscreen/windowed),
+	// *and* if the window is on the same display where it's been last time,
+	// then use old params, otherwise - get default setup for the new mode.
 	bool res;
-	if (last_opposite_mode.IsValid()) {
+	if (last_opposite_mode.IsValid() && (setting.DisplayIndex == sys_get_window_display_index())) {
 		res = graphics_mode_set_dm(last_opposite_mode);
 	} else {
 		WindowSetup ws = windowed ? _GP(usetup).Screen.WinSetup : _GP(usetup).Screen.FsSetup;
@@ -1250,16 +1221,15 @@ bool engine_try_switch_windowed_gfxmode() {
 		// If failed, try switching back to previous gfx mode
 		res = graphics_mode_set_dm(old_dm) &&
 			graphics_mode_set_render_frame(old_frame);
+		if (!res)
+			quitprintf("Failed to restore graphics mode.");
 	}
 
-	if (res) {
-		// If succeeded (with any case), update engine objects that rely on
-		// active display mode.
-		if (!_G(gfxDriver)->GetDisplayMode().IsRealFullscreen())
-			init_desktop = get_desktop_size();
-		engine_post_gfxmode_setup(init_desktop);
-	}
-
+	// If succeeded (with any case), update engine objects that rely on
+	// active display mode.
+	if (!_G(gfxDriver)->GetDisplayMode().IsRealFullscreen())
+		init_desktop = get_desktop_size();
+	engine_post_gfxmode_setup(init_desktop, old_dm);
 	// Make sure that we don't receive window events queued during init
 	sys_flush_events();
 	return res;
@@ -1285,6 +1255,20 @@ const char *get_engine_name() {
 
 const char *get_engine_version() {
 	return _G(EngineVersion).LongString.GetCStr();
+}
+
+String get_engine_version_and_build() {
+	const char *bit = (AGS_PLATFORM_64BIT) ? "64-bit" : "32-bit";
+	const char *end = (AGS_PLATFORM_ENDIAN_LITTLE) ? "LE" : "BE";
+#ifdef BUILD_STR
+	return String::FromFormat("%s (Build: %s), %s %s",
+							  _G(EngineVersion).LongString.GetCStr(), EngineVersion.BuildInfo.GetCStr(),
+							  bit, end);
+#else
+	return String::FromFormat("%s, %s %s",
+							  _G(EngineVersion).LongString.GetCStr(),
+							  bit, end);
+#endif
 }
 
 void engine_set_pre_init_callback(t_engine_pre_init_callback callback) {

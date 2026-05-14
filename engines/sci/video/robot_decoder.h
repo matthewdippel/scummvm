@@ -19,8 +19,8 @@
  *
  */
 
-#ifndef SCI_SOUND_DECODERS_ROBOT_H
-#define SCI_SOUND_DECODERS_ROBOT_H
+#ifndef SCI_VIDEO_DECODERS_ROBOT_H
+#define SCI_VIDEO_DECODERS_ROBOT_H
 
 #include "audio/audiostream.h"           // for AudioStream
 #include "audio/rate.h"                  // for st_sample_t
@@ -32,7 +32,7 @@
 #include "sci/graphics/helpers.h"        // for GuiResourceId
 #include "sci/graphics/screen_item32.h"  // for ScaleInfo, ScreenItem (ptr o...
 
-namespace Common { class SeekableSubReadStreamEndian; }
+namespace Common { class SeekableReadStreamEndian; }
 namespace Sci {
 class Plane;
 class SegManager;
@@ -644,7 +644,7 @@ private:
 	/**
 	 * The read stream containing raw robot data.
 	 */
-	Common::SeekableSubReadStreamEndian *_stream;
+	Common::SeekableReadStreamEndian *_stream;
 
 	/**
 	 * The current status of the player.
@@ -1367,5 +1367,7 @@ private:
 	 */
 	uint8 _verticalScaleFactor;
 };
+
 } // end of namespace Sci
-#endif
+
+#endif // SCI_VIDEO_DECODERS_ROBOT_H

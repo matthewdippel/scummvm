@@ -23,12 +23,18 @@
 
 #include "common/system.h"
 #include "common/savefile.h"
+#include "common/translation.h"
 
 #include "engines/advancedDetector.h"
 
 #include "wage/wage.h"
+#include "wage/detection.h"
 
 namespace Wage {
+
+uint32 WageEngine::getFeatures() {
+	return _gameDescription->flags;
+}
 
 const char *WageEngine::getGameFile() const {
 	return _gameDescription->filesDescriptions[0].fileName;
@@ -36,33 +42,55 @@ const char *WageEngine::getGameFile() const {
 
 } // End of namespace Wage
 
-class WageMetaEngine : public AdvancedMetaEngine {
+#ifdef USE_TTS
+
+static const ADExtraGuiOptionsMap optionsList[] = {
+	{
+		GAMEOPTION_TTS,
+		{
+			_s("Enable Text to Speech"),
+			_s("Use TTS to read the descriptions (if TTS is available)"),
+			"tts_enabled",
+			false,
+			0,
+			0
+		}
+	},
+	
+	AD_EXTRA_GUI_OPTIONS_TERMINATOR
+};
+
+#endif
+
+class WageMetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 public:
 	const char *getName() const override {
 		return "wage";
 	}
 
+#ifdef USE_TTS
+	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override {
+		return optionsList;
+	}
+#endif
+
 	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override;
 
 	bool hasFeature(MetaEngineFeature f) const override;
-	SaveStateList listSaves(const char *target) const override;
 	int getMaximumSaveSlot() const override;
-	void removeSaveState(const char *target, int slot) const override;
 };
 
 bool WageMetaEngine::hasFeature(MetaEngineFeature f) const {
-	return
-		(f == kSupportsListSaves) ||
-		(f == kSupportsLoadingDuringStartup) ||
-		(f == kSupportsDeleteSave) ||
-		(f == kSimpleSavesNames);
+	return checkExtendedSaves(f) ||
+		(f == kSupportsLoadingDuringStartup);
 }
 
 bool Wage::WageEngine::hasFeature(EngineFeature f) const {
 	return
 		(f == kSupportsReturnToLauncher) ||
 		(f == kSupportsLoadingDuringRuntime) ||
-		(f == kSupportsSavingDuringRuntime);
+		(f == kSupportsSavingDuringRuntime) ||
+		(f == kSupportsQuitDialogOverride);
 }
 
 Common::Error WageMetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const {
@@ -70,52 +98,7 @@ Common::Error WageMetaEngine::createInstance(OSystem *syst, Engine **engine, con
 	return Common::kNoError;
 }
 
-SaveStateList WageMetaEngine::listSaves(const char *target) const {
-	const uint32 WAGEflag = MKTAG('W','A','G','E');
-	Common::SaveFileManager *saveFileMan = g_system->getSavefileManager();
-	Common::StringArray filenames;
-	char saveDesc[128] = {0};
-	Common::String pattern = target;
-	pattern += ".###";
-
-	filenames = saveFileMan->listSavefiles(pattern);
-
-	SaveStateList saveList;
-	for (Common::StringArray::const_iterator file = filenames.begin(); file != filenames.end(); ++file) {
-		// Obtain the last 3 digits of the filename, since they correspond to the save slot
-		int slotNum = atoi(file->c_str() + file->size() - 3);
-
-		if (slotNum >= 0 && slotNum <= 999) {
-			Common::InSaveFile *in = saveFileMan->openForLoading(*file);
-			if (in) {
-				saveDesc[0] = 0;
-				in->seek(in->size() - 8);
-				uint32 offset = in->readUint32BE();
-				uint32 type = in->readUint32BE();
-				if (type == WAGEflag) {
-					in->seek(offset);
-
-					type = in->readUint32BE();
-					if (type == WAGEflag) {
-						in->read(saveDesc, 127);
-					}
-				}
-				saveList.push_back(SaveStateDescriptor(this, slotNum, saveDesc));
-				delete in;
-			}
-		}
-	}
-
-	// Sort saves based on slot number.
-	Common::sort(saveList.begin(), saveList.end(), SaveStateDescriptorSlotComparator());
-	return saveList;
-}
-
 int WageMetaEngine::getMaximumSaveSlot() const { return 999; }
-
-void WageMetaEngine::removeSaveState(const char *target, int slot) const {
-	g_system->getSavefileManager()->removeSavefile(Common::String::format("%s.%03d", target, slot));
-}
 
 #if PLUGIN_ENABLED_DYNAMIC(WAGE)
 	REGISTER_PLUGIN_DYNAMIC(WAGE, PLUGIN_TYPE_ENGINE, WageMetaEngine);
@@ -125,11 +108,11 @@ void WageMetaEngine::removeSaveState(const char *target, int slot) const {
 
 namespace Wage {
 
-bool WageEngine::canLoadGameStateCurrently() {
+bool WageEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	return true;
 }
 
-bool WageEngine::canSaveGameStateCurrently() {
+bool WageEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	return true;
 }
 

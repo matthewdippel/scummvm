@@ -39,21 +39,21 @@ public:
 	   The captions are copied into the class. */
 	GUI_TextToggleButton(void *data, int x, int y, int w, int h,
 	                     const char *const *texts, int count, int selection,
-	                     GUI_Font *font, int alignment,
+	                     GUI_Font *font, ButtonTextAlign alignment,
 	                     GUI_CallBack *callback, int flat = 0);
 
 	~GUI_TextToggleButton() override;
 
 	virtual int GetSelection() const;
 
-	GUI_status MouseUp(int x, int y, Shared::MouseButton button) override;
-	GUI_status Activate_button(int x = 0, int y = 0, Shared::MouseButton button = Shared::BUTTON_LEFT) override;
+	GUI_status MouseUp(int x, int y, Events::MouseButton button) override;
+	GUI_status Activate_button(int x = 0, int y = 0, Events::MouseButton button = Events::BUTTON_LEFT) override;
 
 protected:
 	int selection;
 	char **texts;
 	int count;
-	int alignment;
+	ButtonTextAlign alignment;
 };
 
 } // End of namespace Nuvie

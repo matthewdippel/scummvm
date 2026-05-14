@@ -23,34 +23,15 @@
 
 #include "engines/advancedDetector.h"
 
-#include "common/gui_options.h"
 #include "common/file.h"
-#include "common/translation.h"
 
+#include "queen/defs.h"
 #include "queen/detection.h"
-#include "queen/resource.h"
+#include "queen/version.h"
 
 static const PlainGameDescriptor queenGames[] = {
 	{"queen", "Flight of the Amazon Queen"},
 	{nullptr, nullptr}
-};
-
-#define GAMEOPTION_ALT_INTRO  GUIO_GAMEOPTIONS1
-
-static const ADExtraGuiOptionsMap optionsList[] = {
-	{
-		GAMEOPTION_ALT_INTRO,
-		{
-			_s("Alternative intro"),
-			_s("Use an alternative game intro (CD version only)"),
-			"alt_intro",
-			false,
-			0,
-			0
-		}
-	},
-
-	AD_EXTRA_GUI_OPTIONS_TERMINATOR
 };
 
 namespace Queen {
@@ -178,10 +159,10 @@ static const QueenGameDescription gameDescriptions[] = {
 		{
 			"queen",
 			"Floppy",
-			AD_ENTRY1s("queen.1", "f5e827645d3c887be3bdf4729d847756", 22677657),
+			AD_ENTRY1s("queen.1", "979a33954634fae674b59711ef423f40", 22677657),
 			Common::EN_ANY,
 			Common::kPlatformDOS,
-			ADGF_NO_FLAGS,
+			ADGF_TAILMD5,
 			GUIO1(GUIO_NOSPEECH)
 		},
 	},
@@ -190,7 +171,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1", "b6302bccf70463de3d5faf0f0628f742", 190787021),
 			Common::EN_ANY,
 			Common::kPlatformDOS,
@@ -212,15 +193,15 @@ static const QueenGameDescription gameDescriptions[] = {
 		},
 	},
 
-	// DOS Floppy - Russian (From Bugreport #6946)
+	// DOS Floppy - Russian (From Bugreport #6946) - Saveliev Translation
 	{
 		{
 			"queen",
 			"Floppy",
-			AD_ENTRY1s("queen.1", "f5e827645d3c887be3bdf4729d847756", 22677657),
+			AD_ENTRY1s("queen.1", "6e30974bfab8e5f5180363831d204ba0", 22677657),
 			Common::RU_RUS,
 			Common::kPlatformDOS,
-			ADGF_NO_FLAGS,
+			ADGF_TAILMD5,
 			GUIO1(GUIO_NOSPEECH)
 		},
 	},
@@ -229,7 +210,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1", "6fd5486a0db75bae2e023b575c3d6a5d", 186689095),
 			Common::FR_FRA,
 			Common::kPlatformDOS,
@@ -255,7 +236,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1", "551d595be8af890fc4cb8533c9c5f5f1", 217648975),
 			Common::DE_DEU,
 			Common::kPlatformDOS,
@@ -268,12 +249,12 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1", "b6302bccf70463de3d5faf0f0628f742", 190705558),
 			Common::HE_ISR,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GAMEOPTION_ALT_INTRO)
+			GUIO2(GAMEOPTION_ALT_INTRO, GAMEOPTION_ALT_FONT)
 		},
 	},
 
@@ -294,7 +275,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1", "b6302bccf70463de3d5faf0f0628f742", 190795582),
 			Common::IT_ITA,
 			Common::kPlatformDOS,
@@ -307,7 +288,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1", "b6302bccf70463de3d5faf0f0628f742", 190730602),
 			Common::ES_ESP,
 			Common::kPlatformDOS,
@@ -320,7 +301,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1c", "a0749bb8b72e537ead1a63a3dde1443d", 54108887),
 			Common::EN_ANY,
 			Common::kPlatformDOS,
@@ -333,7 +314,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1c", "21fd690b372f8a6289f6f33bc986276c", 51222412),
 			Common::EN_ANY,
 			Common::kPlatformDOS,
@@ -346,7 +327,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1c", "67e3020f8a35e1df7b1c753b5aaa71e1", 97382620),
 			Common::FR_FRA,
 			Common::kPlatformDOS,
@@ -359,7 +340,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1c", "28f78dbec7e20f603a10c2f8ea889a5c", 108738717),
 			Common::DE_DEU,
 			Common::kPlatformDOS,
@@ -372,12 +353,25 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1c", "4d52d8780613ef27a2b779caecb20a21", 99391805),
 			Common::HE_ISR,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
-			GUIO1(GAMEOPTION_ALT_INTRO)
+			GUIO2(GAMEOPTION_ALT_INTRO, GAMEOPTION_ALT_FONT)
+		},
+	},
+
+	// DOS CD - Hebrew
+	{
+		{
+			"queen",
+			"CD",
+			AD_ENTRY1s("queen.1c", "a88effce52227a1842636ce753c2e646", 100455438),
+			Common::HE_ISR,
+			Common::kPlatformDOS,
+			ADGF_NO_FLAGS,
+			GUIO2(GAMEOPTION_ALT_INTRO, GAMEOPTION_ALT_FONT)
 		},
 	},
 
@@ -385,7 +379,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1c", "2f72b715ed753cf905a37cdcc7ea611e", 98327801),
 			Common::IT_ITA,
 			Common::kPlatformDOS,
@@ -398,7 +392,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1c", "21fd690b372f8a6289f6f33bc986276c", 51329031),
 			Common::HU_HUN,
 			Common::kPlatformDOS,
@@ -411,7 +405,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1c", "908d04940d40537d32c50a8429cd8631", 51222412),
 			Common::RU_RUS,
 			Common::kPlatformDOS,
@@ -426,7 +420,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"CD",
 			AD_ENTRY1s("queen.1c", NULL, ?),
 			Common::ES_ESP,
 			Common::kPlatformDOS,
@@ -440,7 +434,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"GOG.com",
 			AD_ENTRY1s("queen.1", "28f78dbec7e20f603a10c2f8ea889a5c", 108738717),
 			Common::DE_DEU,
 			Common::kPlatformDOS,
@@ -453,7 +447,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"GOG.com",
 			AD_ENTRY1s("queen.1", "67e3020f8a35e1df7b1c753b5aaa71e1", 97382620),
 			Common::FR_FRA,
 			Common::kPlatformDOS,
@@ -466,7 +460,7 @@ static const QueenGameDescription gameDescriptions[] = {
 	{
 		{
 			"queen",
-			"Talkie",
+			"GOG.com",
 			AD_ENTRY1s("queen.1", "2f72b715ed753cf905a37cdcc7ea611e", 98327801),
 			Common::IT_ITA,
 			Common::kPlatformDOS,
@@ -480,16 +474,16 @@ static const QueenGameDescription gameDescriptions[] = {
 
 } // End of namespace Queen
 
-class QueenMetaEngineDetection : public AdvancedMetaEngineDetection {
+class QueenMetaEngineDetection : public AdvancedMetaEngineDetection<Queen::QueenGameDescription> {
 public:
-	QueenMetaEngineDetection() : AdvancedMetaEngineDetection(Queen::gameDescriptions, sizeof(Queen::QueenGameDescription), queenGames, optionsList) {
-	}
-
-	const char *getEngineId() const override {
-		return "queen";
+	QueenMetaEngineDetection() : AdvancedMetaEngineDetection(Queen::gameDescriptions, queenGames) {
 	}
 
 	const char *getName() const override {
+		return "queen";
+	}
+
+	const char *getEngineName() const override {
 		return "Flight of the Amazon Queen";
 	}
 
@@ -514,7 +508,7 @@ ADDetectedGame QueenMetaEngineDetection::fallbackDetect(const FileMap &allFiles,
 				continue;
 			}
 			Queen::DetectedGameVersion version;
-			if (Queen::Resource::detectVersion(&version, &dataFile)) {
+			if (Queen::detectVersion(&version, &dataFile)) {
 				desc.gameId = "queen";
 				desc.language = version.language;
 				desc.platform = version.platform;
@@ -532,8 +526,10 @@ ADDetectedGame QueenMetaEngineDetection::fallbackDetect(const FileMap &allFiles,
 					desc.extra = "Floppy";
 					desc.guiOptions = GUIO_NOSPEECH;
 				} else if (version.features & Queen::GF_TALKIE) {
-					desc.extra = "Talkie";
+					desc.extra = "CD";
 					desc.guiOptions = GAMEOPTION_ALT_INTRO;
+					if (desc.language == Common::HE_ISR)
+						desc.guiOptions = GUIO2(GAMEOPTION_ALT_INTRO, GAMEOPTION_ALT_FONT);
 				}
 
 				return ADDetectedGame(&desc);

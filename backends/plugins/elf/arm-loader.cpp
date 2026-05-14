@@ -63,6 +63,9 @@ bool ARMDLObject::relocate(Elf32_Off offset, Elf32_Word size, byte *relSegment) 
 
 		// Act differently based on the type of relocation
 		switch (REL_TYPE(rel[i].r_info)) {
+		case R_ARM_NONE:
+//		        debug(8, "elfloader: R_ARM_NONE: No relocation.");
+			break;
 		case R_ARM_ABS32:
 		case R_ARM_TARGET1:
 			if (sym->st_shndx < SHN_LOPROC) {			// Only shift for plugin section.
@@ -73,6 +76,11 @@ bool ARMDLObject::relocate(Elf32_Off offset, Elf32_Word size, byte *relSegment) 
 
 //				debug(8, "elfloader: R_ARM_ABS32: i=%d, a=%x, origTarget=%x, target=%x", i, a, origTarget, *target);
 			}
+			break;
+
+		// Note: PREL31 often points to a different section, so if we ever load in several segments, this needs to be adjusted
+		case R_ARM_PREL31:
+//		        debug(8, "elfloader: R_ARM_PREL31: PC-relative reference, ld takes care of necessary relocation work for us.");
 			break;
 
 		case R_ARM_PC24:

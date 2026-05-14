@@ -32,6 +32,10 @@
 
 #include "common/array.h"
 
+#ifdef USE_OPENGL
+#define USE_MULTIPLE_RENDERERS
+#endif
+
 #ifdef USE_DISCORD
 class DiscordPresence;
 #endif
@@ -52,6 +56,8 @@ public:
 	void init() override;
 
 	bool hasFeature(Feature f) override;
+	void setFeatureState(Feature f, bool enable) override;
+	bool getFeatureState(Feature f) override;
 
 	// Override functions from ModularBackend and OSystem
 	void initBackend() override;
@@ -89,10 +95,12 @@ public:
 	MixerManager *getMixerManager() override;
 	Common::TimerManager *getTimerManager() override;
 	Common::SaveFileManager *getSavefileManager() override;
+	uint32 getDoubleClickTime() const override;
 
 	// Default paths
-	virtual Common::String getDefaultIconsPath();
-	virtual Common::String getScreenshotsPath();
+	virtual Common::Path getDefaultIconsPath();
+	virtual Common::Path getDefaultDLCsPath();
+	virtual Common::Path getScreenshotsPath();
 
 #if defined(USE_OPENGL_GAME) || defined(USE_OPENGL_SHADERS)
 	Common::Array<uint> getSupportedAntiAliasingLevels() const override;
@@ -116,12 +124,12 @@ protected:
 	/**
 	 * The path of the currently open log file, if any.
 	 *
-	 * @note This is currently a string and not an FSNode for simplicity;
+	 * @note This is currently a Path and not an FSNode for simplicity;
 	 * e.g. we don't need to include fs.h here, and currently the
 	 * only use of this value is to use it to open the log file in an
-	 * editor; for that, we need it only as a string anyway.
+	 * editor; for that, we need it only as a path anyway.
 	 */
-	Common::String _logFilePath;
+	Common::Path _logFilePath;
 
 	/**
 	 * The event source we use for obtaining SDL events.
@@ -142,7 +150,6 @@ protected:
 	void detectAntiAliasingSupport();
 
 	OpenGL::ContextType _oglType;
-	bool _supportsFrameBuffer;
 	bool _supportsShaders;
 	Common::Array<uint> _antiAliasLevels;
 #endif
@@ -158,18 +165,26 @@ protected:
 	virtual AudioCDManager *createAudioCDManager();
 
 	// Logging
-	virtual Common::String getDefaultLogFileName() { return Common::String(); }
 	virtual Common::WriteStream *createLogFile();
 	Backends::Log::Log *_logger;
 
+#ifdef USE_MULTIPLE_RENDERERS
+	enum GraphicsManagerType {
+		GraphicsManagerSurfaceSDL,
 #ifdef USE_OPENGL
+		GraphicsManagerOpenGL,
+#endif
+		GraphicsManagerCount
+	};
+
 	typedef Common::Array<GraphicsMode> GraphicsModeArray;
 	GraphicsModeArray _graphicsModes;
 	Common::Array<int> _graphicsModeIds;
 	int _graphicsMode;
-	int _firstGLMode;
-	int _defaultSDLMode;
-	int _defaultGLMode;
+	int _firstMode[GraphicsManagerCount];
+	int _lastMode[GraphicsManagerCount];
+	int _defaultMode[GraphicsManagerCount];
+	int _supports3D[GraphicsManagerCount];
 
 	/**
 	 * Create the merged graphics modes list.
@@ -181,13 +196,16 @@ protected:
 	 */
 	void clearGraphicsModes();
 
-	enum GraphicsManagerType { GraphicsManagerSDL, GraphicsManagerOpenGL };
-	virtual GraphicsManagerType getDefaultGraphicsManager() const { return GraphicsManagerSDL; }
+	virtual GraphicsManagerType getDefaultGraphicsManager() const;
+	SdlGraphicsManager *createGraphicsManager(SdlEventSource *sdlEventSource, SdlWindow *window, GraphicsManagerType type);
 	const OSystem::GraphicsMode *getSupportedGraphicsModes() const override;
 	int getDefaultGraphicsMode() const override;
 	bool setGraphicsMode(int mode, uint flags) override;
 	int getGraphicsMode() const override;
 #endif
+
+	virtual uint32 getOSDoubleClickTime() const { return 0; }
+	virtual const char * const *buildHelpDialogData() override;
 };
 
 #endif

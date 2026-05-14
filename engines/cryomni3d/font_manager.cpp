@@ -34,10 +34,11 @@
 
 namespace CryOmni3D {
 
-FontManager::FontManager() : _currentFont(nullptr), _transparentBackground(false),
-	_spaceWidth(0), _charSpacing(0), _lineHeight(30), _foreColor(0), _blockTextRemaining(nullptr),
-	_useSpaceDelimiter(true), _keepASCIIjoined(true), _codepage(Common::kCodePageInvalid),
-	_toUnicode(false) {
+FontManager::FontManager() : _codepage(Common::kCodePageInvalid), _toUnicode(false),
+	_currentFont(nullptr), _currentFontId(uint(-1)), _transparentBackground(false),
+	_spaceWidth(0), _charSpacing(0), _foreColor(0), _currentSurface(nullptr),
+	_lineHeight(30), _justifyText(false), _blockTextRemaining(nullptr),
+	_useSpaceDelimiter(true), _keepASCIIjoined(true) {
 }
 
 FontManager::~FontManager() {
@@ -53,7 +54,7 @@ FontManager::~FontManager() {
 	}
 }
 
-void FontManager::loadFonts(const Common::Array<Common::String> &fontFiles,
+void FontManager::loadFonts(const Common::Array<Common::Path> &fontFiles,
 							Common::CodePage codepage) {
 	assert(codepage != Common::kCodePageInvalid);
 	_codepage = codepage;
@@ -65,9 +66,10 @@ void FontManager::loadFonts(const Common::Array<Common::String> &fontFiles,
 	_fonts.clear();
 	_fonts.reserve(fontFiles.size());
 
-	Common::HashMap<Common::String, Graphics::Font *> fontsCache;
+	Common::HashMap<Common::Path, Graphics::Font *,
+		Common::Path::IgnoreCase_Hash, Common::Path::IgnoreCase_EqualTo> fontsCache;
 
-	for (Common::Array<Common::String>::const_iterator it = fontFiles.begin(); it != fontFiles.end();
+	for (Common::Array<Common::Path>::const_iterator it = fontFiles.begin(); it != fontFiles.end();
 	        it++) {
 		Graphics::Font *fontEntry = nullptr;
 		if (fontsCache.tryGetVal(*it, fontEntry)) {
@@ -92,7 +94,7 @@ void FontManager::loadFonts(const Common::Array<Common::String> &fontFiles,
 	}
 }
 
-void FontManager::loadTTFList(const Common::String &ttfList, Common::CodePage codepage) {
+void FontManager::loadTTFList(const Common::Path &ttfList, Common::CodePage codepage) {
 #ifdef USE_FREETYPE2
 	assert(codepage != Common::kCodePageInvalid);
 	_codepage = codepage;
@@ -106,8 +108,10 @@ void FontManager::loadTTFList(const Common::String &ttfList, Common::CodePage co
 	Common::File list;
 
 	if (!list.open(ttfList)) {
-		error("can't open file %s", ttfList.c_str());
+		error("can't open file %s", ttfList.toString(Common::Path::kNativeSeparator).c_str());
 	}
+
+	Common::Path ttfParentDir(ttfList.getParent());
 
 	Common::String line = list.readLine();
 	uint32 num = atoi(line.c_str());
@@ -138,12 +142,13 @@ void FontManager::loadTTFList(const Common::String &ttfList, Common::CodePage co
 		bool bold = sizeFlags.contains('B');
 		bool italic = sizeFlags.contains('I');
 
-		Common::Array<Common::String> fontFiles;
-		fontFiles.push_back(fontFile);
+		Common::Array<Common::Path> fontFiles;
+		fontFiles.push_back(Common::Path(fontFile));
+		fontFiles.push_back(ttfParentDir.appendComponent(fontFile));
 
 		// Use 96 dpi as it's the default under Windows
 		Graphics::Font *font = Graphics::findTTFace(fontFiles, uniFontFace, bold, italic, -(int)size,
-		                       96, Graphics::kTTFRenderModeMonochrome);
+		                       96, 96, Graphics::kTTFRenderModeMonochrome);
 		if (!font) {
 			error("Can't find required face (line %u) in %s", i, fontFile.c_str());
 		}
@@ -373,7 +378,7 @@ void FontManager::calculateWordWrap(const Common::U32String &text,
 		uint width = getStrWidth(word);
 		if (width + offset >= lineWidth) {
 			wordWrap = true;
-			// word is too long: just put pointer back at begining
+			// word is too long: just put pointer back at beginning
 			ptr = begin;
 		} else {
 			words.push_back(word);

@@ -17,8 +17,15 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
+#include "common/config-manager.h"
 #include "common/str.h"
 
 #include "gob/gob.h"
@@ -33,6 +40,7 @@
 #include "gob/draw.h"
 #include "gob/sound/sound.h"
 #include "gob/videoplayer.h"
+#include "gob/save/saveload.h"
 
 namespace Gob {
 
@@ -65,6 +73,47 @@ void Inter_v6::setupOpcodesFunc() {
 void Inter_v6::setupOpcodesGob() {
 }
 
+Common::String Inter_v6::getFile(const char *path, bool stripPath, bool *isCd) {
+	const char *orig = path;
+
+	if      (!strncmp(path, "@:\\", 3))
+		path += 3;
+	else if (!strncmp(path, "<ME>", 4))
+		path += 4;
+	else if (!strncmp(path, "<CD>", 4)) {
+		path += 4;
+		if (isCd)
+			*isCd = true;
+	} else if (!strncmp(path, "<STK>", 5))
+		path += 5;
+	else if (!strncmp(path, "<ALLCD>", 7)) {
+		path += 7;
+		if (isCd)
+			*isCd = true;
+	}
+
+	if (stripPath) {
+		const char *backslash = strrchr(path, '\\');
+		if (backslash)
+			path = backslash + 1;
+	}
+
+	Common::String newPath = path;
+	// Comma in filenames tells this engine that the file handle may be reused for next read/write operations
+	// E.g. myfile,0 will keep the file handle for "myfile".
+	// If later we request file I/O for "myfile,1" the file handle will be reused.
+	// It seems that we can just ignore this, as the seek position of the handle is reset anyway.
+	uint32 commaPos = newPath.find(',');
+	if (commaPos != Common::String::npos)
+		newPath = newPath.substr(0, commaPos);
+
+	if (orig != newPath)
+		debugC(2, kDebugFileIO, "Inter_Playtoons::getFile(): Evaluating path"
+				"\"%s\" to \"%s\"", orig, path);
+
+	return newPath;
+}
+
 void Inter_v6::o6_totSub() {
 	uint8 length = _vm->_game->_script->readByte();
 	if ((length & 0x7F) > 13)
@@ -78,10 +127,57 @@ void Inter_v6::o6_totSub() {
 			totFile += _vm->_game->_script->readChar();
 
 	uint8 flags = _vm->_game->_script->readByte();
-	if (flags & 0x40)
-		warning("Urban Stub: o6_totSub(), flags & 0x40");
+	if (flags & 0x40) {
+		// The original engine would start an external program here. The only known use at the time of writing is for
+		// starting a game in the Adi4 gamebox collection.
+		// We emulate it by lanching the ScummVM target whose path matches the external program's directory, if any.
+		// This target must have been added in ScummVM beforehand.
+		Common::Path currentPath = ConfMan.getPath("path");
+		Common::Path programPath(getFile(totFile.c_str(), false), '\\');
+		Common::Path programDirFullPath = currentPath / programPath.getParent();
+		programDirFullPath = programDirFullPath.normalize();
+		Common::String target;
 
-	_vm->_game->totSub(flags, totFile);
+		for (auto iter = ConfMan.beginGameDomains(); iter != ConfMan.endGameDomains(); ++iter) {
+			Common::ConfigManager::Domain &dom = iter->_value;
+			Common::Path targetPath = Common::Path::fromConfig(dom.getVal("path"));
+			targetPath = targetPath.normalize();
+
+			if (targetPath.equalsIgnoreCase(programDirFullPath)) {
+				target = iter->_key;
+				break;
+			}
+		}
+
+		if (target.empty()) {
+			warning("o6_totSub(): Could not find any matching ScummVM target for external program \"%s\"", programPath.toString().c_str());
+			return;
+		}
+
+		debugC(1, kDebugGameFlow, "o6_totSub(): Launching ScummVM target \"%s\" to substitute for external program \"%s\"",
+			   target.c_str(),
+			   programPath.toString().c_str());
+
+		ChainedGamesMan.push(target);
+		ChainedGamesMan.push(ConfMan.getActiveDomainName(), 100);
+
+		if (_vm->getGameType() == kGameTypeAdi4) {
+			// Save all current game variables in a fictive save file.
+			// Although it is generally not possible to create a snapshot of an arbitrary engine state in Gob,
+			// just saving the current game variables is sufficient here to be able to restore most the engine
+			// state after restarting it through ChainedGamesMan. One simplifying factor is that this opcode
+			// is called from the top-level script.
+			_vm->_saveLoad->save("RETURN_FROM_GAMEBOX", 0, 0, 0);
+		}
+
+		// Force a return to the launcher. This will start the first chained game.
+		Common::EventManager *eventMan = g_system->getEventManager();
+		Common::Event event;
+		event.type = Common::EVENT_RETURN_TO_LAUNCHER;
+		eventMan->pushEvent(event);
+	} else {
+		_vm->_game->totSub(flags, totFile);
+	}
 }
 
 void Inter_v6::o6_playVmdOrMusic() {
@@ -111,7 +207,7 @@ void Inter_v6::o6_playVmdOrMusic() {
 	if (_vm->isCurrentTot("avt005.tot") && file.equalsIgnoreCase("MXRAMPART"))
 		file = "PLCOFDR2";
 
-	if (file == "RIEN") {
+	if (file == "RIEN") { // (French word for "nothing")
 		_vm->_vidPlayer->closeAll();
 		return;
 	}
@@ -127,7 +223,7 @@ void Inter_v6::o6_playVmdOrMusic() {
 //		warning("Urban/Playtoons Stub: Video/Music command -6 (cache video)");
 		return;
 	} else if (props.lastFrame == -7) {
-//		warning("Urban/Playtoons Stub: Video/Music command -6 (flush cache)");
+//		warning("Urban/Playtoons Stub: Video/Music command -7 (flush cache)");
 		return;
 	} else if ((props.lastFrame == -8) || (props.lastFrame == -9)) {
 		if (!file.contains('.'))
@@ -171,7 +267,7 @@ void Inter_v6::o6_playVmdOrMusic() {
 	}
 
 	if (props.hasSound)
-		_vm->_vidPlayer->closeLiveSound();
+		_vm->_vidPlayer->closeLiveVideos();
 
 	if (props.startFrame >= 0)
 		_vm->_vidPlayer->play(slot, props);
@@ -259,7 +355,7 @@ void Inter_v6::o6_assign(OpFuncParams &params) {
 	uint16 dest = _vm->_game->_script->readVarIndex(&size, &destType);
 
 	if (size != 0) {
-		int16 src;
+		int32 src;
 
 		_vm->_game->_script->push();
 
@@ -297,8 +393,36 @@ void Inter_v6::o6_assign(OpFuncParams &params) {
 	} else
 		loopCount = 1;
 
+	// WORKAROUND for a bug in Adibou 2 scripts for cooking activity: bananas count is not updated correctly.
+	// The banana balance equation should be: "remaining bananas = previous remaining bananas - bananas used for cake"
+	// but scripts do instead "remaining bananas = previous remaining *cherries* - bananas used for cake" :p
+	if (_vm->getGameType() == kGameTypeAdibou2 &&
+		loopCount == 1 &&
+		_vm->_enableAdibou2FreeBananasWorkaround &&
+		_vm->_game->_script->pos() == 18631 && // same offset in all versions
+		(dest == 40956 || dest == 40916) && // bananas in v2.10, v2.11 / v2.12, v2.13
+		_vm->isCurrentTot("cuisine.tot")) {
+		uint16 bananasInCakesVar = (dest == 40956) ? 22820 : 22828;
+		WRITE_VAR_OFFSET(dest, VAR_OFFSET(dest) - VAR_OFFSET(bananasInCakesVar) /* bananas used for cake */);
+		_vm->_game->_script->skipExpr(99);
+		return;
+	}
+
+	// WORKAROUND: Make the "bird table" animation in the hollow tree skippable with right click
+	if (_vm->getGameType() == kGameTypeAdibou2 &&
+		loopCount == 1 &&
+		(dest == 19104 || dest == 19400 || dest == 19404) && // animation "frame" in different versions
+		_vm->_game->_script->pos() > 9036 &&
+		_vm->_game->_script->pos() < 9478 &&
+		_vm->isCurrentTot("atelier.tot") &&
+		VAR(4) == kMouseButtonsRight) {
+		WRITE_VAR_OFFSET(dest, 200);
+		_vm->_game->_script->skipExpr(99);
+		return;
+	}
+
 	for (int i = 0; i < loopCount; i++) {
-		int16 result;
+		int32 result;
 		int16 srcType = _vm->_game->_script->evalExpr(&result);
 
 		switch (destType) {
@@ -324,14 +448,24 @@ void Inter_v6::o6_assign(OpFuncParams &params) {
 		case TYPE_VAR_STR:
 		case TYPE_ARRAY_STR:
 			if (srcType == TYPE_IMM_INT16)
-				WRITE_VARO_UINT8(dest, result);
+				WRITE_VARO_UINT8(dest + i * _vm->_global->_inter_animDataSize, result);
 			else
-				WRITE_VARO_STR(dest, _vm->_game->_script->getResultStr());
+				WRITE_VARO_STR(dest + i * _vm->_global->_inter_animDataSize, _vm->_game->_script->getResultStr());
 			break;
 
 		default:
 			break;
 		}
+	}
+
+	// WORKAROUND for a bug in Adibou2 script of "pleasant/unpleasant" game
+	if (_vm->getGameType() == kGameTypeAdibou2 &&
+		loopCount == 1 &&
+		_vm->_game->_script->pos() == 6739 &&
+		dest == 508 &&
+		VAR_OFFSET(dest) == 0 &&
+		_vm->isCurrentTot("l6ex11.tot")) {
+		WRITE_VAR_OFFSET(dest, 1); // used as a loop index for an array initialized only from index 1, skip value 0
 	}
 }
 
@@ -345,13 +479,13 @@ void Inter_v6::o6_removeHotspot(OpFuncParams &params) {
 
 	switch (id + 5) {
 	case 0:
-		_vm->_game->_hotspots->push(1);
+		_vm->_game->_hotspots->push(1, true);
 		break;
 	case 1:
 		_vm->_game->_hotspots->pop();
 		break;
 	case 2:
-		_vm->_game->_hotspots->push(2);
+		_vm->_game->_hotspots->push(2, true);
 		break;
 	case 3:
 		_vm->_game->_hotspots->removeState(stateType1);
@@ -381,9 +515,6 @@ void Inter_v6::o6_fillRect(OpFuncParams &params) {
 	_vm->_draw->_backColor = patternColor & 0xFFFF;
 	_vm->_draw->_pattern   = patternColor >> 16;
 
-	if (_vm->_draw->_pattern != 0)
-		warning("Urban Stub: o6_fillRect(), _pattern = %d", _vm->_draw->_pattern);
-
 	if (_vm->_draw->_spriteRight < 0) {
 		_vm->_draw->_destSpriteX += _vm->_draw->_spriteRight - 1;
 		_vm->_draw->_spriteRight = -_vm->_draw->_spriteRight + 2;
@@ -394,6 +525,7 @@ void Inter_v6::o6_fillRect(OpFuncParams &params) {
 	}
 
 	if (destSurf & 0x80) {
+		// Implemented in Inter_v7::o7_fillRect, consider merging if needed
 		warning("Urban Stub: o6_fillRect(), destSurf & 0x80");
 		return;
 	}

@@ -47,7 +47,7 @@ public:
 
 	void load(const Common::String &name, const int *data);
 
-	int checkItem(int itemId);
+	int checkItem(int itemId) const;
 };
 
 class InventoryManager : public Manager {
@@ -68,6 +68,8 @@ class InventoryManager : public Manager {
 		Common::Point _bufferStart;
 		int _scrollCol;
 		int _scrollRow;
+
+		SavedFields();
 	};
 private:
 	Common::Array<int> _items;
@@ -96,7 +98,7 @@ private:
 
 	void freeInvCells();
 
-	int coordIndexOf();
+	int coordIndexOf() const;
 
 	void saveScreens();
 

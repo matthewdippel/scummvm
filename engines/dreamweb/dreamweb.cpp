@@ -27,14 +27,17 @@
 #include "common/system.h"
 #include "common/timer.h"
 #include "common/util.h"
+#include "common/concatstream.h"
 
 #include "engines/advancedDetector.h"
 
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/surface.h"
 
+#include "dreamweb/detection.h"
 #include "dreamweb/sound.h"
 #include "dreamweb/dreamweb.h"
+#include "dreamweb/rnca_archive.h"
 
 #include "common/text-to-speech.h"
 
@@ -270,6 +273,8 @@ DreamWebEngine::DreamWebEngine(OSystem *syst, const DreamWebGameDescription *gam
 
 DreamWebEngine::~DreamWebEngine() {
 	delete _sound;
+	if (_thumbnail.getPixels())
+		_thumbnail.free();
 }
 
 void DreamWebEngine::pauseEngineIntern(bool pause) {
@@ -394,6 +399,20 @@ void DreamWebEngine::processEvents(bool processSoundEvents) {
 }
 
 Common::Error DreamWebEngine::run() {
+	if (_gameDescription->desc.flags & GF_INSTALLER) {
+		Common::Array<Common::SharedPtr<Common::SeekableReadStream>> volumes;
+		for (uint i = 0; _gameDescription->desc.filesDescriptions[i].fileName; i++) {
+			Common::File *dw = new Common::File();
+			const char *name = _gameDescription->desc.filesDescriptions[i].fileName;
+			if (!dw->open(name)) {
+				error("Can't open %s", name);
+			}
+			volumes.push_back(Common::SharedPtr<Common::SeekableReadStream>(dw));
+		}
+		Common::ConcatReadStream *concat = new Common::ConcatReadStream(volumes);
+		SearchMan.add("rnca", RNCAArchive::open(concat, DisposeAfterUse::YES));
+	}
+
 	if (_ttsMan != nullptr) {
 		Common::String languageString = Common::getLanguageCode(getLanguage());
 		_ttsMan->setLanguage(languageString);
@@ -415,7 +434,7 @@ Common::Error DreamWebEngine::run() {
 	setDebugger(new DreamWebConsole(this));
 	_sound = new DreamWebSound(this);
 
-	_hasSpeech = Common::File::exists(_speechDirName + "/r01c0000.raw") && !ConfMan.getBool("speech_mute");
+	_hasSpeech = Common::File::exists(_speechDirName.appendComponent("r01c0000.raw")) && !ConfMan.getBool("speech_mute");
 	_brightPalette = ConfMan.getBool("bright_palette");
 	_copyProtection = ConfMan.getBool("copy_protection");
 
@@ -590,17 +609,17 @@ uint8 DreamWebEngine::modifyChar(uint8 c) const {
 	}
 }
 
-Common::String DreamWebEngine::modifyFileName(const char *name) {
+Common::Path DreamWebEngine::modifyFileName(const char *name) {
 	Common::String fileName(name);
 
 	// Sanity check
 	if (!fileName.hasPrefix("DREAMWEB."))
-		return fileName;
+		return Common::Path(fileName);
 
 	// Make sure we use the correct file name as it differs depending on the game variant
 	fileName = _datafilePrefix;
 	fileName += name + 9;
-	return fileName;
+	return Common::Path(fileName);
 }
 
 bool DreamWebEngine::hasSpeech() {

@@ -33,12 +33,14 @@
 #include "common/config-manager.h"
 #include "common/text-to-speech.h"
 
+#include "backends/keymapper/keymapper.h"
+
 namespace Sherlock {
 
 namespace Scalpel {
 
 // Main user interface menu control locations
-const int MENU_POINTS[12][4] = {
+const int MENU_POINTS_INTL[12][4] = {
 	{ 13, 153, 72, 165 },
 	{ 13, 169, 72, 181 },
 	{ 13, 185, 72, 197 },
@@ -51,6 +53,21 @@ const int MENU_POINTS[12][4] = {
 	{ 249, 153, 305, 165 },
 	{ 249, 169, 305, 181 },
 	{ 249, 185, 305, 197 }
+};
+
+const int MENU_POINTS_ZH[12][4] = {
+	{   5, 158,  47, 172 },
+	{   5, 181,  47, 196 },
+	{  57, 158,  99, 172 },
+	{  57, 181,  99, 196 },
+	{ 109, 158, 151, 172 },
+	{ 109, 181, 151, 196 },
+	{ 160, 158, 202, 172 },
+	{ 160, 181, 202, 196 },
+	{ 212, 158, 254, 172 },
+	{ 212, 181, 254, 196 },
+	{ 265, 158, 307, 172 },
+	{ 265, 181, 307, 196 }
 };
 
 // Inventory control locations */
@@ -69,6 +86,42 @@ const int UI_OFFSET_3DO = 16;	// (320 - 288) / 2
 
 /*----------------------------------------------------------------*/
 
+Common::Point ScalpelUserInterface::getTopLeftButtonPoint(int num) const {
+	Common::Point pt;
+	if (_vm->getLanguage() == Common::Language::ZH_TWN) {
+		pt = Common::Point(MENU_POINTS_ZH[num][0], MENU_POINTS_ZH[num][1]);
+	} else {
+		pt = Common::Point(MENU_POINTS_INTL[num][0], MENU_POINTS_INTL[num][1]);
+	}
+
+	if (IS_3DO) {
+		if (num >= 0 && num <= 2)
+			pt.x += 15;
+		else if (num >= 6 && num <= 8)
+			pt.x -= 4;
+		else if (num >= 9 && num <= 11)
+			pt.x -= 8;
+	}
+
+	return pt;
+}
+
+Common::Rect ScalpelUserInterface::getButtonRect(int buttonNr) const {
+	Common::Rect r;
+
+	if (_vm->getLanguage() == Common::Language::ZH_TWN) {
+		r = Common::Rect(MENU_POINTS_ZH[buttonNr][0], MENU_POINTS_ZH[buttonNr][1],
+				 MENU_POINTS_ZH[buttonNr][2], MENU_POINTS_ZH[buttonNr][3]);
+	} else {
+		r = Common::Rect(MENU_POINTS_INTL[buttonNr][0], MENU_POINTS_INTL[buttonNr][1],
+				 MENU_POINTS_INTL[buttonNr][2], MENU_POINTS_INTL[buttonNr][3]);
+	}
+	if (IS_3DO && buttonNr <= 2) {
+		r.left += UI_OFFSET_3DO - 1;
+		r.right += UI_OFFSET_3DO - 1;
+	}
+	return r;
+}
 
 ScalpelUserInterface::ScalpelUserInterface(SherlockEngine *vm): UserInterface(vm) {
 	if (_vm->_interactiveFl) {
@@ -87,53 +140,34 @@ ScalpelUserInterface::ScalpelUserInterface(SherlockEngine *vm): UserInterface(vm
 	}
 
 	_keyPress = '\0';
+	_actionPress = kActionNone;
 	_lookHelp = 0;
 	_help = _oldHelp = 0;
-	_key = _oldKey = '\0';
+	_key = '\0';
+	_action = _oldAction = kActionNone;
 	_temp = _oldTemp = 0;
 	_oldLook = 0;
 	_keyboardInput = false;
+	_actionInput = false;
 	_pause = false;
 	_cNum = 0;
 	_find = 0;
 	_oldUse = 0;
 
-	// Set up hotkeys
-	Common::String gameHotkeys = FIXED(Game_Hotkeys);
-
-	memset(_hotkeysIndexed, 0, sizeof(_hotkeysIndexed));
-	assert(gameHotkeys.size() <= sizeof(_hotkeysIndexed));
-	memcpy(_hotkeysIndexed, gameHotkeys.c_str(), gameHotkeys.size());
-
-	_hotkeyLook = gameHotkeys[0];
-	_hotkeyMove = gameHotkeys[1];
-	_hotkeyTalk = gameHotkeys[2];
-	_hotkeyPickUp = gameHotkeys[3];
-	_hotkeyOpen = gameHotkeys[4];
-	_hotkeyClose = gameHotkeys[5];
-	_hotkeyInventory = gameHotkeys[6];
-	_hotkeyUse = gameHotkeys[7];
-	_hotkeyGive = gameHotkeys[8];
-	_hotkeyJournal = gameHotkeys[9];
-	_hotkeyFiles = gameHotkeys[10];
-	_hotkeySetUp = gameHotkeys[11];
-	_hotkeyLoadGame = 0;
-	_hotkeySaveGame = 0;
-
-	if (IS_3DO) {
-		// 3DO doesn't have a Journal nor a Files button
-		// Instead it has the setup button in place of the journal
-		// and also "Load" and "Save" buttons underneath it.
-		_hotkeyJournal = 0;
-		_hotkeyFiles = 0;
-		_hotkeyLoadGame = 'A'; // "S" already used for SetUp
-		_hotkeySaveGame = 'V'; // ditto
-
-		_hotkeysIndexed[MAINBUTTON_JOURNAL]  = 0;
-		_hotkeysIndexed[MAINBUTTON_FILES]    = 0;
-		_hotkeysIndexed[MAINBUTTON_LOADGAME] = 'A';
-		_hotkeysIndexed[MAINBUTTON_SAVEGAME] = 'V';
-	}
+	_actionsIndexed[0] = kActionScalpelLook;
+	_actionsIndexed[1] = kActionScalpelMove;
+	_actionsIndexed[2] = kActionScalpelTalk;
+	_actionsIndexed[3] = kActionScalpelPickUp;
+	_actionsIndexed[4] = kActionScalpelOpen;
+	_actionsIndexed[5] = kActionScalpelClose;
+	_actionsIndexed[6] = kActionScalpelInventory;
+	_actionsIndexed[7] = kActionScalpelUse;
+	_actionsIndexed[8] = kActionScalpelGive;
+	_actionsIndexed[9] = kActionScalpelJournal;
+	_actionsIndexed[10] = kActionScalpelFiles;
+	_actionsIndexed[11] = kActionScalpelSetup;
+	_actionsIndexed[12] = kActionScalpelLoad;
+	_actionsIndexed[13] = kActionScalpelSave;
 }
 
 ScalpelUserInterface::~ScalpelUserInterface() {
@@ -144,6 +178,14 @@ ScalpelUserInterface::~ScalpelUserInterface() {
 void ScalpelUserInterface::reset() {
 	UserInterface::reset();
 	_help = _oldHelp = -1;
+}
+
+int ScalpelUserInterface::infoLineHeight() const {
+	return _vm->getLanguage() == Common::Language::ZH_TWN ? 14 : 10;
+}
+
+int ScalpelUserInterface::infoLineYOffset() const {
+	return _vm->getLanguage() == Common::Language::ZH_TWN ? 0 : 1;
 }
 
 void ScalpelUserInterface::drawInterface(int bufferNum) {
@@ -166,7 +208,7 @@ void ScalpelUserInterface::drawInterface(int bufferNum) {
 	}
 	if (bufferNum == 3)
 		screen._backBuffer2.SHfillRect(Common::Rect(0, INFO_LINE,
-			SHERLOCK_SCREEN_WIDTH, INFO_LINE + 10), INFO_BLACK);
+			SHERLOCK_SCREEN_WIDTH, INFO_LINE + infoLineHeight()), INFO_BLACK);
 }
 
 void ScalpelUserInterface::handleInput() {
@@ -176,6 +218,7 @@ void ScalpelUserInterface::handleInput() {
 	Scene &scene = *_vm->_scene;
 	Screen &screen = *_vm->_screen;
 	Talk &talk = *_vm->_talk;
+	Common::Keymapper *keymapper = _vm->getEventManager()->getKeymapper();
 
 	if (_menuCounter)
 		whileMenuCounter();
@@ -183,18 +226,25 @@ void ScalpelUserInterface::handleInput() {
 	Common::Point pt = events.mousePos();
 	_bgFound = scene.findBgShape(pt);
 	_keyPress = '\0';
+	_actionPress = kActionNone;
 
 	// Check kbd and set the mouse released flag if Enter or space is pressed.
 	// Otherwise, the pressed _key is stored for later use
-	if (events.kbHit()) {
-		Common::KeyState keyState = events.getKey();
-		_keyPress = keyState.ascii;
 
-		if (keyState.keycode == Common::KEYCODE_x && keyState.flags & Common::KBD_ALT) {
+	if (events.actionHit()) {
+		Common::CustomEventType action = events.getAction();
+		_actionPress = action;
+
+		if (action == kActionScalpelQuit) {
 			_vm->quitGame();
 			events.pollEvents();
 			return;
 		}
+	}
+
+	if (events.kbHit()) {
+		Common::KeyState keyState = events.getKey();
+		_keyPress = keyState.ascii;
 	}
 
 	// Do button highlighting check
@@ -259,7 +309,7 @@ void ScalpelUserInterface::handleInput() {
 
 					if (_help != -1 && !scene._bgShapes[_bgFound]._description.empty()
 							&& scene._bgShapes[_bgFound]._description[0] != ' ')
-						screen.print(Common::Point(0, INFO_LINE + 1),
+						screen.print(Common::Point(0, INFO_LINE + infoLineYOffset()),
 						INFO_FOREGROUND, "%s", scene._bgShapes[_bgFound]._description.c_str());
 
 					_oldBgFound = _bgFound;
@@ -273,7 +323,7 @@ void ScalpelUserInterface::handleInput() {
 						restoreButton(idx);
 
 					_menuMode = STD_MODE;
-					_key = _oldKey = -1;
+					_action = _oldAction = kActionNone;
 					_temp = _oldTemp = _lookHelp = _invLookFlag = 0;
 					events.clearEvents();
 				}
@@ -318,8 +368,13 @@ void ScalpelUserInterface::handleInput() {
 				personFound = _bgFound != -1 && scene._bgShapes[_bgFound]._aType == PERSON;
 			}
 
-			if (events._released && personFound)
+			if (events._released && personFound) {
+				keymapper->getKeymap("scalpel")->setEnabled(false);
+				keymapper->getKeymap("scalpel-quit")->setEnabled(false);
+				keymapper->getKeymap("scalpel-talk")->setEnabled(true);
+				keymapper->getKeymap("scalpel-scroll")->setEnabled(true);
 				talk.initTalk(_bgFound);
+			}
 			else if (personFound)
 				lookScreen(pt);
 			else if (_bgFound < 1000)
@@ -345,7 +400,7 @@ void ScalpelUserInterface::handleInput() {
 	//
 	// Do input processing
 	//
-	if (events._pressed || events._released || events._rightPressed || _keyPress || _pause) {
+	if (events._pressed || events._released || events._rightPressed || _keyPress || _actionPress || _pause) {
 		if (((events._released && (_helpStyle || _help == -1)) || (events._rightReleased && !_helpStyle)) &&
 				(pt.y <= CONTROLS_Y) && (_menuMode == STD_MODE)) {
 			// The mouse was clicked in the playing area with no action buttons down.
@@ -361,9 +416,9 @@ void ScalpelUserInterface::handleInput() {
 				people[HOLMES].goAllTheWay();
 			}
 
-			if (_oldKey != -1) {
+			if (_oldAction != kActionNone) {
 				restoreButton(_oldTemp);
-				_oldKey = -1;
+				_oldAction = kActionNone;
 			}
 		}
 
@@ -412,20 +467,19 @@ void ScalpelUserInterface::handleInput() {
 		// As long as there isn't an open window, do main input processing.
 		// Windows are opened when in TALK, USE, INV, and GIVE modes
 		if ((!_windowOpen && !_menuCounter && pt.y > CONTROLS_Y) ||
-				_keyPress) {
-			if (events._pressed || events._released || _pause || _keyPress)
+				_keyPress || _actionPress) {
+			if (events._pressed || events._released || _pause || _keyPress || _actionPress)
 				doMainControl();
 		}
 
-		if (pt.y < CONTROLS_Y && events._pressed && _oldTemp != (int)(_menuMode - 1) && _oldKey != -1)
+		if (pt.y < CONTROLS_Y && events._pressed && _oldTemp != (int)(_menuMode - 1) && _oldAction != kActionNone)
 			restoreButton(_oldTemp);
 	}
 }
 
 void ScalpelUserInterface::depressButton(int num) {
 	Screen &screen = *_vm->_screen;
-	Common::Point pt(MENU_POINTS[num][0], MENU_POINTS[num][1]);
-	offsetButton3DO(pt, num);
+	Common::Point pt = getTopLeftButtonPoint(num);
 
 	ImageFrame &frame = (*_controls)[num];
 	screen._backBuffer1.SHtransBlitFrom(frame, pt);
@@ -435,8 +489,7 @@ void ScalpelUserInterface::depressButton(int num) {
 void ScalpelUserInterface::restoreButton(int num) {
 	Events &events = *_vm->_events;
 	Screen &screen = *_vm->_screen;
-	Common::Point pt(MENU_POINTS[num][0], MENU_POINTS[num][1]);
-	offsetButton3DO(pt, num);
+	Common::Point pt = getTopLeftButtonPoint(num);
 
 	Graphics::Surface &frame = (*_controls)[num]._frame;
 
@@ -456,7 +509,7 @@ void ScalpelUserInterface::restoreButton(int num) {
 
 void ScalpelUserInterface::pushButton(int num) {
 	Events &events = *_vm->_events;
-	_oldKey = -1;
+	_oldAction = kActionNone;
 
 	if (!events._released) {
 		if (_oldHelp != -1)
@@ -476,35 +529,34 @@ void ScalpelUserInterface::toggleButton(uint16 num) {
 
 	if (_menuMode != (MenuMode)(num + 1)) {
 		_menuMode = (MenuMode)(num + 1);
-		assert(num < sizeof(_hotkeysIndexed));
-		_oldKey = _hotkeysIndexed[num];
+		assert(num < ARRAYSIZE(_actionsIndexed));
+		_oldAction = _actionsIndexed[num];
 		_oldTemp = num;
 
-		if (_keyboardInput) {
+		if (_actionInput) {
 			if (_oldHelp != -1 && _oldHelp != num)
 				restoreButton(_oldHelp);
 			if (_help != -1 && _help != num)
 				restoreButton(_help);
 
-			_keyboardInput = false;
+			_actionInput = false;
 
 			ImageFrame &frame = (*_controls)[num];
-			Common::Point pt(MENU_POINTS[num][0], MENU_POINTS[num][1]);
-			offsetButton3DO(pt, num);
+			Common::Point pt = getTopLeftButtonPoint(num);
 			screen._backBuffer1.SHtransBlitFrom(frame, pt);
 			screen.slamArea(pt.x, pt.y, pt.x + frame._width, pt.y + frame._height);
 		}
 	} else {
 		_menuMode = STD_MODE;
-		_oldKey = -1;
+		_oldAction = kActionNone;
 		restoreButton(num);
 	}
 }
 
 void ScalpelUserInterface::clearInfo() {
 	if (_infoFlag) {
-		_vm->_screen->vgaBar(Common::Rect(IS_3DO ? 33 : 16, INFO_LINE,
-			SHERLOCK_SCREEN_WIDTH - (IS_3DO ? 33 : 19), INFO_LINE + 10), INFO_BLACK);
+		_vm->_screen->vgaBar(Common::Rect(IS_3DO ? 33 : 16, INFO_LINE + infoLineYOffset() - 1,
+			SHERLOCK_SCREEN_WIDTH - (IS_3DO ? 33 : 19), INFO_LINE + infoLineHeight()), INFO_BLACK);
 		_infoFlag = false;
 		_oldLook = -1;
 	}
@@ -655,16 +707,16 @@ void ScalpelUserInterface::lookScreen(const Common::Point &pt) {
 						}
 
 						int xStart = (SHERLOCK_SCREEN_WIDTH - x) / 2;
-						screen.print(Common::Point(xStart, INFO_LINE + 1),
+						screen.print(Common::Point(xStart, INFO_LINE + infoLineYOffset()),
 							INFO_FOREGROUND, "%s", useText1.c_str());
 
 						if (_selector != -1) {
-							screen.print(Common::Point(xStart + width1, INFO_LINE + 1),
+							screen.print(Common::Point(xStart + width1, INFO_LINE + infoLineYOffset()),
 								TALK_FOREGROUND, "%s", useText2.c_str());
-							screen.print(Common::Point(xStart + width1 + width2, INFO_LINE + 1),
+							screen.print(Common::Point(xStart + width1 + width2, INFO_LINE + infoLineYOffset()),
 								INFO_FOREGROUND, "%s", useText3.c_str());
 						} else {
-							screen.print(Common::Point(xStart + width1, INFO_LINE + 1),
+							screen.print(Common::Point(xStart + width1, INFO_LINE + infoLineYOffset()),
 								INFO_FOREGROUND, "%s", useText3.c_str());
 						}
 					} else if (temp >= 0 && temp < 1000 && _selector != -1 &&
@@ -687,15 +739,15 @@ void ScalpelUserInterface::lookScreen(const Common::Point &pt) {
 						}
 
 						int xStart = (SHERLOCK_SCREEN_WIDTH - x) / 2;
-						screen.print(Common::Point(xStart, INFO_LINE + 1),
+						screen.print(Common::Point(xStart, INFO_LINE + infoLineYOffset()),
 							INFO_FOREGROUND, "%s", giveText1.c_str());
-						screen.print(Common::Point(xStart + width1, INFO_LINE + 1),
+						screen.print(Common::Point(xStart + width1, INFO_LINE + infoLineYOffset()),
 							TALK_FOREGROUND, "%s", giveText2.c_str());
-						screen.print(Common::Point(xStart + width1 + width2, INFO_LINE + 1),
+						screen.print(Common::Point(xStart + width1 + width2, INFO_LINE + infoLineYOffset()),
 							INFO_FOREGROUND, "%s", giveText3.c_str());
 					}
 				} else {
-					screen.print(Common::Point(0, INFO_LINE + 1), INFO_FOREGROUND, "%s", tempStr.c_str());
+					screen.print(Common::Point(0, INFO_LINE + infoLineYOffset()), INFO_FOREGROUND, "%s", tempStr.c_str());
 				}
 
 				_infoFlag = true;
@@ -719,7 +771,7 @@ void ScalpelUserInterface::lookInv() {
 		if (temp < inv._holdings) {
 			if (temp < inv._holdings) {
 				clearInfo();
-				screen.print(Common::Point(0, INFO_LINE + 1), INFO_FOREGROUND,
+				screen.print(Common::Point(0, INFO_LINE + infoLineYOffset()), INFO_FOREGROUND,
 					"%s", inv[temp]._description.c_str());
 				_infoFlag = true;
 				_oldLook = temp;
@@ -742,12 +794,13 @@ void ScalpelUserInterface::doEnvControl() {
 
 	byte color;
 
-	_key = _oldKey = -1;
-	_keyboardInput = false;
+	_action = _oldAction = kActionNone;
+	_actionInput = false;
 	int found = saves.getHighlightedButton();
 
 	if (events._pressed || events._released) {
 		events.clearKeyboard();
+		events.clearActions();
 
 		// Check for a filename entry being highlighted
 		if ((events._pressed || events._released) && mousePos.y > (CONTROLS_Y + 10)) {
@@ -772,31 +825,29 @@ void ScalpelUserInterface::doEnvControl() {
 			saves._envMode = SAVEMODE_NONE;
 	}
 
-	if (_keyPress) {
-		_key = toupper(_keyPress);
+	if (_actionPress) {
+		_action = _actionPress;
 
-		// Escape _key will close the dialog
-		if (_key == Common::KEYCODE_ESCAPE)
-			_key = saves._hotkeyExit;
+		int buttonIndex = saves.identifyUserButton(_action);
 
-		int buttonIndex = saves.identifyUserButton(_key);
+		if ((buttonIndex >= 0)) {
+			if (buttonIndex < 6) {
+				saves.highlightButtons(buttonIndex);
+				_actionInput = true;
 
-		if ((buttonIndex >= 0) || (_key >= '1' && _key <= '9')) {
-			saves.highlightButtons(buttonIndex);
-			_keyboardInput = true;
-
-			if (_key == saves._hotkeyExit || _key == saves._hotkeyQuit) {
-				saves._envMode = SAVEMODE_NONE;
-			} else if (_key >= '1' && _key <= '9') {
-				_keyboardInput = true;
-				_selector = _key - '1';
+				if (_action == kActionScalpelFilesExit || _action == kActionScalpelFilesQuit) {
+					saves._envMode = SAVEMODE_NONE;
+				} else {
+					_selector = -1;
+				}
+			} else {
+				_actionInput = true;
+				_selector = buttonIndex - 6;
 				if (_selector >= MAX_SAVEGAME_SLOTS + (saves._envMode == SAVEMODE_LOAD ? 0 : 1))
 					_selector = -1;
 
 				if (saves.checkGameOnScreen(_selector))
 					_oldSelector = _selector;
-			} else {
-				_selector = -1;
 			}
 		}
 	}
@@ -819,19 +870,25 @@ void ScalpelUserInterface::doEnvControl() {
 		_oldSelector = _selector;
 	}
 
-	if (events._released || _keyboardInput) {
-		if ((found == 0 && events._released) || _key == saves._hotkeyExit) {
+	if (events._released || _actionPress) {
+		Common::Keymapper *keymapper = _vm->getEventManager()->getKeymapper();
+
+		if ((found == 0 && events._released) || _action == kActionScalpelFilesExit) {
 			banishWindow();
 			_windowBounds.top = CONTROLS_Y1;
 
-			events._pressed = events._released = _keyboardInput = false;
-			_keyPress = '\0';
-		} else if ((found == 1 && events._released) || _key == saves._hotkeyLoad) {
+			events._pressed = events._released = _actionInput = false;
+			_actionPress = kActionNone;
+
+			keymapper->getKeymap("scalpel-files")->setEnabled(false);
+			keymapper->getKeymap("scalpel-scroll")->setEnabled(false);
+			keymapper->getKeymap("scalpel")->setEnabled(true);
+		} else if ((found == 1 && events._released) || _action == kActionScalpelFilesLoad) {
 			saves._envMode = SAVEMODE_LOAD;
 			if (_selector != -1) {
 				saves.loadGame(_selector);
 			}
-		} else if ((found == 2 && events._released) || _key == saves._hotkeySave) {
+		} else if ((found == 2 && events._released) || _action == kActionScalpelFilesSave) {
 			saves._envMode = SAVEMODE_SAVE;
 			if (_selector != -1) {
 				if (saves.checkGameOnScreen(_selector))
@@ -842,9 +899,9 @@ void ScalpelUserInterface::doEnvControl() {
 
 					banishWindow();
 					_windowBounds.top = CONTROLS_Y1;
-					_key = _oldKey = -1;
-					_keyPress = '\0';
-					_keyboardInput = false;
+					_action = _oldAction = kActionNone;
+					_actionPress = kActionNone;
+					_actionInput = false;
 				} else {
 					if (!talk._talkToAbort) {
 						screen._backBuffer1.fillRect(Common::Rect(6, CONTROLS_Y + 11 + (_selector - saves._savegameIndex) * 10,
@@ -859,8 +916,8 @@ void ScalpelUserInterface::doEnvControl() {
 					}
 				}
 			}
-		} else if (((found == 3 && events._released) || _key == saves._hotkeyUp) && saves._savegameIndex) {
-			bool moreKeys;
+		} else if (((found == 3 && events._released) || _action == kActionScalpelScrollUp) && saves._savegameIndex) {
+			bool moreActions;
 			do {
 				saves._savegameIndex--;
 				screen._backBuffer1.fillRect(Common::Rect(3, CONTROLS_Y + 11, SHERLOCK_SCREEN_WIDTH - 2,
@@ -882,17 +939,16 @@ void ScalpelUserInterface::doEnvControl() {
 				color = (saves._savegameIndex == MAX_SAVEGAME_SLOTS - ONSCREEN_FILES_COUNT) ? COMMAND_NULL : COMMAND_FOREGROUND;
 				screen.buttonPrint(Common::Point(ENV_POINTS[4][2], CONTROLS_Y), color, true, saves._fixedTextDown);
 
-				// Check whether there are more pending U keys pressed
-				moreKeys = false;
-				if (events.kbHit()) {
-					Common::KeyState keyState = events.getKey();
+				// Check whether there are more pending Up actions
+				moreActions = false;
+				if (events.actionHit()) {
+					_action = events.getAction();
 
-					_key = toupper(keyState.keycode);
-					moreKeys = _key == saves._hotkeyUp;
+					moreActions = _action == kActionScalpelScrollUp;
 				}
-			} while ((saves._savegameIndex) && moreKeys);
-		} else if (((found == 4 && events._released) || _key == saves._hotkeyDown) && saves._savegameIndex < (MAX_SAVEGAME_SLOTS - ONSCREEN_FILES_COUNT)) {
-			bool moreKeys;
+			} while ((saves._savegameIndex) && moreActions);
+		} else if (((found == 4 && events._released) || _action == kActionScalpelScrollDown) && saves._savegameIndex < (MAX_SAVEGAME_SLOTS - ONSCREEN_FILES_COUNT)) {
+			bool moreActions;
 			do {
 				saves._savegameIndex++;
 				screen._backBuffer1.fillRect(Common::Rect(3, CONTROLS_Y + 11, SHERLOCK_SCREEN_WIDTH - 2,
@@ -918,16 +974,15 @@ void ScalpelUserInterface::doEnvControl() {
 				color = (saves._savegameIndex == MAX_SAVEGAME_SLOTS - ONSCREEN_FILES_COUNT) ? COMMAND_NULL : COMMAND_FOREGROUND;
 				screen.buttonPrint(Common::Point(ENV_POINTS[4][2], CONTROLS_Y), color, true, saves._fixedTextDown);
 
-				// Check whether there are more pending D keys pressed
-				moreKeys = false;
-				if (events.kbHit()) {
-					Common::KeyState keyState = events.getKey();
-					_key = toupper(keyState.keycode);
+				// Check whether there are more pending Down actions
+				moreActions = false;
+				if (events.actionHit()) {
+					_action = events.getAction();
 
-					moreKeys = _key == saves._hotkeyDown;
+					moreActions = _action == kActionScalpelScrollDown;
 				}
-			} while (saves._savegameIndex < (MAX_SAVEGAME_SLOTS - ONSCREEN_FILES_COUNT) && moreKeys);
-		} else if ((found == 5 && events._released) || _key == saves._hotkeyQuit) {
+			} while (saves._savegameIndex < (MAX_SAVEGAME_SLOTS - ONSCREEN_FILES_COUNT) && moreActions);
+		} else if ((found == 5 && events._released) || _action == kActionScalpelFilesQuit) {
 			clearWindow();
 			screen.print(Common::Point(0, CONTROLS_Y + 20), INV_FOREGROUND, "%s", saves._fixedTextQuitGameQuestion.c_str());
 			screen.vgaBar(Common::Rect(0, CONTROLS_Y, SHERLOCK_SCREEN_WIDTH, CONTROLS_Y + 10), BORDER_COLOR);
@@ -935,6 +990,10 @@ void ScalpelUserInterface::doEnvControl() {
 			screen.makeButton(Common::Rect(112, CONTROLS_Y, 160, CONTROLS_Y + 10), 136, saves._fixedTextQuitGameYes);
 			screen.makeButton(Common::Rect(161, CONTROLS_Y, 209, CONTROLS_Y + 10), 184, saves._fixedTextQuitGameNo);
 			screen.slamArea(112, CONTROLS_Y, 97, 10);
+
+			keymapper->getKeymap("scalpel-files")->setEnabled(false);
+			keymapper->getKeymap("scalpel-scroll")->setEnabled(false);
+			keymapper->getKeymap("scalpel-quit-dialog")->setEnabled(true);
 
 			do {
 				scene.doBgAnim();
@@ -946,24 +1005,20 @@ void ScalpelUserInterface::doEnvControl() {
 				events.setButtonState();
 				mousePos = events.mousePos();
 
-				if (events.kbHit()) {
-					Common::KeyState keyState = events.getKey();
-					_key = toupper(keyState.keycode);
+				if (events.actionHit()) {
+					_action = events.getAction();
 
-					if (_key == 'X' && (keyState.flags & Common::KBD_ALT) != 0) {
+					if (_action == kActionScalpelQuit) {
 						_vm->quitGame();
 						events.pollEvents();
 						return;
 					}
 
-					if (_key == Common::KEYCODE_ESCAPE)
-						_key = saves._hotkeyQuitGameNo;
-
-					if (_key == Common::KEYCODE_RETURN || _key == ' ') {
+					if (_action == kActionScalpelQuitDialogSelect) {
 						events._pressed = false;
 						events._released = true;
 						events._oldButtons = 0;
-						_keyPress = '\0';
+						_actionPress = kActionNone;
 					}
 				}
 
@@ -982,13 +1037,13 @@ void ScalpelUserInterface::doEnvControl() {
 				}
 
 				if (mousePos.x > 112 && mousePos.x < 159 && mousePos.y > CONTROLS_Y && mousePos.y < (CONTROLS_Y + 9) && events._released)
-					_key = saves._hotkeyQuitGameYes;
+					_action = kActionScalpelQuitDialogYes;
 
 				if (mousePos.x > 161 && mousePos.x < 208 && mousePos.y > CONTROLS_Y && mousePos.y < (CONTROLS_Y + 9) && events._released)
-					_key = saves._hotkeyQuitGameNo;
-			} while (!_vm->shouldQuit() && _key != saves._hotkeyQuitGameYes && _key != saves._hotkeyQuitGameNo);
+					_action = kActionScalpelQuitDialogNo;
+			} while (!_vm->shouldQuit() && _action != kActionScalpelQuitDialogYes && _action != kActionScalpelQuitDialogNo);
 
-			if (_key == saves._hotkeyQuitGameYes) {
+			if (_action == kActionScalpelQuitDialogYes) {
 				_vm->quitGame();
 				events.pollEvents();
 				return;
@@ -996,7 +1051,9 @@ void ScalpelUserInterface::doEnvControl() {
 				screen.buttonPrint(Common::Point(184, CONTROLS_Y), COMMAND_HIGHLIGHTED, true, saves._fixedTextQuitGameNo);
 				banishWindow();
 				_windowBounds.top = CONTROLS_Y1;
-				_key = -1;
+				_action = kActionNone;
+				keymapper->getKeymap("scalpel-quit-dialog")->setEnabled(false);
+				keymapper->getKeymap("scalpel")->setEnabled(true);
 			}
 		} else {
 			if (_selector != -1) {
@@ -1012,9 +1069,9 @@ void ScalpelUserInterface::doEnvControl() {
 						saves.saveGame(_selector, saves._savegames[_selector]);
 						banishWindow();
 						_windowBounds.top = CONTROLS_Y1;
-						_key = _oldKey = -1;
-						_keyPress = '\0';
-						_keyboardInput = false;
+						_action = _oldAction = kActionNone;
+						_actionPress = kActionNone;
+						_actionInput = false;
 					} else {
 						if (!talk._talkToAbort) {
 							screen._backBuffer1.fillRect(Common::Rect(6, CONTROLS_Y + 11 + (_selector - saves._savegameIndex) * 10,
@@ -1042,8 +1099,8 @@ void ScalpelUserInterface::doInvControl() {
 	int colors[8];
 	Common::Point mousePos = events.mousePos();
 
-	_key = _oldKey = -1;
-	_keyboardInput = false;
+	_action = _oldAction = kActionNone;
+	_actionInput = false;
 
 	// Check whether any inventory slot is highlighted
 	int found = -1;
@@ -1059,6 +1116,7 @@ void ScalpelUserInterface::doInvControl() {
 
 	if (events._pressed || events._released) {
 		events.clearKeyboard();
+		events.clearActions();
 
 		if (found != -1)
 			// If a slot highlighted, set its color
@@ -1097,14 +1155,10 @@ void ScalpelUserInterface::doInvControl() {
 			_selector = -1;
 	}
 
-	if (_keyPress) {
-		_key = toupper(_keyPress);
+	if (_actionPress) {
+		_action = _actionPress;
 
-		if (_key == Common::KEYCODE_ESCAPE)
-			// Escape will also 'E'xit out of inventory display
-			_key = inv._hotkeyExit;
-
-		int buttonIndex = inv.identifyUserButton(_key);
+		int buttonIndex = inv.identifyUserButton(_action);
 
 		if ((buttonIndex >= 0) && (buttonIndex <= 5)) {
 			InvMode temp = inv._invMode;
@@ -1113,8 +1167,8 @@ void ScalpelUserInterface::doInvControl() {
 			inv.invCommands(true);
 
 			inv._invMode = temp;
-			_keyboardInput = true;
-			if (_key == inv._hotkeyExit)
+			_actionInput = true;
+			if (_action == kActionScalpelInvExit)
 				inv._invMode = INVMODE_EXIT;
 			_selector = -1;
 		} else {
@@ -1135,22 +1189,26 @@ void ScalpelUserInterface::doInvControl() {
 		_oldSelector = _selector;
 	}
 
-	if (events._released || _keyboardInput) {
-		if ((found == 0 && events._released) || _key == inv._hotkeyExit) {
+	if (events._released || _actionInput) {
+		Common::Keymapper *keymapper = _vm->getEventManager()->getKeymapper();
+
+		if ((found == 0 && events._released) || _action == kActionScalpelInvExit) {
 			inv.freeInv();
 			_infoFlag = true;
 			clearInfo();
 			banishWindow(false);
-			_key = -1;
+			_action = kActionNone;
 			events.clearEvents();
 			events.setCursor(ARROW);
-		} else if ((found == 1 && events._released) || (_key == inv._hotkeyLook)) {
+			keymapper->getKeymap("scalpel-inv")->setEnabled(false);
+			keymapper->getKeymap("scalpel")->setEnabled(true);
+		} else if ((found == 1 && events._released) || (_action == kActionScalpelInvLook)) {
 			inv._invMode = INVMODE_LOOK;
-		} else if ((found == 2 && events._released) || (_key == inv._hotkeyUse)) {
+		} else if ((found == 2 && events._released) || (_action == kActionScalpelInvUse)) {
 			inv._invMode = INVMODE_USE;
-		} else if ((found == 3 && events._released) || (_key == inv._hotkeyGive)) {
+		} else if ((found == 3 && events._released) || (_action == kActionScalpelInvGive)) {
 			inv._invMode = INVMODE_GIVE;
-		} else if (((found == 4 && events._released) || _key == ',') && inv._invIndex) {
+		} else if (((found == 4 && events._released) || _action == kActionScalpelInvPageLeft) && inv._invIndex) {
 			if (inv._invIndex >= 6)
 				inv._invIndex -= 6;
 			else
@@ -1162,21 +1220,21 @@ void ScalpelUserInterface::doInvControl() {
 			inv.loadGraphics();
 			inv.putInv(SLAM_DISPLAY);
 			inv.invCommands(true);
-		} else if (((found == 5 && events._released) || _key == '-') && inv._invIndex > 0) {
+		} else if (((found == 5 && events._released) || _action == kActionScalpelInvLeft) && inv._invIndex > 0) {
 			--inv._invIndex;
 			screen.print(Common::Point(INVENTORY_POINTS[4][2], CONTROLS_Y1 + 1), COMMAND_HIGHLIGHTED, "^");
 			inv.freeGraphics();
 			inv.loadGraphics();
 			inv.putInv(SLAM_DISPLAY);
 			inv.invCommands(true);
-		} else if (((found == 6 && events._released) || _key == '+') &&  (inv._holdings - inv._invIndex) > 6) {
+		} else if (((found == 6 && events._released) || _action == kActionScalpelInvRight) &&  (inv._holdings - inv._invIndex) > 6) {
 			++inv._invIndex;
 			screen.print(Common::Point(INVENTORY_POINTS[6][2], CONTROLS_Y1 + 1), COMMAND_HIGHLIGHTED, "_");
 			inv.freeGraphics();
 			inv.loadGraphics();
 			inv.putInv(SLAM_DISPLAY);
 			inv.invCommands(true);
-		} else if (((found == 7 && events._released) || _key == '.') && (inv._holdings - inv._invIndex) > 6) {
+		} else if (((found == 7 && events._released) || _action == kActionScalpelInvPageRight) && (inv._holdings - inv._invIndex) > 6) {
 			inv._invIndex += 6;
 			if ((inv._holdings - 6) < inv._invIndex)
 				inv._invIndex = inv._holdings - 6;
@@ -1237,9 +1295,12 @@ void ScalpelUserInterface::doInvControl() {
 					_infoFlag = true;
 					clearInfo();
 					banishWindow(false);
-					_key = -1;
+					_action = kActionNone;
 
 					inv.freeInv();
+
+					keymapper->getKeymap("scalpel-inv")->setEnabled(false);
+					keymapper->getKeymap("scalpel")->setEnabled(true);
 
 					bool giveFl = (tempMode >= INVMODE_GIVE);
 					if (_selector >= 0)
@@ -1261,10 +1322,12 @@ void ScalpelUserInterface::doLookControl() {
 	ScalpelInventory &inv = *(ScalpelInventory *)_vm->_inventory;
 	Screen &screen = *_vm->_screen;
 
-	_key = _oldKey = -1;
+	_key = -1;
 	_keyboardInput = (_keyPress != '\0');
+	_action = _oldAction = kActionNone;
+	_actionInput = (_actionPress != kActionNone);
 
-	if (events._released || events._rightReleased || _keyboardInput) {
+	if (events._released || events._rightReleased || _actionInput || _keyboardInput) {
 		// Is there any remaining text to display?
 		if (!_descStr.empty()) {
 			printObjectDesc(_descStr, false);
@@ -1273,13 +1336,12 @@ void ScalpelUserInterface::doLookControl() {
 		else if (!_invLookFlag) {
 			if (!_lookHelp) {
 				// Need to close the window and depress the Look button
-				Common::Point pt(MENU_POINTS[0][0], MENU_POINTS[0][1]);
-				offsetButton3DO(pt, 0);
+				Common::Point pt = getTopLeftButtonPoint(0);
 				screen._backBuffer2.SHblitFrom((*_controls)[0], pt);
 				banishWindow();
 
 				_windowBounds.top = CONTROLS_Y1;
-				_key = _oldKey = _hotkeyLook;
+				_action = _oldAction = kActionScalpelLook;
 				_temp = _oldTemp = 0;
 				_menuMode = LOOK_MODE;
 				events.clearEvents();
@@ -1290,7 +1352,7 @@ void ScalpelUserInterface::doLookControl() {
 				events.setCursor(ARROW);
 				banishWindow();
 				_windowBounds.top = CONTROLS_Y1;
-				_key = _oldKey = -1;
+				_action = _oldAction = kActionNone;
 				_temp = _oldTemp = 0;
 				_menuMode = STD_MODE;
 				events.clearEvents();
@@ -1309,7 +1371,7 @@ void ScalpelUserInterface::doLookControl() {
 			screen._backBuffer2.SHblitFrom(tempSurface, Common::Point(0, CONTROLS_Y1));
 
 			_windowBounds.top = CONTROLS_Y1;
-			_key = _oldKey = _hotkeyLook;
+			_action = _oldAction = kActionScalpelLook;
 			_temp = _oldTemp = 0;
 			events.clearEvents();
 			_invLookFlag = false;
@@ -1329,17 +1391,13 @@ void ScalpelUserInterface::doMainControl() {
 
 	if ((events._pressed || events._released) && pt.y > CONTROLS_Y) {
 		events.clearKeyboard();
-		_key = -1;
+		events.clearActions();
+		_action = kActionNone;
 		_temp = 12; // no button currently selected
 
 		// Check whether the mouse is in any of the command areas
 		for (uint16 buttonNr = 0; buttonNr < 12; buttonNr++) {
-			Common::Rect r(MENU_POINTS[buttonNr][0], MENU_POINTS[buttonNr][1],
-				MENU_POINTS[buttonNr][2], MENU_POINTS[buttonNr][3]);
-			if (IS_3DO && buttonNr <= 2) {
-				r.left += UI_OFFSET_3DO - 1;
-				r.right += UI_OFFSET_3DO - 1;
-			}
+			Common::Rect r = getButtonRect(buttonNr);
 			if (r.contains(pt)) {
 				_temp = buttonNr;
 				pressedButtonId = buttonNr;
@@ -1359,27 +1417,28 @@ void ScalpelUserInterface::doMainControl() {
 						break;
 					}
 				}
-				// Get hotkey, that's assigned to it
-				assert(buttonNr < sizeof(_hotkeysIndexed));
-				_key = _hotkeysIndexed[buttonNr];
+				// Get action, that's assigned to it
+				assert(buttonNr < ARRAYSIZE(_actionsIndexed));
+				_action = _actionsIndexed[buttonNr];
 				break;
 			}
 		}
-	} else if (_keyPress) {
+	} else if (_actionPress || _keyPress) {
 		// Keyboard control
-		_keyboardInput = true;
+		_actionInput = true;
 		_temp = 12; // no button currently selected
 
-		byte key = toupper(_keyPress);
+		Common::CustomEventType action = _actionPress;
 
-		for (uint16 buttonId = 0; buttonId < sizeof(_hotkeysIndexed); buttonId++) {
-			if (key == _hotkeysIndexed[buttonId]) {
+		for (uint16 buttonId = 0; buttonId < ARRAYSIZE(_actionsIndexed); buttonId++) {
+			if (action == _actionsIndexed[buttonId]) {
 				pressedButtonId = buttonId;
+				break;
 			}
 		}
 		if (pressedButtonId >= 0) {
 			_temp = pressedButtonId;
-			_key = key;
+			_action = action;
 			if (IS_3DO) {
 				// Fix up button number for 3DO
 				switch (pressedButtonId) {
@@ -1397,40 +1456,41 @@ void ScalpelUserInterface::doMainControl() {
 				}
 			}
 		} else {
-			_key  = -1;
+			_action = kActionNone;
 		}
 
 		if (events._rightPressed) {
 			pressedButtonId = -1;
 			_temp = 12;
-			_key = -1;
+			_action = kActionNone;
 		}
 	} else if (!events._released) {
-		_key = -1;
+		_action = kActionNone;
 	}
 
 	// Check if the button being pointed to has changed
-	if (_oldKey != _key && !_windowOpen) {
+	if (_oldAction != _action && !_windowOpen) {
 		// Clear the info line
 		_infoFlag = true;
 		clearInfo();
 
 		// If there was an old button selected, restore it
-		if (_oldKey != -1) {
+		if (_oldAction != kActionNone) {
 			_menuMode = STD_MODE;
 			restoreButton(_oldTemp);
 		}
 
 		// If a new button is being pointed to, highlight it
-		if (_key != -1 && _temp < 12 && !_keyboardInput)
+		if (_action != kActionNone && _temp < 12 && !_actionInput)
 			depressButton(_temp);
 
 		// Save the new button selection
-		_oldKey = _key;
+		_oldAction = _action;
 		_oldTemp = _temp;
 	}
 
 	if (!events._pressed && !_windowOpen) {
+		Common::Keymapper *keymapper = _vm->getEventManager()->getKeymapper();
 		switch (pressedButtonId) {
 		case MAINBUTTON_LOOK:
 			toggleButton(0);
@@ -1451,18 +1511,24 @@ void ScalpelUserInterface::doMainControl() {
 			toggleButton(5);
 			break;
 		case MAINBUTTON_INVENTORY:
+			keymapper->getKeymap("scalpel")->setEnabled(false);
+			keymapper->getKeymap("scalpel-inv")->setEnabled(true);
 			pushButton(6);
 			_selector = _oldSelector = -1;
 			_menuMode = INV_MODE;
 			inv.drawInventory(LOOK_INVENTORY_MODE);
 			break;
 		case MAINBUTTON_USE:
+			keymapper->getKeymap("scalpel")->setEnabled(false);
+			keymapper->getKeymap("scalpel-inv")->setEnabled(true);
 			pushButton(7);
 			_selector = _oldSelector = -1;
 			_menuMode = USE_MODE;
 			inv.drawInventory(USE_INVENTORY_MODE);
 			break;
 		case MAINBUTTON_GIVE:
+			keymapper->getKeymap("scalpel")->setEnabled(false);
+			keymapper->getKeymap("scalpel-inv")->setEnabled(true);
 			pushButton(8);
 			_selector = _oldSelector = -1;
 			_menuMode = GIVE_MODE;
@@ -1490,6 +1556,10 @@ void ScalpelUserInterface::doMainControl() {
 					_menuMode = FILES_MODE;
 					saves.drawInterface();
 					_windowOpen = true;
+
+					keymapper->getKeymap("scalpel")->setEnabled(false);
+					keymapper->getKeymap("scalpel-files")->setEnabled(true);
+					keymapper->getKeymap("scalpel-scroll")->setEnabled(true);
 				} else {
 					// Show the ScummVM GMM instead
 					_vm->_canLoadSave = true;
@@ -1542,7 +1612,7 @@ void ScalpelUserInterface::doMiscControl(int allowed) {
 					if (_menuMode != TALK_MODE && !talk._talkToAbort) {
 						_menuMode = STD_MODE;
 						restoreButton(OPEN_MODE - 1);
-						_key = _oldKey = -1;
+						_action = _oldAction = kActionNone;
 					}
 					break;
 
@@ -1551,7 +1621,7 @@ void ScalpelUserInterface::doMiscControl(int allowed) {
 					if (_menuMode != TALK_MODE && !talk._talkToAbort) {
 						_menuMode = STD_MODE;
 						restoreButton(CLOSE_MODE - 1);
-						_key = _oldKey = -1;
+						_action = _oldAction = kActionNone;
 					}
 					break;
 
@@ -1560,7 +1630,7 @@ void ScalpelUserInterface::doMiscControl(int allowed) {
 					if (_menuMode != TALK_MODE && !talk._talkToAbort) {
 						_menuMode = STD_MODE;
 						restoreButton(MOVE_MODE - 1);
-						_key = _oldKey = -1;
+						_action = _oldAction = kActionNone;
 					}
 					break;
 
@@ -1586,7 +1656,7 @@ void ScalpelUserInterface::doPickControl() {
 				scene._bgShapes[_bgFound].pickUpObject(kFixedTextAction_Pick);
 
 				if (!talk._talkToAbort && _menuMode != TALK_MODE) {
-					_key = _oldKey = -1;
+					_action = _oldAction = kActionNone;
 					_menuMode = STD_MODE;
 					restoreButton(PICKUP_MODE - 1);
 				}
@@ -1603,12 +1673,16 @@ void ScalpelUserInterface::doTalkControl() {
 	Sound &sound = *_vm->_sound;
 	ScalpelTalk &talk = *(ScalpelTalk *)_vm->_talk;
 	Common::Point mousePos = events.mousePos();
+	Common::Keymapper *keymapper = _vm->getEventManager()->getKeymapper();
 
-	_key = _oldKey = -1;
+	_key = -1;
 	_keyboardInput = false;
+	_action = _oldAction = kActionNone;
+	_actionInput = false;
 
 	if (events._pressed || events._released) {
 		events.clearKeyboard();
+		events.clearActions();
 
 		// Handle button printing
 		if (mousePos.x > 99 && mousePos.x < 138 && mousePos.y > CONTROLS_Y && mousePos.y < (CONTROLS_Y + 10) && !_endKeyActive)
@@ -1637,10 +1711,18 @@ void ScalpelUserInterface::doTalkControl() {
 			_selector = -1;
 	}
 
+	if (_actionPress) {
+		_action = _actionPress;
+
+		if (_action == kActionScalpelTalkExit || _action == kActionScalpelScrollUp || _action == kActionScalpelScrollDown) {
+			_actionInput = true;
+		} else {
+			_selector = -1;
+		}
+	}
+
 	if (_keyPress) {
 		_key = toupper(_keyPress);
-		if (_key == Common::KEYCODE_ESCAPE)
-			_key = talk._hotkeyWindowExit;
 
 		// Check for number press indicating reply line
 		if (_key >= '1' && _key <= ('1' + (int)talk._statements.size() - 1)) {
@@ -1653,10 +1735,6 @@ void ScalpelUserInterface::doTalkControl() {
 					break;
 				}
 			}
-		} else if (_key == talk._hotkeyWindowExit || _key == talk._hotkeyWindowUp || _key == talk._hotkeyWindowDown) {
-			_keyboardInput = true;
-		} else {
-			_selector = -1;
 		}
 	}
 
@@ -1679,17 +1757,20 @@ void ScalpelUserInterface::doTalkControl() {
 		_oldSelector = _selector;
 	}
 
-	if (events._released || _keyboardInput) {
+	if (events._released || _keyboardInput || _actionInput) {
 		if (((Common::Rect(99, CONTROLS_Y, 138, CONTROLS_Y + 10).contains(mousePos) && events._released)
-				|| _key == talk._hotkeyWindowExit) && _endKeyActive) {
+				|| _action == kActionScalpelTalkExit) && _endKeyActive) {
 			talk.freeTalkVars();
 			talk.pullSequence();
 
 			drawInterface(2);
 			banishWindow();
+			keymapper->getKeymap("scalpel-talk")->setEnabled(false);
+			keymapper->getKeymap("scalpel-scroll")->setEnabled(false);
+			keymapper->getKeymap("scalpel")->setEnabled(true);
 			_windowBounds.top = CONTROLS_Y1;
 		} else if (((Common::Rect(140, CONTROLS_Y, 179, CONTROLS_Y + 10).contains(mousePos) && events._released)
-				|| _key == talk._hotkeyWindowUp) && talk._moreTalkUp) {
+				|| _action == kActionScalpelScrollUp) && talk._moreTalkUp) {
 			while (talk._statements[--talk._talkIndex]._talkMap == -1)
 				;
 			screen._backBuffer1.fillRect(Common::Rect(5, CONTROLS_Y + 11, SHERLOCK_SCREEN_WIDTH - 2,
@@ -1698,7 +1779,7 @@ void ScalpelUserInterface::doTalkControl() {
 
 			screen.slamRect(Common::Rect(5, CONTROLS_Y, SHERLOCK_SCREEN_WIDTH - 5, SHERLOCK_SCREEN_HEIGHT - 2));
 		} else if (((Common::Rect(181, CONTROLS_Y, 220, CONTROLS_Y + 10).contains(mousePos) && events._released)
-				|| _key == talk._hotkeyWindowDown) && talk._moreTalkDown) {
+				|| _action == kActionScalpelScrollDown) && talk._moreTalkDown) {
 			do {
 				++talk._talkIndex;
 			} while (talk._talkIndex < (int)talk._statements.size() && talk._statements[talk._talkIndex]._talkMap == -1);
@@ -1752,7 +1833,7 @@ void ScalpelUserInterface::doTalkControl() {
 			people.setTalking(0);
 
 			if (!talk._statements[_selector]._voiceFile.empty() && sound._voices) {
-				sound.playSpeech(talk._statements[_selector]._voiceFile);
+				sound.playSpeech(Common::Path(talk._statements[_selector]._voiceFile));
 
 				// Set voices as an indicator for waiting
 				sound._voices = 2;
@@ -1827,6 +1908,9 @@ void ScalpelUserInterface::doTalkControl() {
 						talk.pullSequence();
 						banishWindow();
 						_windowBounds.top = CONTROLS_Y1;
+						keymapper->getKeymap("scalpel-talk")->setEnabled(false);
+						keymapper->getKeymap("scalpel-scroll")->setEnabled(false);
+						keymapper->getKeymap("scalpel")->setEnabled(true);
 						break;
 					}
 				} else {
@@ -1856,38 +1940,49 @@ void ScalpelUserInterface::journalControl() {
 	Screen &screen = *_vm->_screen;
 	bool doneFlag = false;
 
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->getKeymap("sherlock-default")->setEnabled(false);
+	keymapper->getKeymap("scalpel")->setEnabled(false);
+	keymapper->getKeymap("scalpel-journal")->setEnabled(true);
+	keymapper->getKeymap("scalpel-scroll")->setEnabled(true);
+
 	// Draw the journal screen
 	journal.drawInterface();
 
 	// Handle journal events
 	do {
-		_key = -1;
+		_action = kActionNone;
 		events.setButtonState();
 
-		// Handle keypresses
-		if (events.kbHit()) {
-			Common::KeyState keyState = events.getKey();
-			if (keyState.keycode == Common::KEYCODE_x && (keyState.flags & Common::KBD_ALT)) {
+		// Handle actions
+		if (events.actionHit()) {
+			Common::CustomEventType action = events.getAction();
+			if (action == kActionScalpelQuit) {
 				_vm->quitGame();
 				return;
-			} else if (toupper(keyState.ascii) == journal._hotkeyExit || keyState.keycode == Common::KEYCODE_ESCAPE) {
+			} else if (action == kActionScalpelJournalExit) {
 				doneFlag = true;
 			} else {
-				_key = toupper(keyState.keycode);
+				_action = action;
 			}
 		}
 
 		if (!doneFlag)
-			doneFlag = journal.handleEvents(_key);
+			doneFlag = journal.handleEvents(_action);
 	} while (!_vm->shouldQuit() && !doneFlag);
 
 	// Finish up
-	_infoFlag = _keyboardInput = false;
-	_keyPress = '\0';
+	_infoFlag = _actionInput = false;
+	_actionPress = kActionNone;
 	_windowOpen = false;
 	_windowBounds.top = CONTROLS_Y1;
-	_key = -1;
+	_action = kActionNone;
 	_menuMode = STD_MODE;
+
+	keymapper->getKeymap("scalpel-journal")->setEnabled(false);
+	keymapper->getKeymap("scalpel-scroll")->setEnabled(false);
+	keymapper->getKeymap("sherlock-default")->setEnabled(true);
+	keymapper->getKeymap("scalpel")->setEnabled(true);
 
 	// Reset the palette
 	screen.setPalette(screen._cMap);
@@ -1902,6 +1997,9 @@ void ScalpelUserInterface::printObjectDesc(const Common::String &str, bool first
 	ScalpelInventory &inv = *(ScalpelInventory *)_vm->_inventory;
 	ScalpelScreen &screen = *(ScalpelScreen *)_vm->_screen;
 	Talk &talk = *_vm->_talk;
+
+	int lineHeight = (_vm->getLanguage() == Common::Language::ZH_TWN ? 16 : 9);
+	int maxLineCount = (_vm->getLanguage() == Common::Language::ZH_TWN ? 3 : 5);
 
 	if (str.hasPrefix("_")) {
 		_lookScriptFlag = true;
@@ -1923,8 +2021,7 @@ void ScalpelUserInterface::printObjectDesc(const Common::String &str, bool first
 				// the look button before we close the window. So save a copy of the
 				// menu area, and draw the controls onto it
 				Surface tempSurface((*_controls)[0]._frame.w, (*_controls)[0]._frame.h);
-				Common::Point pt(MENU_POINTS[0][0], MENU_POINTS[0][1]);
-				offsetButton3DO(pt, 0);
+				Common::Point pt = getTopLeftButtonPoint(0);
 
 				tempSurface.SHblitFrom(screen._backBuffer2, Common::Point(0, 0),
 					Common::Rect(pt.x, pt.y, pt.x + tempSurface.width(), pt.y + tempSurface.height()));
@@ -1933,7 +2030,7 @@ void ScalpelUserInterface::printObjectDesc(const Common::String &str, bool first
 				banishWindow();
 				events.setCursor(MAGNIFY);
 				_windowBounds.top = CONTROLS_Y1;
-				_key = _oldKey = _hotkeyLook;
+				_action = _oldAction = kActionScalpelLook;
 				_temp = _oldTemp = 0;
 				_menuMode = LOOK_MODE;
 				events.clearEvents();
@@ -1943,7 +2040,7 @@ void ScalpelUserInterface::printObjectDesc(const Common::String &str, bool first
 				events.setCursor(ARROW);
 				banishWindow();
 				_windowBounds.top = CONTROLS_Y1;
-				_key = _oldKey = -1;
+				_action = _oldAction = kActionNone;
 				_temp = _oldTemp = 0;
 				_menuMode = STD_MODE;
 				_lookHelp = 0;
@@ -1960,7 +2057,7 @@ void ScalpelUserInterface::printObjectDesc(const Common::String &str, bool first
 			banishWindow();
 
 			_windowBounds.top = CONTROLS_Y1;
-			_key = _oldKey = _hotkeyInventory;
+			_action = _oldAction = kActionScalpelInventory;
 			_temp = _oldTemp = 0;
 			events.clearEvents();
 
@@ -1996,47 +2093,20 @@ void ScalpelUserInterface::printObjectDesc(const Common::String &str, bool first
 	events.clearEvents();
 
 	// Loop through displaying up to five lines
-	bool endOfStr = false;
-	const char *msgP = str.c_str();
-	for (int lineNum = 0; lineNum < ONSCREEN_FILES_COUNT && !endOfStr; ++lineNum) {
-		int width = 0;
-		const char *lineStartP = msgP;
-
-		// Determine how much can be displayed on the line
-		do {
-			width += screen.charWidth(*msgP++);
-		} while (width < 300 && *msgP);
-
-		if (*msgP)
-			--msgP;
-		else
-			endOfStr = true;
-
-		// If the line needs to be wrapped, scan backwards to find
-		// the end of the previous word as a splitting point
-		if (width >= 300) {
-			while (*msgP != ' ')
-				--msgP;
-			endOfStr = false;
-		}
-
-		// Print out the line
-		Common::String line(lineStartP, msgP);
-		screen.gPrint(Common::Point(16, CONTROLS_Y + 12 + lineNum * 9),
-			INV_FOREGROUND, "%s", line.c_str());
-
-		if (!endOfStr)
-			// Start next line at start of the nxet word after space
-			++msgP;
+	Common::String remainder;
+	Common::Array<Common::String> lines = screen.wordWrap(str, 300, remainder, Common::String::npos, maxLineCount);
+	for (uint lineNum = 0; lineNum < lines.size(); ++lineNum) {
+		screen.gPrint(Common::Point(16, CONTROLS_Y + 12 + lineNum * lineHeight),
+			INV_FOREGROUND, "%s", lines[lineNum].c_str());
 	}
 
 	// Handle display depending on whether all the message was shown
-	if (!endOfStr) {
+	if (!remainder.empty()) {
 		Common::String fixedText_PressKeyForMore = FIXED(PressKey_ForMore);
 
 		screen.makeButton(Common::Rect(46, CONTROLS_Y, 272, CONTROLS_Y + 10),
 			SHERLOCK_SCREEN_WIDTH / 2, fixedText_PressKeyForMore);
-		_descStr = msgP;
+		_descStr = remainder;
 	} else {
 		Common::String fixedText_PressKeyToContinue = FIXED(PressKey_ToContinue);
 
@@ -2217,7 +2287,7 @@ void ScalpelUserInterface::checkUseAction(const UseType *use, const Common::Stri
 
 		// Display error message
 		_menuCounter = 30;
-		screen.print(Common::Point(0, INFO_LINE + 1), INFO_FOREGROUND, "You can't do that to yourself.");
+		screen.print(Common::Point(0, INFO_LINE + infoLineYOffset()), INFO_FOREGROUND, "You can't do that to yourself.");
 		return;
 	}
 
@@ -2269,7 +2339,7 @@ void ScalpelUserInterface::checkUseAction(const UseType *use, const Common::Stri
 			if (scene._goToScene != 1 && !printed && !talk._talkToAbort) {
 				_infoFlag = true;
 				clearInfo();
-				screen.print(Common::Point(0, INFO_LINE + 1), INFO_FOREGROUND, "%s", FIXED(UserInterface_Done));
+				screen.print(Common::Point(0, INFO_LINE + infoLineYOffset()), INFO_FOREGROUND, "%s", FIXED(UserInterface_Done));
 				_menuCounter = 25;
 			}
 		}
@@ -2279,12 +2349,12 @@ void ScalpelUserInterface::checkUseAction(const UseType *use, const Common::Stri
 		clearInfo();
 
 		if (giveMode) {
-			screen.print(Common::Point(0, INFO_LINE + 1), INFO_FOREGROUND, "%s", FIXED(UserInterface_NoThankYou));
+			screen.print(Common::Point(0, INFO_LINE + infoLineYOffset()), INFO_FOREGROUND, "%s", FIXED(UserInterface_NoThankYou));
 		} else if (fixedTextActionId == kFixedTextAction_Invalid) {
-			screen.print(Common::Point(0, INFO_LINE + 1), INFO_FOREGROUND, "%s", FIXED(UserInterface_YouCantDoThat));
+			screen.print(Common::Point(0, INFO_LINE + infoLineYOffset()), INFO_FOREGROUND, "%s", FIXED(UserInterface_YouCantDoThat));
 		} else {
 			Common::String errorMessage = fixedText.getActionMessage(fixedTextActionId, 0);
-			screen.print(Common::Point(0, INFO_LINE + 1), INFO_FOREGROUND, "%s", errorMessage.c_str());
+			screen.print(Common::Point(0, INFO_LINE + infoLineYOffset()), INFO_FOREGROUND, "%s", errorMessage.c_str());
 		}
 
 		_infoFlag = true;
@@ -2292,17 +2362,6 @@ void ScalpelUserInterface::checkUseAction(const UseType *use, const Common::Stri
 	}
 
 	events.setCursor(ARROW);
-}
-
-void ScalpelUserInterface::offsetButton3DO(Common::Point &pt, int num) {
-	if (IS_3DO) {
-		if (num >= 0 && num <= 2)
-			pt.x += 15;
-		else if (num >= 6 && num <= 8)
-			pt.x -= 4;
-		else if (num >= 9 && num <= 11)
-			pt.x -= 8;
-	}
 }
 
 } // End of namespace Scalpel

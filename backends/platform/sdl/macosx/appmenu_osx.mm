@@ -40,10 +40,15 @@
 #endif
 
 #if MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_5
+// https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/Cocoa64BitGuide/64BitChangesCocoa/64BitChangesCocoa.html
+#if __LP64__ || NS_BUILD_32_LIKE_64
 typedef unsigned long NSUInteger;
+#else
+typedef unsigned int NSUInteger;
+#endif
 
 // Those are not defined in the 10.4 SDK, but they are defined when targeting
-// Mac OS X 10.4 or above in the 10.5 SDK. So hopefully that means it works with 10.4 as well.
+// Mac OS X 10.4 or above in the 10.5 SDK, and they do work with 10.4.
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_4
 enum {
 	NSUTF32StringEncoding = 0x8c000100,
@@ -53,8 +58,8 @@ enum {
 #endif
 #endif
 
-// Apple added setAppleMenu in 10.5 and removed it in 10.6.
-// But as the method still exists we declare it ourselves here.
+// Apple removed setAppleMenu from the header files in 10.4,
+// but as the method still exists we declare it ourselves here.
 // Yes, this works :)
 @interface NSApplication(MissingFunction)
 - (void)setAppleMenu:(NSMenu *)menu;
@@ -69,25 +74,42 @@ enum {
 // In SnowLeopard, this workaround is unnecessary and should not be used. Under SnowLeopard, the first menu
 // is always identified as the application menu.
 
-static void openFromBundle(NSString *file) {
-	NSString *path = [[NSBundle mainBundle] pathForResource:file ofType:@"rtf"];
-	if (!path) {
-		path = [[NSBundle mainBundle] pathForResource:file ofType:@"html"];
-		if (!path) {
-			path = [[NSBundle mainBundle] pathForResource:file ofType:@""];
-			if (!path)
-				path = [[NSBundle mainBundle] pathForResource:file ofType:@"md"];
-		}
+static void openFromBundle(NSString *file, NSString *subdir = nil) {
+	NSString *path = nil;
+	NSArray *types = [NSArray arrayWithObjects:@"rtf", @"html", @"txt", @"", @"md", nil];
+	NSEnumerator *typeEnum = [types objectEnumerator];
+	NSString *type;
+
+	while ((type = [typeEnum nextObject])) {
+		if (subdir)
+			path = [[NSBundle mainBundle] pathForResource:file ofType:type inDirectory:subdir];
+		else
+			path = [[NSBundle mainBundle] pathForResource:file ofType:type];
+		if (path)
+			break;
 	}
 
+	// RTF, TXT, and HTML files are widely recognized and we can rely on the default
+	// file association working for those. For the other ones this might not be
+	// the case so we explicitly indicate they should be open with TextEdit.
 	if (path) {
-		// RTF and HTML files are widely recognized and we can rely on the default
-		// file association working for those. For the other ones this might not be
-		// the case so we explicitly indicate they should be open with TextEdit.
-		if ([path hasSuffix:@".html"] || [path hasSuffix:@".rtf"])
+#if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_15
+		if ([path hasSuffix:@".html"] || [path hasSuffix:@".rtf"] || [path hasSuffix:@".txt"])
 			[[NSWorkspace sharedWorkspace] openFile:path];
 		else
 			[[NSWorkspace sharedWorkspace] openFile:path withApplication:@"TextEdit"];
+#else
+		NSURL *pathUrl = [NSURL fileURLWithPath:path isDirectory:NO];
+		if ([path hasSuffix:@".html"] || [path hasSuffix:@".rtf"] || [path hasSuffix:@".txt"]) {
+			[[NSWorkspace sharedWorkspace] openURL:pathUrl];
+		} else {
+			[[NSWorkspace sharedWorkspace] openURLs:[NSArray arrayWithObjects:pathUrl, nil]
+				withApplicationAtURL:[[NSWorkspace sharedWorkspace] URLForApplicationWithBundleIdentifier:@"com.apple.TextEdit"]
+				configuration:[NSWorkspaceOpenConfiguration configuration]
+				completionHandler:nil
+			];
+		}
+#endif
 	}
 }
 
@@ -95,10 +117,19 @@ static void openFromBundle(NSString *file) {
 }
 - (void) openReadme;
 - (void) openLicenseGPL;
-- (void) openLicenseLGPL;
-- (void) openLicenseFreefont;
-- (void) openLicenseOFL;
+- (void) openLicenseApache;
 - (void) openLicenseBSD;
+- (void) openLicenseBSL;
+- (void) openLicenseGLAD;
+- (void) openLicenseISC;
+- (void) openLicenseLGPL;
+- (void) openLicenseLUA;
+- (void) openLicenseMIT;
+- (void) openLicenseMKV;
+- (void) openLicenseMPL;
+- (void) openLicenseOFL;
+- (void) openLicenseTinyGL;
+- (void) openLicenseCatharon;
 - (void) openNews;
 - (void) openUserManual;
 - (void) openCredits;
@@ -110,23 +141,59 @@ static void openFromBundle(NSString *file) {
 }
 
 - (void)openLicenseGPL {
-	openFromBundle(@"COPYING");
+	openFromBundle(@"COPYING", @"licenses");
 }
 
-- (void)openLicenseLGPL {
-	openFromBundle(@"COPYING-LGPL");
-}
-
-- (void)openLicenseFreefont {
-	openFromBundle(@"COPYING-FREEFONT");
-}
-
-- (void)openLicenseOFL {
-	openFromBundle(@"COPYING-OFL");
+- (void)openLicenseApache {
+	openFromBundle(@"COPYING-Apache", @"licenses");
 }
 
 - (void)openLicenseBSD {
-	openFromBundle(@"COPYING-BSD");
+	openFromBundle(@"COPYING-BSD", @"licenses");
+}
+
+- (void)openLicenseBSL {
+	openFromBundle(@"COPYING-BSL", @"licenses");
+}
+
+- (void)openLicenseGLAD {
+	openFromBundle(@"COPYING-GLAD", @"licenses");
+}
+
+- (void)openLicenseISC {
+	openFromBundle(@"COPYING-ISC", @"licenses");
+}
+
+- (void)openLicenseLGPL {
+	openFromBundle(@"COPYING-LGPL", @"licenses");
+}
+
+- (void)openLicenseLUA {
+	openFromBundle(@"COPYING-LUA", @"licenses");
+}
+
+- (void)openLicenseMIT {
+	openFromBundle(@"COPYING-MIT", @"licenses");
+}
+
+- (void)openLicenseMKV {
+	openFromBundle(@"COPYING-MKV", @"licenses");
+}
+
+- (void)openLicenseMPL {
+	openFromBundle(@"COPYING-MPL", @"licenses");
+}
+
+- (void)openLicenseOFL {
+	openFromBundle(@"COPYING-OFL", @"licenses");
+}
+
+- (void)openLicenseTinyGL {
+	openFromBundle(@"COPYING-TINYGL", @"licenses");
+}
+
+- (void)openLicenseCatharon {
+	openFromBundle(@"CatharonLicense", @"licenses");
 }
 
 - (void)openNews {
@@ -134,15 +201,26 @@ static void openFromBundle(NSString *file) {
 }
 
 - (void)openUserManual {
+	NSString *bundlePath = [[NSBundle mainBundle] resourcePath];
+
 	// If present locally in the bundle, open that file.
-	if ([[NSFileManager defaultManager] respondsToSelector:@selector(contentsOfDirectoryAtPath:error:)]) {
-		NSString *bundlePath = [[NSBundle mainBundle] resourcePath];
-		NSArray *dirContents = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:bundlePath error:nil];
+#if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_5
+	NSArray *dirContents = [[NSFileManager defaultManager] directoryContentsAtPath:bundlePath];
+#else
+	NSArray *dirContents = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:bundlePath error:nil];
+#endif
+	if (dirContents != nil) {
 		NSEnumerator *dirEnum = [dirContents objectEnumerator];
 		NSString *file;
-		while (file = [dirEnum nextObject]) {
+
+		while ((file = [dirEnum nextObject])) {
 			if ([file hasPrefix:@"ScummVM Manual"] && [file hasSuffix:@".pdf"]) {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_15
 				[[NSWorkspace sharedWorkspace] openFile:[bundlePath stringByAppendingPathComponent:file]];
+#else
+				NSURL *fileUrl = [NSURL fileURLWithPath:[bundlePath stringByAppendingPathComponent:file] isDirectory:NO];
+				[[NSWorkspace sharedWorkspace] openURL:fileUrl];
+#endif
 				return;
 			}
 		}
@@ -234,7 +312,11 @@ void replaceApplicationMenuItems() {
 		addMenuItem(_("Minimize"), nil, @selector(performMiniaturize:), @"m", windowMenu);
 	}
 
-	NSMenu *helpMenu = addMenu(_("Help"), @"", @selector(setHelpMenu:));
+	// Note: special care must be taken for the Help menu before 10.6,
+	// as setHelpMenu didn't exist yet: give an explicit nil for it in
+	// addMenu(), and also make sure it's created last.
+	SEL helpMenuSelector = [NSApp respondsToSelector:@selector(setHelpMenu:)] ? @selector(setHelpMenu:) : nil;
+	NSMenu *helpMenu = addMenu(_("Help"), @"", helpMenuSelector);
 	if (helpMenu) {
 		if (!delegate) {
 			delegate = [[ScummVMMenuHandler alloc] init];
@@ -247,9 +329,19 @@ void replaceApplicationMenuItems() {
 		addMenuItem(_("Credits"), delegate, @selector(openCredits), @"", helpMenu);
 		addMenuItem(_("GPL License"), delegate, @selector(openLicenseGPL), @"", helpMenu);
 		addMenuItem(_("LGPL License"), delegate, @selector(openLicenseLGPL), @"", helpMenu);
-		addMenuItem(_("Freefont License"), delegate, @selector(openLicenseFreefont), @"", helpMenu);
 		addMenuItem(_("OFL License"), delegate, @selector(openLicenseOFL), @"", helpMenu);
 		addMenuItem(_("BSD License"), delegate, @selector(openLicenseBSD), @"", helpMenu);
+
+		addMenuItem(_("Apache License"), delegate, @selector(openLicenseApache), @"", helpMenu);
+		addMenuItem(_("BSL License"), delegate, @selector(openLicenseBSL), @"", helpMenu);
+		addMenuItem(_("GLAD License"), delegate, @selector(openLicenseGLAD), @"", helpMenu);
+		addMenuItem(_("ISC License"), delegate, @selector(openLicenseISC), @"", helpMenu);
+		addMenuItem(_("Lua License"), delegate, @selector(openLicenseLUA), @"", helpMenu);
+		addMenuItem(_("MIT License"), delegate, @selector(openLicenseMIT), @"", helpMenu);
+		addMenuItem(_("MKV License"), delegate, @selector(openLicenseMKV), @"", helpMenu);
+		addMenuItem(_("MPL License"), delegate, @selector(openLicenseMPL), @"", helpMenu);
+		addMenuItem(_("TinyGL License"), delegate, @selector(openLicenseTinyGL), @"", helpMenu);
+		addMenuItem(_("Catharon License"), delegate, @selector(openLicenseCatharon), @"", helpMenu);
 	}
 
 	[appleMenu release];

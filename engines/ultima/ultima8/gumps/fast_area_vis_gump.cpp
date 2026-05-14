@@ -24,7 +24,8 @@
 #include "ultima/ultima8/world/current_map.h"
 #include "ultima/ultima8/world/get_object.h"
 #include "ultima/ultima8/world/item.h"
-#include "ultima/ultima8/graphics/render_surface.h"
+#include "ultima/ultima8/gfx/render_surface.h"
+#include "ultima/ultima8/gfx/texture.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -41,24 +42,30 @@ void FastAreaVisGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool sca
 	World *world = World::get_instance();
 	CurrentMap *currentmap = world->getCurrentMap();
 
-	surf->Fill32(0xFF0000, 0, 0, MAP_NUM_CHUNKS + 2, MAP_NUM_CHUNKS + 2);
-	surf->Fill32(0, 1, 1, MAP_NUM_CHUNKS, MAP_NUM_CHUNKS);
+	uint32 color = TEX32_PACK_RGB(0xFF, 0, 0);
+	surf->frameRect32(color, _dims);
+
+	color = TEX32_PACK_RGB(0, 0, 0);
+	surf->fill32(color, 1, 1, MAP_NUM_CHUNKS, MAP_NUM_CHUNKS);
 
 
+	color = TEX32_PACK_RGB(0xFF, 0xFF, 0xFF);
 	for (int yp = 0; yp < MAP_NUM_CHUNKS; yp++)
 		for (int xp = 0; xp < MAP_NUM_CHUNKS; xp++)
-			if (currentmap->isChunkFast(xp, yp)) surf->Fill32(0xFFFFFFFF, xp + 1, yp + 1, 1, 1);
+			if (currentmap->isChunkFast(xp, yp))
+				surf->fill32(color, xp + 1, yp + 1, 1, 1);
 
 	// Put a red dot where the avatar is
 	Item *avatar = getItem(1);
 	if (avatar) {
-		int32 x, y, z;
-		avatar->getLocation(x, y, z);
+		Point3 pt = avatar->getLocation();
 		int chunksize = currentmap->getChunkSize();
-		x /= chunksize;
-		y /= chunksize;
-		if (x >= 0 && x < MAP_NUM_CHUNKS && y >= 0 && y < MAP_NUM_CHUNKS)
-			surf->Fill32(0xFFFF1010, x + 1, y + 1, 1, 1);
+		pt.x /= chunksize;
+		pt.y /= chunksize;
+		if (pt.x >= 0 && pt.x < MAP_NUM_CHUNKS && pt.y >= 0 && pt.y < MAP_NUM_CHUNKS) {
+			color = TEX32_PACK_RGB(0xFF, 0x10, 0x10);
+			surf->fill32(color, pt.x + 1, pt.y + 1, 1, 1);
+		}
 	}
 }
 

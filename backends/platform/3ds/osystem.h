@@ -25,12 +25,15 @@
 #define FORBIDDEN_SYMBOL_EXCEPTION_time_h
 
 #include "backends/base-backend.h"
-#include "graphics/palette.h"
+#include "graphics/blit.h"
+#include "graphics/dirtyrects.h"
+#include "graphics/paletteman.h"
 #include "base/main.h"
 #include "audio/mixer_intern.h"
 #include "backends/graphics/graphics.h"
 #include "backends/log/log.h"
 #include "backends/platform/3ds/sprite.h"
+#include "common/events.h"
 #include "common/rect.h"
 #include "common/queue.h"
 #include "common/ustr.h"
@@ -53,9 +56,15 @@ enum InputMode {
 enum GraphicsModeID {
 	RGBA8,
 	RGB565,
-	RGB555,
 	RGB5A1,
+	RGBA4,
 	CLUT8
+};
+
+enum Screen {
+	kScreenTop = 0x10000002,
+	kScreenBottom,
+	kScreenBoth,
 };
 
 enum TransactionState {
@@ -92,7 +101,7 @@ struct GfxState {
 };
 
 
-class OSystem_3DS : public EventsBaseBackend, public PaletteManager, public Common::EventObserver {
+class OSystem_3DS : virtual public BaseBackend, public Common::EventSource, public PaletteManager, public Common::EventObserver {
 public:
 	OSystem_3DS();
 	virtual ~OSystem_3DS();
@@ -112,6 +121,10 @@ public:
 	Common::KeymapArray getGlobalKeymaps() override;
 	Common::KeymapperDefaultBindings *getKeymapperDefaultBindings() override;
 
+	void registerDefaultSettings(const Common::String &target) const override;
+	GUI::OptionsContainerWidget *buildBackendOptionsWidget(GUI::GuiObject *boss, const Common::String &name, const Common::String &target) const override;
+	void applyBackendSettings() override;
+
 	virtual uint32 getMillis(bool skipRecord = false);
 	virtual void delayMillis(uint msecs);
 	virtual void getTimeAndDate(TimeDate &td, bool skipRecord = false) const;
@@ -126,7 +139,7 @@ public:
 	virtual void fatalError();
 	virtual void quit();
 
-	virtual Common::String getDefaultConfigFileName();
+	virtual Common::Path getDefaultConfigFileName();
 	void addSysArchivesToSearchSet(Common::SearchSet &s, int priority) override;
 
 	// Graphics
@@ -149,11 +162,13 @@ public:
 	                      int h);
 	Graphics::Surface *lockScreen();
 	void unlockScreen();
+	void fillScreen(uint32 col);
+	void fillScreen(const Common::Rect &r, uint32 col);
 	void updateScreen();
 	void setShakePos(int shakeXOffset, int shakeYOffset);
 	void setFocusRectangle(const Common::Rect &rect);
 	void clearFocusRectangle();
-	void showOverlay();
+	void showOverlay(bool inGUI);
 	void hideOverlay();
 	bool isOverlayVisible() const { return _overlayVisible; }
 	Graphics::PixelFormat getOverlayFormat() const;
@@ -161,8 +176,8 @@ public:
 	void grabOverlay(Graphics::Surface &surface);
 	void copyRectToOverlay(const void *buf, int pitch, int x, int y, int w,
 	                       int h);
-	virtual int16 getOverlayHeight();
-	virtual int16 getOverlayWidth();
+	virtual int16 getOverlayHeight() const;
+	virtual int16 getOverlayWidth() const;
 	void displayMessageOnOSD(const Common::U32String &msg) override;
 	void displayActivityIconOnOSD(const Graphics::Surface *icon) override;
 
@@ -170,7 +185,7 @@ public:
 	void warpMouse(int x, int y);
 	void setMouseCursor(const void *buf, uint w, uint h, int hotspotX,
 	                    int hotspotY, uint32 keycolor, bool dontScale = false,
-	                    const Graphics::PixelFormat *format = NULL);
+	                    const Graphics::PixelFormat *format = NULL, const byte *mask = NULL);
 	void setCursorPalette(const byte *colors, uint start, uint num);
 
 	// Transform point from touchscreen coords into gamescreen coords
@@ -182,6 +197,7 @@ public:
 
 	void updateFocus();
 	void updateMagnify();
+	void updateBacklight();
 	void updateConfig();
 	void updateSize();
 
@@ -192,12 +208,11 @@ private:
 	void destroyAudio();
 	void initEvents();
 	void destroyEvents();
-	void runOptionsDialog();
 
 	void flushGameScreen();
 	void flushCursor();
 
-	virtual Common::String getDefaultLogFileName();
+	virtual Common::Path getDefaultLogFileName();
 	virtual Common::WriteStream *createLogFile();
 
 protected:
@@ -218,14 +233,16 @@ private:
 	TransactionDetails _transactionDetails;
 
 	GfxState _gfxState, _oldGfxState;
+	Graphics::FastBlitFunc _blitFunc;
 	Graphics::PixelFormat _pfDefaultTexture;
 	Graphics::PixelFormat _pfGame, _oldPfGame;
 	Graphics::PixelFormat _pfCursor;
 	byte _palette[3 * 256];
 	byte _cursorPalette[3 * 256];
+	uint32 _paletteMap[256];
 
 	Graphics::Surface _gameScreen;
-	bool _gameTextureDirty;
+	Graphics::DirtyRectList _dirtyRects;
 	Sprite _gameTopTexture;
 	Sprite _gameBottomTexture;
 	Sprite _overlay;
@@ -241,6 +258,7 @@ private:
 	int _screenShakeXOffset;
 	int _screenShakeYOffset;
 	bool _overlayVisible;
+	bool _overlayInGUI;
 	int _screenChangeId;
 
 	DVLB_s *_dvlb;
@@ -287,11 +305,16 @@ private:
 	u16 _magWidth, _magHeight;
 	u16 _magCenterX, _magCenterY;
 
-	Common::String _logFilePath;
+	Common::Path _logFilePath;
 
 public:
 	// Pause
 	PauseToken _sleepPauseToken;
+
+	bool _showCursor;
+	bool _snapToBorder;
+	bool _stretchToFit;
+	Screen _screen;
 };
 
 } // namespace N3DS

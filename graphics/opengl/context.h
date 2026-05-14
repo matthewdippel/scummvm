@@ -75,6 +75,9 @@ public:
 	/** Whether GL_ARB_texture_non_power_of_two is available or not. */
 	bool NPOTSupported;
 
+	/** Whether GL_ARB_imaging is available or not. */
+	bool imagingSupported;
+
 	/** Whether shader support is available or not. */
 	bool shadersSupported;
 
@@ -96,6 +99,9 @@ public:
 	 */
 	int multisampleMaxSamples;
 
+	/** Whether BGRA support is available or not. */
+	bool bgraSupported;
+
 	/** Whether packed pixels support is available or not. */
 	bool packedPixelsSupported;
 
@@ -110,6 +116,18 @@ public:
 
 	/** Whether texture coordinate edge clamping is available or not. */
 	bool textureEdgeClampSupported;
+
+	/** Whether texture coordinate border clamping is available or not. */
+	bool textureBorderClampSupported;
+
+	/** Whether texture coordinate mirrored repeat is available or not. */
+	bool textureMirrorRepeatSupported;
+
+	/** Whether texture max level is available or not. */
+	bool textureMaxLevelSupported;
+
+	/** Texture lookup result precision. */
+	unsigned int textureLookupPrecision;
 
 private:
 	/**

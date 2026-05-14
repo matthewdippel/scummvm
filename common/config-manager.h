@@ -24,6 +24,7 @@
 
 #include "common/array.h"
 #include "common/hashmap.h"
+#include "common/path.h"
 #include "common/singleton.h"
 #include "common/str.h"
 #include "common/hash-str.h"
@@ -70,9 +71,6 @@ public:
 
 		bool           contains(const String &key) const { return _entries.contains(key); } /*!< Check whether the domain contains a @p key. */
 		/** Return the configuration value for the given key.
-		 *  If no entry exists for the given key in the configuration, it is created.
-		 */
-		/** Return the configuration value for the given key.
 		 *  @note This function does *not* create a configuration entry
 		 *  for the given key if it does not exist.
 		 */
@@ -80,6 +78,9 @@ public:
 
 		void           setVal(const String &key, const String &value) { _entries.setVal(key, value); } /*!< Assign a @p value to a @p key. */
 
+		/** Return the configuration value for the given key.
+		 *  If no entry exists for the given key in the configuration, it is created.
+		 */
 		String &getOrCreateVal(const String &key) { return _entries.getOrCreateVal(key); }
 		String        &getVal(const String &key) { return _entries.getVal(key); } /*!< Retrieve the value of a @p key. */
 		const String  &getVal(const String &key) const { return _entries.getVal(key); } /*!< @overload */
@@ -88,8 +89,8 @@ public:
 		  * @return True if the key exists, false otherwise.
 		  * You can use this method if you frequently attempt to access keys that do not exist.
 		  */
-		const String &getValOrDefault(const String &key) const { return _entries.getValOrDefault(key); }
 		bool tryGetVal(const String &key, String &out) const { return _entries.tryGetVal(key, out); }
+		const String &getValOrDefault(const String &key) const { return _entries.getValOrDefault(key); }
 
 		void           clear() { _entries.clear(); } /*!< Clear all configuration entries in the domain. */
 
@@ -115,18 +116,18 @@ public:
 	/** The name of keymapper domain used to store the key maps. */
 	static char const *const kKeymapperDomain;
 
-	/** The name of the session domain where configs are put 
-	 * for the entire session or until they are overwritten or removed. 
+	/** The name of the session domain where configs are put
+	 * for the entire session or until they are overwritten or removed.
 	 * These settings don't get saved to disk. */
-	static char const *const kSessionDomain; 
+	static char const *const kSessionDomain;
 
 #ifdef USE_CLOUD
 	/** The name of cloud domain used to store the user's tokens. */
 	static char const *const kCloudDomain;
 #endif
 
-	void                     loadDefaultConfigFile(); /*!< Load the default configuration file. */
-	void                     loadConfigFile(const String &filename); /*!< Load a specific configuration file. */
+	bool                     loadDefaultConfigFile(const Path &fallbackFilename); /*!< Load the default configuration file. */
+	bool                     loadConfigFile(const Path &filename, const Path &fallbackFilename); /*!< Load a specific configuration file. */
 
 	/**
 	 * Retrieve the config domain with the given name.
@@ -148,6 +149,11 @@ public:
 	const String            &get(const String &key) const;    /*!< Get the value of a @p key. */
 	void                     set(const String &key, const String &value); /*!< Assign a @p value to a @p key. */
 	/** @} */
+
+	/**
+	 * Indicate if a default value has been set for the given key.
+	 */
+	bool                     hasDefault(const String &key) const;
 
 	/**
 	 * Update a configuration entry for the active domain and flush
@@ -181,13 +187,18 @@ public:
 
 	int                      getInt(const String &key, const String &domName = String()) const; /*!< Get integer value. */
 	bool                     getBool(const String &key, const String &domName = String()) const; /*!< Get Boolean value. */
+	Path                     getPath(const String &key, const String &domName = String()) const; /*!< Get path value. */
+	float                    getFloat(const String &key, const String &domName = String()) const; /*!< Get float value. */
 	void                     setInt(const String &key, int value, const String &domName = String()); /*!< Set integer value. */
 	void                     setBool(const String &key, bool value, const String &domName = String()); /*!< Set Boolean value. */
+	void                     setPath(const String &key, const Path &value, const String &domName = String()); /*!< Set path value. */
+	void                     setFloat(const String &key, float value, const String &domName = String()); /*!< Set float value. */
 
 	void                     registerDefault(const String &key, const String &value); /*!< Register a value as the default. */
 	void                     registerDefault(const String &key, const char *value); /*!< @overload */
 	void                     registerDefault(const String &key, int value); /*!< @overload */
 	void                     registerDefault(const String &key, bool value); /*!< @overload */
+	void                     registerDefault(const String &key, const Path &value); /*!< @overload */
 
 	void                     flushToDisk(); /*!< Flush configuration to disk. */
 
@@ -213,7 +224,7 @@ public:
 	DomainMap::iterator      beginGameDomains() { return _gameDomains.begin(); } /*!< Return the beginning position of game domains. */
 	DomainMap::iterator      endGameDomains() { return _gameDomains.end(); } /*!< Return the ending position of game domains. */
 
-	const String             &getCustomConfigFileName() { return _filename; } /*!< Return the custom config file being used, or an empty string when using the default config file */
+	const Path              &getCustomConfigFileName() { return _filename; } /*!< Return the custom config file being used, or an empty string when using the default config file */
 
 	static void              defragment(); /*!< Move the configuration in memory to reduce fragmentation. */
 	void                     copyFrom(ConfigManager &source); /*!< Copy from a ConfigManager instance. */
@@ -222,7 +233,8 @@ private:
 	friend class Singleton<SingletonBaseType>;
 	ConfigManager();
 
-	void			loadFromStream(SeekableReadStream &stream);
+	bool			loadFallbackConfigFile(const Path &filename);
+	bool			loadFromStream(SeekableReadStream &stream);
 	void			addDomain(const String &domainName, const Domain &domain);
 	void			writeDomain(WriteStream &stream, const String &name, const Domain &domain);
 	void			renameDomain(const String &oldName, const String &newName, DomainMap &map);
@@ -235,7 +247,7 @@ private:
 
 	Domain			_keymapperDomain;
 
-	Domain          _sessionDomain; 	
+	Domain          _sessionDomain;
 
 #ifdef USE_CLOUD
 	Domain			_cloudDomain;
@@ -246,7 +258,7 @@ private:
 	String			_activeDomainName;
 	Domain *		_activeDomain;
 
-	String			_filename;
+	Path			_filename;
 };
 
 /** @} */

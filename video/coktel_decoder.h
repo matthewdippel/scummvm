@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 // Currently, only GOB and SCI32 games play IMDs and VMDs, so skip compiling if GOB and SCI32 is disabled.
@@ -34,6 +40,7 @@
 #include "common/rational.h"
 #include "common/str.h"
 
+#include "graphics/palette.h"
 #include "graphics/surface.h"
 
 #include "video/video_decoder.h"
@@ -113,6 +120,7 @@ public:
 
 	bool hasPalette() const;
 	virtual bool hasVideo() const;
+	virtual bool hasVideoData() const;
 
 	bool hasSound()       const;
 	bool isSoundEnabled() const;
@@ -142,11 +150,14 @@ public:
 	/** Is the video paletted or true color? */
 	virtual bool isPaletted() const;
 
+	virtual uint32 getVideoBufferSize() const = 0;
+
 	/**
 	 * Get the current frame
 	 * @see VideoDecoder::getCurFrame()
 	 */
 	int getCurFrame() const;
+	int getNbFramesPastEnd() const;
 
 	/**
 	 * Decode the next frame
@@ -176,6 +187,8 @@ public:
 
 	uint16 getWidth()  const;
 	uint16 getHeight() const;
+	virtual uint32 getFlags() const = 0;
+	virtual uint16 getSoundFlags() const = 0;
 	virtual Graphics::PixelFormat getPixelFormat() const = 0;
 
 	uint32 getFrameCount() const;
@@ -185,6 +198,7 @@ public:
 
 	uint32 getTimeToNextFrame() const;
 	uint32 getStaticTimeToNextFrame() const;
+	int32 getExpectedFrameFromCurrentTime() const;
 
 	void pauseVideo(bool pause);
 
@@ -222,11 +236,12 @@ protected:
 	uint32 _features;
 
 	 int32 _curFrame;
+	 int32 _nbFramesPastEnd;
 	uint32 _frameCount;
 
 	uint32 _startTime;
 
-	byte _palette[768];
+	Graphics::Palette _palette;
 	bool _paletteDirty;
 
 	bool    _ownSurface;
@@ -256,12 +271,12 @@ protected:
 	void deRLE(byte *&destPtr, const byte *&srcPtr, int16 destLen, int16 srcLen);
 
 	// Block rendering
-	void renderBlockWhole   (Graphics::Surface &dstSurf, const byte *src, Common::Rect &rect);
-	void renderBlockWhole4X (Graphics::Surface &dstSurf, const byte *src, Common::Rect &rect);
-	void renderBlockWhole2Y (Graphics::Surface &dstSurf, const byte *src, Common::Rect &rect);
-	void renderBlockSparse  (Graphics::Surface &dstSurf, const byte *src, Common::Rect &rect);
-	void renderBlockSparse2Y(Graphics::Surface &dstSurf, const byte *src, Common::Rect &rect);
-	void renderBlockRLE     (Graphics::Surface &dstSurf, const byte *src, Common::Rect &rect);
+	void renderBlockWhole       (Graphics::Surface &dstSurf, const byte *src, Common::Rect &rect);
+	void renderBlockWhole4X     (Graphics::Surface &dstSurf, const byte *src, Common::Rect &rect);
+	void renderBlockWhole2Y     (Graphics::Surface &dstSurf, const byte *src, Common::Rect &rect);
+	void renderBlockSparse      (Graphics::Surface &dstSurf, const byte *src, Common::Rect &rect);
+	void renderBlockSparse2Y    (Graphics::Surface &dstSurf, const byte *src, Common::Rect &rect);
+	void renderBlockRLE         (Graphics::Surface &dstSurf, const byte *src, Common::Rect &rect);
 
 	// Sound helper functions
 	inline void unsignedToSigned(byte *buffer, int length);
@@ -287,6 +302,10 @@ public:
 	bool isVideoLoaded() const;
 
 	const Graphics::Surface *decodeNextFrame();
+
+	uint32 getFlags() const;
+	uint16 getSoundFlags() const;
+	uint32 getVideoBufferSize() const;
 
 	Graphics::PixelFormat getPixelFormat() const;
 
@@ -319,6 +338,10 @@ public:
 	bool isVideoLoaded() const;
 
 	const Graphics::Surface *decodeNextFrame();
+
+	uint32 getFlags() const;
+	uint16 getSoundFlags() const;
+	uint32 getVideoBufferSize() const;
 
 	Graphics::PixelFormat getPixelFormat() const;
 
@@ -416,6 +439,7 @@ public:
 	int32 getSubtitleIndex() const;
 
 	bool hasVideo() const;
+	bool hasVideoData() const;
 	bool isPaletted() const;
 
 	bool loadStream(Common::SeekableReadStream *stream);
@@ -424,6 +448,10 @@ public:
 	bool isVideoLoaded() const;
 
 	const Graphics::Surface *decodeNextFrame();
+
+	uint32 getFlags() const;
+	uint16 getSoundFlags() const;
+	uint32 getVideoBufferSize() const;
 
 	Graphics::PixelFormat getPixelFormat() const;
 
@@ -492,7 +520,7 @@ private:
 
 	// Sound properties
 	uint16 _soundFlags;
-	int16  _soundFreq;
+	uint16  _soundFreq;
 	int16  _soundSliceSize;
 	int16  _soundSlicesCount;
 	byte   _soundBytesPerSample;
@@ -516,6 +544,7 @@ private:
 
 	// Video properties
 	bool   _hasVideo;
+	bool   _hasVideoData; ///< True if at least a frame contains a "video" part (even with dimensions 0x0)
 	uint32 _videoCodec;
 	byte   _blitMode;
 	byte   _bytesPerPixel;

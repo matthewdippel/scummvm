@@ -67,10 +67,10 @@ template<class T> class IteratorImpl;
  * For each used Key type, we need an "size_type hashit(Key,size_type)" function
  * that computes a hash for the given Key object and returns it as an
  * an integer from 0 to hashsize-1, and also an "equality functor".
- * that returns true if if its two arguments are to be considered
+ * that returns true if its two arguments are to be considered
  * equal. Also, we assume that "=" works on Val objects for assignment.
  *
- * If aa is an HashMap<Key,Val>, then space is allocated each time aa[key] is
+ * If aa is a HashMap<Key,Val>, then space is allocated each time aa[key] is
  * referenced, for a new key. If the object is const, then an assertion is
  * triggered instead. Hence if you are not sure whether a key is contained in
  * the map, use contains() first to check for its presence.
@@ -407,7 +407,7 @@ template<class Key, class Val, class HashFunc, class EqualFunc>
 void HashMap<Key, Val, HashFunc, EqualFunc>::expandStorage(size_type newCapacity) {
 	assert(newCapacity > _mask+1);
 
-#ifndef NDEBUG
+#ifndef RELEASE_BUILD
 	const size_type old_size = _size;
 #endif
 	const size_type old_mask = _mask;
@@ -440,9 +440,11 @@ void HashMap<Key, Val, HashFunc, EqualFunc>::expandStorage(size_type newCapacity
 		_size++;
 	}
 
+#ifndef RELEASE_BUILD
 	// Perform a sanity check: Old number of elements should match the new one!
 	// This check will fail if some previous operation corrupted this hashmap.
 	assert(_size == old_size);
+#endif
 
 	delete[] old_storage;
 

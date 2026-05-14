@@ -57,6 +57,8 @@ void Script::freeScript(const bool keepLocalsSegment) {
 	_synonyms.clear();
 	_numSynonyms = 0;
 
+	_codeOffset = 0;
+
 	_localsOffset = 0;
 	if (!keepLocalsSegment) {
 		_localsSegment = 0;
@@ -89,6 +91,7 @@ void Script::load(int script_nr, ResourceManager *resMan, ScriptPatcher *scriptP
 	_nr = script_nr;
 	uint32 scriptSize = script->size();
 	uint32 bufSize = scriptSize;
+	Resource *heap = nullptr;
 
 	if (getSciVersion() == SCI_VERSION_0_EARLY) {
 		bufSize += script->getUint16LEAt(0) * 2;
@@ -99,7 +102,10 @@ void Script::load(int script_nr, ResourceManager *resMan, ScriptPatcher *scriptP
 		// combined size of the stack and the heap must be 64KB. So far this has
 		// worked for SCI11, SCI2 and SCI21 games. SCI3 games use a different
 		// script format, and they can exceed the 64KB boundary using relocation.
-		Resource *heap = resMan->findResource(ResourceId(kResourceTypeHeap, script_nr), false);
+		heap = resMan->findResource(ResourceId(kResourceTypeHeap, script_nr), false);
+		if (heap == nullptr) {
+			error("Heap %d not found", script_nr);
+		}
 		bufSize += heap->size();
 
 		// Ensure that the start of the heap resource can be word-aligned.
@@ -123,8 +129,7 @@ void Script::load(int script_nr, ResourceManager *resMan, ScriptPatcher *scriptP
 		// WORKAROUND: Script 1 in Ocean Battle doesn't have enough locals to
 		// fit the string showing how many shots are left (a nasty script bug,
 		// corrupting heap memory). We add 10 more locals so that it has enough
-		// space to use as the target for its kFormat operation. Fixes bug
-		// #5335.
+		// space to use as the target for its kFormat operation. Fixes bug #5335.
 		extraLocalsWorkaround = 10;
 	}
 	bufSize += extraLocalsWorkaround * 2;
@@ -132,14 +137,10 @@ void Script::load(int script_nr, ResourceManager *resMan, ScriptPatcher *scriptP
 	SciSpan<byte> outBuffer = _buf->allocate(bufSize, script->name() + " buffer");
 	script->copyDataTo(outBuffer);
 	// The word-aligned script size is used here because other parts of the code
-	// currently rely on finding the start of the heap by reading the script
-	// size
+	// currently rely on finding the start of the heap by reading the script size
 	_script = _buf->subspan(0, scriptSize, script->name());
 
-	if (getSciVersion() >= SCI_VERSION_1_1 && getSciVersion() <= SCI_VERSION_2_1_LATE) {
-		Resource *heap = resMan->findResource(ResourceId(kResourceTypeHeap, _nr), false);
-		assert(heap);
-
+	if (heap != nullptr) {
 		SciSpan<byte> outHeap = outBuffer.subspan(scriptSize, heap->size(), heap->name(), 0);
 		heap->copyDataTo(outHeap);
 		_heap = outHeap;
@@ -502,16 +503,12 @@ void Script::identifyOffsets() {
 #ifdef ENABLE_SCI32
 	} else if (getSciVersion() == SCI_VERSION_3) {
 		// SCI3
-		uint32 sci3StringOffset = 0;
-		uint32 sci3RelocationOffset = 0;
-		uint32 sci3BoundaryOffset = 0;
-
 		if (_buf->size() < 22)
 			error("Script::identifyOffsets(): script %d smaller than expected SCI3-header", _nr);
 
 		_codeOffset = _buf->getUint32LEAt(0);
-		sci3StringOffset = _buf->getUint32LEAt(4);
-		sci3RelocationOffset = _buf->getUint32LEAt(8);
+		uint32 sci3StringOffset = _buf->getUint32LEAt(4);
+		uint32 sci3RelocationOffset = _buf->getUint32LEAt(8);
 
 		if (sci3RelocationOffset > _buf->size())
 			error("Script::identifyOffsets(): relocation offset is beyond end of script %d", _nr);
@@ -600,7 +597,7 @@ void Script::identifyOffsets() {
 				_offsetLookupStringCount++;
 
 				// SCI3 seems to have aligned all string on DWORD boundaries
-				sci3BoundaryOffset = stringDataPtr - *_buf; // Calculate current offset inside script data
+				uint32 sci3BoundaryOffset = stringDataPtr - *_buf; // Calculate current offset inside script data
 				sci3BoundaryOffset = sci3BoundaryOffset & 3; // Check boundary offset
 				if (sci3BoundaryOffset) {
 					// lower 2 bits are set? Then we have to adjust the offset
@@ -841,6 +838,21 @@ void Script::relocateSci3(const SegmentId segmentId) {
 
 void Script::incrementLockers() {
 	assert(!_markedAsDeleted);
+	if (_lockers == 0xffffffff) {
+		// FIXME
+		// The locker on system scripts, most notably script 999, increases throughout
+		// the game and can eventually overflow, causing script 999 to be unloaded
+		// and crash. We have been provided QFG1 SCI0 save games where this occurred
+		// within hours of play over the course of three days. Debugging shows that
+		// this value increases rapidly, for example: on every `class Event` opcode
+		// during input polling, or when our kAnimate code calls `doit` on objects.
+		// Until this is fixed properly, log these overflow attempts and lower the
+		// counter so that the warnings continue without flooding the log.
+		// At the point where a resource usage counter reaches the billions, its value
+		// no longer has meaning, so the important thing for now is that it not crash.
+		warning("script %d locker maximum reached, resetting", _nr);
+		_lockers = 0x80000000;
+	}
 	_lockers++;
 }
 
@@ -849,11 +861,11 @@ void Script::decrementLockers() {
 		_lockers--;
 }
 
-int Script::getLockers() const {
+uint Script::getLockers() const {
 	return _lockers;
 }
 
-void Script::setLockers(int lockers) {
+void Script::setLockers(uint lockers) {
 	assert(lockers == 0 || !_markedAsDeleted);
 	_lockers = lockers;
 }
@@ -886,7 +898,12 @@ uint32 Script::validateExportFunc(int pubfunct, bool relocSci3) {
 #endif
 		offset = _exports.getUint16SEAt(pubfunct);
 
-	// TODO: Check if this should be done for SCI1.1 games as well
+	// SCI2 doesn't adjust export offsets to the code block when they're zero.
+	// Zero is supposed to signify that the export slot is empty. This leaves the
+	// offset pointing at the start of the code block, and several scripts rely
+	// on this. Script 64909's first export is zero but game scripts call this
+	// to shake the screen. This works because the function resides at the start
+	// of the code block.
 	if (getSciVersion() >= SCI_VERSION_2 && offset == 0) {
 		offset = getCodeBlockOffset();
 	}
@@ -956,12 +973,14 @@ LocalVariables *Script::allocLocalsSegment(SegManager *segMan) {
 	} else {
 		LocalVariables *locals;
 
-		if (_localsSegment) {
+		if (!_localsSegment) {
+			locals = new LocalVariables();
+			_localsSegment = segMan->allocSegment(locals);
+		} else {
 			locals = (LocalVariables *)segMan->getSegment(_localsSegment, SEG_TYPE_LOCALS);
 			if (!locals || locals->getType() != SEG_TYPE_LOCALS || locals->script_id != getScriptNumber())
 				error("Invalid script %d locals segment while allocating locals", _nr);
-		} else
-			locals = (LocalVariables *)segMan->allocSegment(new LocalVariables(), &_localsSegment);
+		}
 
 		_localsBlock = locals;
 		locals->script_id = getScriptNumber();
@@ -991,134 +1010,60 @@ void Script::syncLocalsBlock(SegManager *segMan) {
 	_localsBlock = (_localsSegment == 0) ? nullptr : (LocalVariables *)(segMan->getSegment(_localsSegment, SEG_TYPE_LOCALS));
 }
 
-void Script::initializeClasses(SegManager *segMan) {
-	SciSpan<const byte> seeker;
-	uint16 mult = 0;
-
-	if (getSciVersion() <= SCI_VERSION_1_LATE) {
-		seeker = _script;
-		mult = 1;
-
-		// SCI0 early has an extra two bytes of header
-		if (getSciVersion() == SCI_VERSION_0_EARLY) {
-			seeker += 2;
+void Script::initializeClass(SegManager *segMan, uint16 species, uint32 position) {
+	// WORKAROUND: The class table (vocab 996) is incomplete in some games.
+	// Because of this, scripts can contain species (class indexes) beyond
+	// the table's limit. In SCI2 this was a fatal error, but prior to this
+	// the interpreter would write to memory beyond the class table boundary
+	// and then read it back. We accommodate this by resizing the class table
+	// for plausible species values in earlier games.
+	// Ex: sq3 1.018 scripts 93 & 99, lsl3 script 500, kq5 amiga script 220
+	if (species >= segMan->classTableSize()) {
+		if (species <= 255 && getSciVersion() < SCI_VERSION_2) {
+			warning("Resizing class table for species %d in script %d", species, _nr);
+			segMan->resizeClassTable(species + 1);
+		} else {
+			error("Invalid species %d in script %d", species, _nr);
 		}
-	} else if (getSciVersion() >= SCI_VERSION_1_1 && getSciVersion() <= SCI_VERSION_2_1_LATE) {
-		seeker = _heap.subspan(4 + _heap.getUint16SEAt(2) * 2);
-		mult = 2;
-#ifdef ENABLE_SCI32
-	} else if (getSciVersion() == SCI_VERSION_3) {
-		seeker = getSci3ObjectsPointer();
-		mult = 1;
-#endif
 	}
 
-	if (!seeker)
-		return;
-
-	uint16 marker;
-	bool isClass = false;
-	uint32 classpos;
-	int16 species = 0;
-
-	for (;;) {
-		// In SCI0-SCI1, this is the segment type. In SCI11, it's a marker (0x1234)
-		marker = seeker.getUint16SEAt(0);
-		classpos = seeker - *_buf;
-
-		if (getSciVersion() <= SCI_VERSION_1_LATE && !marker)
-			break;
-
-		if (getSciVersion() >= SCI_VERSION_1_1 && marker != SCRIPT_OBJECT_MAGIC_NUMBER)
-			break;
-
-		if (getSciVersion() <= SCI_VERSION_1_LATE) {
-			isClass = (marker == SCI_OBJ_CLASS);
-			if (isClass)
-				species = seeker.getUint16SEAt(12);
-			classpos += 12;
-		} else if (getSciVersion() >= SCI_VERSION_1_1 && getSciVersion() <= SCI_VERSION_2_1_LATE) {
-			isClass = (seeker.getUint16SEAt(14) & kInfoFlagClass);	// -info- selector
-			species = seeker.getUint16SEAt(10);
-		} else if (getSciVersion() == SCI_VERSION_3) {
-			isClass = (seeker.getUint16SEAt(10) & kInfoFlagClass);
-			species = seeker.getUint16SEAt(4);
-		}
-
-		if (isClass) {
-			// WORKAROUNDs for off-by-one script errors
-			if (species == (int)segMan->classTableSize()) {
-				if (g_sci->getGameId() == GID_LSL2 && g_sci->isDemo())
-					segMan->resizeClassTable(species + 1);
-				else if (g_sci->getGameId() == GID_LSL3 && !g_sci->isDemo() && _nr == 500)
-					segMan->resizeClassTable(species + 1);
-				else if (g_sci->getGameId() == GID_SQ3 && !g_sci->isDemo() && _nr == 93)
-					segMan->resizeClassTable(species + 1);
-				else if (g_sci->getGameId() == GID_SQ3 && !g_sci->isDemo() && _nr == 99)
-					segMan->resizeClassTable(species + 1);
-				else if (g_sci->getGameId() == GID_KQ5 && g_sci->getPlatform() == Common::kPlatformAmiga && _nr == 220)
-					segMan->resizeClassTable(species + 1);
-			}
-
-			if (species < 0 || species >= (int)segMan->classTableSize())
-				error("Invalid species %d(0x%x) unknown max %d(0x%x) while instantiating script %d",
-						  species, species, segMan->classTableSize(), segMan->classTableSize(), _nr);
-
-			segMan->setClassOffset(species, make_reg32(segMan->getScriptSegment(_nr), classpos));
-		}
-
-		seeker += seeker.getUint16SEAt(2) * mult;
-	}
+	segMan->setClassOffset(species, make_reg32(segMan->getScriptSegment(_nr), position));
 }
 
 void Script::initializeObjectsSci0(SegManager *segMan, SegmentId segmentId, bool applyScriptPatches) {
 	bool oldScriptHeader = (getSciVersion() == SCI_VERSION_0_EARLY);
+	SciSpan<const byte> seeker = _buf->subspan(oldScriptHeader ? 2 : 0);
 
-	// We need to make two passes, as the objects in the script might be in the
-	// wrong order (e.g. in the demo of Iceman) - refer to bug #4963
-	for (int pass = 1; pass <= 2; pass++) {
-		SciSpan<const byte> seeker = _buf->subspan(oldScriptHeader ? 2 : 0);
+	do {
+		uint16 objType = seeker.getUint16SEAt(0);
+		if (objType == 0)
+			break;
 
-		do {
-			uint16 objType = seeker.getUint16SEAt(0);
-			if (!objType)
-				break;
-
-			switch (objType) {
-			case SCI_OBJ_OBJECT:
-			case SCI_OBJ_CLASS:
-				{
-					reg_t addr = make_reg(segmentId, seeker - *_buf + 4 - SCRIPT_OBJECT_MAGIC_OFFSET);
-					Object *obj;
-					if (pass == 1) {
-						obj = scriptObjInit(addr);
-						obj->initSpecies(segMan, addr, applyScriptPatches);
-					} else {
-						obj = getObject(addr.getOffset());
-						if (!obj->initBaseObject(segMan, addr, true, applyScriptPatches)) {
-							if ((_nr == 202 || _nr == 764) && g_sci->getGameId() == GID_KQ5) {
-								// WORKAROUND: Script 202 of KQ5 French and German
-								// (perhaps Spanish too?) has an invalid object.
-								// This is non-fatal. Refer to bugs #4996 and
-								// #5568.
-								// Same happens with script 764, it seems to
-								// contain junk towards its end.
-								_objects.erase(addr.toUint16() - SCRIPT_OBJECT_MAGIC_OFFSET);
-							} else {
-								error("Failed to locate base object for object at %04x:%04x in script %d", PRINT_REG(addr), _nr);
-							}
-						}
-					}
-				}
-				break;
-
-			default:
-				break;
+		if (objType == SCI_OBJ_OBJECT || objType == SCI_OBJ_CLASS) {
+			uint16 objectPosition = seeker - *_buf + 12;
+			if (objType == SCI_OBJ_CLASS) {
+				uint16 species = seeker.getUint16SEAt(12);
+				initializeClass(segMan, species, objectPosition);
 			}
 
-			seeker += seeker.getUint16SEAt(2);
-		} while ((uint32)(seeker - *_buf) < getScriptSize() - 2);
-	}
+			reg_t addr = make_reg(segmentId, objectPosition);
+			Object *obj = scriptObjInit(addr);
+			obj->initSpecies(segMan, addr, applyScriptPatches);
+			if (!obj->initBaseObject(segMan, addr, true, applyScriptPatches)) {
+				if ((_nr == 202 || _nr == 764) && g_sci->getGameId() == GID_KQ5) {
+					// WORKAROUND: Script 202 of KQ5 French and German
+					// (perhaps Spanish too?) has an invalid object.
+					// This is non-fatal. Refer to bugs #4996 and #5568.
+					// Same happens with script 764, it seems to
+					// contain junk towards its end.
+					_objects.erase(addr.toUint16() - SCRIPT_OBJECT_MAGIC_OFFSET);
+				} else {
+					error("Failed to locate base object for object at %04x:%04x in script %d", PRINT_REG(addr), _nr);
+				}
+			}
+		}
+		seeker += seeker.getUint16SEAt(2);
+	} while ((uint32)(seeker - *_buf) < getScriptSize() - 2);
 
 	relocateSci0Sci21(segmentId);
 }
@@ -1128,7 +1073,14 @@ void Script::initializeObjectsSci11(SegManager *segMan, SegmentId segmentId, boo
 	Common::Array<reg_t> mismatchedVarCountObjects;
 
 	while (seeker.getUint16SEAt(0) == SCRIPT_OBJECT_MAGIC_NUMBER) {
-		reg_t reg = make_reg(segmentId, seeker - *_buf);
+		uint16 objectPosition = seeker - *_buf;
+		bool isClass = (seeker.getUint16SEAt(14) & kInfoFlagClass);	// -info- selector
+		if (isClass) {
+			uint16 species = seeker.getUint16SEAt(10);
+			initializeClass(segMan, species, objectPosition);
+		}
+
+		reg_t reg = make_reg(segmentId, objectPosition);
 		Object *obj = scriptObjInit(reg);
 
 		// Copy base from species class, as we need its selector IDs
@@ -1192,10 +1144,22 @@ void Script::initializeObjectsSci11(SegManager *segMan, SegmentId segmentId, boo
 
 #ifdef ENABLE_SCI32
 void Script::initializeObjectsSci3(SegManager *segMan, SegmentId segmentId, bool applyScriptPatches) {
+	// SCI3 added all classes to the class table before initializing objects
 	SciSpan<const byte> seeker = getSci3ObjectsPointer();
-
 	while (seeker.getUint16SEAt(0) == SCRIPT_OBJECT_MAGIC_NUMBER) {
-		Object *obj = scriptObjInit(make_reg32(segmentId, seeker - *_buf));
+		uint32 objectPosition = seeker - *_buf;
+		bool isClass = (seeker.getUint16SEAt(10) & kInfoFlagClass);
+		if (isClass) {
+			uint16 species = seeker.getUint16SEAt(4);
+			initializeClass(segMan, species, objectPosition);
+		}
+		seeker += seeker.getUint16SEAt(2);
+	}
+
+	seeker = getSci3ObjectsPointer();
+	while (seeker.getUint16SEAt(0) == SCRIPT_OBJECT_MAGIC_NUMBER) {
+		uint32 objectPosition = seeker - *_buf;
+		Object *obj = scriptObjInit(make_reg32(segmentId, objectPosition));
 		obj->setSuperClassSelector(segMan->getClassAddress(obj->getSuperClassSelector().getOffset(), SCRIPT_GET_LOCK, 0, applyScriptPatches));
 		seeker += seeker.getUint16SEAt(2);
 	}
@@ -1207,10 +1171,10 @@ void Script::initializeObjectsSci3(SegManager *segMan, SegmentId segmentId, bool
 void Script::initializeObjects(SegManager *segMan, SegmentId segmentId, bool applyScriptPatches) {
 	if (getSciVersion() <= SCI_VERSION_1_LATE)
 		initializeObjectsSci0(segMan, segmentId, applyScriptPatches);
-	else if (getSciVersion() >= SCI_VERSION_1_1 && getSciVersion() <= SCI_VERSION_2_1_LATE)
+	else if (getSciVersion() <= SCI_VERSION_2_1_LATE)
 		initializeObjectsSci11(segMan, segmentId, applyScriptPatches);
 #ifdef ENABLE_SCI32
-	else if (getSciVersion() == SCI_VERSION_3)
+	else
 		initializeObjectsSci3(segMan, segmentId, applyScriptPatches);
 #endif
 }
@@ -1272,10 +1236,6 @@ Common::Array<reg_t> Script::listObjectReferences() const {
 	}
 
 	return tmp;
-}
-
-bool Script::offsetIsObject(uint32 offset) const {
-	return _buf->getUint16SEAt(offset + SCRIPT_OBJECT_MAGIC_OFFSET) == SCRIPT_OBJECT_MAGIC_NUMBER;
 }
 
 void Script::applySaidWorkarounds() {

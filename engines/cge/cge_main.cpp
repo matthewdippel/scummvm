@@ -30,7 +30,7 @@
 #include "common/savefile.h"
 #include "common/serializer.h"
 #include "common/str.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/scaler.h"
 #include "graphics/thumbnail.h"
 #include "cge/vga13h.h"
@@ -115,10 +115,10 @@ const Dac g_stdPal[] =  {// R    G   B
 };
 
 char *CGEEngine::mergeExt(char *buf, const char *name, const char *ext) {
-	strcpy(buf, name);
+	Common::strcpy_s(buf, kPathMax, name);
 	char *dot = strrchr(buf, '.');
 	if (!dot)
-		strcat(buf, ext);
+		Common::strcat_s(buf, kPathMax, ext);
 
 	return buf;
 }
@@ -533,8 +533,8 @@ Square::Square(CGEEngine *vm) : Sprite(vm, nullptr), _vm(vm) {
 	setShapeList(MB);
 }
 
-void Square::touch(uint16 mask, int x, int y, Common::KeyCode keyCode) {
-	Sprite::touch(mask, x, y, keyCode);
+void Square::touch(uint16 mask, int x, int y) {
+	Sprite::touch(mask, x, y);
 	if (mask & kMouseLeftUp) {
 		_vm->XZ(_x + x, _y + y).cell() = 0;
 		_vm->_commandHandlerTurbo->addCommand(kCmdKill, -1, 0, this);
@@ -547,7 +547,7 @@ void CGEEngine::setMapBrick(int x, int z) {
 	Square *s = new Square(this);
 	char n[6];
 	s->gotoxy(x * kMapGridX, kMapTop + z * kMapGridZ);
-	sprintf(n, "%02d:%02d", x, z);
+	Common::sprintf_s(n, "%02d:%02d", x, z);
 	_clusterMap[z][x] = 1;
 	s->setName(n);
 	_vga->_showQ->insert(s, _vga->_showQ->first());
@@ -772,18 +772,16 @@ void System::funTouch() {
 		_funDel = n;
 }
 
-void System::touch(uint16 mask, int x, int y, Common::KeyCode keyCode) {
+void System::touch(uint16 mask, int x, int y) {
 	funTouch();
 
-	if (mask & kEventKeyb) {
-		if (keyCode == Common::KEYCODE_ESCAPE) {
-			// The original was calling keyClick()
-			// The sound is uselessly annoying and noisy, so it has been removed
-			_vm->killText();
-			if (_vm->_startupMode == 1) {
-				_vm->_commandHandler->addCommand(kCmdClear, -1, 0, nullptr);
-				return;
-			}
+	if (mask & kEventEsc) {
+		// The original was calling keyClick()
+		// The sound is uselessly annoying and noisy, so it has been removed
+		_vm->killText();
+		if (_vm->_startupMode == 1) {
+			_vm->_commandHandler->addCommand(kCmdClear, -1, 0, nullptr);
+			return;
 		}
 	} else {
 		if (_vm->_startupMode)
@@ -942,7 +940,7 @@ void CGEEngine::optionTouch(int opt, uint16 mask) {
 }
 
 #pragma argsused
-void Sprite::touch(uint16 mask, int x, int y, Common::KeyCode keyCode) {
+void Sprite::touch(uint16 mask, int x, int y) {
 	_vm->_sys->funTouch();
 
 	if ((mask & kEventAttn) != 0)
@@ -1041,6 +1039,7 @@ void CGEEngine::loadSprite(const char *fname, int ref, int scene, int col = 0, i
 
 	char tmpStr[kLineMax + 1];
 	Common::String line;
+	static_assert(kLineMax + 1 >= kPathMax, "mergeExt expects kPathMax buffer");
 	mergeExt(tmpStr, fname, kSprExt);
 
 	if (_resman->exist(tmpStr)) {      // sprite description file exist
@@ -1090,7 +1089,7 @@ void CGEEngine::loadSprite(const char *fname, int ref, int scene, int col = 0, i
 		++shpcnt;
 	}
 
-	// make sprite of choosen type
+	// make sprite of chosen type
 	switch (type) {
 	case 1:
 		// AUTO
@@ -1447,7 +1446,7 @@ void CGEEngine::movie(const char *ext) {
 		return;
 
 	char fn[12];
-	sprintf(fn, "CGE.%s", (*ext == '.') ? ext +1 : ext);
+	Common::sprintf_s(fn, "CGE.%s", (*ext == '.') ? ext +1 : ext);
 
 	if (_resman->exist(fn)) {
 		loadScript(fn);

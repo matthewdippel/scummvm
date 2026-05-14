@@ -24,8 +24,8 @@
 
 #include "common/scummsys.h"
 #include "common/array.h"
-#include "mads/game.h"
-#include "mads/resources.h"
+#include "mads/nebular/core/game.h"
+#include "mads/nebular/core/resources.h"
 
 namespace MADS {
 
@@ -271,7 +271,7 @@ enum {
 };
 
 /* Section #7 */
-// Status of the the bottle
+// Status of the bottle
 enum {
 	BOTTLE_EMPTY = 0, BOTTLE_ONE_QUARTER_FULL = 1, BOTTLE_HALF_FULL = 2,
 	BOTTLE_THREE_QUARTERS_FULL = 3, BOTTLE_FULL = 4
@@ -307,8 +307,8 @@ public:
 	virtual void synchronize(Common::Serializer &s);
 };
 
-} // End of namespace Nebular
+} // namespace Nebular
 
-} // End of namespace MADS
+} // namespace MADS
 
 #endif /* MADS_GLOBALS_NEBULAR_H */

@@ -19,8 +19,8 @@
  *
  */
 
+#include "common/str.h"
 #include "ultima/ultima8/misc/util.h"
-#include "ultima/ultima8/misc/istring.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -30,11 +30,10 @@ template<class T> void StringToArgv(const T &args, Common::Array<T> &argv) {
 	argv.clear();
 
 	bool quoted = false;
-	typename T::const_iterator it;
 	int ch;
 	T arg;
 
-	for (it = args.begin(); it != args.end(); ++it) {
+	for (auto it = args.begin(); it != args.end(); ++it) {
 		ch = *it;
 
 		// Toggle quoted string handling
@@ -88,36 +87,8 @@ template<class T> void StringToArgv(const T &args, Common::Array<T> &argv) {
 
 template void StringToArgv<Common::String>(const Common::String &args, Common::Array<Common::String> &argv);
 
-template<class T> void TrimSpaces(T &str) {
-	if (str.empty()) return;
-
-	typename T::size_type pos1 = str.findFirstNotOf(' ');
-	if (pos1 == T::npos) {
-		str = "";
-		return;
-	}
-
-	typename T::size_type pos2 = str.findLastNotOf(' ');
-	str = str.substr(pos1, pos2 - pos1 + 1);
-}
-
-template void TrimSpaces<Std::string>(Std::string &str);
-template void TrimSpaces<istring>(istring &str);
-
-
-template<class T> void TabsToSpaces(T &str, unsigned int n) {
-	T repl(n, ' ');
-	typename T::size_type p;
-	while ((p = str.find('\t')) != T::npos)
-		str.replace(p, 1, repl);
-}
-
-template void TabsToSpaces<Std::string>(Std::string &str, unsigned int n);
-template void TabsToSpaces<istring>(istring &str, unsigned int n);
-
-
 template<class T> void SplitString(const T &args, char sep,
-								   Std::vector<T> &argv) {
+								   Common::Array<T> &argv) {
 	// Clear the vector
 	argv.clear();
 
@@ -138,41 +109,36 @@ template<class T> void SplitString(const T &args, char sep,
 }
 
 
-template void SplitString<Std::string>(const Std::string &args, char sep, Std::vector<Std::string> &argv);
-template void SplitString<istring>(const istring &args, char sep, Std::vector<istring> &argv);
-
-
-
+template void SplitString<Common::String>(const Common::String &args, char sep, Common::Array<Common::String> &argv);
 
 template<class T> void SplitStringKV(const T &args, char sep,
-									 Std::vector<Std::pair<T, T> > &argv) {
+									 Common::Array<Common::Pair<T, T> > &argv) {
 	// Clear the vector
 	argv.clear();
 
 	if (args.empty()) return;
 
-	Std::vector<T> keyvals;
+	Common::Array<T> keyvals;
 	SplitString(args, sep, keyvals);
 
 	for (unsigned int i = 0; i < keyvals.size(); ++i) {
-		Std::pair<T, T> keyval;
+		Common::Pair<T, T> keyval;
 		typename T::size_type pos;
 		pos = keyvals[i].find('=');
 		keyval.first = keyvals[i].substr(0, pos);
-		TrimSpaces(keyval.first);
+		keyval.first.trim();
 		if (pos == T::npos) {
 			keyval.second = "";
 		} else {
 			keyval.second = keyvals[i].substr(pos + 1);
-			TrimSpaces(keyval.second);
+			keyval.second.trim();
 		}
 		if (!(keyval.first.empty() && keyval.second.empty()))
 			argv.push_back(keyval);
 	}
 }
 
-template void SplitStringKV<Std::string>(const Std::string &args, char sep, Std::vector<Std::pair<Std::string, Std::string> > &argv);
-template void SplitStringKV<istring>(const istring &args, char sep, Std::vector<Std::pair<istring, istring> > &argv);
+template void SplitStringKV<Common::String>(const Common::String &args, char sep, Common::Array<Common::Pair<Common::String, Common::String> > &argv);
 
 } // End of namespace Ultima8
 } // End of namespace Ultima

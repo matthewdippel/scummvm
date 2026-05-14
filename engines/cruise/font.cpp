@@ -146,7 +146,7 @@ void initSystem() {
 	subColor = 10;
 
 	for (i = 0; i < 64; i++) {
-		strcpy(preloadData[i].name, "");
+		preloadData[i].name[0] = '\0';
 		preloadData[i].ptr = nullptr;
 		preloadData[i].nofree = 0;
 	}
@@ -161,7 +161,7 @@ void initSystem() {
 	changeCursor(CURSOR_NORMAL);
 	mouseOn();
 
-	strcpy(cmdLine, "");
+	cmdLine[0] = '\0';
 
 	loadFNT("system.fnt");
 }
@@ -269,6 +269,8 @@ void drawString(int32 x, int32 y, const char *string, uint8 *buffer, uint8 fontC
 
 	// Draw the message
 	drawMessage(s, x, y, rightBorder_X - x, fontColor, buffer);
+
+	_vm->sayText(string, Common::TextToSpeechManager::INTERRUPT);
 
 	// Free the data
 	delete s->imagePtr;
@@ -391,7 +393,7 @@ gfxEntryStruct *renderText(int inRightBorder_X, const char *string) {
 
 			if (character) {
 				if (character == ' ' || character == 0x7C) {
-					drawPosPixel_X += wordSpacingWidth + SPACE_WIDTH;	// if char = "space" adjust word starting postion (don't render space though);
+					drawPosPixel_X += wordSpacingWidth + SPACE_WIDTH;	// if char = "space" adjust word starting position (don't render space though);
 				} else {
 					if (charData >= 0) {
 						const FontEntry &fe = fontPtr_Desc[charData];

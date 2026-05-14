@@ -21,7 +21,7 @@
 
 #include "ags/engine/gfx/gfxfilter_scummvm_renderer.h"
 #include "ags/engine/gfx/ali_3d_scummvm.h"
-#include "ags/lib/std/algorithm.h"
+#include "common/std/algorithm.h"
 #include "ags/engine/ac/sys_events.h"
 #include "ags/engine/gfx/gfxfilter_scummvm_renderer.h"
 #include "ags/engine/gfx/gfx_util.h"
@@ -51,9 +51,6 @@ ScummVMRendererGraphicsDriver::ScummVMRendererGraphicsDriver() {
 	_tint_blue = 0;
 	virtualScreen = nullptr;
 	_stageVirtualScreen = nullptr;
-
-	// Initialize default sprite batch, it will be used when no other batch was activated
-	ScummVMRendererGraphicsDriver::InitSpriteBatch(0, _spriteBatchDesc[0]);
 }
 
 ScummVMRendererGraphicsDriver::~ScummVMRendererGraphicsDriver() {
@@ -79,9 +76,15 @@ int ScummVMRendererGraphicsDriver::GetDisplayDepthForNativeDepth(int native_colo
 	return native_color_depth;
 }
 
-IGfxModeList *ScummVMRendererGraphicsDriver::GetSupportedModeList(int /*color_depth*/) {
+IGfxModeList *ScummVMRendererGraphicsDriver::GetSupportedModeList(int color_depth) {
 	std::vector<DisplayMode> modes;
-	sys_get_desktop_modes(modes);
+	sys_get_desktop_modes(modes, color_depth);
+	if ((modes.size() == 0) && color_depth == 32) {
+		// Pretend that 24-bit are 32-bit
+		sys_get_desktop_modes(modes, 24);
+		for (auto &m : modes)
+			m.ColorDepth = 32;
+	}
 	return new ScummVMRendererGfxModeList(modes);
 }
 
@@ -114,11 +117,20 @@ bool ScummVMRendererGraphicsDriver::SetDisplayMode(const DisplayMode &mode) {
 	if (!IsModeSupported(mode))
 		return false;
 
+	_capsVsync = true; // reset vsync flag, allow to try setting again
 	const int driver = GFX_SCUMMVM;
 	if (set_gfx_mode(driver, mode.Width, mode.Height, mode.ColorDepth) != 0)
 		return false;
-	if (g_system->hasFeature(OSystem::kFeatureVSync))
+
+	if (g_system->hasFeature(OSystem::kFeatureVSync)) {
+		g_system->beginGFXTransaction();
 		g_system->setFeatureState(OSystem::kFeatureVSync, mode.Vsync);
+		g_system->endGFXTransaction();
+	}
+	else {
+		_capsVsync = false;
+		Debug::Printf(kDbgMsg_Warn, "WARNING: Vertical sync is not supported. Setting will be kept at driver default.");
+	}
 
 	OnInit();
 	OnModeSet(mode);
@@ -207,6 +219,7 @@ void ScummVMRendererGraphicsDriver::SetGamma(int newGamma) {
 	}
 
 	SDL_SetWindowGammaRamp(sys_get_window(), gamma_red, gamma_green, gamma_blue);
+	_gamma = newGamma;
 #endif
 }
 
@@ -214,12 +227,18 @@ bool ScummVMRendererGraphicsDriver::DoesSupportVsyncToggle() {
 	return g_system->hasFeature(OSystem::kFeatureVSync);
 }
 
-bool ScummVMRendererGraphicsDriver::SetVsync(bool enabled) {
+bool ScummVMRendererGraphicsDriver::SetVsyncImpl(bool enabled, bool &vsync_res) {
 	if (g_system->hasFeature(OSystem::kFeatureVSync)) {
+		g_system->beginGFXTransaction();
 		g_system->setFeatureState(OSystem::kFeatureVSync, enabled);
-		_mode.Vsync = g_system->getFeatureState(OSystem::kFeatureVSync);
+		g_system->endGFXTransaction();
+
+		vsync_res = g_system->getFeatureState(OSystem::kFeatureVSync);
+		if (!vsync_res)
+			Debug::Printf(kDbgMsg_Warn, "Renderer: SetVsync (%d) failed", enabled);
+		return vsync_res;
 	}
-	return _mode.Vsync;
+	return false;
 }
 
 int ScummVMRendererGraphicsDriver::GetCompatibleBitmapFormat(int color_depth) {
@@ -230,14 +249,18 @@ IDriverDependantBitmap *ScummVMRendererGraphicsDriver::CreateDDB(int width, int 
 	return new ALSoftwareBitmap(width, height, color_depth, opaque);
 }
 
-IDriverDependantBitmap *ScummVMRendererGraphicsDriver::CreateDDBFromBitmap(Bitmap *bitmap, bool hasAlpha, bool opaque) {
-	return new ALSoftwareBitmap(bitmap, opaque, hasAlpha);
+IDriverDependantBitmap *ScummVMRendererGraphicsDriver::CreateDDBFromBitmap(Bitmap *bitmap, bool has_alpha, bool opaque) {
+	return new ALSoftwareBitmap(bitmap, has_alpha, opaque);
 }
 
-void ScummVMRendererGraphicsDriver::UpdateDDBFromBitmap(IDriverDependantBitmap *bitmapToUpdate, Bitmap *bitmap, bool hasAlpha) {
+IDriverDependantBitmap *ScummVMRendererGraphicsDriver::CreateRenderTargetDDB(int width, int height, int color_depth, bool opaque) {
+	return new ALSoftwareBitmap(width, height, color_depth, opaque);
+}
+
+void ScummVMRendererGraphicsDriver::UpdateDDBFromBitmap(IDriverDependantBitmap *bitmapToUpdate, Bitmap *bitmap, bool has_alpha) {
 	ALSoftwareBitmap *alSwBmp = (ALSoftwareBitmap *)bitmapToUpdate;
 	alSwBmp->_bmp = bitmap;
-	alSwBmp->_hasAlpha = hasAlpha;
+	alSwBmp->_hasAlpha = has_alpha;
 }
 
 void ScummVMRendererGraphicsDriver::DestroyDDB(IDriverDependantBitmap *bitmap) {
@@ -249,47 +272,79 @@ void ScummVMRendererGraphicsDriver::InitSpriteBatch(size_t index, const SpriteBa
 		_spriteBatches.resize(index + 1);
 	ALSpriteBatch &batch = _spriteBatches[index];
 	batch.ID = index;
-	// TODO: correct offsets to have pre-scale (source) and post-scale (dest) offsets!
-	const int src_w = desc.Viewport.GetWidth() / desc.Transform.ScaleX;
-	const int src_h = desc.Viewport.GetHeight() / desc.Transform.ScaleY;
+
+	// Apply parent batch's settings, if preset;
+	Rect viewport = desc.Viewport;
+	SpriteTransform transform = desc.Transform;
+	Bitmap *parent_surf = virtualScreen;
+	if (desc.Parent != UINT32_MAX) {
+		const auto &parent = _spriteBatches[desc.Parent];
+		if (parent.Surface)
+			parent_surf = parent.Surface.get();
+		// NOTE: we prioritize parent's surface size as a dest viewport,
+		// because parent may have a scheduled scaled blit.
+		if (viewport.IsEmpty())
+			viewport = parent_surf ? RectWH(parent_surf->GetSize()) : RectWH(parent.Viewport.GetSize());
+	} else if (viewport.IsEmpty()) {
+		viewport = _srcRect;
+	}
+
+	// Calculate expected source surf size, based on dest viewport and scaling
+	const int src_w = viewport.GetWidth() / transform.ScaleX;
+	const int src_h = viewport.GetHeight() / transform.ScaleY;
+
+	// Initialize batch surface, depending on the batch description.
 	// Surface was prepared externally (common for room cameras)
 	if (desc.Surface != nullptr) {
-		batch.Surface = std::static_pointer_cast<Bitmap>(desc.Surface);
+		batch.Surface = desc.Surface;
 		batch.Opaque = true;
-		batch.IsVirtualScreen = false;
+		batch.IsParentRegion = false;
 	}
 	// In case something was not initialized
 	else if (desc.Viewport.IsEmpty() || !virtualScreen) {
 		batch.Surface.reset();
 		batch.Opaque = false;
-		batch.IsVirtualScreen = false;
+		batch.IsParentRegion = false;
 	}
-	// Drawing directly on a viewport without transformation (other than offset)
-	else if (desc.Transform.ScaleX == 1.f && desc.Transform.ScaleY == 1.f) {
+	// Drawing directly on a viewport without transformation (other than offset):
+	// then make a subbitmap of the parent surface (virtualScreen or else).
+	else if (transform.ScaleX == 1.f && transform.ScaleY == 1.f) {
 		// We need this subbitmap for plugins, which use _stageVirtualScreen and are unaware of possible multiple viewports;
 		// TODO: there could be ways to optimize this further, but best is to update plugin rendering hooks (and upgrade plugins)
-		if (!batch.Surface || !batch.IsVirtualScreen || batch.Surface->GetWidth() != src_w || batch.Surface->GetHeight() != src_h
-		        || batch.Surface->GetSubOffset() != desc.Viewport.GetLT()) {
-			Rect rc = RectWH(desc.Viewport.Left, desc.Viewport.Top, desc.Viewport.GetWidth(), desc.Viewport.GetHeight());
-			batch.Surface.reset(BitmapHelper::CreateSubBitmap(virtualScreen, rc));
+		if (!batch.Surface || !batch.IsParentRegion ||
+			(!batch.Surface->IsSameBitmap(parent_surf)) ||
+			(batch.Surface->GetSize() != Size(src_w, src_h)) ||
+			(batch.Surface->GetSubOffset() != viewport.GetLT())) {
+			batch.Surface.reset(BitmapHelper::CreateSubBitmap(parent_surf, viewport));
 		}
 		batch.Opaque = true;
-		batch.IsVirtualScreen = true;
+		batch.IsParentRegion = true;
+		// Because we sub-bitmap to viewport, render offsets should account for that
+		transform.X -= viewport.Left;
+		transform.Y -= viewport.Top;
 	}
-	// No surface prepared and has transformation other than offset
-	else if (!batch.Surface || batch.IsVirtualScreen || batch.Surface->GetWidth() != src_w || batch.Surface->GetHeight() != src_h) {
-		batch.Surface.reset(new Bitmap(src_w, src_h, _srcColorDepth));
+	// No surface prepared and has transformation other than offset:
+	// then create exclusive intermediate bitmap.
+	else {
+		if (!batch.Surface || batch.IsParentRegion || (batch.Surface->GetSize() != Size(src_w, src_h))) {
+			batch.Surface.reset(new Bitmap(src_w, src_h, _srcColorDepth));
+		}
 		batch.Opaque = false;
-		batch.IsVirtualScreen = false;
+		batch.IsParentRegion = false;
 	}
+
+	batch.Viewport = viewport;
+	batch.Transform = transform;
 }
 
 void ScummVMRendererGraphicsDriver::ResetAllBatches() {
-	_spriteBatches.clear();
+	// NOTE: we don't release batches themselves here, only sprite lists.
+	// This is because we cache batch surfaces, for performance reasons.
 	_spriteList.clear();
 }
 
 void ScummVMRendererGraphicsDriver::DrawSprite(int x, int y, IDriverDependantBitmap *bitmap) {
+	assert(_actSpriteBatch != UINT32_MAX);
 	_spriteList.push_back(ALDrawListEntry((ALSoftwareBitmap *)bitmap, _actSpriteBatch, x, y));
 }
 
@@ -299,6 +354,7 @@ void ScummVMRendererGraphicsDriver::SetScreenFade(int /*red*/, int /*green*/, in
 }
 
 void ScummVMRendererGraphicsDriver::SetScreenTint(int red, int green, int blue) {
+	assert(_actSpriteBatch != UINT32_MAX);
 	_tint_red = red;
 	_tint_green = green;
 	_tint_blue = blue;
@@ -308,11 +364,20 @@ void ScummVMRendererGraphicsDriver::SetScreenTint(int red, int green, int blue) 
 	}
 }
 
+void ScummVMRendererGraphicsDriver::SetStageScreen(const Size & /*sz*/, int /*x*/, int /*y*/) {
+	// unsupported, as using _stageVirtualScreen instead
+}
+
 void ScummVMRendererGraphicsDriver::RenderToBackBuffer() {
 	// Close unended batches, and issue a warning
-	assert(_actSpriteBatch == 0);
-	while (_actSpriteBatch > 0)
+	assert(_actSpriteBatch == UINT32_MAX);
+	while (_actSpriteBatch != UINT32_MAX)
 		EndSpriteBatch();
+
+	if (_spriteBatchDesc.size() == 0) {
+		ClearDrawLists();
+		return; // no batches - no render
+	}
 
 	// Render all the sprite batches with necessary transformations
 	//
@@ -323,31 +388,70 @@ void ScummVMRendererGraphicsDriver::RenderToBackBuffer() {
 	// with blending and translucency; it seems you'd have to first stretch the original sprite onto a
 	// temp buffer and then TransBlendBlt / LitBlendBlt it to the final destination. Of course, doing
 	// that here would slow things down significantly, so if we ever go that way sprite caching will
-	// be required (similarily to how AGS caches flipped/scaled object sprites now for).
+	// be required (similarly to how AGS caches flipped/scaled object sprites now for).
 	//
-	for (size_t cur_spr = 0; cur_spr < _spriteList.size();) {
-		const auto &batch_desc = _spriteBatchDesc[_spriteList[cur_spr].node];
-		const ALSpriteBatch &batch = _spriteBatches[_spriteList[cur_spr].node];
-		const Rect &viewport = batch_desc.Viewport;
-		const SpriteTransform &transform = batch_desc.Transform;
 
-		virtualScreen->SetClip(viewport);
-		Bitmap *surface = batch.Surface.get();
-		const int view_offx = viewport.Left;
-		const int view_offy = viewport.Top;
-		if (surface) {
-			if (!batch.Opaque)
-				surface->ClearTransparent();
-			_stageVirtualScreen = surface;
-			cur_spr = RenderSpriteBatch(batch, cur_spr, surface, transform.X, transform.Y);
-			if (!batch.IsVirtualScreen)
-				virtualScreen->StretchBlt(surface, RectWH(view_offx, view_offy, viewport.GetWidth(), viewport.GetHeight()),
-					batch.Opaque ? kBitmap_Copy : kBitmap_Transparency);
-		} else {
-			cur_spr = RenderSpriteBatch(batch, cur_spr, virtualScreen, view_offx + transform.X, view_offy + transform.Y);
+	const size_t last_batch_to_rend = _spriteBatchDesc.size() - 1;
+	for (size_t cur_bat = 0u, last_bat = 0u, cur_spr = 0u; last_bat <= last_batch_to_rend;) {
+		// Test if we are entering this batch (and not continuing after coming back from nested)
+		if (cur_spr <= _spriteBatchRange[cur_bat].first) {
+			const auto &batch = _spriteBatches[cur_bat];
+			// Prepare the transparent surface
+			if (batch.Surface && !batch.Opaque)
+				batch.Surface->ClearTransparent();
 		}
-		_stageVirtualScreen = virtualScreen;
+
+		// Render immediate batch sprites, if any, update cur_spr iterator
+		if ((cur_spr < _spriteList.size()) && (cur_bat == _spriteList[cur_spr].node)) {
+			const auto &batch = _spriteBatches[cur_bat];
+			const auto &batch_desc = _spriteBatchDesc[cur_bat];
+			Bitmap *surface = batch.Surface.get();
+			Bitmap *parent_surf = ((batch_desc.Parent != UINT32_MAX) && _spriteBatches[batch_desc.Parent].Surface) ? _spriteBatches[batch_desc.Parent].Surface.get() : virtualScreen;
+			const Rect &viewport = batch.Viewport;
+			const SpriteTransform &transform = batch.Transform;
+
+			_rendSpriteBatch = batch.ID;
+			parent_surf->SetClip(viewport); // CHECKME: this is not exactly correct?
+			if (surface && !batch.IsParentRegion) {
+				_stageVirtualScreen = surface;
+				cur_spr = RenderSpriteBatch(batch, cur_spr, surface, transform.X, transform.Y);
+			} else {
+				_stageVirtualScreen = surface ? surface : parent_surf;
+				cur_spr = RenderSpriteBatch(batch, cur_spr, _stageVirtualScreen, transform.X, transform.Y);
+			}
+		}
+
+		// Test if we're exiting current batch (and not going into nested ones):
+		// if there's no sprites belonging to this batch (direct, or nested),
+		// and if there's no nested batches (even if empty ones)
+		const uint32_t was_bat = cur_bat;
+		while ((cur_bat != UINT32_MAX) && (cur_spr >= _spriteBatchRange[cur_bat].second) &&
+			   ((last_bat == last_batch_to_rend) || (_spriteBatchDesc[last_bat + 1].Parent != cur_bat))) {
+			const auto &batch = _spriteBatches[cur_bat];
+			const auto &batch_desc = _spriteBatchDesc[cur_bat];
+			Bitmap *surface = batch.Surface.get();
+			Bitmap *parent_surf = ((batch_desc.Parent != UINT32_MAX) && _spriteBatches[batch_desc.Parent].Surface) ? _spriteBatches[batch_desc.Parent].Surface.get() : virtualScreen;
+			const Rect &viewport = batch.Viewport;
+
+			// If we're not drawing directly to the subregion of a parent surface,
+			// then blit our own surface to the parent's
+			if (surface && !batch.IsParentRegion) {
+				parent_surf->StretchBlt(surface, viewport, batch.Opaque ? kBitmap_Copy : kBitmap_Transparency);
+			}
+
+			// Back to the parent batch
+			cur_bat = batch_desc.Parent;
+		}
+
+		// If we stayed at the same batch, this means that there are still nested batches;
+		// if there's no batches in the stack left, this means we got to move forward anyway.
+		if ((was_bat == cur_bat) || (cur_bat == UINT32_MAX)) {
+			cur_bat = ++last_bat;
+		}
 	}
+
+	_stageVirtualScreen = virtualScreen;
+	_rendSpriteBatch = UINT32_MAX;
 	ClearDrawLists();
 }
 
@@ -355,11 +459,12 @@ size_t ScummVMRendererGraphicsDriver::RenderSpriteBatch(const ALSpriteBatch &bat
 	for (; (from < _spriteList.size()) && (_spriteList[from].node == batch.ID); ++from) {
 		const auto &sprite = _spriteList[from];
 		if (sprite.ddb == nullptr) {
-			if (_nullSpriteCallback)
-				_nullSpriteCallback(sprite.x, sprite.y);
+			if (_spriteEvtCallback)
+				_spriteEvtCallback(sprite.x, sprite.y);
 			else
 				error("Unhandled attempt to draw null sprite");
-
+			// Stage surface could have been replaced by plugin
+			surface = _stageVirtualScreen;
 			continue;
 		} else if (sprite.ddb == reinterpret_cast<ALSoftwareBitmap *>(DRAWENTRY_TINT)) {
 			// draw screen tint fx
@@ -428,8 +533,30 @@ void ScummVMRendererGraphicsDriver::copySurface(const Graphics::Surface &src, bo
 		_screen->addDirtyRect(Common::Rect(x1, y1, x2 + 1, y2 + 1));
 }
 
-void ScummVMRendererGraphicsDriver::BlitToScreen() {
-	const Graphics::Surface &src =
+void ScummVMRendererGraphicsDriver::Present(int xoff, int yoff, Shared::GraphicFlip flip) {
+	Graphics::Surface *srcTransformed = nullptr;
+	if (xoff != 0 || yoff != 0 || flip != Shared::kFlip_None) {
+		srcTransformed = new Graphics::Surface();
+		srcTransformed->copyFrom(virtualScreen->GetAllegroBitmap()->getSurface());
+		switch(flip) {
+		case kFlip_Horizontal:
+			srcTransformed->flipHorizontal(Common::Rect(srcTransformed->w, srcTransformed->h));
+			break;
+		case kFlip_Vertical:
+			srcTransformed->flipVertical(Common::Rect(srcTransformed->w, srcTransformed->h));
+			break;
+		case kFlip_Both:
+			srcTransformed->flipHorizontal(Common::Rect(srcTransformed->w, srcTransformed->h));
+			srcTransformed->flipVertical(Common::Rect(srcTransformed->w, srcTransformed->h));
+			break;
+		default:
+			break;
+		}
+		srcTransformed->move(xoff, yoff, srcTransformed->h);
+	}
+
+	const Graphics::Surface &src = srcTransformed ?
+		*srcTransformed :
 		virtualScreen->GetAllegroBitmap()->getSurface();
 
 	enum {
@@ -485,34 +612,28 @@ void ScummVMRendererGraphicsDriver::BlitToScreen() {
 		g_system->copyRectToScreen(src.getPixels(), src.pitch,
 			0, 0, src.w, src.h);
 		g_system->updateScreen();
+		if (srcTransformed) {
+			srcTransformed->free();
+			delete srcTransformed;
+		}
 		return;
 
 	default:
 		break;
 	}
 
+	if (srcTransformed) {
+		srcTransformed->free();
+		delete srcTransformed;
+	}
+
 	if (_screen)
 		_screen->update();
 }
 
-void ScummVMRendererGraphicsDriver::Render(int /*xoff*/, int /*yoff*/, GraphicFlip flip) {
-	switch (flip) {
-	case kFlip_Both:
-		_renderFlip = (RendererFlip)(FLIP_HORIZONTAL | FLIP_VERTICAL);
-		break;
-	case kFlip_Horizontal:
-		_renderFlip = FLIP_HORIZONTAL;
-		break;
-	case kFlip_Vertical:
-		_renderFlip = FLIP_VERTICAL;
-		break;
-	default:
-		_renderFlip = FLIP_NONE;
-		break;
-	}
-
+void ScummVMRendererGraphicsDriver::Render(int xoff, int yoff, GraphicFlip flip) {
 	RenderToBackBuffer();
-	Present();
+	Present(xoff, yoff, flip);
 }
 
 void ScummVMRendererGraphicsDriver::Render() {
@@ -524,16 +645,22 @@ Bitmap *ScummVMRendererGraphicsDriver::GetMemoryBackBuffer() {
 }
 
 void ScummVMRendererGraphicsDriver::SetMemoryBackBuffer(Bitmap *backBuffer) {
-	if (backBuffer) {
+	// We need to also test internal AL BITMAP pointer, because we may receive it raw from plugin,
+	// in which case the Bitmap object may be a different wrapper over our own virtual screen.
+	if (backBuffer && (backBuffer->GetAllegroBitmap() != _origVirtualScreen->GetAllegroBitmap())) {
 		virtualScreen = backBuffer;
 	} else {
 		virtualScreen = _origVirtualScreen.get();
 	}
 	_stageVirtualScreen = virtualScreen;
 
-	// Reset old virtual screen's subbitmaps
+	// Reset old virtual screen's subbitmaps;
+	// NOTE: this MUST NOT be called in the midst of the RenderSpriteBatches!
+	assert(_rendSpriteBatch == UINT32_MAX);
+	if (_rendSpriteBatch != UINT32_MAX)
+		return;
 	for (auto &batch : _spriteBatches) {
-		if (batch.IsVirtualScreen)
+		if (batch.IsParentRegion)
 			batch.Surface.reset();
 	}
 }
@@ -542,21 +669,31 @@ Bitmap *ScummVMRendererGraphicsDriver::GetStageBackBuffer(bool /*mark_dirty*/) {
 	return _stageVirtualScreen;
 }
 
-bool ScummVMRendererGraphicsDriver::GetCopyOfScreenIntoBitmap(Bitmap *destination, bool at_native_res, GraphicResolution *want_fmt) {
+void ScummVMRendererGraphicsDriver::SetStageBackBuffer(Bitmap *backBuffer) {
+	Bitmap *cur_stage = (_rendSpriteBatch == UINT32_MAX) ? virtualScreen : _spriteBatches[_rendSpriteBatch].Surface.get();
+	// We need to also test internal AL BITMAP pointer, because we may receive it raw from plugin,
+	// in which case the Bitmap object may be a different wrapper over our own virtual screen.
+	if (backBuffer && (backBuffer->GetAllegroBitmap() != cur_stage->GetAllegroBitmap()))
+		_stageVirtualScreen = backBuffer;
+	else
+		_stageVirtualScreen = cur_stage;
+}
+
+bool ScummVMRendererGraphicsDriver::GetCopyOfScreenIntoBitmap(Bitmap *destination, const Rect *src_rect, bool at_native_res,
+															  GraphicResolution *want_fmt, uint32_t /*batch_skip_filter*/) {
 	(void)at_native_res; // software driver always renders at native resolution at the moment
-	// software filter is taught to copy to any size
+	// software filter is taught to copy to any size, so only check color depth
 	if (destination->GetColorDepth() != _srcColorDepth) {
 		if (want_fmt)
 			*want_fmt = GraphicResolution(destination->GetWidth(), destination->GetHeight(), _srcColorDepth);
 		return false;
 	}
 
-	if (destination->GetSize() == virtualScreen->GetSize()) {
-		destination->Blit(virtualScreen, 0, 0, 0, 0, virtualScreen->GetWidth(), virtualScreen->GetHeight());
+	Rect copy_from = src_rect ? *src_rect : _srcRect;
+	if (destination->GetSize() == copy_from.GetSize()) {
+		destination->Blit(virtualScreen, copy_from.Left, copy_from.Top, 0, 0, copy_from.GetWidth(), copy_from.GetHeight());
 	} else {
-		destination->StretchBlt(virtualScreen,
-		                        RectWH(0, 0, virtualScreen->GetWidth(), virtualScreen->GetHeight()),
-		                        RectWH(0, 0, destination->GetWidth(), destination->GetHeight()));
+		destination->StretchBlt(virtualScreen, copy_from, RectWH(destination->GetSize()));
 	}
 	return true;
 }
@@ -569,7 +706,7 @@ bool ScummVMRendererGraphicsDriver::GetCopyOfScreenIntoBitmap(Bitmap *destinatio
     Author: Matthew Leverton
 **/
 void ScummVMRendererGraphicsDriver::highcolor_fade_in(Bitmap *vs, void(*draw_callback)(),
-		int /*offx*/, int /*offy*/, int speed, int targetColourRed, int targetColourGreen, int targetColourBlue) {
+		int speed, int targetColourRed, int targetColourGreen, int targetColourBlue) {
 	Bitmap *bmp_orig = vs;
 	const int col_depth = bmp_orig->GetColorDepth();
 	const int clearColor = makecol_depth(col_depth, targetColourRed, targetColourGreen, targetColourBlue);
@@ -603,7 +740,7 @@ void ScummVMRendererGraphicsDriver::highcolor_fade_in(Bitmap *vs, void(*draw_cal
 }
 
 void ScummVMRendererGraphicsDriver::highcolor_fade_out(Bitmap *vs, void(*draw_callback)(),
-		int /*offx*/, int /*offy*/, int speed, int targetColourRed, int targetColourGreen, int targetColourBlue) {
+		int speed, int targetColourRed, int targetColourGreen, int targetColourBlue) {
 	Bitmap *bmp_orig = vs;
 	const int col_depth = vs->GetColorDepth();
 	const int clearColor = makecol_depth(col_depth, targetColourRed, targetColourGreen, targetColourBlue);
@@ -667,6 +804,7 @@ void ScummVMRendererGraphicsDriver::__fade_from_range(PALETTE source, PALETTE de
 		sys_evt_process_pending();
 		if (_pollingCallback)
 			_pollingCallback();
+		WaitForNextFrame();
 	}
 
 	set_palette_range(dest, from, to, TRUE);
@@ -680,28 +818,28 @@ void ScummVMRendererGraphicsDriver::__fade_out_range(int speed, int from, int to
 	__fade_from_range(temp, faded_out_palette, speed, from, to);
 }
 
-void ScummVMRendererGraphicsDriver::FadeOut(int speed, int targetColourRed, int targetColourGreen, int targetColourBlue) {
+void ScummVMRendererGraphicsDriver::FadeOut(int speed, int targetColourRed, int targetColourGreen, int targetColourBlue, uint32_t /*batch_skip_filter*/) {
 	if (_srcColorDepth > 8) {
-		highcolor_fade_out(virtualScreen, _drawPostScreenCallback, 0, 0, speed * 4, targetColourRed, targetColourGreen, targetColourBlue);
+		highcolor_fade_out(virtualScreen, _drawPostScreenCallback, speed * 4, targetColourRed, targetColourGreen, targetColourBlue);
 	} else {
 		__fade_out_range(speed, 0, 255, targetColourRed, targetColourGreen, targetColourBlue);
 	}
 }
 
-void ScummVMRendererGraphicsDriver::FadeIn(int speed, PALETTE p, int targetColourRed, int targetColourGreen, int targetColourBlue) {
+void ScummVMRendererGraphicsDriver::FadeIn(int speed, PALETTE p, int targetColourRed, int targetColourGreen, int targetColourBlue, uint32_t /*batch_skip_filter*/) {
 	if (_drawScreenCallback) {
 		_drawScreenCallback();
 		RenderToBackBuffer();
 	}
 	if (_srcColorDepth > 8) {
-		highcolor_fade_in(virtualScreen, _drawPostScreenCallback, 0, 0, speed * 4, targetColourRed, targetColourGreen, targetColourBlue);
+		highcolor_fade_in(virtualScreen, _drawPostScreenCallback, speed * 4, targetColourRed, targetColourGreen, targetColourBlue);
 	} else {
 		initialize_fade_256(targetColourRed, targetColourGreen, targetColourBlue);
 		__fade_from_range(faded_out_palette, p, speed, 0, 255);
 	}
 }
 
-void ScummVMRendererGraphicsDriver::BoxOutEffect(bool blackingOut, int speed, int delay) {
+void ScummVMRendererGraphicsDriver::BoxOutEffect(bool blackingOut, int speed, int delay, uint32_t /*batch_skip_filter*/) {
 	if (blackingOut) {
 		int yspeed = _srcRect.GetHeight() / (_srcRect.GetWidth() / speed);
 		int boxwid = speed, boxhit = yspeed;

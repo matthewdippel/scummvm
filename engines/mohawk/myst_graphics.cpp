@@ -22,6 +22,7 @@
 #include "mohawk/myst.h"
 #include "mohawk/myst_graphics.h"
 #include "mohawk/resource.h"
+#include "mohawk/myst_scripts.h"
 
 #include "common/substream.h"
 #include "common/system.h"
@@ -29,7 +30,7 @@
 #include "engines/util.h"
 #include "graphics/fonts/ttf.h"
 #include "graphics/fontman.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/scaler.h"
 #include "image/pict.h"
 
@@ -93,8 +94,7 @@ void MystGraphics::loadMenuFont() {
 
 	Common::SeekableReadStream *fontStream = SearchMan.createReadStreamForMember(menuFontName);
 	if (fontStream) {
-		_menuFont = Graphics::loadTTFFont(*fontStream, fontSize);
-		delete fontStream;
+		_menuFont = Graphics::loadTTFFont(fontStream, DisposeAfterUse::YES, fontSize);
 	} else
 #endif
 	{
@@ -217,11 +217,17 @@ void MystGraphics::applyImagePatches(uint16 id, const MohawkSurface *mhkSurface)
 		Graphics::Surface fixSurf;
 		fixSurf.create(15, 11, Graphics::PixelFormat::createFormatCLUT8());
 		fixSurf.copyRectToSurface(markerSwitchInstructionsFixPic, fixSurf.w, 0, 0, fixSurf.w, fixSurf.h);
-		fixSurf.convertToInPlace(_pixelFormat, markerSwitchInstructionsFixPal);
+		fixSurf.convertToInPlace(_pixelFormat, markerSwitchInstructionsFixPal, sizeof(markerSwitchInstructionsFixPal) / 3);
 
 		mhkSurface->getSurface()->copyRectToSurface(fixSurf, 171, 208, Common::Rect(fixSurf.w, fixSurf.h));
 
 		fixSurf.free();
+	}
+
+	// Fix map picture with inverted colors in Myst ME Polish version
+	if (id == _vm->_stack->getMap() && _vm->isGameVariant(GF_ME) && _vm->getLanguage() == Common::PL_POL) {
+		debug(3, "Fix for Inverted Map Colors in Myst ME Polish Version Triggered!");
+		mhkSurface->getSurface()->convertToInPlace(Graphics::PixelFormat(4, 8, 8, 8, 8, 8, 16, 0, 24));
 	}
 }
 
@@ -701,18 +707,29 @@ void MystGraphics::fadeToBlack() {
 	// This is only for the demo
 	assert(!_vm->isGameVariant(GF_ME));
 
-	// Linear fade in 64 steps
-	for (int i = 63; i >= 0; i--) {
+	// Linear fade in 64 steps or less
+	uint32 startTime = _vm->_system->getMillis();
+	uint32 endTime = startTime + 640;
+	uint32 time, i;
+
+	do {
 		byte palette[256 * 3];
 		byte *src = _palette;
 		byte *dst = palette;
 
-		for (uint j = 0; j < sizeof(palette); j++)
-			*dst++ = *src++ * i / 64;
+		time = _vm->_system->getMillis();
+		i = (endTime - time) / 10;
+
+		if (time < endTime) {
+			for (uint j = 0; j < sizeof(palette); j++)
+				*dst++ = *src++ * i / 64;
+		} else {
+			memset(palette, 0, sizeof(palette));
+		}
 
 		_vm->_system->getPaletteManager()->setPalette(palette, 0, 256);
 		_vm->doFrame();
-	}
+	} while (time < endTime);
 }
 
 void MystGraphics::fadeFromBlack() {
@@ -721,18 +738,28 @@ void MystGraphics::fadeFromBlack() {
 
 	copyBackBufferToScreen(_viewport);
 
-	// Linear fade in 64 steps
-	for (int i = 0; i < 64; i++) {
+	// Linear fade in 64 steps or less
+	uint32 startTime = _vm->_system->getMillis();
+	uint32 endTime = startTime + 640;
+	uint32 time, i;
+
+	do {
 		byte palette[256 * 3];
 		byte *src = _palette;
 		byte *dst = palette;
+		time = _vm->_system->getMillis();
+		i = (time - startTime) / 10;
 
-		for (uint j = 0; j < sizeof(palette); j++)
-			*dst++ = *src++ * i / 64;
+		if (time < endTime) {
+			for (uint j = 0; j < sizeof(palette); j++)
+				*dst++ = *src++ * i / 64;
+		} else {
+			memcpy(palette, _palette, sizeof(palette));
+		}
 
 		_vm->_system->getPaletteManager()->setPalette(palette, 0, 256);
 		_vm->doFrame();
-	}
+	} while (time < endTime);
 
 	// Set the full palette
 	_vm->_system->getPaletteManager()->setPalette(_palette, 0, 256);

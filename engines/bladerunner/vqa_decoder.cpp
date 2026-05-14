@@ -32,6 +32,8 @@
 
 #include "audio/decoders/raw.h"
 
+#include "graphics/blit.h"
+
 #include "common/array.h"
 #include "common/util.h"
 #include "common/memstream.h"
@@ -148,17 +150,32 @@ VQADecoder::VQADecoder() {
 }
 
 VQADecoder::~VQADecoder() {
+	close();
+}
+
+void VQADecoder::close() {
 	for (uint i = _codebooks.size(); i != 0; --i) {
 		delete[] _codebooks[i - 1].data;
 	}
+	_codebooks.clear();
+
 	delete _audioTrack;
+	_audioTrack = nullptr;
+
 	delete _videoTrack;
+	_videoTrack = nullptr;
+
 	delete[] _frameInfo;
+	_frameInfo = nullptr;
+
+	_loopInfo.close();
+
 	deleteVQPTable();
 }
 
 bool VQADecoder::loadStream(Common::SeekableReadStream *s) {
-	// close();
+	close();
+
 	_s = s;
 
 	IFFChunkHeader chd;
@@ -204,6 +221,15 @@ bool VQADecoder::loadStream(Common::SeekableReadStream *s) {
 
 	return true;
 }
+
+void VQADecoder::overrideOffsetXY(uint16 offX, uint16 offY) {
+	_header.offsetX = offX;
+	_header.offsetY = offY;
+	if (_videoTrack != nullptr) {
+		_videoTrack->overrideOffsetXY(offX, offY);
+	}
+}
+
 
 void VQADecoder::decodeVideoFrame(Graphics::Surface *surface, int frame, bool forceDraw) {
 	_decodingFrame = frame;
@@ -604,18 +630,20 @@ bool VQADecoder::readLNIN(Common::SeekableReadStream *s, uint32 size) {
 	return true;
 }
 
-bool VQADecoder::getLoopBeginAndEndFrame(int loop, int *begin, int *end) {
+bool VQADecoder::getLoopBeginAndEndFrame(int loopId, int *begin, int *end) {
 	assert(begin && end);
 
-	if (loop < 0 || loop >= _loopInfo.loopCount)
+	if (loopId < 0 || loopId >= _loopInfo.loopCount)
 		return false;
 
-	*begin = _loopInfo.loops[loop].begin;
-	*end   = _loopInfo.loops[loop].end;
+	*begin = _loopInfo.loops[loopId].begin;
+	*end   = _loopInfo.loops[loopId].end;
 
 	return true;
 }
 
+// Note that some video loops (scene loops) share frames (but will have different start frame (or end frame?))
+// Thus this method may not return the "correct" loop here. It will just return the first loop that contains the frame.
 int VQADecoder::getLoopIdFromFrame(int frame) {
 	if (frame >= 0) {
 		for (int loopId = 0; loopId < _loopInfo.loopCount; ++loopId) {
@@ -682,9 +710,9 @@ VQADecoder::VQAVideoTrack::VQAVideoTrack(VQADecoder *vqaDecoder) {
 	_offsetX   = header->offsetX;
 	_offsetY   = header->offsetY;
 
-	_maxVPTRSize = header->maxVPTRSize;
-	_maxCBFZSize = header->maxCBFZSize;
-	_maxZBUFChunkSize = vqaDecoder->_maxZBUFChunkSize;
+	_maxVPTRSize = roundup(header->maxVPTRSize);
+	_maxCBFZSize = roundup(header->maxCBFZSize);
+	_maxZBUFChunkSize = roundup(vqaDecoder->_maxZBUFChunkSize);
 
 	_codebook = nullptr;
 	_cbfz     = nullptr;
@@ -695,7 +723,7 @@ VQADecoder::VQAVideoTrack::VQAVideoTrack(VQADecoder *vqaDecoder) {
 	_curFrame = -1;
 
 	_zbufChunkSize = 0;
-	_zbufChunk     = new uint8[roundup(_maxZBUFChunkSize)];
+	_zbufChunk     = new uint8[_maxZBUFChunkSize];
 
 	_viewDataSize = 0;
 	_viewData     = nullptr;
@@ -749,6 +777,11 @@ uint16 VQADecoder::VQAVideoTrack::getHeight() const {
 
 int VQADecoder::VQAVideoTrack::getFrameCount() const {
 	return _numFrames;
+}
+
+void VQADecoder::VQAVideoTrack::overrideOffsetXY(uint16 offX, uint16 offY) {
+	_offsetX = offX;
+	_offsetY = offY;
 }
 
 Common::Rational VQADecoder::VQAVideoTrack::getFrameRate() const {
@@ -811,7 +844,7 @@ bool VQADecoder::VQAVideoTrack::readCBFZ(Common::SeekableReadStream *s, uint32 s
 	codebookInfo.data = new uint8[roundup(codebookSize)];
 
 	if (!_cbfz) {
-		_cbfz = new uint8[roundup(_maxCBFZSize)];
+		_cbfz = new uint8[_maxCBFZSize];
 	}
 
 	s->read(_cbfz, roundup(size));
@@ -838,7 +871,7 @@ bool VQADecoder::VQAVideoTrack::readCBPZ(Common::SeekableReadStream* s, uint32 s
 	}
 
 	if (!_cbfzNext) {
-		_cbfzNext = new uint8[roundup(_maxCBFZSize)];
+		_cbfzNext = new uint8[_maxCBFZSize];
 		_codebookInfoNext = new CodebookInfo();
 		_codebookInfoNext->frame = 0;
 		_codebookInfoNext->data = new uint8[roundup(_cbParts * _maxBlocks)];
@@ -850,20 +883,21 @@ bool VQADecoder::VQAVideoTrack::readCBPZ(Common::SeekableReadStream* s, uint32 s
 	s->read(_cbfzNext + _accumulatedCBPZsizeToCBF, roundup(size));
 
 	_accumulatedCBPZsizeToCBF += size;
-	assert(_accumulatedCBPZsizeToCBF <= roundup(_maxCBFZSize));
+	assert(_accumulatedCBPZsizeToCBF <= _maxCBFZSize);
 	++_countOfCBPsToCBF;
 	return true;
 }
 
 bool VQADecoder::VQAVideoTrack::readZBUF(Common::SeekableReadStream *s, uint32 size) {
-	if (size > _maxZBUFChunkSize) {
+	uint32 roundedSize = roundup(size);
+	if (roundedSize > _maxZBUFChunkSize) {
 		warning("VQA ERROR: ZBUF chunk size: %08x > %08x", size, _maxZBUFChunkSize);
-		s->skip(roundup(size));
+		s->skip(roundedSize);
 		return false;
 	}
 
 	_zbufChunkSize = size;
-	s->read(_zbufChunk, roundup(size));
+	s->read(_zbufChunk, roundedSize);
 
 	return true;
 }
@@ -987,7 +1021,7 @@ bool VQADecoder::VQAVideoTrack::readCPL0(Common::SeekableReadStream *s, uint32 s
 	}
 
 	// Add a new palette ONLY if the previous is not identical.
-	// This accomodates the VQA reel for Lands of Lore 2.
+	// This accommodates the VQA reel for Lands of Lore 2.
 	if (_currentPaletteId == -1) {
 		_cpalPointerSize = size;
 		s->read(_cpalPointer, roundup(size));
@@ -1028,7 +1062,7 @@ bool VQADecoder::VQAVideoTrack::readVPTZ(Common::SeekableReadStream* s, uint32 s
 		return false;
 
 	if (!_vptz) {
-		_vptz = new uint8[roundup(_maxVPTRSize)];
+		_vptz = new uint8[_maxVPTRSize];
 	}
 
 	s->read(_vptz, roundup(size));
@@ -1051,7 +1085,7 @@ bool VQADecoder::VQAVideoTrack::readVPTR(Common::SeekableReadStream *s, uint32 s
 		return false;
 
 	if (!_vpointer) {
-		_vpointer = new uint8[roundup(_maxVPTRSize)];
+		_vpointer = new uint8[_maxVPTRSize];
 	}
 
 	_vpointerSize = size;
@@ -1070,34 +1104,63 @@ void VQADecoder::VQAVideoTrack::VPTRWriteBlock(Graphics::Surface *surface, unsig
 	uint32 intermDiv = 0;
 	uint32 dst_x = 0;
 	uint32 dst_y = 0;
-	uint16 vqaColor = 0;
-	uint8 a, r, g, b;
+
+	// Alpha component is inversed, set srcFormat to XRGB1555 to ignore it
+	// Instead we manually transform alpha values into a mask
+	Graphics::PixelFormat srcFormat = Graphics::PixelFormat(2, 5, 5, 5, 0, 10, 5, 0, 0);
+	const uint16 *src_p = (const uint16 *)block_src;
+	uint8 *mask = nullptr;
+
+#ifdef SCUMM_BIG_ENDIAN
+	// Swap bytes to big endian as the source is little endian
+	uint16 *swapSrc = (uint16 *)malloc(2 * _blockW * _blockH);
+	if (!swapSrc) {
+		warning("Not enough memory for VPTRWriteBlock");
+		return;
+	}
+
+	for (uint x = 0; x < _blockW * _blockH; ++x) {
+		swapSrc[x] = SWAP_BYTES_16(src_p[x]);
+	}
+
+	src_p = swapSrc;
+#endif
+
+	if (alpha) {
+		mask = (uint8 *)malloc(_blockW * _blockH);
+		if (!mask) {
+			warning("Not enough memory for VPTRWriteBlock");
+			return;
+		}
+		// Create mask using alpha values
+		for (uint x = 0; x < static_cast<uint>(_blockW * _blockH); ++x) {
+			// Extract alpha value
+			// We XOR it with 1 to invert and get an actual alpha value
+			mask[x] = (byte)(READ_UINT16(src_p + x) >> 15) ^ 0x01;
+		}
+	}
 
 	for (uint i = count; i != 0; --i) {
-		// aux variable to avoid duplicate division and a modulo operation
 		intermDiv = (dstBlock + count - i) / blocks_per_line; // start of current blocks line
 		dst_x = ((dstBlock + count - i) - intermDiv * blocks_per_line) * _blockW + _offsetX;
 		dst_y = intermDiv * _blockH + _offsetY;
 
-		const uint8 *src_p = block_src;
-
-		for (uint y = _blockH; y != 0; --y) {
-			for (uint x = _blockW; x != 0; --x) {
-				vqaColor = READ_LE_UINT16(src_p);
-				src_p += 2;
-
-				getGameDataColor(vqaColor, a, r, g, b);
-
-				if (!(alpha && a)) {
-					// CLIP() is too slow and it is not needed.
-					// void* dstPtr = surface->getBasePtr(CLIP(dst_x + x, (uint32)0, (uint32)(surface->w - 1)), CLIP(dst_y + y, (uint32)0, (uint32)(surface->h - 1)));
-					void* dstPtr = surface->getBasePtr(dst_x + _blockW - x, dst_y + _blockH - y);
-					// Ignore the alpha in the output as it is inversed in the input
-					drawPixel(*surface, dstPtr, surface->format.RGBToColor(r, g, b));
-				}
-			}
+		uint8* dstPtr = (uint8 *)surface->getBasePtr(dst_x, dst_y);
+		if (alpha) {
+			// Use mask to blit
+			Graphics::crossMaskBlit(dstPtr, (const byte *)src_p, (const byte *)mask, surface->pitch, _blockW * 2, _blockW, _blockW, _blockH, surface->format, srcFormat);
+		} else {
+			Graphics::crossBlit(dstPtr, (const byte *)src_p, surface->pitch, _blockW * 2, _blockW, _blockH, surface->format, srcFormat);
 		}
 	}
+
+#ifdef SCUMM_BIG_ENDIAN
+	if (swapSrc)
+		free(swapSrc);
+#endif
+
+	if (mask)
+		free(mask);
 }
 
 bool VQADecoder::VQAVideoTrack::decodeFrame(Graphics::Surface *surface) {
@@ -1190,7 +1253,7 @@ bool VQADecoder::VQAVideoTrack::decodeFrame(Graphics::Surface *surface) {
 		uint32 dst_y = 0;
 		void  *dstPtr = nullptr;
 
-		assert(_vpointerSize == 2 * (blocks_per_column * blocks_per_line));
+		assert(_vpointerSize == 2u * (blocks_per_column * blocks_per_line));
 		// Create a pointer to the second half of the frame data:
 		const uint8 *srcB = src + (blocks_per_column * blocks_per_line);
 
@@ -1322,7 +1385,7 @@ bool VQADecoder::VQAVideoTrack::decodeFrame(Graphics::Surface *surface) {
 						// With the even rows of the line blocks completely filled, go to the odd rows
 						// which are empty and completely fill them in, too.
 						// NOTE if _allowVerticalScanlines is true, then the even rows are not completely filled.
-						//      In that case we need to skip the odd columns here 
+						//      In that case we need to skip the odd columns here
 						uint8 topColorIdx = 0;
 						uint8 botColorIdx = 0;
 						uint8 jIncr = 1;

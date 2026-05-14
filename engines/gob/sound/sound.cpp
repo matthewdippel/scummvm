@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "gob/gob.h"
@@ -39,7 +45,7 @@
 namespace Gob {
 
 Sound::Sound(GobEngine *vm) : _vm(vm) {
-	_pcspeaker = new PCSpeaker(*_vm->_mixer);
+	_pcspeaker = new PCSpeaker();
 	_blaster = new SoundBlaster(*_vm->_mixer);
 
 	_adlPlayer = nullptr;
@@ -61,8 +67,9 @@ Sound::Sound(GobEngine *vm) : _vm(vm) {
 		_cdrom = new CDROM;
 	if (_vm->getGameType() == kGameTypeWoodruff)
 		_bgatmos = new BackgroundAtmosphere(*_vm->_mixer);
-	if ((_vm->getGameType() == kGameTypeUrban) ||
-	    (_vm->getGameType() == kGameTypeAdibou2)) {
+	if (_vm->getGameType() == kGameTypeUrban ||
+	    _vm->getGameType() == kGameTypeAdibou2 ||
+	    _vm->getGameType() == kGameTypeAdi4) {
 		_bgatmos = new BackgroundAtmosphere(*_vm->_mixer);
 		_bgatmos->setShadable(false);
 	}
@@ -331,7 +338,7 @@ void Sound::adlibPlayTrack(const char *trackname) {
 }
 
 void Sound::adlibPlayBgMusic() {
-	if (!_hasAdLib || _hasAdLibBg)
+	if (!_hasAdLib || !_hasAdLibBg) // If one of those is disabled, then stop there 
 		return;
 
 	createADLPlayer();

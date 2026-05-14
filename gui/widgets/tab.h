@@ -38,7 +38,6 @@ class TabWidget : public Widget {
 		Common::U32String title;
 		Common::String dialogName;
 		Widget *firstWidget;
-		ScrollContainerWidget *scrollWidget;
 		int _tabWidth;
 	};
 	typedef Common::Array<Tab> TabList;
@@ -51,6 +50,8 @@ protected:
 	int _tabHeight;
 	int _minTabWidth;
 	int _titleSpacing;
+
+	ThemeEngine::TextAlignVertical _alignV;
 
 	int _bodyRP, _bodyTP, _bodyLP, _bodyBP;
 	ThemeEngine::DialogBackground _bodyBackgroundType;
@@ -66,8 +67,8 @@ protected:
 	void recalc();
 
 public:
-	TabWidget(GuiObject *boss, int x, int y, int w, int h);
-	TabWidget(GuiObject *boss, const Common::String &name);
+	TabWidget(GuiObject *boss, int x, int y, int w, int h, ThemeEngine::TextAlignVertical alignV = ThemeEngine::kTextAlignVTop);
+	TabWidget(GuiObject *boss, const Common::String &name, ThemeEngine::TextAlignVertical alignV = ThemeEngine::kTextAlignVTop);
 	~TabWidget() override;
 
 	void init();
@@ -76,10 +77,7 @@ public:
 	 * Add a new tab with the given title. Returns a unique ID which can be used
 	 * to identify the tab (to remove it / activate it etc.).
 	 */
-	int addTab(const Common::U32String &title, const Common::String &dialogName, bool withScroll = true);
-
-	virtual Widget *addChild(Widget *newChild) override;
-	virtual void removeWidget(Widget *del) override;
+	int addTab(const Common::U32String &title, const Common::String &dialogName);
 
 	/**
 	 * Remove the tab with the given tab ID. Disposes all child widgets of that tab.
@@ -103,6 +101,8 @@ public:
 	 */
 	void setActiveTab(int tabID);
 
+	int getTabCount();
+
 	void setTabTitle(int tabID, const Common::U32String &title) {
 		assert(0 <= tabID && tabID < (int)_tabs.size());
 		_tabs[tabID].title = title;
@@ -113,6 +113,7 @@ public:
 	void handleMouseLeft(int button) override { _lastRead = -1; };
 	bool handleKeyDown(Common::KeyState state) override;
 	void handleMouseWheel(int x, int y, int direction) override;
+	void handleTickle() override;
 	void handleCommand(CommandSender *sender, uint32 cmd, uint32 data) override;
 	virtual int getFirstVisible() const;
 	virtual void setFirstVisible(int tabID, bool adjustIfRoom = false);

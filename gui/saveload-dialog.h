@@ -29,22 +29,25 @@
 
 namespace GUI {
 
-#if defined(USE_CLOUD) && defined(USE_LIBCURL)
-enum SaveLoadCloudSyncProgress {
-	kSavesSyncProgressCmd = 'SSPR',
-	kSavesSyncEndedCmd = 'SSEN'
-};
+#ifdef USE_CLOUD
+class SaveLoadChooserDialog;
 
 class SaveLoadCloudSyncProgressDialog : public Dialog { //protected?
 	StaticTextWidget *_label, *_percentLabel;
 	SliderWidget *_progressBar;
+	SaveLoadChooserDialog *_parent;
 	bool _close;
+	int _pollFrame;
+
 public:
-	SaveLoadCloudSyncProgressDialog(bool canRunInBackground);
+	SaveLoadCloudSyncProgressDialog(bool canRunInBackground, SaveLoadChooserDialog *parent);
 	~SaveLoadCloudSyncProgressDialog() override;
 
 	void handleCommand(CommandSender *sender, uint32 cmd, uint32 data) override;
 	void handleTickle() override;
+
+private:
+	void pollCloudMan();
 };
 #endif
 
@@ -80,7 +83,7 @@ public:
 
 	void handleCommand(CommandSender *sender, uint32 cmd, uint32 data) override;
 
-#if defined(USE_CLOUD) && defined(USE_LIBCURL)
+#ifdef USE_CLOUD
 	virtual void runSaveSync(bool hasSavepathOverride);
 #endif
 
@@ -91,13 +94,13 @@ public:
 #endif // !DISABLE_SAVELOADCHOOSER_GRID
 
 	int run(const Common::String &target, const MetaEngine *metaEngine);
-	virtual const Common::U32String getResultString() const = 0;
+	virtual const Common::String getResultString() const = 0;
 
 protected:
 	virtual int runIntern() = 0;
 
 	/** Common function to refresh the list on the screen. */
-	virtual void updateSaveList();
+	virtual void updateSaveList(bool external);
 
 	/**
 	* Common function to get saves list from MetaEngine.
@@ -109,7 +112,7 @@ protected:
 	*/
 	virtual void listSaves();
 
-	void activate(int slot, const Common::U32String &description);
+	void activate(int slot, const Common::String &description);
 
 	const bool					_saveMode;
 	const MetaEngine		    *_metaEngine;
@@ -121,7 +124,7 @@ protected:
 	Common::String				_target;
 	bool _dialogWasShown;
 	SaveStateList				_saveList;
-	Common::U32String			_resultString;
+	Common::String			_resultString;
 
 #ifndef DISABLE_SAVELOADCHOOSER_GRID
 	ButtonWidget *_listButton;
@@ -130,6 +133,16 @@ protected:
 	void addChooserButtons();
 	ButtonWidget *createSwitchButton(const Common::String &name, const Common::U32String &desc, const Common::U32String &tooltip, const char *image, uint32 cmd = 0);
 #endif // !DISABLE_SAVELOADCHOOSER_GRID
+
+#ifdef USE_CLOUD
+	int _pollFrame;
+	bool _didUpdateAfterSync;
+
+	/** If CloudMan is syncing, this will refresh the list of saves. */
+	void pollCloudMan();
+
+	friend class SaveLoadCloudSyncProgressDialog;
+#endif
 };
 
 class SaveLoadChooserSimple : public SaveLoadChooserDialog {
@@ -138,7 +151,7 @@ public:
 
 	void handleCommand(CommandSender *sender, uint32 cmd, uint32 data) override;
 
-	const Common::U32String getResultString() const override;
+	const Common::String getResultString() const override;
 
 	void reflowLayout() override;
 
@@ -149,7 +162,7 @@ public:
 	void open() override;
 	void close() override;
 protected:
-	void updateSaveList() override;
+	void updateSaveList(bool external) override;
 private:
 	int runIntern() override;
 
@@ -175,8 +188,8 @@ class SavenameDialog : public Dialog {
 public:
 	SavenameDialog();
 
-	void setDescription(const Common::U32String &desc);
-	const Common::U32String &getDescription();
+	void setDescription(const Common::String &desc);
+	const Common::String getDescription();
 
 	void setTargetSlot(int slot) { _targetSlot = slot; }
 
@@ -194,7 +207,7 @@ public:
 	SaveLoadChooserGrid(const Common::U32String &title, bool saveMode);
 	~SaveLoadChooserGrid() override;
 
-	const Common::U32String getResultString() const override;
+	const Common::String getResultString() const override;
 
 	void open() override;
 
@@ -206,7 +219,7 @@ public:
 protected:
 	void handleCommand(CommandSender *sender, uint32 cmd, uint32 data) override;
 	void handleMouseWheel(int x, int y, int direction) override;
-	void updateSaveList() override;
+	void updateSaveList(bool external) override;
 private:
 	int runIntern() override;
 

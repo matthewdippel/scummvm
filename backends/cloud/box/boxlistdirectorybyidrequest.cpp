@@ -24,10 +24,10 @@
 #include "backends/cloud/box/boxtokenrefresher.h"
 #include "backends/cloud/iso8601.h"
 #include "backends/cloud/storage.h"
-#include "backends/networking/curl/connectionmanager.h"
-#include "backends/networking/curl/curljsonrequest.h"
-#include "backends/networking/curl/networkreadstream.h"
-#include "common/json.h"
+#include "backends/networking/http/connectionmanager.h"
+#include "backends/networking/http/httpjsonrequest.h"
+#include "backends/networking/http/networkreadstream.h"
+#include "common/formats/json.h"
 
 namespace Cloud {
 namespace Box {
@@ -35,7 +35,7 @@ namespace Box {
 #define BOX_LIST_DIRECTORY_LIMIT 1000
 #define BOX_FOLDERS_API_LINK "https://api.box.com/2.0/folders/%s/items?offset=%u&limit=%u&fields=%s"
 
-BoxListDirectoryByIdRequest::BoxListDirectoryByIdRequest(BoxStorage *storage, Common::String id, Storage::ListDirectoryCallback cb, Networking::ErrorCallback ecb):
+BoxListDirectoryByIdRequest::BoxListDirectoryByIdRequest(BoxStorage *storage, const Common::String &id, Storage::ListDirectoryCallback cb, Networking::ErrorCallback ecb):
 	Networking::Request(nullptr, ecb), _requestedId(id), _storage(storage), _listDirectoryCallback(cb),
 	_workingRequest(nullptr), _ignoreCallback(false) {
 	start();
@@ -65,14 +65,14 @@ void BoxListDirectoryByIdRequest::makeRequest(uint32 offset) {
 		"id,type,name,size,modified_at"
 	);
 
-	Networking::JsonCallback callback = new Common::Callback<BoxListDirectoryByIdRequest, Networking::JsonResponse>(this, &BoxListDirectoryByIdRequest::responseCallback);
-	Networking::ErrorCallback failureCallback = new Common::Callback<BoxListDirectoryByIdRequest, Networking::ErrorResponse>(this, &BoxListDirectoryByIdRequest::errorCallback);
-	Networking::CurlJsonRequest *request = new BoxTokenRefresher(_storage, callback, failureCallback, url.c_str());
+	Networking::JsonCallback callback = new Common::Callback<BoxListDirectoryByIdRequest, const Networking::JsonResponse &>(this, &BoxListDirectoryByIdRequest::responseCallback);
+	Networking::ErrorCallback failureCallback = new Common::Callback<BoxListDirectoryByIdRequest, const Networking::ErrorResponse &>(this, &BoxListDirectoryByIdRequest::errorCallback);
+	Networking::HttpJsonRequest *request = new BoxTokenRefresher(_storage, callback, failureCallback, url.c_str());
 	request->addHeader("Authorization: Bearer " + _storage->accessToken());
 	_workingRequest = ConnMan.addRequest(request);
 }
 
-void BoxListDirectoryByIdRequest::responseCallback(Networking::JsonResponse response) {
+void BoxListDirectoryByIdRequest::responseCallback(const Networking::JsonResponse &response) {
 	_workingRequest = nullptr;
 	if (_ignoreCallback) {
 		delete response.value;
@@ -83,11 +83,11 @@ void BoxListDirectoryByIdRequest::responseCallback(Networking::JsonResponse resp
 		_date = response.request->date();
 
 	Networking::ErrorResponse error(this, "BoxListDirectoryByIdRequest::responseCallback: unknown error");
-	Networking::CurlJsonRequest *rq = (Networking::CurlJsonRequest *)response.request;
+	const Networking::HttpJsonRequest *rq = (const Networking::HttpJsonRequest *)response.request;
 	if (rq && rq->getNetworkReadStream())
 		error.httpResponseCode = rq->getNetworkReadStream()->httpResponseCode();
 
-	Common::JSONValue *json = response.value;
+	const Common::JSONValue *json = response.value;
 	if (json == nullptr) {
 		error.response = "Failed to parse JSON, null passed!";
 		finishError(error);
@@ -130,15 +130,15 @@ void BoxListDirectoryByIdRequest::responseCallback(Networking::JsonResponse resp
 
 		Common::JSONArray items = responseObject.getVal("entries")->asArray();
 		for (uint32 i = 0; i < items.size(); ++i) {
-			if (!Networking::CurlJsonRequest::jsonIsObject(items[i], "BoxListDirectoryByIdRequest")) continue;
+			if (!Networking::HttpJsonRequest::jsonIsObject(items[i], "BoxListDirectoryByIdRequest")) continue;
 
 			Common::JSONObject item = items[i]->asObject();
 
-			if (!Networking::CurlJsonRequest::jsonContainsString(item, "id", "BoxListDirectoryByIdRequest")) continue;
-			if (!Networking::CurlJsonRequest::jsonContainsString(item, "name", "BoxListDirectoryByIdRequest")) continue;
-			if (!Networking::CurlJsonRequest::jsonContainsString(item, "type", "BoxListDirectoryByIdRequest")) continue;
-			if (!Networking::CurlJsonRequest::jsonContainsString(item, "modified_at", "BoxListDirectoryByIdRequest")) continue;
-			if (!Networking::CurlJsonRequest::jsonContainsStringOrIntegerNumber(item, "size", "BoxListDirectoryByIdRequest")) continue;
+			if (!Networking::HttpJsonRequest::jsonContainsString(item, "id", "BoxListDirectoryByIdRequest")) continue;
+			if (!Networking::HttpJsonRequest::jsonContainsString(item, "name", "BoxListDirectoryByIdRequest")) continue;
+			if (!Networking::HttpJsonRequest::jsonContainsString(item, "type", "BoxListDirectoryByIdRequest")) continue;
+			if (!Networking::HttpJsonRequest::jsonContainsString(item, "modified_at", "BoxListDirectoryByIdRequest")) continue;
+			if (!Networking::HttpJsonRequest::jsonContainsStringOrIntegerNumber(item, "size", "BoxListDirectoryByIdRequest")) continue;
 
 			Common::String id = item.getVal("id")->asString();
 			Common::String name = item.getVal("name")->asString();
@@ -172,7 +172,7 @@ void BoxListDirectoryByIdRequest::responseCallback(Networking::JsonResponse resp
 	delete json;
 }
 
-void BoxListDirectoryByIdRequest::errorCallback(Networking::ErrorResponse error) {
+void BoxListDirectoryByIdRequest::errorCallback(const Networking::ErrorResponse &error) {
 	_workingRequest = nullptr;
 	if (_ignoreCallback) return;
 	if (error.request) _date = error.request->date();

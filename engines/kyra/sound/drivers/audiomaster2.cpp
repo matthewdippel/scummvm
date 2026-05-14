@@ -26,7 +26,7 @@
 
 #include "audio/mods/paula.h"
 
-#include "common/iff_container.h"
+#include "common/formats/iff_container.h"
 
 namespace Kyra {
 
@@ -334,7 +334,7 @@ public:
 private:
 	void initResource();
 
-	// define only additional chunk types which aren't already defined in common/iff_container.h
+	// define only additional chunk types which aren't already defined in common/formats/iff_container.h
 	enum ChunkTypes {
 		ID_INST = MKTAG('I', 'N', 'S', 'T'),
 		ID_PTCH = MKTAG('P', 'T', 'C', 'H'),
@@ -593,7 +593,7 @@ void SoundResource8SVX::setupSoundEffect(AudioMaster2IOManager::IOUnit *unit, ui
 	unit->_lenOnce = no;
 	unit->_lenRepeat = nr;
 
-	unit->_endTick = _numSamplesRepeat ? 0xFFFFFFFF : (tempo * _numSamplesOnce * 60) / _rate + sync;
+	unit->_endTick = _numSamplesRepeat ? 0xFFFFFFFF : (tempo * _numSamplesOnce * 60) / (_rate ? _rate : 2000) + sync;
 	unit->_volumeSetting = unit->_outputVolume = ((_trackVolume >= 0xFFFF ? _trackVolume >> 2 : 0x4000) * _masterVolume) / 64;
 	setupEnvelopes(unit);
 }

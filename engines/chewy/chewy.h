@@ -31,6 +31,7 @@
 #include "common/memstream.h"
 #include "common/random.h"
 #include "engines/engine.h"
+#include "engines/savestate.h"
 #include "graphics/screen.h"
 
 namespace Chewy {
@@ -82,10 +83,10 @@ public:
 	uint32 getFeatures() const;
 	Common::Language getLanguage() const;
 
-	bool canLoadGameStateCurrently() override {
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override {
 		return _canLoad;
 	}
-	bool canSaveGameStateCurrently() override {
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override {
 		return _canSave;
 	}
 	void setCanLoadSave(bool canLoadSave) {
@@ -115,8 +116,6 @@ public:
 	uint getRandomNumber(uint max) {
 		return _rnd.getRandomNumber(max);
 	}
-
-	void playVideo(uint num);
 };
 
 extern ChewyEngine *g_engine;

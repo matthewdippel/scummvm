@@ -23,27 +23,23 @@
 #define BACKENDS_CLOUD_BOX_BOXTOKENREFRESHER_H
 
 #include "backends/cloud/storage.h"
-#include "backends/networking/curl/curljsonrequest.h"
+#include "backends/networking/http/httpjsonrequest.h"
 
 namespace Cloud {
 namespace Box {
 
 class BoxStorage;
 
-class BoxTokenRefresher: public Networking::CurlJsonRequest {
+class BoxTokenRefresher: public Networking::HttpJsonRequest {
 	BoxStorage *_parentStorage;
-	Common::Array<Common::String> _headers;
 
-	void tokenRefreshed(Storage::BoolResponse response);
+	void tokenRefreshed(const Storage::BoolResponse &response);
 
-	virtual void finishJson(Common::JSONValue *json);
-	virtual void finishError(Networking::ErrorResponse error, Networking::RequestState state = Networking::FINISHED);
+	void finishJson(const Common::JSONValue *json) override;
+	void finishError(const Networking::ErrorResponse &error, Networking::RequestState state = Networking::FINISHED) override;
 public:
 	BoxTokenRefresher(BoxStorage *parent, Networking::JsonCallback callback, Networking::ErrorCallback ecb, const char *url);
-	virtual ~BoxTokenRefresher();
-
-	virtual void setHeaders(Common::Array<Common::String> &headers);
-	virtual void addHeader(Common::String header);
+	~BoxTokenRefresher() override;
 };
 
 } // End of namespace Box

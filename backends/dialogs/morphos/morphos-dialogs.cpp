@@ -42,36 +42,30 @@ Common::DialogManager::DialogResult MorphosDialogManager::showFileBrowser(const 
 	struct Library *AslBase = OpenLibrary(AslName, 39);
 
 	if (AslBase) {
-
 		struct FileRequester *fr = NULL;
 
 		if (ConfMan.hasKey("browser_lastpath")) {
-			strncpy(pathBuffer, ConfMan.get("browser_lastpath").c_str(), sizeof(pathBuffer) - 1);
+			strncpy(pathBuffer, ConfMan.getPath("browser_lastpath").toString(Common::Path::kNativeSeparator).c_str(), sizeof(pathBuffer) - 1);
 		}
 
 		fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest, TAG_DONE);
-
 		if (!fr)
 			return result;
 
 		if (AslRequestTags(fr, ASLFR_TitleText, (IPTR)newTitle.c_str(), ASLFR_RejectIcons, TRUE, ASLFR_InitialDrawer, (IPTR)pathBuffer, ASLFR_DrawersOnly, (isDirBrowser ? TRUE : FALSE), TAG_DONE)) {
-
 			if (strlen(fr->fr_Drawer) < sizeof(pathBuffer)) {
 				strncpy(pathBuffer, fr->fr_Drawer, sizeof(pathBuffer));
-				ConfMan.set("browser_lastpath", pathBuffer); // only path
+				ConfMan.setPath("browser_lastpath", pathBuffer); // only path
 				if (!isDirBrowser) {
 					AddPart(pathBuffer, fr->fr_File, sizeof(pathBuffer));
 				}
 				choice = Common::FSNode(pathBuffer);
 				result = kDialogOk;
 			}
-			FreeAslRequest((APTR)fr);
 		}
-
+		FreeAslRequest((APTR)fr);
 		CloseLibrary(AslBase);
 	}
-
 	return result;
 }
-
 #endif

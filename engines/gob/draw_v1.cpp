@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/endian.h"
@@ -227,6 +233,9 @@ void Draw_v1::printTotText(int16 id) {
 	}
 	ptrEnd++;
 
+#ifdef USE_TTS
+	Common::String ttsMessage;
+#endif
 	while (*ptr != 1) {
 		cmd = *ptr;
 		if (cmd == 3) {
@@ -252,7 +261,7 @@ void Draw_v1::printTotText(int16 id) {
 			cmd = ptrEnd[17] & 0x7F;
 			if (cmd == 0) {
 				val = READ_LE_UINT16(ptrEnd + 18) * 4;
-				sprintf(buf, "%d", (int32)VAR_OFFSET(val));
+				Common::sprintf_s(buf, "%d", (int32)VAR_OFFSET(val));
 			} else if (cmd == 1) {
 				val = READ_LE_UINT16(ptrEnd + 18) * 4;
 
@@ -260,7 +269,7 @@ void Draw_v1::printTotText(int16 id) {
 			} else {
 				val = READ_LE_UINT16(ptrEnd + 18) * 4;
 
-				sprintf(buf, "%d", (int32)VAR_OFFSET(val));
+				Common::sprintf_s(buf, "%d", (int32)VAR_OFFSET(val));
 				if (buf[0] == '-') {
 					while (strlen(buf) - 1 < (uint32)ptrEnd[17]) {
 						_vm->_util->insertStr("0", buf, 1);
@@ -275,8 +284,13 @@ void Draw_v1::printTotText(int16 id) {
 			}
 
 			_textToPrint = buf;
+#ifdef USE_TTS
+			ttsMessage += _textToPrint;
+			ttsMessage += " ";
+#endif
+
 			destSpriteX = _destSpriteX;
-			spriteOperation(DRAW_PRINTTEXT);
+			spriteOperation(DRAW_PRINTTEXT, false);
 			if (ptrEnd[17] & 0x80) {
 				if (ptr[1] == ' ') {
 					_destSpriteX += _fonts[_fontIndex]->getCharWidth();
@@ -298,6 +312,18 @@ void Draw_v1::printTotText(int16 id) {
 		}
 	}
 
+#ifdef USE_TTS
+	if (_previousTot != ttsMessage) {
+		if (_vm->_game->_hotspots->hoveringOverHotspot()) {
+			_vm->sayText(ttsMessage);
+		} else {
+			_vm->sayText(ttsMessage, Common::TextToSpeechManager::QUEUE);
+		}
+
+		_previousTot = ttsMessage;
+	}
+#endif
+
 	delete textItem;
 	_renderFlags = savedFlags;
 
@@ -310,7 +336,7 @@ void Draw_v1::printTotText(int16 id) {
 	}
 }
 
-void Draw_v1::spriteOperation(int16 operation) {
+void Draw_v1::spriteOperation(int16 operation, bool ttsAddHotspotText) {
 	int16 len;
 	int16 x, y;
 	int16 perLine;
@@ -409,6 +435,14 @@ void Draw_v1::spriteOperation(int16 operation) {
 		dirtiedRect(_destSurface, _destSpriteX, _destSpriteY,
 				_destSpriteX + len * font->getCharWidth() - 1,
 				_destSpriteY + font->getCharHeight() - 1);
+
+#ifdef USE_TTS
+		if (ttsAddHotspotText) {
+			_vm->_game->_hotspots->addHotspotTTSText(_textToPrint, _destSpriteX, _destSpriteY,
+											_destSpriteX + len * font->getCharWidth() - 1,
+											_destSpriteY + font->getCharHeight() - 1, _destSurface);
+		}
+#endif
 
 		for (int i = 0; i < len; i++) {
 			font->drawLetter(*_spritesArray[_destSurface], _textToPrint[i],

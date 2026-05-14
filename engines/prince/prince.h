@@ -27,6 +27,7 @@
 #include "common/debug.h"
 #include "common/debug-channels.h"
 #include "common/textconsole.h"
+#include "common/text-to-speech.h"
 #include "common/rect.h"
 #include "common/events.h"
 #include "common/endian.h"
@@ -50,6 +51,15 @@
 #include "prince/detection.h"
 
 namespace Prince {
+
+enum PRINCEActions {
+	kActionNone,
+	kActionSave,
+	kActionLoad,
+	kActionZ,
+	kActionX,
+	kActionSkip,
+};
 
 struct SavegameHeader;
 
@@ -138,7 +148,7 @@ const int kStructSizeBASA = 8;
 // background and normal animation
 struct Anim {
 	BASA _basaData;
-	int32 _addr; //animation adress
+	int32 _addr; // animation address
 	int16 _usage;
 	int16 _state; // state of animation: 0 - turning on, 1 - turning off
 	int16 _flags;
@@ -206,7 +216,7 @@ enum AnimType {
 // Nak (PL - Nakladka)
 struct Mask {
 	uint16 _state; // visible / invisible
-	int16 _flags; // turning on / turning off of an mask
+	int16 _flags; // turning on / turning off of a mask
 	int16 _x1;
 	int16 _y1;
 	int16 _x2;
@@ -261,11 +271,13 @@ struct DrawNode {
 struct DebugChannel {
 
 enum Type {
-	kScript,
-	kEngine
+	kScript = 1 << 0,
+	kEngine = 1 << 1
 };
 
 };
+
+static const uint8 kHeroTextColor = 220;
 
 class PrinceEngine : public Engine {
 protected:
@@ -279,12 +291,12 @@ public:
 
 	bool hasFeature(EngineFeature f) const override;
 	void pauseEngineIntern(bool pause) override;
-	bool canSaveGameStateCurrently() override;
-	bool canLoadGameStateCurrently() override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 	Common::Error loadGameState(int slot) override;
 
-	void playVideo(Common::String videoFilename);
+	void playVideo(const Common::Path &videoFilename);
 
 	WARN_UNUSED_RESULT static bool readSavegameHeader(Common::InSaveFile *in, SavegameHeader &header, bool skipThumbnail = true);
 	void writeSavegameHeader(Common::OutSaveFile *out, SavegameHeader &header);
@@ -343,6 +355,14 @@ public:
 	int calcTextTime(int numberOfLines);
 	void correctStringDEU(char *s);
 
+	void sayText(const Common::String &text, bool isSpeech, Common::TextToSpeechManager::Action action = Common::TextToSpeechManager::INTERRUPT);
+#ifdef USE_TTS
+	Common::U32String convertText(const Common::String &text) const;
+	bool checkConversionTable(const byte *character, int &index, byte *convertedBytes, const uint16 *table) const;
+#endif
+	void setTTSVoice(uint8 textColor) const;
+	void stopTextToSpeech() const;
+
 	static const uint8 kMaxTexts = 32;
 	Text _textSlots[kMaxTexts];
 
@@ -360,6 +380,10 @@ public:
 	uint16 _sceneWidth;
 	int32 _picWindowX;
 	int32 _picWindowY;
+
+	bool _printMapNotification;
+	bool _intro;
+	bool _credits;
 
 	Image::BitmapDecoder *_roomBmp;
 	MhwanhDecoder *_suitcaseBmp;
@@ -380,7 +404,6 @@ public:
 	int32 _shadLineLen;
 	byte *_shadowLine;
 	void setShadowScale(int32 shadowScale);
-	static void plotShadowLinePoint(int x, int y, int color, void *data);
 
 	static const int16 kFPS = 15;
 	static const int32 kIntMax = 2147483647;
@@ -426,6 +449,8 @@ public:
 	void grabMap();
 
 	int _selectedMob; // number of selected Mob / inventory item
+	int _previousMob;
+	int _dialogMob;
 	int _selectedItem; // number of item on mouse cursor
 	int _selectedMode;
 	int _currentPointerNumber;
@@ -518,6 +543,8 @@ public:
 	int _dialogLineSpace;
 	int _dialogColor1; // color for non-selected options
 	int _dialogColor2; // color for selected option
+	int _previousSelectedDialog;
+	bool _isConversing;
 	Graphics::Surface *_dialogImage;
 
 	void createDialogBox(int dialogBoxNr);
@@ -569,7 +596,7 @@ public:
 	byte *_roomPathBitmapTemp; // PL - SSala
 	byte *_coordsBufEnd;
 	byte *_coordsBuf; // optimal path
-	byte *_coords; // last path point adress from coordsBuf
+	byte *_coords; // last path point address from coordsBuf
 	byte *_coordsBuf2;
 	byte *_coords2;
 	byte *_coordsBuf3;

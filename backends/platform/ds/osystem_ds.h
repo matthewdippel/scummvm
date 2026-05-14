@@ -29,7 +29,7 @@
 #include "backends/platform/ds/background.h"
 #include "backends/platform/ds/keyboard.h"
 #include "graphics/surface.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 
 enum {
 	GFX_NOSCALE = 0,
@@ -39,13 +39,55 @@ enum {
 
 class OSystem_DS : public ModularMixerBackend, public PaletteManager {
 protected:
-	DS::Background _framebuffer, _overlay;
+	enum TransactionMode {
+		kTransactionNone = 0,
+		kTransactionActive = 1,
+		kTransactionRollback = 2
+	};
+
+	/**
+	 * The current transaction mode.
+	 */
+	TransactionMode _transactionMode;
+
+	//
+	// Transaction support
+	//
+	struct VideoState {
+		constexpr VideoState() : width(0), height(0), format(),
+		    graphicsMode(GFX_HWSCALE), stretchMode(100) {
+		}
+
+		uint width, height;
+		Graphics::PixelFormat format;
+		int graphicsMode;
+		int stretchMode;
+	};
+
+	/**
+	 * The currently set up video state.
+	 */
+	VideoState _currentState;
+
+	/**
+	 * The old video state used when doing a transaction rollback.
+	 */
+	VideoState _oldState;
+
+	/**
+	 * The current screen change ID.
+	 */
+	int _screenChangeID;
+
+	Graphics::Surface _framebuffer, _overlay;
+	DS::Background *_screen, *_overlayScreen;
 #ifdef DISABLE_TEXT_CONSOLE
-	DS::Background _subScreen;
+	DS::Background *_subScreen;
+	DS::TiledBackground *_banner;
 #endif
 	bool _subScreenActive;
 	Graphics::Surface _cursor;
-	int _graphicsMode, _stretchMode;
+	bool _hiresHack;
 	bool _paletteDirty, _cursorDirty;
 
 	static OSystem_DS *_instance;
@@ -59,6 +101,7 @@ protected:
 	int _cursorHotY;
 	uint32 _cursorKey;
 	bool _cursorVisible;
+	bool _overlayInGUI;
 
 	DSEventSource *_eventSource;
 	DS::Keyboard *_keyboard;
@@ -68,6 +111,8 @@ protected:
 	bool _disableCursorPalette;
 
 	const Graphics::PixelFormat _pfCLUT8, _pfABGR1555;
+
+	bool _engineRunning;
 
 public:
 	OSystem_DS();
@@ -92,6 +137,11 @@ public:
 	virtual Graphics::PixelFormat getScreenFormat() const;
 	virtual Common::List<Graphics::PixelFormat> getSupportedFormats() const;
 
+	virtual void beginGFXTransaction();
+	virtual OSystem::TransactionError endGFXTransaction();
+
+	virtual int getScreenChangeID() const;
+
 	virtual void initSize(uint width, uint height, const Graphics::PixelFormat *format);
 	virtual int16 getHeight();
 	virtual int16 getWidth();
@@ -107,21 +157,21 @@ public:
 	virtual void updateScreen();
 	virtual void setShakePos(int shakeXOffset, int shakeYOffset);
 
-	virtual void showOverlay();
+	virtual void showOverlay(bool inGUI);
 	virtual void hideOverlay();
 	virtual bool isOverlayVisible() const;
 	virtual void clearOverlay();
 	virtual void grabOverlay(Graphics::Surface &surface);
 	virtual void copyRectToOverlay(const void *buf, int pitch, int x, int y, int w, int h);
-	virtual int16 getOverlayHeight();
-	virtual int16 getOverlayWidth();
+	virtual int16 getOverlayHeight() const;
+	virtual int16 getOverlayWidth() const;
 	virtual Graphics::PixelFormat getOverlayFormat() const;
 
 	Common::Point transformPoint(int16 x, int16 y);
 	virtual bool showMouse(bool visible);
 
 	virtual void warpMouse(int x, int y);
-	virtual void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, u32 keycolor, bool dontScale, const Graphics::PixelFormat *format);
+	virtual void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, u32 keycolor, bool dontScale, const Graphics::PixelFormat *format, const byte *mask);
 
 	virtual void addSysArchivesToSearchSet(Common::SearchSet &s, int priority);
 
@@ -136,6 +186,8 @@ public:
 
 	virtual Common::String getSystemLanguage() const;
 
+	virtual void engineInit();
+	virtual void engineDone();
 	virtual void quit();
 
 	virtual void setFocusRectangle(const Common::Rect& rect);

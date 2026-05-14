@@ -26,7 +26,6 @@
 #include "sword1/resman.h"
 #include "sword1/objectman.h"
 #include "sword1/menu.h"
-#include "sword1/music.h"
 #include "sword1/sound.h"
 #include "sword1/sword1.h"
 #include "sword1/logic.h"
@@ -2587,7 +2586,7 @@ RoomDef Screen::_roomDefTable[TOTAL_ROOMS] = { // these are NOT const
 	}
 };
 
-const char Music::_tuneList[TOTAL_TUNES][8] = {
+const char Sound::_tuneList[TOTAL_TUNES][8] = {
 	"",				// 0	SPARE
 	"1m2",		// DONE 1	George picks up the newspaper
 	"1m3",		// DONE 2	In the alley for the first time
@@ -2709,7 +2708,7 @@ const char Music::_tuneList[TOTAL_TUNES][8] = {
 	"4m9",		// DONE 108	Room 21, on "Maybe it wasn't the right room"
 	"4m10",		// DONE 109	On coming into 21 on subsequent occasions.
 
-	"4m11",		// DONE 110 As George steps upto window.
+	"4m11",		// DONE 110 As George steps up to the window.
 	"4m12",		// DONE 111	Alternative times he steps up to the window.
 	"4m13",		// DONE 112	In Moerlin's room
 	"4m14",		// DONE 113	Sees "Moerlin" on the Stairs

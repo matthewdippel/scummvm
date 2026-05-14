@@ -57,6 +57,24 @@ class ProjExpl;
 class DialogMan;
 class SoundMan;
 
+enum DMActions {
+	kActionNone,
+	kActionToggleInventoryChampion0,
+	kActionToggleInventoryChampion1,
+	kActionToggleInventoryChampion2,
+	kActionToggleInventoryChampion3,
+	kActionSave,
+	kActionFreezeGame,
+	kActionTurnLeft,
+	kActionMoveForward,
+	kActionTurnRight,
+	kActionMoveLeft,
+	kActionMoveBackward,
+	kActionMoveRight,
+	kActionWakeUp,
+	kActionSelectChoice,
+};
+
 enum Direction {
 	kDMDirNorth = 0,
 	kDMDirEast = 1,
@@ -175,7 +193,7 @@ public:
 	bool hasFeature(EngineFeature f) const override;
 
 	Common::Error loadGameState(int slot) override;
-	bool canLoadGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	bool isDemo() const;
 

@@ -110,7 +110,7 @@ public:
 	/**
 	 * Find the hardware input an action is mapped to, if any
 	 */
-	Array<HardwareInput> getActionMapping(Action *action) const;
+	Array<HardwareInput> getActionMapping(const Action *action) const;
 
 	/**
 	 * Find the Actions that a hardware input is mapped to
@@ -158,6 +158,9 @@ public:
 	const U32String &getDescription() const { return _description; }
 	KeymapType getType() const { return _type; }
 
+	bool isPartialMatchAllowed() const { return _partialMatchAllowed; }
+	void setPartialMatchAllowed(bool partialMatchAllowed) { _partialMatchAllowed = partialMatchAllowed; }
+
 	/**
 	 * Defines if the keymap is considered when mapping events
 	 */
@@ -181,7 +184,7 @@ private:
 	KeymapType _type;
 	String _id;
 	U32String _description;
-
+	bool _partialMatchAllowed;
 	bool _enabled;
 
 	ActionArray _actions;

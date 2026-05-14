@@ -33,7 +33,7 @@ TextDisplayer_MR::TextDisplayer_MR(KyraEngine_MR *vm, Screen_MR *screen)
 char *TextDisplayer_MR::preprocessString(const char *str) {
 	if (_talkBuffer != str) {
 		assert(strlen(str) < sizeof(_talkBuffer) - 1);
-		strcpy(_talkBuffer, str);
+		Common::strlcpy(_talkBuffer, str, sizeof(_talkBuffer));
 	}
 
 	char *p = _talkBuffer;
@@ -658,14 +658,14 @@ void KyraEngine_MR::updateDlgBuffer() {
 	if (_curDlgIndex == _mainCharacter.dlgIndex && _curDlgChapter == _currentChapter && _curDlgLang == _lang)
 		return;
 
-	Common::String dlgFile = Common::String::format("CH%.02d-S%.02d.%s", _currentChapter, _mainCharacter.dlgIndex, _languageExtension[_lang]);
-	Common::String cnvFile = Common::String::format("CH%.02d-S%.02d.CNV", _currentChapter, _mainCharacter.dlgIndex);
+	Common::Path dlgFile(Common::String::format("CH%.02d-S%.02d.%s", _currentChapter, _mainCharacter.dlgIndex, _languageExtension[_lang]));
+	Common::Path cnvFile(Common::String::format("CH%.02d-S%.02d.CNV", _currentChapter, _mainCharacter.dlgIndex));
 
 	delete _cnvFile;
 	delete _dlgBuffer;
 
-	_res->exists(cnvFile.c_str(), true);
-	_res->exists(dlgFile.c_str(), true);
+	_res->exists(cnvFile, true);
+	_res->exists(dlgFile, true);
 	_cnvFile = _res->createReadStream(cnvFile);
 	_dlgBuffer = _res->createReadStream(dlgFile);
 	assert(_cnvFile);
@@ -744,7 +744,7 @@ void KyraEngine_MR::processDialog(int vocHighIndex, int vocHighBase, int funcNum
 			setDlgIndex(vocHighBase);
 		} else if (cmd == 11) {
 			int strSize = _cnvFile->readUint16LE();
-			vocLow = _cnvFile->readUint16LE();
+			_cnvFile->readUint16LE();
 			_cnvFile->read(_stringBuffer, strSize);
 			_stringBuffer[strSize] = 0;
 		} else {
@@ -762,10 +762,8 @@ void KyraEngine_MR::processDialog(int vocHighIndex, int vocHighBase, int funcNum
 
 			if (cmd != 12) {
 				if (object != script) {
-					if (script >= 0) {
+					if (script >= 0)
 						dialogEndScript(script);
-						script = -1;
-					}
 
 					dialogStartScript(object, funcNum);
 					script = object;

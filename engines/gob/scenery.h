@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_SCENERY_H
@@ -93,6 +99,8 @@ public:
 	int16 _curStatic;
 	int16 _curStaticLayer;
 
+	int16 _maxDrawOrder;
+
 	int16 _toRedrawLeft;
 	int16 _toRedrawRight;
 	int16 _toRedrawTop;
@@ -113,6 +121,8 @@ public:
 	void freeAnim(int16 index);
 	void updateAnim(int16 layer, int16 frame, int16 animation,
 			int16 flags, int16 drawDeltaX, int16 drawDeltaY, char doDraw);
+	void updateAnimObjectVideo(int16 layer, int16 frame, int16 animation,
+							   int16 flags, int16 drawDeltaX, int16 drawDeltaY, char doDraw);
 
 	void writeAnimLayerInfo(uint16 index, uint16 layer,
 			int16 varDX, int16 varDY, int16 varUnk0, int16 varFrames);

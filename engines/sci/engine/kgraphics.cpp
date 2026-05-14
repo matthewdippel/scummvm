@@ -43,7 +43,8 @@
 #include "sci/graphics/compare.h"
 #include "sci/graphics/controls16.h"
 #include "sci/graphics/cursor.h"
-#include "sci/graphics/palette.h"
+#include "sci/graphics/drivers/gfxdriver.h"
+#include "sci/graphics/palette16.h"
 #include "sci/graphics/paint16.h"
 #include "sci/graphics/picture.h"
 #include "sci/graphics/ports.h"
@@ -257,7 +258,7 @@ reg_t kGraph(EngineState *s, int argc, reg_t *argv) {
 }
 
 reg_t kGraphGetColorCount(EngineState *s, int argc, reg_t *argv) {
-	return make_reg(0, g_sci->_gfxPalette16->getTotalColorCount());
+	return make_reg(0, g_sci->_gfxScreen->gfxDriver()->numColors());
 }
 
 reg_t kGraphDrawLine(EngineState *s, int argc, reg_t *argv) {
@@ -272,7 +273,7 @@ reg_t kGraphDrawLine(EngineState *s, int argc, reg_t *argv) {
 reg_t kGraphSaveBox(EngineState *s, int argc, reg_t *argv) {
 	Common::Rect rect = getGraphRect(argv);
 	uint16 screenMask = argv[4].toUint16() & GFX_SCREEN_MASK_ALL;
-	return g_sci->_gfxPaint16->kernelGraphSaveBox(rect, screenMask);
+	return g_sci->_gfxPaint16->kernelGraphSaveBox(rect, screenMask, false);
 }
 
 reg_t kGraphRestoreBox(EngineState *s, int argc, reg_t *argv) {
@@ -308,8 +309,9 @@ reg_t kGraphUpdateBox(EngineState *s, int argc, reg_t *argv) {
 	Common::Rect rect = getGraphRect(argv);
 	// argv[4] is the map (1 for visual, etc.)
 	// argc == 6 on upscaled hires
-	bool hiresMode = (argc > 5) ? true : false;
-	g_sci->_gfxPaint16->kernelGraphUpdateBox(rect, hiresMode);
+	// The original interpreter skips the update if either argc > 5 or argv[5] != 0.
+	if (argc <= 5 || argv[5].isNull())
+		g_sci->_gfxPaint16->kernelGraphUpdateBox(rect);
 	return s->r_acc;
 }
 
@@ -327,7 +329,17 @@ reg_t kGraphAdjustPriority(EngineState *s, int argc, reg_t *argv) {
 
 reg_t kGraphSaveUpscaledHiresBox(EngineState *s, int argc, reg_t *argv) {
 	Common::Rect rect = getGraphRect(argv);
-	return g_sci->_gfxPaint16->kernelGraphSaveUpscaledHiresBox(rect);
+	// There seems to be a mismatch between the function call the original interpreter expects and the call
+	// that the scripts actually make. The scripts never actually push argv[4] for kGraph sub op 15, but
+	// the interpreter will still pass on the (thus undefined) argument to kernelGraphSaveBox(). Apparently,
+	// the argument is not needed. From a technical point of view this would make sense, since the hires
+	// graphics never overwrite the engine bitmap buffers, so it should not be necessary to recover any pixel
+	// data. We pretend to check argc here, but we know it will always be 4...
+	uint16 screenMask = argc > 4 ? (argv[4].toUint16() & GFX_SCREEN_MASK_ALL) : 0;
+	if (g_sci->_gfxScreen->gfxDriver()->supportsHiResGraphics())
+		return g_sci->_gfxPaint16->kernelGraphSaveBox(rect, screenMask, true);
+	else
+		return NULL_REG;
 }
 
 reg_t kTextSize(EngineState *s, int argc, reg_t *argv) {
@@ -363,21 +375,14 @@ reg_t kTextSize(EngineState *s, int argc, reg_t *argv) {
 
 	int16 textWidth;
 	int16 textHeight;
-	g_sci->_gfxText16->kernelTextSize(splitText.c_str(), languageSplitter, font, maxWidth, &textWidth, &textHeight);
-
-	// One of the game texts in LB2 German contains loads of spaces in
-	// its end. We trim the text here, otherwise the graphics code will
-	// attempt to draw a very large window (larger than the screen) to
-	// show the text, and crash.
-	// Fixes bug #5710.
-	if (textWidth >= g_sci->_gfxScreen->getDisplayWidth() ||
-		textHeight >= g_sci->_gfxScreen->getDisplayHeight()) {
-		warning("kTextSize: string would be too big to fit on screen. Trimming it");
-		text.trim();
-		// Copy over the trimmed string...
-		s->_segMan->strcpy(argv[1], text.c_str());
-		// ...and recalculate bounding box dimensions
+	const bool useMacFonts = g_sci->hasMacFonts() && (argc < 6);
+	if (!useMacFonts) {
 		g_sci->_gfxText16->kernelTextSize(splitText.c_str(), languageSplitter, font, maxWidth, &textWidth, &textHeight);
+	} else {
+		// Mac games with native fonts always use them for sizing unless a sixth
+		// parameter is passed to indicate that SCI font sizing should be used.
+		// Only LSL5 is known to pass this parameter in Dialog:setSize.
+		g_sci->_gfxText16->macTextSize(splitText, font, g_sci->_gfxText16->GetFontId(), maxWidth, &textWidth, &textHeight);
 	}
 
 	debugC(kDebugLevelStrings, "GetTextSize '%s' -> %dx%d", text.c_str(), textWidth, textHeight);
@@ -399,6 +404,7 @@ reg_t kWait(EngineState *s, int argc, reg_t *argv) {
 		return NULL_REG;
 	}
 
+	s->_eventCounter = 0;
 	s->_paletteSetIntensityCounter = 0;
 	return make_reg(0, delta);
 }
@@ -560,7 +566,6 @@ reg_t kOnControl(EngineState *s, int argc, reg_t *argv) {
 
 reg_t kDrawPic(EngineState *s, int argc, reg_t *argv) {
 	GuiResourceId pictureId = argv[0].toUint16();
-	uint16 flags = 0;
 	int16 animationNr = -1;
 	bool animationBlackoutFlag = false;
 	bool mirroredFlag = false;
@@ -568,7 +573,7 @@ reg_t kDrawPic(EngineState *s, int argc, reg_t *argv) {
 	int16 EGApaletteNo = 0; // default needs to be 0
 
 	if (argc >= 2) {
-		flags = argv[1].toUint16();
+		uint16 flags = argv[1].toUint16();
 		if (flags & K_DRAWPIC_FLAGS_ANIMATIONBLACKOUT)
 			animationBlackoutFlag = true;
 		animationNr = flags & 0xFF;
@@ -621,7 +626,7 @@ reg_t kPaletteSetFromResource(EngineState *s, int argc, reg_t *argv) {
 	// Non-VGA games don't use palette resources.
 	// This has been changed to 64 colors because Longbow Amiga does have
 	// one palette (palette 999).
-	if (g_sci->_gfxPalette16->getTotalColorCount() < 64)
+	if (g_sci->_gfxScreen->gfxDriver()->numColors() < 64)
 		return s->r_acc;
 
 	g_sci->_gfxPalette16->kernelSetFromResource(resourceId, force);
@@ -651,7 +656,7 @@ reg_t kPaletteSetIntensity(EngineState *s, int argc, reg_t *argv) {
 	bool setPalette = (argc < 4) ? true : (argv[3].isNull()) ? true : false;
 
 	// Palette intensity in non-VGA SCI1 games has been removed
-	if (g_sci->_gfxPalette16->getTotalColorCount() < 256)
+	if (g_sci->_gfxScreen->gfxDriver()->numColors() < 256)
 		return s->r_acc;
 
 	if (setPalette) {
@@ -682,12 +687,11 @@ reg_t kPaletteFindColor(EngineState *s, int argc, reg_t *argv) {
 }
 
 reg_t kPaletteAnimate(EngineState *s, int argc, reg_t *argv) {
-	int16 argNr;
 	bool paletteChanged = false;
 
 	// Palette animation in non-VGA SCI1 games has been removed
-	if (g_sci->_gfxPalette16->getTotalColorCount() == 256) {
-		for (argNr = 0; argNr < argc; argNr += 3) {
+	if (g_sci->_gfxScreen->gfxDriver()->numColors() == 256) {
+		for (int argNr = 0; argNr < argc; argNr += 3) {
 			uint16 fromColor = argv[argNr].toUint16();
 			uint16 toColor = argv[argNr + 1].toUint16();
 			int16 speed = argv[argNr + 2].toSint16();
@@ -697,6 +701,19 @@ reg_t kPaletteAnimate(EngineState *s, int argc, reg_t *argv) {
 		if (paletteChanged)
 			g_sci->_gfxPalette16->kernelAnimateSet();
 	}
+
+	// WORKAROUNDS: kPaletteAnimate produces different results in ScummVM than
+	// the original when multiple calls occur in the same game cycle.
+	// SSCI updated the screen immediately so each call took a noticeable amount
+	// of time and the results of each call were visible.
+	// We generally update the screen on each game cycle; that makes all of the
+	// palette changes appear at once. No extra delay is produced since updating
+	// the palette data by itself takes an insignificant amount of time.
+	// Most scripts that call kPaletteAnimate only do so once per game cycle, so
+	// they are unaffected. Most that call it multiple times achieve practically
+	// the same effect in ScummVM. (Longbow title screen, EcoQuest ocean rooms,
+	// QFG1VGA room 10) But for scripts or effects that depend on the delay,
+	// or seeing each individual update, we currently work around them.
 
 	// WORKAROUND: The game scripts in SQ4 floppy count the number of elapsed
 	// cycles in the intro from the number of successive kAnimate calls during
@@ -718,6 +735,25 @@ reg_t kPaletteAnimate(EngineState *s, int argc, reg_t *argv) {
 	// right after a gameover (room#376)
 	if (g_sci->getGameId() == GID_SQ4 && !g_sci->isCD())
 		g_sci->sleep(10);
+
+	// WORKAROUND: PQ1 and PQ3 title screens call kPaletteAnimate eight times
+	// on each game cycle to animate police lights. The effect relies on every
+	// palette change being drawn to the screen instead of just the last one.
+	// We fix this by updating the screen on every call. Normally we would want
+	// to process events to keep the cursor smooth during these lengthy game
+	// cycles, but it doesn't matter here because the cursor is hidden.
+	// We call OSystem::updateScreen() directly to avoid the SCI throttler that
+	// discards multiple updates within 1/60th of a second, as that can lose
+	// some of the animation frames. This is only applied to the VGA version.
+	if ((g_sci->getGameId() == GID_PQ1 && s->currentRoomNumber() == 1) ||
+		(g_sci->getGameId() == GID_PQ3 && s->currentRoomNumber() == 2)) {
+		// PQ1 also cycles the Sierra logo in its room 1, so limit the
+		// workaround to just the police lights.
+		uint16 fromColor = argv[0].toUint16();
+		if (fromColor >= 208 && paletteChanged) {
+			g_system->updateScreen();
+		}
+	}
 
 	return s->r_acc;
 }
@@ -838,7 +874,7 @@ reg_t kPortrait(EngineState *s, int argc, reg_t *argv) {
 }
 
 // Original top-left must stay on kControl rects, we adjust accordingly because
-// sierra sci actually wont draw rects that are upside down (example: jones,
+// sierra sci actually won't draw rects that are upside down (example: jones,
 // when challenging jones - one button is a duplicate and also has lower-right
 // which is 0, 0)
 Common::Rect kControlCreateRect(int16 x, int16 y, int16 x1, int16 y1) {
@@ -857,7 +893,7 @@ void _k_GenericDrawControl(EngineState *s, reg_t controlObject, bool hilite) {
 	Common::String text;
 	Common::Rect rect;
 	TextAlignment alignment;
-	int16 mode, maxChars, cursorPos, upperPos, listCount, i;
+	int16 mode, maxChars, cursorPos, upperPos, listCount;
 	uint16 upperOffset, cursorOffset;
 	GuiResourceId viewId;
 	int16 loopNo;
@@ -883,7 +919,7 @@ void _k_GenericDrawControl(EngineState *s, reg_t controlObject, bool hilite) {
 		splitText = g_sci->strSplitLanguage(text.c_str(), &languageSplitter, nullptr);
 		break;
 	case SCI_CONTROLS_TYPE_TEXT:
-		splitText = g_sci->strSplitLanguage(text.c_str(), &languageSplitter);
+		splitText = g_sci->strSplitLanguage(text.c_str(), &languageSplitter, g_sci->getGameId() == GID_PQ2 ? "\r" : "\r----------\r");
 		break;
 	default:
 		break;
@@ -964,7 +1000,7 @@ void _k_GenericDrawControl(EngineState *s, reg_t controlObject, bool hilite) {
 			// We create a pointer-list to the different strings, we also find out whats upper and cursor position
 			listSeeker = textReference;
 			listStrings = new Common::String[listCount];
-			for (i = 0; i < listCount; i++) {
+			for (int16 i = 0; i < listCount; i++) {
 				listStrings[i] = s->_segMan->getString(listSeeker);
 				if (listSeeker.getOffset() == upperOffset)
 					upperPos = i;
@@ -1012,7 +1048,7 @@ reg_t kDrawControl(EngineState *s, int argc, reg_t *argv) {
 				// The french version of Quest For Glory 3 uses "gloire3.sauv". It seems a translator translated the filename.
 				text.deleteChar(0);
 				text.deleteChar(0);
-				s->_segMan->strcpy(textReference, text.c_str());
+				s->_segMan->strcpy_(textReference, text.c_str());
 			}
 		}
 	}
@@ -1170,6 +1206,12 @@ reg_t kDisposeWindow(EngineState *s, int argc, reg_t *argv) {
 	g_sci->_gfxPorts->kernelDisposeWindow(windowId, reanimate);
 	g_sci->_tts->stop();
 
+	// This is only needed for KQ6WinCD when using the mixed speech+text mode with hires graphics enabled.
+	// The original interpreter does not support the mixed mode, but it still does have this code here. So
+	// we can use that without having to make up a solution ourselves.
+	if (g_sci->_gfxScreen && g_sci->_gfxScreen->gfxDriver()->supportsHiResGraphics())
+		g_sci->_gfxPaint16->redrawHiresCels();
+
 	return s->r_acc;
 }
 
@@ -1234,7 +1276,7 @@ reg_t kDisplay(EngineState *s, int argc, reg_t *argv) {
 	}
 
 	uint16 languageSplitter = 0;
-	Common::String splitText = g_sci->strSplitLanguage(text.c_str(), &languageSplitter);
+	Common::String splitText = g_sci->strSplitLanguage(text.c_str(), &languageSplitter, g_sci->getGameId() == GID_PQ2 ? "\r" : "\r----------\r");
 
 	return g_sci->_gfxPaint16->kernelDisplay(splitText.c_str(), languageSplitter, argc, argv);
 }
@@ -1246,7 +1288,7 @@ reg_t kSetVideoMode(EngineState *s, int argc, reg_t *argv) {
 	// decoder in KQ6 is specifically written for the planar memory model.
 	// Planar memory mode access was used for VGA "Mode X" (320x240 resolution,
 	// although the intro in KQ6 is 320x200).
-	// Refer to http://en.wikipedia.org/wiki/Mode_X
+	// Refer to https://en.wikipedia.org/wiki/Mode_X
 
 	//warning("STUB: SetVideoMode %d", argv[0].toUint16());
 	return s->r_acc;

@@ -63,28 +63,48 @@ enum UltimaGameFlags {
 };
 
 struct UltimaGameDescription {
+	AD_GAME_DESCRIPTION_HELPERS(desc);
+
 	ADGameDescription desc;
 	GameId gameId;
 	uint32 features;
 };
 
+#define GAMEOPTION_ORIGINAL_SAVELOAD GUIO_GAMEOPTIONS1
+#define GAMEOPTION_FRAME_SKIPPING    GUIO_GAMEOPTIONS2
+#define GAMEOPTION_FRAME_LIMITING    GUIO_GAMEOPTIONS3
+#define GAMEOPTION_CHEATS            GUIO_GAMEOPTIONS4
+#define GAMEOPTION_HIGH_RESOLUTION   GUIO_GAMEOPTIONS5
+#define GAMEOPTION_FOOTSTEP_SOUNDS   GUIO_GAMEOPTIONS6
+#define GAMEOPTION_JUMP_TO_MOUSE     GUIO_GAMEOPTIONS7
+#define GAMEOPTION_FONT_REPLACEMENT  GUIO_GAMEOPTIONS8
+#define GAMEOPTION_FONT_ANTIALIASING GUIO_GAMEOPTIONS9
+#define GAMEOPTION_CAMERA_WITH_SILENCER GUIO_GAMEOPTIONS10
+#define GAMEOPTION_ALWAYS_CHRISTMAS     GUIO_GAMEOPTIONS11
+
 } // End of namespace Ultima
 
-class UltimaMetaEngineDetection : public AdvancedMetaEngineDetection {
+class UltimaMetaEngineDetection : public AdvancedMetaEngineDetection<Ultima::UltimaGameDescription> {
+	static const DebugChannelDef debugFlagList[];
+
 public:
 	UltimaMetaEngineDetection();
 	~UltimaMetaEngineDetection() override {}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "ultima";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Ultima";
 	}
 
 	const char *getOriginalCopyright() const override {
 		return "Ultima Games (C) 1980-1995 Origin Systems Inc.";
+	}
+
+	const DebugChannelDef *getDebugChannels() const override {
+		return debugFlagList;
 	}
 };
 

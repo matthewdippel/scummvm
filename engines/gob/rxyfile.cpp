@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/stream.h"
@@ -27,12 +33,12 @@
 namespace Gob {
 
 RXYFile::RXYFile(Common::SeekableReadStream &rxy) : _width(0), _height(0) {
-	Common::SeekableSubReadStreamEndian sub(&rxy, 0, rxy.size(), false, DisposeAfterUse::NO);
+	Common::SeekableReadStreamEndianWrapper sub(&rxy, false, DisposeAfterUse::NO);
 
 	load(sub);
 }
 
-RXYFile::RXYFile(Common::SeekableSubReadStreamEndian &rxy) : _width(0), _height(0) {
+RXYFile::RXYFile(Common::SeekableReadStreamEndian &rxy) : _width(0), _height(0) {
 	load(rxy);
 }
 
@@ -70,7 +76,7 @@ const RXYFile::Coordinates &RXYFile::operator[](uint i) const {
 	return _coords[i];
 }
 
-void RXYFile::load(Common::SeekableSubReadStreamEndian &rxy) {
+void RXYFile::load(Common::SeekableReadStreamEndian &rxy) {
 	if (rxy.size() < 2)
 		return;
 
@@ -81,15 +87,15 @@ void RXYFile::load(Common::SeekableSubReadStreamEndian &rxy) {
 	uint16 count = (rxy.size() - 2) / 8;
 
 	_coords.resize(count);
-	for (CoordArray::iterator c = _coords.begin(); c != _coords.end(); ++c) {
-		c->left   = rxy.readUint16();
-		c->right  = rxy.readUint16();
-		c->top    = rxy.readUint16();
-		c->bottom = rxy.readUint16();
+	for (auto &coord : _coords) {
+		coord.left   = rxy.readUint16();
+		coord.right  = rxy.readUint16();
+		coord.top    = rxy.readUint16();
+		coord.bottom = rxy.readUint16();
 
-		if (c->left != 0xFFFF) {
-			_width  = MAX<uint16>(_width , c->right  + 1);
-			_height = MAX<uint16>(_height, c->bottom + 1);
+		if (coord.left != 0xFFFF) {
+			_width  = MAX<uint16>(_width , coord.right  + 1);
+			_height = MAX<uint16>(_height, coord.bottom + 1);
 		}
 	}
 }

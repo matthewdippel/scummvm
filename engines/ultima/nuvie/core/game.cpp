@@ -66,65 +66,32 @@
 #include "ultima/nuvie/nuvie.h"
 
 #include "common/system.h"
+#include "graphics/cursorman.h"
 
 namespace Ultima {
 namespace Nuvie {
 
-Game *Game::game = NULL;
+Game *Game::game = nullptr;
 
-Game::Game(Configuration *cfg, Events *evt, Screen *scr, GUI *g, nuvie_game_t type, SoundManager *sm) {
+Game::Game(Configuration *cfg, Events *evt, Screen *scr, GUI *g, nuvie_game_t type, SoundManager *sm)
+		: config(cfg), event(evt), gui(g), screen(scr), game_type(type),
+		  sound_manager(sm), script(nullptr), background(nullptr),
+		  cursor(nullptr), dither(nullptr), tile_manager(nullptr),
+		  obj_manager(nullptr), palette(nullptr), font_manager(nullptr),
+		  scroll(nullptr), game_map(nullptr), map_window(nullptr),
+		  actor_manager(nullptr), player(nullptr), converse(nullptr),
+		  conv_gump(nullptr), command_bar(nullptr), new_command_bar(nullptr),
+		  _clock(nullptr), party(nullptr), portrait(nullptr),
+		  view_manager(nullptr), egg_manager(nullptr), usecode(nullptr),
+		  effect_manager(nullptr), weather(nullptr), magic(nullptr),
+		  book(nullptr), keybinder(nullptr), _playing(true),
+		  converse_gump_type(CONVERSE_GUMP_DEFAULT),
+		  pause_flags(PAUSE_UNPAUSED), pause_user_count(0),
+		  ignore_event_delay(0), unlimited_casting(false),
+		  god_mode_enabled(false), armageddon(false), ethereal(false),
+		  free_balloon_movement(false), converse_gump_width(0),
+		  min_converse_gump_width(0), force_solid_converse_bg(false) {
 	game = this;
-	config = cfg;
-	event = evt;
-
-	gui = g;
-
-	screen = scr;
-	game_type = type;
-	sound_manager = sm;
-
-	script = NULL;
-	background = NULL;
-	cursor = NULL;
-	dither = NULL;
-	tile_manager = NULL;
-	obj_manager = NULL;
-	palette = NULL;
-	font_manager = NULL;
-	scroll = NULL;
-	game_map = NULL;
-	map_window = NULL;
-	actor_manager = NULL;
-	player = NULL;
-	converse = NULL;
-	conv_gump = NULL;
-	command_bar = NULL;
-	new_command_bar = NULL;
-	clock = NULL;
-	party = NULL;
-	portrait = NULL;
-	view_manager = NULL;
-	egg_manager = NULL;
-	usecode = NULL;
-	effect_manager = NULL;
-	weather = NULL;
-	magic = NULL;
-	book = NULL;
-	keybinder = NULL;
-
-	_playing = true;
-	converse_gump_type = CONVERSE_GUMP_DEFAULT;
-	pause_flags = PAUSE_UNPAUSED;
-	pause_user_count = 0;
-	ignore_event_delay = 0;
-	unlimited_casting = false;
-	god_mode_enabled = false;
-	armageddon = false;
-	ethereal = false;
-	free_balloon_movement = false;
-	converse_gump_width = 0;
-	min_converse_gump_width = 0;
-	force_solid_converse_bg = false;
 
 	config->value("config/cheats/enabled", cheats_enabled, false);
 	config->value("config/cheats/enable_hackmove", is_using_hackmove, false);
@@ -153,7 +120,7 @@ Game::Game(Configuration *cfg, Events *evt, Screen *scr, GUI *g, nuvie_game_t ty
 			game_style = NUVIE_STYLE_ORIG_PLUS_CUTOFF_MAP;
 	}
 
-	string game_position;
+	Common::String game_position;
 	config->value("config/video/game_position", game_position, "center");
 
 	if (game_position == "upper_left")
@@ -182,10 +149,12 @@ Game::~Game() {
 	if (game_map) delete game_map;
 	if (actor_manager) delete actor_manager;
 	//delete map_window;
+	// If conversation active, must be deleted before player as it resets
+	// player flags.
+	if (converse) delete converse;
 	if (player) delete player;
 	//delete background;
-	if (converse) delete converse;
-	if (clock) delete clock;
+	if (_clock) delete _clock;
 	if (party) delete party;
 	if (portrait) delete portrait;
 	if (view_manager) delete view_manager;
@@ -209,13 +178,12 @@ bool Game::loadGame(Script *s) {
 	dither = new Dither(config);
 
 	script = s;
-	//sound_manager->LoadSongs(NULL);
-	//sound_manager->LoadObjectSamples(NULL);
+	//sound_manager->LoadSongs(nullptr);
+	//sound_manager->LoadObjectSamples(nullptr);
 
 	palette = new GamePalette(screen, config);
 
-	clock = new GameClock(config, game_type);
-
+	_clock = new GameClock(game_type);
 
 	background = new Background(config);
 	background->init();
@@ -233,7 +201,7 @@ bool Game::loadGame(Script *s) {
 	}
 	game_map = new Map(config);
 
-	egg_manager = new EggManager(config, game_type, game_map);
+	egg_manager = new EggManager(game_type);
 
 	tile_manager = new TileManager(config);
 	if (tile_manager->loadTiles() == false)
@@ -270,7 +238,7 @@ bool Game::loadGame(Script *s) {
 	egg_manager->set_obj_manager(obj_manager);
 
 	ConsoleAddInfo("Loading actor data.");
-	actor_manager = new ActorManager(config, game_map, tile_manager, obj_manager, clock);
+	actor_manager = new ActorManager(config, game_map, tile_manager, obj_manager, _clock);
 
 	game_map->set_actor_manager(actor_manager);
 	egg_manager->set_actor_manager(actor_manager);
@@ -282,7 +250,7 @@ bool Game::loadGame(Script *s) {
 	if (is_original_plus_full_map()) // need to render after map window
 		gui->AddWidget(background);
 
-	weather = new Weather(config, clock, game_type);
+	weather = new Weather(config, _clock, game_type);
 
 //   if(!is_new_style()) // Everyone always uses original style command bar now.
 	{
@@ -301,7 +269,7 @@ bool Game::loadGame(Script *s) {
 
 	player = new Player(config);
 	party = new Party(config);
-	player->init(obj_manager, actor_manager, map_window, clock, party);
+	player->init(obj_manager, actor_manager, map_window, _clock, party);
 	party->init(this, actor_manager);
 
 	portrait = newPortrait(game_type, config);
@@ -327,7 +295,7 @@ bool Game::loadGame(Script *s) {
 		magic = new Magic();
 	}
 
-	event->init(obj_manager, map_window, scroll, player, magic, clock, view_manager, usecode, gui, keybinder);
+	event->init(obj_manager, map_window, scroll, player, magic, _clock, view_manager, usecode, gui, keybinder);
 	if (game_type == NUVIE_GAME_U6) {
 		magic->init(event);
 	}
@@ -347,7 +315,7 @@ bool Game::loadGame(Script *s) {
 			command_bar->Show();
 		else {
 			bool show;
-			Std::string show_cb;
+			Common::String show_cb;
 			config->value(config_get_game_key(config) + "/show_orig_style_cb", show_cb, "default");
 			if (show_cb == "default") {
 				if (is_new_style())
@@ -383,7 +351,7 @@ void Game::init_converse_gump_settings() {
 	else {
 		converse_gump_type = get_converse_gump_type_from_config(config);
 	}
-	Std::string width_str;
+	Common::String width_str;
 	int gump_w = get_game_width();
 
 	if (game_type == NUVIE_GAME_MD)
@@ -427,19 +395,19 @@ void Game::init_converse() {
 		conv_gump->Hide();
 		gui->AddWidget(conv_gump);
 
-		converse->init(config, game_type, conv_gump, actor_manager, clock, player, view_manager, obj_manager);
+		converse->init(config, game_type, conv_gump, actor_manager, _clock, player, view_manager, obj_manager);
 	} else if (game_type == NUVIE_GAME_U6 && converse_gump_type == CONVERSE_GUMP_DEFAULT) {
-		converse->init(config, game_type, scroll, actor_manager, clock, player, view_manager, obj_manager);
+		converse->init(config, game_type, scroll, actor_manager, _clock, player, view_manager, obj_manager);
 	} else {
 		ConverseGumpWOU *gump = new ConverseGumpWOU(config, font_manager->get_font(0), screen);
 		gump->Hide();
 		gui->AddWidget(gump);
-		converse->init(config, game_type, gump, actor_manager, clock, player, view_manager, obj_manager);
+		converse->init(config, game_type, gump, actor_manager, _clock, player, view_manager, obj_manager);
 	}
 
 }
 
-void Game::set_converse_gump_type(uint8 new_type) {
+void Game::set_converse_gump_type(ConverseGumpType new_type) {
 	if (converse)
 		delete converse;
 	converse_gump_type = new_type;
@@ -451,14 +419,14 @@ bool Game::using_new_converse_gump() {
 }
 
 void Game::delete_new_command_bar() {
-	if (new_command_bar == NULL)
+	if (new_command_bar == nullptr)
 		return;
 	new_command_bar->Delete();
-	new_command_bar = NULL;
+	new_command_bar = nullptr;
 }
 
 void Game::init_new_command_bar() {
-	if (new_command_bar != NULL)
+	if (new_command_bar != nullptr)
 		return;
 	new_command_bar = new CommandBarNewUI(this);
 	new_command_bar->Hide();
@@ -470,15 +438,15 @@ void Game::init_cursor() {
 		cursor = new Cursor();
 
 	if (cursor->init(config, screen, game_type))
-		SDL_ShowCursor(false); // won't need the system default
+		CursorMan.showMouse(false); // won't need the system default
 	else {
 		delete cursor;
-		cursor = NULL; // no game cursor
+		cursor = nullptr; // no game cursor
 	}
 }
 
 void Game::init_game_style() {
-	string game_style_str;
+	Common::String game_style_str;
 	config->value("config/video/game_style", game_style_str, "original");
 	if (game_style_str == "new")
 		game_style = NUVIE_STYLE_NEW;
@@ -638,7 +606,7 @@ void Game::play() {
 		if (cursor) cursor->clear(); // restore cursor area before GUI events
 
 		event->update();
-		if (clock->get_timer(GAMECLOCK_TIMER_U6_TIME_STOP) == 0) {
+		if (_clock->get_timer(GAMECLOCK_TIMER_U6_TIME_STOP) == 0) {
 			palette->rotatePalette();
 			tile_manager->update();
 			actor_manager->twitchActors();
@@ -653,7 +621,7 @@ void Game::play() {
 		gui->Display();
 		if (cursor) cursor->display();
 
-		screen->preformUpdate();
+		screen->performUpdate();
 		sound_manager->update();
 		event->wait();
 	}
@@ -682,7 +650,7 @@ void Game::update_once(bool process_gui_input, bool run_converse) {
 			gui->HandleEvent(&evt);
 	}
 
-	if (clock->get_timer(GAMECLOCK_TIMER_U6_TIME_STOP) == 0) {
+	if (_clock->get_timer(GAMECLOCK_TIMER_U6_TIME_STOP) == 0) {
 		palette->rotatePalette();
 		tile_manager->update();
 		actor_manager->twitchActors();
@@ -698,7 +666,7 @@ void Game::update_once_display() {
 	gui->Display();
 	if (cursor) cursor->display();
 
-	screen->preformUpdate();
+	screen->performUpdate();
 	sound_manager->update();
 	event->wait();
 }
@@ -706,12 +674,12 @@ void Game::update_once_display() {
 /* return the fullpath to the datafile. First look for it in the savegame directory.
  * Then in the app data directory.
  */
-Std::string Game::get_data_file_path(Std::string datafile) {
-	Std::string path;
-	build_path("data", datafile, path);
+Common::Path Game::get_data_file_path(const Common::Path &datafile) {
+	Common::Path path("data");
+	path.joinInPlace(datafile);
 
-	if (!file_exists(path.c_str())) {
-		build_path(gui->get_data_dir(), datafile, path);
+	if (!file_exists(path)) {
+		path = gui->get_data_dir().joinInPlace(datafile);
 	}
 
 	return path;

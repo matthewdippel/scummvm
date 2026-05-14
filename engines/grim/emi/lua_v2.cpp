@@ -20,7 +20,6 @@
  */
 
 #include "common/endian.h"
-#include "common/foreach.h"
 #include "common/savefile.h"
 
 #include "graphics/surface.h"
@@ -220,18 +219,13 @@ void Lua_V2::GetFontDimensions() {
 
 	const char *fontName = lua_getstring(fontObj);
 
-	Font *font = nullptr;
-	foreach (Font *f, Font::getPool()) {
-		if (f->getFilename() == fontName) {
-			font = f;
-		}
-	}
+	Font *font = Font::getByFileName(fontName);
 	if (!font) {
 		font = g_resourceloader->loadFont(fontName);
 	}
 	if (font) {
 		int32 h = font->getBaseOffsetY();
-		int32 w = font->getCharKernedWidth('w');
+		int32 w = font->getFontWidth();
 		lua_pushnumber(w);
 		lua_pushnumber(h);
 	} else {
@@ -509,7 +503,7 @@ void Lua_V2::ThumbnailFromFile() {
 		return;
 	}
 
-	screenshot->_data->convertToColorFormat(Graphics::PixelFormat(4, 8, 8, 8, 8, 0, 8, 16, 24));
+	screenshot->_data->convertToColorFormat(Graphics::PixelFormat::createFormatRGBA32());
 	g_driver->createSpecialtyTexture(index, (const uint8 *)screenshot->getData(0).getPixels(), width, height);
 	delete screenshot;
 	delete[] data;
@@ -553,7 +547,7 @@ void Lua_V2::LocalizeString() {
 	if (lua_isstring(strObj)) {
 		const char *str = lua_getstring(strObj);
 		Common::String msg = parseMsgText(str, msgId);
-		sprintf(buf, "/%s/%s", msgId, msg.c_str());
+		Common::sprintf_s(buf, "/%s/%s", msgId, msg.c_str());
 
 		lua_pushstring(buf);
 	}

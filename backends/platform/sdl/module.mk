@@ -4,6 +4,12 @@ MODULE_OBJS := \
 	sdl.o \
 	sdl-window.o
 
+ifdef KOLIBRIOS
+MODULE_OBJS += \
+	kolibrios/kolibrios-main.o \
+	kolibrios/kolibrios.o
+endif
+
 ifdef POSIX
 MODULE_OBJS += \
 	posix/posix-main.o \
@@ -17,6 +23,7 @@ MODULE_OBJS += \
 	macosx/macosx-touchbar.o \
 	macosx/macosx-window.o \
 	macosx/macosx_wrapper.o \
+	macosx/macosx_osys_misc.o \
 	macosx/appmenu_osx.o
 endif
 
@@ -39,6 +46,12 @@ MODULE_OBJS += \
 	riscos/riscos-main.o \
 	riscos/riscos-utils.o \
 	riscos/riscos.o
+endif
+
+ifdef MIYOO
+MODULE_OBJS += \
+	miyoo/miyoo-main.o \
+	miyoo/miyoo.o
 endif
 
 ifdef MORPHOS
@@ -64,6 +77,13 @@ CC=arm-vita-eabi-gcc
 MODULE_OBJS += \
 	psp2/psp2-main.o \
 	psp2/psp2.o
+endif
+
+ifdef SAILFISH
+MODULE_OBJS += \
+	sailfish/sailfish-main.o \
+	sailfish/sailfish-window.o \
+	sailfish/sailfish.o
 endif
 
 ifdef SWITCH

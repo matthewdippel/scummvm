@@ -54,10 +54,24 @@
 #include "common/rect.h"
 #include "common/macresman.h"
 #include "common/random.h"
+#include "common/timer.h"
+#include "common/text-to-speech.h"
 
 #include "wage/debugger.h"
 
 struct ADGameDescription;
+
+namespace Common {
+struct Event;
+}
+
+namespace Graphics {
+class MacDialog;
+}
+
+namespace Audio {
+class PCSpeaker;
+}
 
 namespace Wage {
 
@@ -77,6 +91,12 @@ typedef Common::List<Chr *> ChrList;
 
 #define STORAGESCENE "STORAGE@"
 
+enum {
+	kDebugImGui = 1,
+	kDebugSound,
+	kDebugLoading,
+};
+
 enum OperandType {
 	OBJ = 0,
 	CHR = 1,
@@ -95,12 +115,9 @@ enum Directions {
 	WEST = 3
 };
 
-// our engine debug levels
-enum {
-	kWageDebugExample = 1 << 0,
-	kWageDebugExample2 = 1 << 1
-	// next new level must be 1 << 2 (4)
-	// the current limitation is 32 debug levels (1 << 31 is the last one)
+enum Resolution {
+	GF_RES800  =	1 << 0,
+	GF_RES1024 =	1 << 1
 };
 
 Common::Rect *readRect(Common::SeekableReadStream *in);
@@ -119,14 +136,15 @@ public:
 
 	Common::Error run() override;
 
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	const char *getGameFile() const;
 	void processTurn(Common::String *textInput, Designed *clickInput);
 	void regen();
 
 	const char *getTargetName() { return _targetName.c_str(); }
+	bool pollEvent(Common::Event &event);
 
 private:
 	bool loadWorld(Common::MacResManager *resMan);
@@ -143,9 +161,6 @@ private:
 	void decrementUses(Obj *obj);
 	bool attackHit(Chr *attacker, Chr *victim, Obj *weapon, int targetIndex);
 	void performHealingMagic(Chr *chr, Obj *magicalObject);
-
-	void doClose();
-	void updateSoundTimerForScene(Scene *scene, bool firstTime);
 
 public:
 	void takeObj(Obj *obj);
@@ -173,6 +188,8 @@ public:
 	void printPlayerCondition(Chr *player);
 	const char *getPercentMessage(double percent);
 
+	void doClose();
+
 public:
 	Common::RandomSource *_rnd;
 
@@ -190,16 +207,25 @@ public:
 	bool _temporarilyHidden;
 	bool _isGameOver;
 	bool _commandWasQuick;
+	bool _restartRequested = false;
 
 	bool _shouldQuit;
+	int _defaultSaveSlot = -1;
+	Common::String _defaultSaveDescritpion;
 
 	Common::String _inputText;
 
-	void playSound(Common::String soundName);
+	Common::List<int> _soundQueue;
+	Common::String _soundToPlay;
+	Audio::PCSpeaker *_speaker;
+
+	void playSound(Common::String soundName, bool blocking = true);
+	void playStartupSound(byte *stream, uint32 size, int divisor);
+	void updateSoundTimerForScene(Scene *scene, bool firstTime);
 	void setMenu(Common::String soundName);
 	void appendText(const char *str);
-	void gameOver();
-	bool saveDialog();
+	void sayText(const Common::U32String &str, Common::TextToSpeechManager::Action action = Common::TextToSpeechManager::INTERRUPT_NO_REPEAT) const;
+	void sayText(const Common::String &str, Common::TextToSpeechManager::Action action = Common::TextToSpeechManager::INTERRUPT_NO_REPEAT) const;
 	Obj *getOffer();
 	Chr *getMonster();
 	void processEvents();
@@ -208,6 +234,8 @@ public:
 	void encounter(Chr *player, Chr *chr);
 	void redrawScene();
 	void saveGame();
+
+	uint32 getFeatures();
 
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
@@ -223,6 +251,9 @@ private:
 	int saveGame(const Common::String &fileName, const Common::String &descriptionString);
 	int loadGame(int slotId);
 
+	void resetState();
+	void restart();
+
 private:
 	const ADGameDescription *_gameDescription;
 
@@ -230,6 +261,8 @@ private:
 
 	Audio::SoundHandle _soundHandle;
 };
+
+extern WageEngine *g_wage;
 
 } // End of namespace Wage
 

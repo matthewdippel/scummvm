@@ -23,14 +23,14 @@
 #ifndef ULTIMA8_ULTIMA8
 #define ULTIMA8_ULTIMA8
 
+#include "common/random.h"
 #include "common/stream.h"
-#include "ultima/shared/std/containers.h"
-#include "ultima/shared/engine/ultima.h"
-#include "ultima/ultima8/usecode/intrinsics.h"
-#include "ultima/ultima8/misc/common_types.h"
-#include "ultima/ultima8/games/game_info.h"
-#include "ultima/ultima8/graphics/render_surface.h"
+#include "graphics/screen.h"
 #include "ultima/detection.h"
+#include "ultima/ultima8/games/game_info.h"
+#include "ultima/ultima8/gfx/render_surface.h"
+#include "ultima/ultima8/metaengine.h"
+#include "ultima/ultima8/usecode/intrinsics.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -53,9 +53,7 @@ class Mouse;
 class AvatarMoverProcess;
 class Texture;
 class AudioMixer;
-class FileSystem;
 class ConfigFileManager;
-struct GameInfo;
 
 #define GAME_IS_U8 (Ultima8Engine::get_instance()->getGameInfo()->_type == GameInfo::GAME_U8)
 #define GAME_IS_REMORSE (Ultima8Engine::get_instance()->getGameInfo()->_type == GameInfo::GAME_REMORSE)
@@ -63,14 +61,16 @@ struct GameInfo;
 #define GAME_IS_CRUSADER (GAME_IS_REMORSE || GAME_IS_REGRET)
 #define GAME_IS_DEMO (Ultima8Engine::get_instance()->getGameInfo()->_ucOffVariant == GameInfo::GAME_UC_DEMO)
 
-class Ultima8Engine : public Shared::UltimaEngine {
+class Ultima8Engine : public Engine {
 	friend class Debugger;
 private:
+	Common::RandomSource _randomSource;
+
 	bool _isRunning;
 	GameInfo *_gameInfo;
+	const UltimaGameDescription *_gameDescription;
 
 	// minimal system
-	FileSystem *_fileSystem;
 	ConfigFileManager *_configFileMan;
 
 	static Ultima8Engine *_instance;
@@ -83,8 +83,7 @@ private:
 
 	// full system
 	Game *_game;
-	Std::string _errorMessage;
-	Std::string _errorTitle;
+	Common::Error _lastError;
 
 	Kernel *_kernel;
 	ObjectManager *_objectManager;
@@ -101,10 +100,11 @@ private:
 	InverterGump *_inverterGump;
 	AvatarMoverProcess *_avatarMoverProcess;
 
-	// Various dependancy flags
+	// Various dependency flags
 	// Timing stuff
 	int32 _lerpFactor;       //!< Interpolation factor for this frame (0-256)
 	bool _inBetweenFrame;    //!< Set true if we are doing an inbetween frame
+	uint32 _priorFrameCounterTime;
 
 	bool _highRes;			 //!< Set to true to enable larger screen size
 	bool _frameSkip;         //!< Set to true to enable frame skipping (default false)
@@ -116,8 +116,9 @@ private:
 
 	bool _avatarInStasis;    //!< If this is set to true, Avatar can't move,
 	//!< nor can Avatar start more usecode
-	bool _paintEditorItems;  //!< If true, paint items with the SI_EDITOR flag
-	bool _showTouching;          //!< If true, highlight items touching Avatar
+	bool _showEditorItems;   //!< If true, paint items with the SI_EDITOR flag
+	bool _showTouching;      //!< If true, highlight items touching Avatar
+	bool _hackMoverEnabled;  //!< If true, any item can be moved
 	int32 _timeOffset;
 	bool _hasCheated;
 	bool _cheatsEnabled;
@@ -127,16 +128,10 @@ private:
 	bool _cruStasis; //!< A slightly different kind of stasis for Crusader that stops some keyboard events
 private:
 	/**
-	 * Does engine deinitialization
-	 */
-	void deinitialize() override;
-
-	/**
 	 * Shows the Pentagram splash screen
 	 */
 	void showSplashScreen();
 
-private:
 	//! write savegame info (time, ..., game-specifics)
 	void writeSaveInfo(Common::WriteStream *ws);
 
@@ -155,33 +150,23 @@ private:
 	//! Does a Full reset of the Engine (including shutting down Video)
 //	void fullReset();
 
-	// called depending upon command line arguments
-	void GraphicSysInit(); // starts/restarts the graphics subsystem
-
 	void handleDelayedEvents();
 
-	//! Fill a GameInfo struct for the give game name
-	//! \param game The id of the game to check (from pentagram.cfg)
-	//! \param gameinfo The GameInfo struct to fill
-	//! \return true if detected all the fields, false if detection failed
-	bool getGameInfo(const istring &game, GameInfo *gameinfo);
-
+	bool pollEvent(Common::Event &event);
 protected:
 	// Engine APIs
 	Common::Error run() override;
 
-	bool initialize() override;
+	Common::Error initialize();
+	void deinitialize();
 
 	void pauseEngineIntern(bool pause) override;
-
-	/**
-	 * Returns the data archive folder and version that's required
-	 */
-	bool isDataRequired(Common::String &folder, int &majorVersion, int &minorVersion) override;
 
 public:
 	Ultima8Engine(OSystem *syst, const Ultima::UltimaGameDescription *gameDesc);
 	~Ultima8Engine() override;
+
+	void initializePath(const Common::FSNode &gamePath) override;
 
 	static Ultima8Engine *get_instance() {
 		return _instance;
@@ -189,14 +174,12 @@ public:
 
 	bool hasFeature(EngineFeature f) const override;
 
-	bool startup();
-	void shutdown();
+	Common::Language getLanguage() const;
 
 	bool setupGame();
-	bool startupGame();
-	void shutdownGame(bool reloading = true);
+	Common::Error startupGame();
 
-	void changeVideoMode(int width, int height);
+	Common::Error changeVideoMode(int width, int height);
 
 	//! Get current GameInfo struct
 	const GameInfo *getGameInfo() const {
@@ -207,10 +190,13 @@ public:
 		return _screen;
 	}
 
-	Graphics::Screen *getScreen() const override;
+	Graphics::Screen *getScreen() const;
 
-	bool runGame();
+	Common::Error runGame();
 	virtual void handleEvent(const Common::Event &event);
+
+	void handleActionDown(KeybindingAction action);
+	void handleActionUp(KeybindingAction action);
 
 	void paint();
 
@@ -247,20 +233,25 @@ public:
 	bool isAvatarInStasis() const {
 		return _avatarInStasis;
 	}
-	void toggleAvatarInStasis() {
-		_avatarInStasis = !_avatarInStasis;
+	bool isAvatarControlled() const;
+	bool isShowEditorItems() const {
+		return _showEditorItems;
 	}
-	bool isPaintEditorItems() const {
-		return _paintEditorItems;
-	}
-	void togglePaintEditorItems() {
-		_paintEditorItems = !_paintEditorItems;
+	void setShowEditorItems(bool flag) {
+		_showEditorItems = flag;
 	}
 	bool isShowTouchingItems() const {
 		return _showTouching;
 	}
-	void toggleShowTouchingItems() {
-		_showTouching = !_showTouching;
+	void setShowTouchingItems(bool flag) {
+		_showTouching = flag;
+	}
+
+	bool isHackMoverEnabled() const {
+		return _hackMoverEnabled;
+	}
+	void setHackMoverEnabled(bool flag) {
+		_hackMoverEnabled = flag;
 	}
 
 	bool isCrusaderTeleporting() const {
@@ -297,6 +288,10 @@ public:
 		return _avatarMoverProcess;
 	}
 
+	Common::RandomSource &getRandomSource() {
+		return _randomSource;
+	}
+
 	/**
 	 * Notifies the engine that the sound settings may have changed
 	 */
@@ -315,12 +310,12 @@ public:
 	/**
 	 * Returns true if a savegame can be loaded
 	 */
-	bool canLoadGameStateCurrently(bool isAutosave = false) override { return true; }
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override { return true; }
 
 	/**
 	 * Returns true if the game can be saved
 	 */
-	bool canSaveGameStateCurrently(bool isAutosave = false) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	/**
 	 * Load a game
@@ -342,18 +337,13 @@ public:
 	 */
 	Common::Error saveGameStream(Common::WriteStream *stream, bool isAutosave) override;
 
-	//! save a game
-	//! \param filename the file to save to
-	//! \return true if succesful
-	bool saveGame(int slot, const Std::string &desc);
-
 	//! start a new game
-	//! \return true if succesful.
+	//! \return true if successful.
 	bool newGame(int saveSlot = -1);
 
-	//! Display an error message box
-	//! \param message The message to display on the box
-	void Error(Std::string message, Std::string title = Std::string());
+	//! Sets an error to end the engine run loop
+	//! \param error The error to return from the engine
+	void setError(Common::Error &error);
 public:
 	unsigned int getInversion() const {
 		return _inversion;
@@ -380,8 +370,6 @@ public:
 	bool isInterpolationEnabled() const {
 		return _interpolate;
 	}
-public:
-	U8PixelFormat _renderFormat;
 };
 
 } // End of namespace Ultima8

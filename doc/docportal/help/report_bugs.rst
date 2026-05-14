@@ -5,7 +5,7 @@ Report a bug
 
 To report a bug, go to the ScummVM `Issue Tracker <https://bugs.scummvm.org/>`_ and log in with your GitHub account.
 
-Please make sure the bug is reproducible, and still occurs in the latest git/Daily build version. Also check the `compatibility list <https://www.scummvm.org/compatibility/>`_ for that game, to ensure the issue is not already known. Please do not report bugs for games that are not listed as completeable on the `Supported Games <https://wiki.scummvm.org/index.php?title=Category:Supported_Games>`_ wiki page, or on the compatibility list. We already know those games have bugs!
+Please make sure the bug is reproducible, and still occurs in the latest git/Daily build version. Also check the `compatibility list <https://www.scummvm.org/compatibility/>`_ for that game, to ensure the issue is not already known. Please do not report bugs for games that are not listed as completable  on the `Supported Games <https://wiki.scummvm.org/index.php?title=Category:Supported_Games>`_ wiki page, or on the compatibility list. We already know those games have bugs!
 
 Please include the following information in the bug report:
 
@@ -27,25 +27,16 @@ The ScummVM log file
 
 To help you report a bug, you can find error messages in the ScummVM log file. The location of this file varies depending on your operating system.
 
+.. tab-set::
 
-.. tabbed:: Windows
+    .. tab-item:: Windows
 
-	.. panels::
-		:column: col-lg-12 mb-2
+        ``%APPDATA%\ScummVM\Logs\scummvm.log``
 
-		``%APPDATA%\ScummVM\Logs\scummvm.log``
+    .. tab-item:: macOS
 
-.. tabbed:: macOS
+        ``~/Library/Logs/scummvm.log``
 
-	.. panels::
-		:column: col-lg-12 mb-2
+    .. tab-item:: Linux
 
-		``~/Library/Logs/scummvm.log``
-
-.. tabbed:: Linux
-
-	.. panels::
-		:column: col-lg-12 mb-2
-
-		We use the XDG Base Directory Specification, so by default the file will be ``~/.cache/scummvm/logs/scummvm.log`` but its location might vary depending on the value of the ``XDG_CACHE_HOME`` environment variable.
-
+        We use the XDG Base Directory Specification, so by default the file will be ``~/.cache/scummvm/logs/scummvm.log`` but its location might vary depending on the value of the ``XDG_CACHE_HOME`` environment variable.

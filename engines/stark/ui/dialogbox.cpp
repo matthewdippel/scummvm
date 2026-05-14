@@ -22,7 +22,7 @@
 #include "engines/stark/ui/dialogbox.h"
 #include "engines/stark/gfx/driver.h"
 #include "engines/stark/gfx/surfacerenderer.h"
-#include "engines/stark/gfx/texture.h"
+#include "engines/stark/gfx/bitmap.h"
 #include "engines/stark/services/services.h"
 #include "engines/stark/services/fontprovider.h"
 #include "engines/stark/ui/cursor.h"
@@ -30,7 +30,7 @@
 
 #include "common/memstream.h"
 #include "common/stream.h"
-#include "common/winexe_pe.h"
+#include "common/formats/winexe_pe.h"
 
 #include "graphics/surface.h"
 
@@ -46,25 +46,16 @@ static const uint buttonVerticalMargin   = 5;
 
 DialogBox::DialogBox(StarkEngine *vm, Gfx::Driver *gfx, Cursor *cursor) :
 		Window(gfx, cursor),
-		_foregroundTexture(nullptr),
+		_background(nullptr),
+		_foreground(nullptr),
 		_confirmCallback(nullptr) {
 	_vm = vm;
 	_surfaceRenderer = gfx->createSurfaceRenderer();
 
-	Graphics::Surface *background = loadBackground();
-	if (!background) {
-		// If we were not able to load the background, fallback to dark blue
-		background = new Graphics::Surface();
-		background->create(256, 256, Gfx::Driver::getRGBAPixelFormat());
-
-		uint32 blue = background->format.RGBToColor(26, 28, 57);
-		background->fillRect(Common::Rect(256, 256), blue);
+	_background = loadBackground(gfx);
+	if (_background) {
+		_background->setSamplingFilter(Gfx::Bitmap::kLinear);
 	}
-	_backgroundTexture = gfx->createBitmap(background);
-	_backgroundTexture->setSamplingFilter(Gfx::Texture::kLinear);
-
-	background->free();
-	delete background;
 
 	_messageVisual = new VisualText(gfx);
 	_messageVisual->setColor(_textColor);
@@ -87,7 +78,7 @@ DialogBox::~DialogBox() {
 	delete _confirmLabelVisual;
 	delete _cancelLabelVisual;
 
-	delete _backgroundTexture;
+	delete _background;
 
 	delete _surfaceRenderer;
 }
@@ -166,30 +157,30 @@ void DialogBox::recomputeLayout() {
 	drawBevel(&foreground, _confirmButtonRect);
 	drawBevel(&foreground, _cancelButtonRect);
 
-	_foregroundTexture = _gfx->createBitmap(&foreground);
-	_foregroundTexture->setSamplingFilter(Gfx::Texture::kLinear);
+	_foreground = _gfx->createBitmap(&foreground);
+	_foreground->setSamplingFilter(Gfx::Bitmap::kLinear);
 
 	foreground.free();
 
 	Common::Point screenCenter(Gfx::Driver::kOriginalWidth / 2, Gfx::Driver::kOriginalHeight / 2);
 	_position = Common::Rect::center(screenCenter.x, screenCenter.y,
-	                                 _foregroundTexture->width(), _foregroundTexture->height());
+	                                 _foreground->width(), _foreground->height());
 }
 
 void DialogBox::freeForeground() {
-	delete _foregroundTexture;
-	_foregroundTexture = nullptr;
+	delete _foreground;
+	_foreground = nullptr;
 
 	if (_messageVisual) {
-		_messageVisual->resetTexture();
+		_messageVisual->reset();
 	}
 
 	if (_confirmLabelVisual) {
-		_confirmLabelVisual->resetTexture();
+		_confirmLabelVisual->reset();
 	}
 
 	if (_cancelLabelVisual) {
-		_cancelLabelVisual->resetTexture();
+		_cancelLabelVisual->reset();
 	}
 }
 
@@ -208,13 +199,13 @@ void DialogBox::onClick(const Common::Point &pos) {
 	}
 }
 
-void DialogBox::onKeyPress(const Common::KeyState &keyState) {
-	if (keyState.keycode == Common::KEYCODE_ESCAPE) {
+void DialogBox::onKeyPress(const Common::CustomEventType customType) {
+	if (customType == kActionSkip) {
 		close();
 	}
 }
 
-Graphics::Surface *DialogBox::loadBackground() {
+Gfx::Bitmap *DialogBox::loadBackground(Gfx::Driver *gfx) {
 	Common::PEResources *executable = new Common::PEResources();
 	if (!executable->loadFromEXE("game.exe") && !executable->loadFromEXE("game.dll")) {
 		warning("Unable to load 'game.exe' to read the modal dialog background image");
@@ -263,16 +254,20 @@ Graphics::Surface *DialogBox::loadBackground() {
 
 	delete[] bitmapWithHeader;
 
-	return decoder.getSurface()->convertTo(Gfx::Driver::getRGBAPixelFormat(), decoder.getPalette());
+	return gfx->createBitmap(decoder.getSurface(), decoder.getPalette().data());
 }
 
 void DialogBox::onRender() {
-	uint32 backgroundRepeatX = ceil(_foregroundTexture->width() / (float)_backgroundTexture->width());
-	for (uint i = 0; i < backgroundRepeatX; i++) {
-		_surfaceRenderer->render(_backgroundTexture, Common::Point(i * _backgroundTexture->width(), 0));
+	if (_background) {
+		uint32 backgroundRepeatX = ceil(_foreground->width() / (float)_background->width());
+		for (uint i = 0; i < backgroundRepeatX; i++) {
+			_surfaceRenderer->render(_background, Common::Point(i * _background->width(), 0));
+		}
+	} else {
+		_surfaceRenderer->fill(_backgroundColor, Common::Point(0, 0), _foreground->width(), _foreground->height());
 	}
 
-	_surfaceRenderer->render(_foregroundTexture, Common::Point(0, 0));
+	_surfaceRenderer->render(_foreground, Common::Point(0, 0));
 
 	_messageVisual->render(Common::Point(_messageRect.left, _messageRect.top));
 

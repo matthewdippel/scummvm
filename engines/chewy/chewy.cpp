@@ -22,6 +22,7 @@
 #include "common/config-manager.h"
 #include "common/fs.h"
 #include "common/system.h"
+#include "engines/metaengine.h"
 #include "engines/util.h"
 #include "chewy/chewy.h"
 #include "chewy/cursor.h"
@@ -45,7 +46,7 @@ ChewyEngine::ChewyEngine(OSystem *syst, const ChewyGameDescription *gameDesc)
 
 	g_engine = this;
 	g_screen = nullptr;
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 
 	SearchMan.addSubDirectoryMatching(gameDataDir, "back");
 	SearchMan.addSubDirectoryMatching(gameDataDir, "cut");

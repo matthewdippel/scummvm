@@ -23,6 +23,7 @@
 #include "common/file.h"
 #include "engines/util.h"
 #include "graphics/surface.h"
+#include "graphics/scaler/downscaler.h"
 #include "image/pcx.h"
 
 namespace DreamWeb {
@@ -154,35 +155,40 @@ void DreamWebEngine::setMode() {
 }
 
 void DreamWebEngine::showPCX(const Common::String &suffix) {
-	Common::String name = getDatafilePrefix() + suffix;
+	Common::Path name(getDatafilePrefix() + suffix);
 	Common::File pcxFile;
 	if (!pcxFile.open(name)) {
-		warning("showpcx: Could not open '%s'", name.c_str());
+		warning("showpcx: Could not open '%s'", name.toString(Common::Path::kNativeSeparator).c_str());
 		return;
 	}
 
 	Image::PCXDecoder pcx;
 	if (!pcx.loadStream(pcxFile)) {
-		warning("showpcx: Could not process '%s'", name.c_str());
+		warning("showpcx: Could not process '%s'", name.toString(Common::Path::kNativeSeparator).c_str());
 		return;
 	}
 
 	// Read the 16-color palette into the 'maingamepal' buffer. Note that
 	// the color components have to be adjusted from 8 to 6 bits.
 	memset(_mainPal, 0xff, 256 * 3);
-	memcpy(_mainPal, pcx.getPalette(), 48);
+	memcpy(_mainPal, pcx.getPalette().data(), 48);
 	for (int i = 0; i < 48; i++) {
 		_mainPal[i] >>= 2;
 	}
 
-	Graphics::Surface *s = g_system->lockScreen();
-	s->fillRect(Common::Rect(640, 480), 0);
 	const Graphics::Surface *pcxSurface = pcx.getSurface();
 	if (pcxSurface->format.bytesPerPixel != 1)
 		error("Invalid bytes per pixel in PCX surface (%d)", pcxSurface->format.bytesPerPixel);
-	for (uint16 y = 0; y < pcxSurface->h; y++)
-		memcpy((byte *)s->getBasePtr(0, y), pcxSurface->getBasePtr(0, y), pcxSurface->w);
-	g_system->unlockScreen();
+
+	g_system->fillScreen(0);
+	if (pcxSurface->w >= g_system->getWidth() * 2) {
+		Graphics::Surface *s = g_system->lockScreen();
+		Graphics::downscaleSurfaceByHalf(s, pcxSurface, _mainPal);
+		g_system->unlockScreen();
+	} else {
+		g_system->copyRectToScreen(pcxSurface->getPixels(), pcxSurface->pitch,
+		                           0, 0, pcxSurface->w, pcxSurface->h);
+	}
 }
 
 void DreamWebEngine::frameOutV(uint8 *dst, const uint8 *src, uint16 pitch, uint16 width, uint16 height, int16 x, int16 y) {
@@ -298,7 +304,7 @@ void DreamWebEngine::dumpZoom() {
 }
 
 void DreamWebEngine::crosshair() {
-	uint8 frame;
+	uint16 frame;
 	if ((_commandType != 3) && (_commandType < 10)) {
 		frame = 9;
 	} else {
@@ -373,7 +379,7 @@ bool DreamWebEngine::pixelCheckSet(const ObjPos *pos, uint8 x, uint8 y) {
 void DreamWebEngine::loadPalFromIFF() {
 	Common::File palFile;
 	uint8* buf = new uint8[2000];
-	palFile.open(getDatafilePrefix() + "PAL");
+	palFile.open(Common::Path(getDatafilePrefix() + "PAL"));
 	palFile.read(buf, 2000);
 	palFile.close();
 

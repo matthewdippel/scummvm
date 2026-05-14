@@ -42,14 +42,16 @@ struct ScreenSave {
 	int _scrollRow;
 	Common::Point _bufferStart;
 	int _screenYOff;
+
+	ScreenSave();
 };
 
 class Screen : public BaseSurface {
 private:
 	AccessEngine *_vm;
-	byte _tempPalette[PALETTE_SIZE];
-	byte _rawPalette[PALETTE_SIZE];
-	byte _savedPalettes[2][PALETTE_SIZE];
+	byte _tempPalette[Graphics::PALETTE_SIZE];
+	byte _rawPalette[Graphics::PALETTE_SIZE];
+	byte _savedPalettes[2][Graphics::PALETTE_SIZE];
 	int _savedPaletteCount;
 	int _vesaCurrentWin;
 	int _currentPanel;
@@ -60,7 +62,6 @@ private:
 	int _startCycle;
 	int _cycleStart;
 	int _endCycle;
-	Common::List<Common::Rect> _dirtyRects;
 
 	void updatePalette();
 public:
@@ -85,7 +86,7 @@ public:
 	 */
 	void update() override;
 
-	void copyBlock(BaseSurface *src, const Common::Rect &bounds) override;
+	void copyBlock(const BaseSurface *src, const Common::Rect &bounds) override;
 
 	void restoreBlock() override;
 
@@ -132,7 +133,7 @@ public:
 	 */
 	void setManPalette();
 
-	void loadPalette(int fileNum, int subfile);
+	void loadPalette(int fileNum, int subfile, int srcOffset = 0);
 
 	void setPalette();
 
@@ -144,7 +145,7 @@ public:
 
 	void getPalette(byte *pal);
 
-	void flashPalette(int count);
+	void flashPalette(int step);
 
 	/**
 	 * Copy a buffer to the screen
@@ -170,6 +171,8 @@ public:
 	void cyclePaletteForward();
 
 	void cyclePaletteBackwards();
+
+	void dump(const char *fname) const;
 };
 
 } // End of namespace Access

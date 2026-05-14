@@ -31,13 +31,13 @@ namespace Data {
 namespace Standard {
 
 struct CursorModifier : public PlugInModifierData {
-	uint16 unknown1;
-	Event applyWhen;
-	uint16 unknown2;
-	Event removeWhen;
-	uint16 unknown3;
-	uint32 cursorID;
-	uint8 unknown4[4];
+	CursorModifier();
+
+	bool haveRemoveWhen;
+
+	PlugInTypeTaggedValue applyWhen;
+	PlugInTypeTaggedValue removeWhen;
+	PlugInTypeTaggedValue cursorIDAsLabel;
 
 protected:
 	DataReadErrorCode load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) override;
@@ -70,6 +70,8 @@ struct MediaCueMessengerModifier : public PlugInModifierData {
 		kTriggerTimingEnd = 2,
 	};
 
+	MediaCueMessengerModifier();
+
 	PlugInTypeTaggedValue enableWhen;
 	PlugInTypeTaggedValue disableWhen;
 	PlugInTypeTaggedValue sendEvent;
@@ -89,47 +91,6 @@ struct ObjectReferenceVariableModifier : public PlugInModifierData {
 	PlugInTypeTaggedValue setToSourceParentWhen;
 	PlugInTypeTaggedValue unknown1;
 	PlugInTypeTaggedValue objectPath;
-
-protected:
-	DataReadErrorCode load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) override;
-};
-
-struct MidiModifier : public PlugInModifierData {
-	struct EmbeddedFile {
-		Common::Array<uint8> contents;
-	};
-
-	struct EmbeddedPart {
-		uint8 hasFile;
-		uint8 loop;
-		uint8 overrideTempo;
-		uint8 volume;
-	};
-
-	struct SingleNotePart {
-		uint8 channel;
-		uint8 note;
-		uint8 velocity;
-		uint8 program;
-	};
-
-	union ModeSpecificUnion {
-		EmbeddedPart embedded;
-		SingleNotePart singleNote;
-	};
-
-	PlugInTypeTaggedValue executeWhen;
-	PlugInTypeTaggedValue terminateWhen;
-
-	uint8 embeddedFlag;
-	ModeSpecificUnion modeSpecific;
-
-	PlugInTypeTaggedValue embeddedTempo;		// Float
-	PlugInTypeTaggedValue embeddedFadeIn;		// Float
-	PlugInTypeTaggedValue embeddedFadeOut;		// Float
-	PlugInTypeTaggedValue singleNoteDuration;	// Float
-
-	Common::SharedPtr<EmbeddedFile> embeddedFile;
 
 protected:
 	DataReadErrorCode load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) override;
@@ -165,6 +126,67 @@ protected:
 };
 
 struct SysInfoModifier : public PlugInModifierData {
+protected:
+	DataReadErrorCode load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) override;
+};
+
+struct PanningModifier : public PlugInModifierData {
+	PlugInTypeTaggedValue unknown1Event; // Probably "Enable When"
+	PlugInTypeTaggedValue unknown2Event; // Probably "Disable When"
+	PlugInTypeTaggedValue unknown3Int;   // Int
+	PlugInTypeTaggedValue unknown4Int;   // Int
+	PlugInTypeTaggedValue unknown5Int;   // Int
+
+protected:
+	DataReadErrorCode load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) override;
+};
+
+struct FadeModifier : public PlugInModifierData {
+	PlugInTypeTaggedValue unknown1Event; // Probably "Enable When"
+	PlugInTypeTaggedValue unknown2Event; // Probably "Disable When"
+	PlugInTypeTaggedValue unknown3Int;   // Int
+	PlugInTypeTaggedValue unknown4Int;   // Int
+	PlugInTypeTaggedValue unknown5Int;   // Int
+
+protected:
+	DataReadErrorCode load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) override;
+};
+
+struct PrintModifier : public PlugInModifierData {
+	PlugInTypeTaggedValue executeWhen;
+	PlugInTypeTaggedValue unknown1Bool;
+	PlugInTypeTaggedValue unknown2Bool;
+	PlugInTypeTaggedValue unknown3Bool;
+	PlugInTypeTaggedValue filePath;
+	PlugInTypeTaggedValue unknown4Bool;
+
+protected:
+	DataReadErrorCode load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) override;
+};
+
+struct NavigateModifier : public PlugInModifierData {
+protected:
+	DataReadErrorCode load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) override;
+};
+
+struct OpenTitleModifier : public PlugInModifierData {
+	PlugInTypeTaggedValue executeWhen;
+	PlugInTypeTaggedValue pathOrUrl;
+	PlugInTypeTaggedValue addToReturnList;
+
+protected:
+	DataReadErrorCode load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) override;
+};
+
+struct OpenAppModifier : public PlugInModifierData {
+	PlugInTypeTaggedValue unknown1Null;
+	PlugInTypeTaggedValue unknown2Null;
+	PlugInTypeTaggedValue unknown3Event;
+	PlugInTypeTaggedValue unknown4String;
+	PlugInTypeTaggedValue unknown5Integer;
+	PlugInTypeTaggedValue unknown6Integer;
+	PlugInTypeTaggedValue unknown7Bool;
+
 protected:
 	DataReadErrorCode load(PlugIn &plugIn, const PlugInModifier &prefix, DataReader &reader) override;
 };

@@ -223,7 +223,7 @@ void ResourceManager::dumpFile(int num, const char *pattern) {
 		return;
 
 	Common::DumpFile dumpFile;
-	dumpFile.open(Common::String("dumps/") + Common::String::format(pattern, num));
+	dumpFile.open(Common::Path("dumps/").appendComponent(Common::String::format(pattern, num)));
 	uint32 pos = _bigDataFile->pos();
 
 	_bigDataFile->seek(_startOfDataIndex + (num << 2), 0);
@@ -240,6 +240,38 @@ void ResourceManager::dumpFile(int num, const char *pattern) {
 	free(data);
 
 	_bigDataFile->seek(pos);
+}
+
+bool ResourceManager::dumpFileFromName(const char *name) {
+	int num = -1;
+	for (int i = 0; i < getResourceNameCount(); i++) {
+		if (name != resourceNameFromNum(i))
+			continue;
+		num = i;
+		break;
+	}
+	if (num < 0)
+		return false;
+
+	Common::DumpFile dumpFile;
+	dumpFile.open(Common::Path("dumps/").append(name), true);
+	uint32 pos = _bigDataFile->pos();
+
+	_bigDataFile->seek(_startOfDataIndex + (num << 2), 0);
+	_bigDataFile->seek(_bigDataFile->readUint32LE(), 1);
+
+	uint fsize = _bigDataFile->readUint32LE();
+
+	byte *data = (byte *)malloc(fsize);
+
+	_bigDataFile->read(data, fsize);
+	dumpFile.write(data, fsize);
+	dumpFile.close();
+
+	free(data);
+
+	_bigDataFile->seek(pos);
+	return true;
 }
 
 void ResourceManager::readResourceNames(Common::SeekableReadStream *readStream) {

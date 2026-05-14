@@ -28,7 +28,7 @@
 namespace Titanic {
 
 /**
- * Extremly simple fixed size queue class.
+ * Extremely simple fixed size queue class.
  */
 template<class T, uint MAX_SIZE = 10>
 class FixedQueue {
@@ -37,7 +37,7 @@ protected:
 	Common::Array<T> _data;
 	size_type _topIndex;
 public:
-	FixedQueue<T, MAX_SIZE>() : _topIndex(0) {
+	FixedQueue() : _topIndex(0) {
 		_data.reserve(MAX_SIZE);
 	}
 

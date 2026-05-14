@@ -242,7 +242,7 @@ void Tfmx::macroRun(ChannelContext &channel) {
 				// in this state we then need to allow some commands that normally
 				// would halt the macroprogamm to continue instead.
 				// those commands are: Wait, WaitDMA, AddPrevNote, AddNote, SetNote, <unknown Cmd>
-				// DMA On is affected aswell
+				// DMA On is affected as well
 				// TODO remember time disabled, remember pending dmaoff?.
 			}
 
@@ -401,7 +401,7 @@ void Tfmx::macroRun(ChannelContext &channel) {
 			continue;
 
 		case 0x18: {	// Sampleloop. Parameters: Offset from Samplestart(W)
-			// TODO: MI loads 24 bit, but thats useless?
+			// TODO: MI loads 24 bit, but that's useless?
 			const uint16 temp = /* ((int8)macroPtr[1] << 16) | */ READ_BE_UINT16(&macroPtr[2]);
 			if (macroPtr[1] || (temp & 1))
 				warning("Tfmx: Problematic value for sampleloop: %06X", (macroPtr[1] << 16) | temp);
@@ -457,7 +457,7 @@ void Tfmx::macroRun(ChannelContext &channel) {
 			continue;
 
 		// 0x22 - 0x29 are used by Gem`X
-		// 0x30 - 0x34 are used by Carribean Disaster
+		// 0x30 - 0x34 are used by Caribbean Disaster
 
 		default:
 			debug(3, "Tfmx: Macro %02X not supported", macroPtr[0]);
@@ -669,7 +669,7 @@ bool Tfmx::trackRun(const bool incStep) {
 				initFadeCommand(((const uint8 *)&trackData[2])[1], ((const int8 *)&trackData[3])[1]);
 				break;
 
-			case 3:	// Unknown, stops player aswell
+			case 3:	// Unknown, stops player as well
 			default:
 				debug(3, "Tfmx: Unknown Trackstep Command: %02X", READ_BE_UINT16(&trackData[1]));
 				// MI-Player handles this by stopping the player, we just continue
@@ -880,7 +880,7 @@ const int8 *Tfmx::loadSampleFile(uint32 &sampleLen, Common::SeekableReadStream &
 
 	const int32 sampleSize = sampleStream.size();
 	if (sampleSize < 4) {
-		warning("Tfmx: Cant load Samplefile");
+		warning("Tfmx: Can't load Samplefile");
 		return nullptr;
 	}
 
@@ -985,7 +985,7 @@ const Tfmx::MdatResource *Tfmx::loadMdatFile(Common::SeekableReadStream &musicDa
 		resource->macroOffset[i] = musicData.readUint32BE();
 
 	// Read in mdat-file
-	// TODO: we can skip everything thats already stored in the resource-structure.
+	// TODO: we can skip everything that's already stored in the resource-structure.
 	const int32 mdatOffset = offTrackstep ? 0x200 : 0x600;	// 0x200 is very conservative
 	const uint32 allocSize = (uint32)mdatSize - mdatOffset;
 
@@ -1132,7 +1132,7 @@ void displayMacroStep(const void * const vptr) {
 		"Go submacro xx/xxxx  macro-number/step ",
 		"--------Return to old macro------------",
 		"Setperiod   ..xxxx   DMA period        ",
-		"Sampleloop  ..xxxx   relative adress   ",
+		"Sampleloop  ..xxxx   relative address  ",
 		"-------Set one shot sample-------------",
 		"Wait on DMA ..xxxx   count (Wavecycles)",
 		"Random play xx/xx/xx macro/speed/mode  ",

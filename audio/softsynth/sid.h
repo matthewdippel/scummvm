@@ -27,7 +27,7 @@
 #ifndef AUDIO_SOFTSYNTH_SID_H
 #define AUDIO_SOFTSYNTH_SID_H
 
-#include "common/scummsys.h"
+#include "audio/sid.h"
 
 // Inlining on/off.
 #define RESID_INLINE inline
@@ -49,7 +49,10 @@ typedef unsigned int reg24;
 
 typedef int cycle_count;
 typedef int sound_sample;
-typedef sound_sample fc_point[2];
+
+typedef unsigned char data8;
+typedef unsigned short data16;
+typedef unsigned short fc_point[2];
 
 
 class WaveformGenerator {
@@ -116,10 +119,10 @@ protected:
 	reg12 outputNPST();
 
 	// Sample data for combinations of waveforms.
-	static const reg8 wave6581__ST[];
-	static const reg8 wave6581_P_T[];
-	static const reg8 wave6581_PS_[];
-	static const reg8 wave6581_PST[];
+	static const data8 wave6581__ST[];
+	static const data8 wave6581_P_T[];
+	static const data8 wave6581_PS_[];
+	static const data8 wave6581_PST[];
 
 	friend class Voice;
 	friend class SID;
@@ -186,8 +189,8 @@ protected:
 	// FC is an 11 bit register.
 	sound_sample f0_6581[2048];
 	sound_sample* f0;
-	static fc_point f0_points_6581[];
-	fc_point* f0_points;
+	static const fc_point f0_points_6581[];
+	const fc_point* f0_points;
 	int f0_count;
 
 	friend class SID;
@@ -229,10 +232,10 @@ protected:
 
 	// Lookup table to convert from attack, decay, or release value to rate
 	// counter period.
-	static reg16 rate_counter_period[];
+	static const data16 rate_counter_period[];
 
 	// The 16 selectable sustain levels.
-	static reg8 sustain_level[];
+	static const data8 sustain_level[];
 
 	friend class SID;
 };
@@ -299,9 +302,9 @@ protected:
 };
 
 
-class SID {
+class SID final : public ::SID::SID, public Audio::EmulatedChip {
 public:
-	SID();
+	SID(::SID::Config::SidType videoSystem);
 	~SID();
 
 	void enable_filter(bool enable);
@@ -312,16 +315,22 @@ public:
 
 	void updateClock(cycle_count delta_t);
 	int updateClock(cycle_count& delta_t, short* buf, int n, int interleave = 1);
-	void reset();
+
+	bool init() override;
+	void reset() override;
 
 	// Read/write registers.
 	reg8 read(reg8 offset);
-	void write(reg8 offset, reg8 value);
+	void writeReg(int offset, int value) override;
 
 	// 16-bit output (AUDIO OUT).
 	int output();
 
+	bool isStereo() const override { return false; }
+
 protected:
+	void generateSamples(int16 *buffer, int numSamples) override;
+
 	Voice voice[3];
 	Filter filter;
 	ExternalFilter extfilt;
@@ -339,6 +348,9 @@ protected:
 	cycle_count cycles_per_sample;
 	cycle_count sample_offset;
 	short sample_prev;
+
+	::SID::Config::SidType _videoSystem;
+	cycle_count _cpuCyclesLeft;
 };
 
 }

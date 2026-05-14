@@ -71,8 +71,11 @@ void ScummHelp::updateStrings(byte gameId, byte version, Common::Platform platfo
 	case 1:
 		title = _("Common keyboard commands:");
 		ADD_BIND("F5", _("Save / Load dialog"));
-		if (version >= 5)
-			ADD_BIND(".", _("Skip line of text"));
+		// I18N: "Selection screen" is what the English game manual
+		// calls it. It contains various options, a sound test, etc.
+		if (gameId == GID_LOOM && platform == Common::kPlatformPCEngine)
+			ADD_BIND("F6", _("Selection screen"));
+		ADD_BIND(".", _("Skip line of text"));
 		ADD_BIND(_("Esc"), _("Skip cutscene"));
 		ADD_BIND(_("Space"), _("Pause game"));
 		ADD_BIND(_("Ctrl") + U32String(" 0-9"), _("Load saved game 1-10"));
@@ -91,14 +94,13 @@ void ScummHelp::updateStrings(byte gameId, byte version, Common::Platform platfo
 	case 2:
 		title = _("Special keyboard commands:");
 		ADD_BIND("~, #", _("Show / Hide console"));
-		ADD_BIND(_("Ctrl") + U32String(" d"), _("Start the debugger"));
-		ADD_BIND(_("Ctrl") + U32String(" s"), _("Show memory consumption"));
+		ADD_BIND(_("Ctrl") + _("Alt") + U32String(" d"), _("Start the debugger"));
 		ADD_BIND(_("Ctrl") + U32String(" f"), _("Run in fast mode (*)"));
 		ADD_BIND(_("Ctrl") + U32String(" g"), _("Run in really fast mode (*)"));
 		ADD_BIND(_("Ctrl") + U32String(" m"), _("Toggle mouse capture"));
-		ADD_BIND(_("Ctrl") + U32String(" ") + _("Alt") + U32String(" 1-8"), _("Switch between graphics filters"));
+		ADD_BIND(_("Ctrl") + U32String(" ") + _("Alt") + U32String(" 9, 0"), _("Cycle between graphics filters"));
 		ADD_BIND(_("Ctrl") + U32String(" ") + _("Alt") + U32String(" +, -"), _("Increase / Decrease scale factor"));
-		ADD_BIND(_("Ctrl") + U32String(" ") + _("Alt") + U32String(" a"), _("Toggle aspect-ratio correction"));
+		ADD_BIND(_("Ctrl") + U32String(" ") + _("Alt") + U32String(" a"), _("Toggle aspect ratio correction"));
 		ADD_LINE;
 		ADD_LINE;
 		// FIXME: This should use word-wrapping, and should not assume
@@ -110,7 +112,7 @@ void ScummHelp::updateStrings(byte gameId, byte version, Common::Platform platfo
 		break;
 	case 3:
 		if (gameId == GID_LOOM)
-			title = _("Spinning drafts on the keyboard:");
+			title = _("Spinning drafts on the keyboard:"); // I18N: Drafts is set of notes in Loom to invoke spells
 		else
 			title = _("Main game controls:");
 		switch (gameId) {
@@ -183,6 +185,8 @@ void ScummHelp::updateStrings(byte gameId, byte version, Common::Platform platfo
 			ADD_BIND("y, a", _("play A on distaff"));
 			ADD_BIND("u, b", _("play B on distaff"));
 			ADD_BIND("i, C", _("play C major on distaff"));
+			// I18N: Drafts is set of notes in Loom to invoke spells
+			ADD_BIND(_("Ctrl") + U32String(" d"), _("Shows the drafts inventory"));
 			break;
 		case GID_MONKEY_EGA:
 		case GID_MONKEY_VGA:

@@ -23,7 +23,7 @@
 #include "voyeur/voyeur.h"
 #include "voyeur/staticres.h"
 #include "engines/util.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/surface.h"
 
 namespace Voyeur {
@@ -42,13 +42,13 @@ Screen::Screen(VoyeurEngine *vm) : Graphics::Screen(), _vm(vm), _drawPtr(&_defau
 	_SVGAMode = 0;
 	_planeSelect = 0;
 	_saveBack = true;
-	_clipPtr = NULL;
-	_viewPortListPtr = NULL;
-	_backgroundPage = NULL;
-	_vPort = NULL;
-	_fontPtr = NULL;
-	Common::fill(&_VGAColors[0], &_VGAColors[PALETTE_SIZE], 0);
-	_fontChar = new PictureResource(DISPFLAG_NONE, 0xff, 0xff, 0, Common::Rect(), 0, NULL, 0);
+	_clipPtr = nullptr;
+	_viewPortListPtr = nullptr;
+	_backgroundPage = nullptr;
+	_vPort = nullptr;
+	_fontPtr = nullptr;
+	Common::fill(&_VGAColors[0], &_VGAColors[Graphics::PALETTE_SIZE], 0);
+	_fontChar = new PictureResource(DISPFLAG_NONE, 0xff, 0xff, 0, Common::Rect(), 0, nullptr, 0);
 	_backColors = nullptr;
 }
 
@@ -117,7 +117,7 @@ void Screen::sDrawPic(DisplayResource *srcDisplay, DisplayResource *destDisplay,
 	int srcOffset;
 	int screenOffset;
 	int srcFlags, destFlags;
-	ViewPortResource *destViewPort = NULL;
+	ViewPortResource *destViewPort = nullptr;
 	Common::Rect newBounds;
 	Common::Rect backBounds;
 	int tmpWidth = 0;
@@ -157,7 +157,7 @@ void Screen::sDrawPic(DisplayResource *srcDisplay, DisplayResource *destDisplay,
 	srcOffset = 0;
 	srcFlags = srcPic->_flags;
 	destFlags = destPic->_flags;
-	byte *cursorData = NULL;
+	byte *cursorData = nullptr;
 
 	if (srcFlags & DISPFLAG_1) {
 		if (_clipPtr) {
@@ -1007,8 +1007,8 @@ void Screen::setColors(int start, int count, const byte *pal) {
 void Screen::screenReset() {
 	resetPalette();
 
-	_backgroundPage = NULL;
-	_vPort->setupViewPort(NULL);
+	_backgroundPage = nullptr;
+	_vPort->setupViewPort(nullptr);
 	fillPic(_vPort, 0);
 
 	_vm->flipPageAndWait();
@@ -1070,7 +1070,7 @@ void Screen::drawDot() {
 }
 
 void Screen::synchronize(Common::Serializer &s) {
-	s.syncBytes(&_VGAColors[0], PALETTE_SIZE);
+	s.syncBytes(&_VGAColors[0], Graphics::PALETTE_SIZE);
 }
 
 } // End of namespace Voyeur

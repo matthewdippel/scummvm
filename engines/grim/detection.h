@@ -38,9 +38,16 @@ enum GrimGameType {
 };
 
 struct GrimGameDescription {
+	AD_GAME_DESCRIPTION_HELPERS(desc);
+
 	ADGameDescription desc;
 	GrimGameType gameType;
 };
+
+#define GAMEOPTION_LOAD_DATAUSR GUIO_GAMEOPTIONS1
+#define GAMEOPTION_SHOW_FPS GUIO_GAMEOPTIONS2
+
+#define GUI_OPTIONS_GRIME GUIO2(GAMEOPTION_LOAD_DATAUSR, GAMEOPTION_SHOW_FPS)
 
 } // End of namespace Grim
 

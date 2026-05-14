@@ -19,7 +19,7 @@
  *
  */
 
-#include "ultima/ultima8/misc/pent_include.h"
+#include "ultima/ultima8/misc/debugger.h"
 #include "ultima/ultima8/world/world.h"
 #include "ultima/ultima8/world/map.h"
 #include "ultima/ultima8/world/current_map.h"
@@ -40,7 +40,7 @@
 #include "ultima/ultima8/world/target_reticle_process.h"
 #include "ultima/ultima8/audio/audio_process.h"
 #include "ultima/ultima8/world/snap_process.h"
-#include "ultima/ultima8/graphics/main_shape_archive.h"
+#include "ultima/ultima8/gfx/main_shape_archive.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -51,14 +51,14 @@ World *World::_world = nullptr;
 
 World::World() : _currentMap(nullptr), _alertActive(false), _difficulty(3),
 				 _controlledNPCNum(1), _vargasShield(5000) {
-	debugN(MM_INFO, "Creating World...\n");
+	debug(1, "Creating World...");
 
 	_world = this;
 }
 
 
 World::~World() {
-	debugN(MM_INFO, "Destroying World...\n");
+	debug(1, "Destroying World...");
 	clear();
 
 	_world = nullptr;
@@ -85,7 +85,7 @@ void World::clear() {
 }
 
 void World::reset() {
-	debugN(MM_INFO, "Resetting World...\n");
+	debug(1, "Resetting World...");
 
 	clear();
 
@@ -151,19 +151,19 @@ bool World::switchMap(uint32 newmap) {
 			if (i->getFlags() & Item::FLG_ETHEREAL)
 				i->destroy();
 			else
-				warning("Not destroying ethereal item %d - it doesn't think it's ethereal!", eth);
+				warning("Not destroying ethereal item %d - it doesn't think it's ethereal", eth);
 		}
 	}
 
 	uint32 oldmap = _currentMap->getNum();
 	if (oldmap != 0) {
-		perr << "Unloading map " << oldmap << Std::endl;
+		debug(1, "Unloading map %u", oldmap);
 
 		assert(oldmap < _maps.size() && _maps[oldmap] != nullptr);
 
 		_currentMap->writeback();
 
-		perr << "Unloading Fixed items from map " << oldmap << Std::endl;
+		debug(1, "Unloading Fixed items from map %u", oldmap);
 
 		_maps[oldmap]->unloadFixed();
 	}
@@ -180,7 +180,7 @@ bool World::switchMap(uint32 newmap) {
 		Kernel::get_instance()->addProcess(new SchedulerProcess());
 	}
 
-	pout << "Loading Fixed items in map " << newmap << Std::endl;
+	debug(1, "Loading Fixed items in map %u", newmap);
 	Common::SeekableReadStream *items = GameData::get_instance()->getFixed()
 	                     ->get_datasource(newmap);
 	_maps[newmap]->loadFixed(items);
@@ -193,14 +193,14 @@ bool World::switchMap(uint32 newmap) {
 		// TODO: This may not even be needed for U8, but reset in case camera
 		// was looking at something other than the avatar during teleport.
 		CameraProcess *camera = CameraProcess::GetCameraProcess();
-		if (camera && camera->getItemNum() != 1) {
-			CameraProcess::SetCameraProcess(new CameraProcess(1));
+		if (camera && camera->getItemNum() != kMainActorId) {
+			CameraProcess::SetCameraProcess(new CameraProcess(kMainActorId));
 		}
 		CameraProcess::SetEarthquake(0);
 	} else {
 		// In Crusader, snap the camera to the avatar.  The snap process will
 		// then find the right snap egg in the next frame.
-		CameraProcess::SetCameraProcess(new CameraProcess(1));
+		CameraProcess::SetCameraProcess(new CameraProcess(kMainActorId));
 	}
 
 	return true;
@@ -209,7 +209,7 @@ bool World::switchMap(uint32 newmap) {
 void World::loadNonFixed(Common::SeekableReadStream *rs) {
 	FlexFile *f = new FlexFile(rs);
 
-	pout << "Loading NonFixed items" << Std::endl;
+	debug(1, "Loading NonFixed items");
 
 	for (unsigned int i = 0; i < f->getCount(); ++i) {
 
@@ -240,7 +240,7 @@ void World::loadItemCachNPCData(Common::SeekableReadStream *itemcach, Common::Se
 	delete itemcachflex;
 	delete npcdataflex;
 
-	pout << "Loading NPCs" << Std::endl;
+	debug(1, "Loading NPCs");
 
 	for (uint32 i = 1; i < 256; ++i) { // Get rid of constants?
 		// These are ALL unsigned on disk
@@ -278,7 +278,8 @@ void World::loadItemCachNPCData(Common::SeekableReadStream *itemcach, Common::Se
 		}
 
 #ifdef DUMP_ITEMS
-		pout << shape << "," << frame << ":\t(" << x << "," << y << "," << z << "),\t" << Std::hex << flags << Std::dec << ", " << quality << ", " << npcnum << ", " << mapnum << ", " << next << Std::endl;
+		debugC(kDebugObject, "%u,%u:\t(%d, %d, %d),\t%04X, %u, %u, u",
+			shape, frame, x, y, z, flags, quality, npcnum, mapnum);
 #endif
 
 		Actor *actor = ItemFactory::createActor(shape, frame, quality,
@@ -286,9 +287,7 @@ void World::loadItemCachNPCData(Common::SeekableReadStream *itemcach, Common::Se
 		                                        npcnum, mapnum,
 		                                        Item::EXT_PERMANENT_NPC, false);
 		if (!actor) {
-#ifdef DUMP_ITEMS
-			pout << "Couldn't create actor" << Std::endl;
-#endif
+			warning("Couldn't create actor");
 			continue;
 		}
 		ObjectManager::get_instance()->assignActorObjId(actor, i);
@@ -349,9 +348,8 @@ void World::worldStats() const {
 	g_debugger->debugPrintf("Avatar pos.: ");
 	if (av) {
 		g_debugger->debugPrintf("map %d, (", av->getMapNum());
-		int32 x, y, z;
-		av->getLocation(x, y, z);
-		g_debugger->debugPrintf("%d,%d,%d)\n", x, y, z);
+		Point3 pt = av->getLocation();
+		g_debugger->debugPrintf("%d,%d,%d)\n", pt.x, pt.y, pt.z);
 	} else {
 		g_debugger->debugPrintf("missing (null)\n");
 	}
@@ -374,7 +372,7 @@ void World::save(Common::WriteStream *ws) {
 
 	// empty stack and refill it again
 	uint16 *e = new uint16[es];
-	Std::list<ObjId>::const_iterator it = _ethereal.begin();
+	auto it = _ethereal.begin();
 	unsigned int i;
 	for (i = 0; i < es; ++i) {
 		e[es - i] = *it;
@@ -560,9 +558,8 @@ void World::setControlledNPCNum(uint16 num) {
 			if (controlled->isInCombat())
 				controlled->clearInCombat();
 		}
-		int32 x, y, z;
-		controlled->getCentre(x, y, z);
-		CameraProcess::SetCameraProcess(new CameraProcess(x, y, z));
+		Point3 pt = controlled->getCentre();
+		CameraProcess::SetCameraProcess(new CameraProcess(pt));
 	}
 
 	TargetReticleProcess *t = TargetReticleProcess::get_instance();

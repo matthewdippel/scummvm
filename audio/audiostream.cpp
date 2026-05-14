@@ -65,12 +65,12 @@ static const StreamFileFormat STREAM_FILEFORMATS[] = {
 	{ "WAV",          ".wav",  makeWAVStream },
 };
 
-SeekableAudioStream *SeekableAudioStream::openStreamFile(const Common::String &basename) {
+SeekableAudioStream *SeekableAudioStream::openStreamFile(const Common::Path &basename) {
 	SeekableAudioStream *stream = nullptr;
 	Common::File *fileHandle = new Common::File();
 
 	for (int i = 0; i < ARRAYSIZE(STREAM_FILEFORMATS); ++i) {
-		Common::String filename = basename + STREAM_FILEFORMATS[i].fileExtension;
+		Common::Path filename = basename.append(STREAM_FILEFORMATS[i].fileExtension);
 		fileHandle->open(filename);
 		if (fileHandle->isOpen()) {
 			// Create the stream object
@@ -83,7 +83,7 @@ SeekableAudioStream *SeekableAudioStream::openStreamFile(const Common::String &b
 	delete fileHandle;
 
 	if (stream == nullptr)
-		debug(1, "SeekableAudioStream::openStreamFile: Could not open compressed AudioFile %s", basename.c_str());
+		debug(1, "SeekableAudioStream::openStreamFile: Could not open compressed AudioFile %s", basename.toString(Common::Path::kNativeSeparator).c_str());
 
 	return stream;
 }
@@ -92,19 +92,22 @@ SeekableAudioStream *SeekableAudioStream::openStreamFile(const Common::String &b
 #pragma mark --- LoopingAudioStream ---
 #pragma mark -
 
-LoopingAudioStream::LoopingAudioStream(RewindableAudioStream *stream, uint loops, DisposeAfterUse::Flag disposeAfterUse, bool rewind)
-	: _parent(stream, disposeAfterUse), _loops(loops), _completeIterations(0) {
-	assert(stream);
+LoopingAudioStream::LoopingAudioStream(Common::DisposablePtr<RewindableAudioStream>&& stream, uint loops, bool rewind)
+        : _parent(Common::move(stream)), _loops(loops), _completeIterations(0) {
+	assert(_parent);
 
-	if (rewind && !stream->rewind()) {
+	if (rewind && !_parent->rewind()) {
 		// TODO: Properly indicate error
 		_loops = _completeIterations = 1;
 	}
-	if (stream->endOfStream()) {
+	if (_parent->endOfStream()) {
 		// Apparently this is an empty stream
 		_loops = _completeIterations = 1;
 	}
 }
+
+LoopingAudioStream::LoopingAudioStream(RewindableAudioStream *stream, uint loops, DisposeAfterUse::Flag disposeAfterUse, bool rewind)
+	: LoopingAudioStream(Common::move(Common::DisposablePtr<RewindableAudioStream>(stream, disposeAfterUse)), loops, rewind) {}
 
 int LoopingAudioStream::readBuffer(int16 *buffer, const int numSamples) {
 	if ((_loops && _completeIterations == _loops) || !numSamples)
@@ -121,12 +124,12 @@ int LoopingAudioStream::readBuffer(int16 *buffer, const int numSamples) {
 
 		if (!_parent->rewind()) {
 			// TODO: Properly indicate error
-			_loops = _completeIterations = 1;
+			_loops = _completeIterations;
 			return samplesRead;
 		}
 		if (_parent->endOfStream()) {
 			// Apparently this is an empty stream
-			_loops = _completeIterations = 1;
+			_loops = _completeIterations;
 		}
 
 		return samplesRead + readBuffer(buffer + samplesRead, remainingSamples);
@@ -176,19 +179,19 @@ SubLoopingAudioStream::SubLoopingAudioStream(SeekableAudioStream *stream,
 											 const Timestamp loopStart,
 											 const Timestamp loopEnd,
 											 DisposeAfterUse::Flag disposeAfterUse)
-	: _parent(stream, disposeAfterUse), _loops(loops),
+	: _parent(stream, disposeAfterUse), _loops(loops), _completeIterations(0),
 	  _pos(0, getRate() * (isStereo() ? 2 : 1)),
 	  _loopStart(convertTimeToStreamPos(loopStart, getRate(), isStereo())),
-	  _loopEnd(convertTimeToStreamPos(loopEnd, getRate(), isStereo())),
-	  _done(false) {
+	  _loopEnd(convertTimeToStreamPos(loopEnd, getRate(), isStereo())) {
 	assert(loopStart < loopEnd);
+	assert(stream);
 
 	if (!_parent->rewind())
-		_done = true;
+		_loops = _completeIterations = 1;
 }
 
 int SubLoopingAudioStream::readBuffer(int16 *buffer, const int numSamples) {
-	if (_done)
+	if ((_loops && _completeIterations == _loops) || !numSamples)
 		return 0;
 
 	int framesLeft = MIN(_loopEnd.frameDiff(_pos), numSamples);
@@ -197,20 +200,18 @@ int SubLoopingAudioStream::readBuffer(int16 *buffer, const int numSamples) {
 
 	if (framesRead < framesLeft && _parent->endOfStream()) {
 		// TODO: Proper error indication.
-		_done = true;
+		if (!_completeIterations)
+			_completeIterations = 1;
+		_loops = _completeIterations;
 		return framesRead;
 	} else if (_pos == _loopEnd) {
-		if (_loops != 0) {
-			--_loops;
-			if (!_loops) {
-				_done = true;
-				return framesRead;
-			}
-		}
+		++_completeIterations;
+		if (_completeIterations == _loops)
+			return framesRead;
 
 		if (!_parent->seek(_loopStart)) {
 			// TODO: Proper error indication.
-			_done = true;
+			_loops = _completeIterations;
 			return framesRead;
 		}
 
@@ -225,13 +226,13 @@ int SubLoopingAudioStream::readBuffer(int16 *buffer, const int numSamples) {
 bool SubLoopingAudioStream::endOfData() const {
 	// We're out of data if this stream is finished or the parent
 	// has run out of data for now.
-	return _done || _parent->endOfData();
+	return (_loops != 0 && _completeIterations == _loops) || _parent->endOfData();
 }
 
 bool SubLoopingAudioStream::endOfStream() const {
 	// The end of the stream has been reached only when we've gone
 	// through all the iterations.
-	return _done;
+	return _loops != 0 && _completeIterations == _loops;
 }
 
 #pragma mark -
@@ -485,6 +486,31 @@ int NullAudioStream::getRate() const {
 
 AudioStream *makeNullAudioStream() {
 	return new NullAudioStream();
+}
+
+/**
+ * An AudioStream that just returns silent samples and runs infinitely.
+ */
+class SilentAudioStream : public AudioStream {
+public:
+	SilentAudioStream(int rate, bool stereo) : _rate(rate), _isStereo(stereo) {}
+
+	int readBuffer(int16 *buffer, const int numSamples) override {
+		memset(buffer, 0, numSamples * 2);
+		return numSamples;
+	}
+
+	bool endOfData() const override { return false; } // it never ends!
+	bool isStereo() const override { return _isStereo; }
+	int getRate() const override { return _rate; }
+
+private:
+	int _rate;
+	bool _isStereo;
+};
+
+AudioStream *makeSilentAudioStream(int rate, bool stereo) {
+	return new SilentAudioStream(rate, stereo);
 }
 
 } // End of namespace Audio

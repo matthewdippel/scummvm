@@ -23,8 +23,8 @@
 #define BACKENDS_CLOUD_BOX_BOXUPLOADREQUEST_H
 
 #include "backends/cloud/storage.h"
-#include "backends/networking/curl/curljsonrequest.h"
-#include "backends/networking/curl/request.h"
+#include "backends/networking/http/httpjsonrequest.h"
+#include "backends/networking/http/request.h"
 #include "common/callback.h"
 
 namespace Cloud {
@@ -33,7 +33,8 @@ class BoxStorage;
 
 class BoxUploadRequest: public Networking::Request {
 	BoxStorage *_storage;
-	Common::String _savePath, _localPath;
+	Common::String _savePath;
+	Common::Path _localPath;
 	Storage::UploadCallback _uploadCallback;
 	Request *_workingRequest;
 	bool _ignoreCallback;
@@ -41,19 +42,19 @@ class BoxUploadRequest: public Networking::Request {
 
 	void start();
 	void resolveId();
-	void idResolvedCallback(Storage::UploadResponse response);
-	void idResolveFailedCallback(Networking::ErrorResponse error);
+	void idResolvedCallback(const Storage::UploadResponse &response);
+	void idResolveFailedCallback(const Networking::ErrorResponse &error);
 	void upload();
-	void uploadedCallback(Networking::JsonResponse response);
-	void notUploadedCallback(Networking::ErrorResponse error);
-	void finishUpload(StorageFile status);
+	void uploadedCallback(const Networking::JsonResponse &response);
+	void notUploadedCallback(const Networking::ErrorResponse &error);
+	void finishUpload(const StorageFile &status);
 
 public:
-	BoxUploadRequest(BoxStorage *storage, Common::String path, Common::String localPath, Storage::UploadCallback callback, Networking::ErrorCallback ecb);
-	virtual ~BoxUploadRequest();
+	BoxUploadRequest(BoxStorage *storage, const Common::String &path, const Common::Path &localPath, Storage::UploadCallback callback, Networking::ErrorCallback ecb);
+	~BoxUploadRequest() override;
 
-	virtual void handle();
-	virtual void restart();
+	void handle() override;
+	void restart() override;
 };
 
 } // End of namespace Box

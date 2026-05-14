@@ -59,6 +59,14 @@ struct PluginVersion;
 class EventsManager;
 class Music;
 
+struct PluginVersion {
+	const char *_plugin;
+	int _version;
+};
+
+enum AGSSteamVersion { kAGSteam = 0, kWadjetEye = 1 };
+enum AGSSpriteFontVersion { kAGSSpriteFont = 0, kClifftopGames = 1 };
+
 class AGSEngine : public Engine {
 private:
 	const AGSGameDescription *_gameDescription;
@@ -132,6 +140,11 @@ public:
 	 */
 	bool isUnsupportedPre25() const;
 
+	/**
+	 * Returns true if the selected game is built with AGS4
+	 */
+	bool isUnsupportedAGS4() const;
+
 	/*
 	 * Returns true if the game has data files greater than 2Gb
 	 */
@@ -145,12 +158,12 @@ public:
 	/**
 	 * Indicate whether a game state can be loaded.
 	 */
-	bool canLoadGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	/**
 	 * Indicate whether a game state can be saved.
 	 */
-	bool canSaveGameStateCurrently() override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	/**
 	 * Load a savegame
@@ -161,6 +174,11 @@ public:
 	 * Save a savegame
 	 */
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
+
+	/**
+	 * Returns autosave slot (-1 if unavailable)
+	 */
+	int getAutosaveSlot() const override;
 
 	/**
 	 * Synchronize user volume settings

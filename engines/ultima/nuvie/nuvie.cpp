@@ -20,11 +20,10 @@
  */
 
 #include "ultima/nuvie/nuvie.h"
-#include "ultima/nuvie/meta_engine.h"
+#include "ultima/nuvie/metaengine.h"
 #include "ultima/nuvie/core/events.h"
 #include "ultima/nuvie/actors/actor.h"
 #include "ultima/nuvie/core/nuvie_defs.h"
-#include "ultima/nuvie/core/debugger.h"
 #include "ultima/nuvie/conf/configuration.h"
 #include "ultima/nuvie/misc/u6_misc.h"
 #include "ultima/nuvie/files/nuvie_io_file.h"
@@ -37,9 +36,10 @@
 #include "ultima/nuvie/gui/widgets/map_window.h"
 #include "ultima/nuvie/save/save_game.h"
 #include "ultima/nuvie/gui/widgets/msg_scroll.h"
+#include "ultima/shared/engine/data_archive.h"
 #include "common/config-manager.h"
 #include "common/translation.h"
-#include "common/unzip.h"
+#include "common/compression/unzip.h"
 
 namespace Ultima {
 namespace Nuvie {
@@ -47,8 +47,9 @@ namespace Nuvie {
 NuvieEngine *g_engine;
 
 NuvieEngine::NuvieEngine(OSystem *syst, const Ultima::UltimaGameDescription *gameDesc) :
-		Ultima::Shared::UltimaEngine(syst, gameDesc),  _config(nullptr), _savegame(nullptr),
-		_screen(nullptr), _script(nullptr), _game(nullptr), _soundManager(nullptr) {
+		Engine(syst), _gameDescription(gameDesc),  _config(nullptr), _savegame(nullptr),
+		_screen(nullptr), _script(nullptr), _game(nullptr), _soundManager(nullptr),
+		_events(nullptr), _randomSource("Nuvie") {
 	g_engine = this;
 }
 
@@ -63,21 +64,42 @@ NuvieEngine::~NuvieEngine() {
 	g_engine = nullptr;
 }
 
-bool NuvieEngine::isDataRequired(Common::String &folder, int &majorVersion, int &minorVersion) {
+bool NuvieEngine::isDataRequired(Common::Path &folder, int &majorVersion, int &minorVersion) {
 	folder = "ultima6";
 	majorVersion = 1;
 	minorVersion = 1;
 	return true;
 }
 
+GameId NuvieEngine::getGameId() const {
+	return _gameDescription->gameId;
+}
+
+bool NuvieEngine::isEnhanced() const {
+	return _gameDescription->features & GF_VGA_ENHANCED;
+}
 
 bool NuvieEngine::initialize() {
 	uint8 gameType;
 	bool playEnding = false;
 	bool showVirtueMsg = false;
 
-	if (!Ultima::Shared::UltimaEngine::initialize())
+	Common::Path folder;
+	int reqMajorVersion, reqMinorVersion;
+
+	// Call syncSoundSettings to get default volumes set
+	syncSoundSettings();
+
+	// Check if the game uses data from te ultima.dat archive
+	if (!isDataRequired(folder, reqMajorVersion, reqMinorVersion))
+		return true;
+
+	// Try and set up the data archive
+	Common::U32String errorMsg;
+	if (!Shared::UltimaDataArchive::load(folder, reqMajorVersion, reqMinorVersion, errorMsg)) {
+		GUIErrorMessage(errorMsg);
 		return false;
+	}
 
 	// Get which game to play
 	switch (getGameId()) {
@@ -99,22 +121,17 @@ bool NuvieEngine::initialize() {
 	initConfig();
 
 	// Setup events
-	Events *events = new Ultima::Nuvie::Events(this, _config);
+	Events *events = new Ultima::Nuvie::Events(_config);
 	_events = events;
 
 	// Setup savegame handler
 	_savegame = new SaveGame(_config);
 
-	// Setup debugger
-	setDebugger(new Debugger());
-
 	// Setup screen
 	_screen = new Screen(_config);
 
-	if (_screen->init() == false) {
-		DEBUG(0, LEVEL_ERROR, "Initializing screen!\n");
-		return false;
-	}
+	if (_screen->init() == false)
+		error("Error initializing screen!");
 
 	GUI *gui = new GUI(_config, _screen);
 
@@ -164,6 +181,7 @@ bool NuvieEngine::initialize() {
 
 	if (_game->loadGame(_script) == false) {
 		delete _game;
+		_game = nullptr;
 		return false;
 	}
 
@@ -181,13 +199,21 @@ Common::Error NuvieEngine::run() {
 	return Common::kNoError;
 }
 
+bool NuvieEngine::hasFeature(EngineFeature f) const {
+	return
+		(f == kSupportsReturnToLauncher) ||
+		(f == kSupportsLoadingDuringRuntime) ||
+		(f == kSupportsChangingOptionsDuringRuntime) ||
+		(f == kSupportsSavingDuringRuntime);
+}
+
 void NuvieEngine::initConfig() {
 	_config = new Configuration();
 	_config->load(_gameDescription->gameId, isEnhanced());
 }
 
 void NuvieEngine::assignGameConfigValues(uint8 gameType) {
-	Std::string game_name, game_id;
+	Common::String game_name, game_id;
 
 	_config->set("config/GameType", gameType);
 
@@ -213,16 +239,16 @@ void NuvieEngine::assignGameConfigValues(uint8 gameType) {
 }
 
 bool NuvieEngine::checkGameDir(uint8 gameType) {
-	Std::string path;
+	Common::Path path;
 
 	config_get_path(_config, "", path);
-	ConsoleAddInfo("gamedir: \"%s\"", path.c_str());
+	ConsoleAddInfo("gamedir: \"%s\"", path.toString().c_str());
 
 	return true;
 }
 
 bool NuvieEngine::checkDataDir() {
-	Std::string path;
+	Common::String path;
 	_config->value("config/datadir", path, "");
 	ConsoleAddInfo("datadir: \"%s\"", path.c_str());
 
@@ -230,26 +256,14 @@ bool NuvieEngine::checkDataDir() {
 }
 
 void NuvieEngine::syncSoundSettings() {
-	Ultima::Shared::UltimaEngine::syncSoundSettings();
+	Engine::syncSoundSettings();
 	if (!_soundManager)
 		return;
 
-	_soundManager->set_audio_enabled(
-		!ConfMan.hasKey("mute") || !ConfMan.getBool("mute"));
-	_soundManager->set_sfx_enabled(
-		!ConfMan.hasKey("sfx_mute") || !ConfMan.getBool("sfx_mute"));
-	_soundManager->set_music_enabled(
-		!ConfMan.hasKey("music_mute") || !ConfMan.getBool("music_mute"));
-	_soundManager->set_speech_enabled(
-		!ConfMan.hasKey("speech_mute") || !ConfMan.getBool("speech_mute"));
-
-	_soundManager->set_sfx_volume(ConfMan.hasKey("sfx_volume") ?
-		ConfMan.getInt("sfx_volume") : 255);
-	_soundManager->set_music_volume(ConfMan.hasKey("music_volume") ?
-		ConfMan.getInt("music_volume") : 255);
+	_soundManager->syncSoundSettings();
 }
 
-bool NuvieEngine::canLoadGameStateCurrently(bool isAutosave) {
+bool NuvieEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	if (_game == nullptr || !_game->isLoaded())
 		return false;
 
@@ -258,6 +272,7 @@ bool NuvieEngine::canLoadGameStateCurrently(bool isAutosave) {
 	Events *events = static_cast<Events *>(_events);
 	MapWindow *mapWindow = _game->get_map_window();
 
+	const bool isAutosave = false;
 	if (isAutosave) {
 		return events->get_mode() == MOVE_MODE;
 
@@ -279,14 +294,15 @@ bool NuvieEngine::canLoadGameStateCurrently(bool isAutosave) {
 	}
 }
 
-bool NuvieEngine::canSaveGameStateCurrently(bool isAutosave) {
-	if (!canLoadGameStateCurrently(isAutosave))
+bool NuvieEngine::canSaveGameStateCurrently(Common::U32String *msg) {
+	if (!canLoadGameStateCurrently(msg))
 		return false;
 
 	// Further checks against saving
 	Events *events = static_cast<Events *>(_events);
 	MsgScroll *scroll = _game->get_scroll();
 
+	const bool isAutosave = false;
 	if (_game->is_armageddon()) {
 		if (!isAutosave)
 			scroll->message("Can't save. You killed everyone!\n\n");
@@ -377,22 +393,22 @@ bool NuvieEngine::quickSave(int saveSlot, bool isLoad) {
 	if (saveSlot < 0 || saveSlot > 99)
 		return false;
 
-	Std::string text;
+	Common::String text;
 	MsgScroll *scroll = _game->get_scroll();
 
 	if (isLoad) {
-		if (!canLoadGameStateCurrently(false))
+		if (!canLoadGameStateCurrently())
 			return false;
 
 		text = Common::convertFromU32String(_("loading quick save %d"));
 	} else {
-		if (!canSaveGameStateCurrently(false))
+		if (!canSaveGameStateCurrently())
 			return false;
 
 		text = Common::convertFromU32String(_("saving quick save %d"));
 	}
 
-	text = Std::string::format(text.c_str(), saveSlot);
+	text = Common::String::format(text.c_str(), saveSlot);
 	scroll->display_string(text);
 
 	if (isLoad) {
@@ -414,7 +430,7 @@ bool NuvieEngine::playIntro() {
 		return true;
 
 	bool skip_intro;
-	string key = config_get_game_key(_config);
+	Common::String key = config_get_game_key(_config);
 	key.append("/skip_intro");
 	_config->value(key, skip_intro, false);
 

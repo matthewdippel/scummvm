@@ -31,6 +31,7 @@
 #include "common/func.h"
 #include "common/ptr.h"
 #include "common/scummsys.h"
+#include "common/keyboard.h"
 
 #include "engines/engine.h"
 
@@ -53,7 +54,7 @@ class RandomSource;
 
 namespace Adl {
 
-Common::String getDiskImageName(const AdlGameDescription &adlDesc, byte volume);
+Common::Path getDiskImageName(const AdlGameDescription &adlDesc, byte volume);
 GameType getGameType(const AdlGameDescription &desc);
 GameVersion getGameVersion(const AdlGameDescription &desc);
 Common::Language getLanguage(const AdlGameDescription &desc);
@@ -65,7 +66,7 @@ class GraphicsMan;
 class ScriptEnv;
 
 enum kDebugChannels {
-	kDebugChannelScript = 1 << 0
+	kDebugChannelScript = 1,
 };
 
 enum ADLAction {
@@ -106,13 +107,13 @@ struct Room {
 
 	byte description;
 	byte connections[IDI_DIR_TOTAL];
-	DataBlockPtr data;
+	Common::DataBlockPtr data;
 	byte picture;
 	byte curPicture;
 	bool isFirstTime;
 };
 
-typedef Common::HashMap<byte, DataBlockPtr> PictureMap;
+typedef Common::HashMap<byte, Common::DataBlockPtr> PictureMap;
 
 typedef Common::Array<byte> Script;
 
@@ -262,18 +263,18 @@ protected:
 	// Engine
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
-	bool canSaveGameStateCurrently() override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::String getSaveStateName(int slot) const override;
 	int getAutosaveSlot() const override { return 15; }
 
-	Common::String getDiskImageName(byte volume) const { return Adl::getDiskImageName(*_gameDescription, volume); }
+	Common::Path getDiskImageName(byte volume) const { return Adl::getDiskImageName(*_gameDescription, volume); }
 	GameType getGameType() const { return Adl::getGameType(*_gameDescription); }
 	GameVersion getGameVersion() const { return Adl::getGameVersion(*_gameDescription); }
 	Common::Language getLanguage() const { return Adl::getLanguage(*_gameDescription); }
 	virtual void gameLoop();
 	virtual void loadState(Common::ReadStream &stream);
 	virtual void saveState(Common::WriteStream &stream);
-	Common::String readString(Common::ReadStream &stream, byte until = 0) const;
+	Common::String readString(Common::ReadStream &stream, byte until = 0, const char *key = "") const;
 	Common::String readStringAt(Common::SeekableReadStream &stream, uint offset, byte until = 0) const;
 	void extractExeStrings(Common::ReadStream &stream, uint16 printAddr, Common::StringArray &strings) const;
 
@@ -286,15 +287,17 @@ protected:
 	virtual Common::String getLine();
 	Common::String inputString(byte prompt = 0) const;
 	byte inputKey(bool showCursor = true) const;
+	void waitKey(uint32 ms = 0, Common::KeyCode keycode = Common::KEYCODE_INVALID) const;
 	virtual void getInput(uint &verb, uint &noun);
 	Common::String getWord(const Common::String &line, uint &index) const;
 
 	virtual Common::String formatVerbError(const Common::String &verb) const;
 	virtual Common::String formatNounError(const Common::String &verb, const Common::String &noun) const;
-	void loadWords(Common::ReadStream &stream, WordMap &map, Common::StringArray &pri) const;
+	void loadWords(Common::ReadStream &stream, WordMap &map, Common::StringArray &pri, uint count = 0) const;
 	void readCommands(Common::ReadStream &stream, Commands &commands);
 	void removeCommand(Commands &commands, uint idx);
 	Command &getCommand(Commands &commands, uint idx);
+	void removeMessage(uint idx);
 	void checkInput(byte verb, byte noun);
 	virtual bool isInputValid(byte verb, byte noun, bool &is_any);
 	virtual bool isInputValid(const Commands &commands, byte verb, byte noun, bool &is_any);
@@ -307,6 +310,8 @@ protected:
 	virtual byte roomArg(byte room) const;
 	virtual void advanceClock() { }
 	void loadDroppedItemOffsets(Common::ReadStream &stream, byte count);
+
+	void stopTextToSpeech() const;
 
 	// Opcodes
 	typedef Common::SharedPtr<Common::Functor1<ScriptEnv &, int> > Opcode;
@@ -398,7 +403,7 @@ protected:
 	// Opcodes
 	Common::Array<Opcode> _condOpcodes, _actOpcodes;
 	// Message strings in data file
-	Common::Array<DataBlockPtr> _messages;
+	Common::Array<Common::DataBlockPtr> _messages;
 	// Picture data
 	PictureMap _pictures;
 	// Dropped item screen offsets
@@ -464,7 +469,7 @@ private:
 	// Engine
 	Common::Error run() override;
 	bool hasFeature(EngineFeature f) const override;
-	bool canLoadGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	// Text input
 	byte convertKey(uint16 ascii) const;

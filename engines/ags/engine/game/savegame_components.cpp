@@ -19,7 +19,7 @@
  *
  */
 
-#include "ags/lib/std/map.h"
+#include "common/std/map.h"
 #include "ags/engine/game/savegame_components.h"
 #include "ags/shared/ac/audio_clip_type.h"
 #include "ags/shared/ac/common.h"
@@ -41,6 +41,7 @@
 #include "ags/shared/ac/view.h"
 #include "ags/engine/ac/system.h"
 #include "ags/engine/ac/dynobj/cc_serializer.h"
+#include "ags/engine/ac/dynobj/dynobj_manager.h"
 #include "ags/shared/debugging/out.h"
 #include "ags/engine/game/savegame_internal.h"
 #include "ags/shared/gfx/bitmap.h"
@@ -52,7 +53,6 @@
 #include "ags/shared/gui/gui_main.h"
 #include "ags/shared/gui/gui_slider.h"
 #include "ags/shared/gui/gui_textbox.h"
-#include "ags/plugins/ags_plugin.h"
 #include "ags/plugins/plugin_engine.h"
 #include "ags/shared/script/cc_common.h"
 #include "ags/engine/script/script.h"
@@ -234,21 +234,17 @@ void ReadLegacyCameraState(Stream *in, RestoredData & r_data) {
 	int camy = in->ReadInt32();
 	_GP(play).CreateRoomCamera();
 	_GP(play).CreateRoomViewport();
-	const auto &main_view = _GP(play).GetMainViewport();
 	RestoredData::CameraData cam_dat;
 	cam_dat.ID = 0;
 	cam_dat.Left = camx;
 	cam_dat.Top = camy;
-	cam_dat.Width = main_view.GetWidth();
-	cam_dat.Height = main_view.GetHeight();
 	r_data.Cameras.push_back(cam_dat);
 	RestoredData::ViewportData view_dat;
 	view_dat.ID = 0;
-	view_dat.Width = main_view.GetWidth();
-	view_dat.Height = main_view.GetHeight();
 	view_dat.Flags = kSvgViewportVisible;
 	view_dat.CamID = 0;
 	r_data.Viewports.push_back(view_dat);
+	r_data.LegacyViewCamera = true;
 }
 
 void ReadCameraState(RestoredData &r_data, Stream *in) {
@@ -275,7 +271,7 @@ void ReadViewportState(RestoredData &r_data, Stream *in) {
 	r_data.Viewports.push_back(view);
 }
 
-HSaveError ReadGameState(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, RestoredData &r_data) {
+HSaveError ReadGameState(Stream *in, int32_t cmp_ver, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData &r_data) {
 	HSaveError err;
 	GameStateSvgVersion svg_ver = (GameStateSvgVersion)cmp_ver;
 	// Game base
@@ -292,7 +288,7 @@ HSaveError ReadGameState(Stream *in, int32_t cmp_ver, const PreservedParams & /*
 	}
 
 	// Game state
-	_GP(play).ReadFromSavegame(in, svg_ver, r_data);
+	_GP(play).ReadFromSavegame(in, _G(loaded_game_file_version), svg_ver, r_data);
 
 	// Other dynamic values
 	r_data.FPS = in->ReadInt32();
@@ -330,6 +326,14 @@ HSaveError ReadGameState(Stream *in, int32_t cmp_ver, const PreservedParams & /*
 	return err;
 }
 
+// Savegame data format for RoomStatus
+enum AudioSvgVersion {
+	kAudioSvgVersion_Initial = 0,
+	kAudioSvgVersion_35026 = 1,       // source position settings
+	kAudioSvgVersion_36009 = 2,       // up number of channels
+	kAudioSvgVersion_36130 = 3060130, // playback state
+};
+
 HSaveError WriteAudio(Stream *out) {
 	// Game content assertion
 	out->WriteInt32(_GP(game).audioClipTypes.size());
@@ -352,14 +356,22 @@ HSaveError WriteAudio(Stream *out) {
 			out->WriteInt32(ch->_priority);
 			out->WriteInt32(ch->_repeat ? 1 : 0);
 			out->WriteInt32(ch->get_volume255());
-			out->WriteInt32(0); // unused
+			out->WriteInt32(0); // was redundant data
 			out->WriteInt32(ch->get_volume100());
 			out->WriteInt32(ch->get_panning());
 			out->WriteInt32(ch->get_speed());
-			// since version 1
+			// since version kAudioSvgVersion_35026
 			out->WriteInt32(ch->_xSource);
 			out->WriteInt32(ch->_ySource);
 			out->WriteInt32(ch->_maximumPossibleDistanceAway);
+			// since version kAudioSvgVersion_36130
+			int playback_flags = 0;
+			if (ch->is_paused())
+				playback_flags |= kSvgAudioPaused;
+			out->WriteInt32(playback_flags);
+			out->WriteInt32(0); // reserved 3 ints
+			out->WriteInt32(0);
+			out->WriteInt32(0);
 		} else {
 			out->WriteInt32(-1);
 		}
@@ -377,13 +389,13 @@ HSaveError WriteAudio(Stream *out) {
 	return HSaveError::None();
 }
 
-HSaveError ReadAudio(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, RestoredData &r_data) {
+HSaveError ReadAudio(Stream *in, int32_t cmp_ver, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData &r_data) {
 	HSaveError err;
 	// Game content assertion
 	if (!AssertGameContent(err, in->ReadInt32(), _GP(game).audioClipTypes.size(), "Audio Clip Types"))
 		return err;
 	int total_channels, max_game_channels;
-	if (cmp_ver >= 2) {
+	if (cmp_ver >= kAudioSvgVersion_36009) {
 		total_channels = in->ReadInt8();
 		max_game_channels = in->ReadInt8();
 		in->ReadInt16(); // reserved 2 bytes
@@ -414,15 +426,21 @@ HSaveError ReadAudio(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/
 			chan_info.Priority = in->ReadInt32();
 			chan_info.Repeat = in->ReadInt32();
 			chan_info.Vol = in->ReadInt32();
-			in->ReadInt32(); // unused
+			in->ReadInt32(); // was redundant data
 			chan_info.VolAsPercent = in->ReadInt32();
 			chan_info.Pan = in->ReadInt32();
 			chan_info.Speed = 1000;
 			chan_info.Speed = in->ReadInt32();
-			if (cmp_ver >= 1) {
+			if (cmp_ver >= kAudioSvgVersion_35026) {
 				chan_info.XSource = in->ReadInt32();
 				chan_info.YSource = in->ReadInt32();
 				chan_info.MaxDist = in->ReadInt32();
+			}
+			if (cmp_ver >= kAudioSvgVersion_36130) {
+				chan_info.Flags = in->ReadInt32();
+				in->ReadInt32(); // reserved 3 ints
+				in->ReadInt32();
+				in->ReadInt32();
 			}
 		}
 	}
@@ -480,31 +498,31 @@ HSaveError ReadInteraction272(Interaction &intr, Stream *in) {
 HSaveError WriteCharacters(Stream *out) {
 	out->WriteInt32(_GP(game).numcharacters);
 	for (int i = 0; i < _GP(game).numcharacters; ++i) {
-		_GP(game).chars[i].WriteToFile(out);
+		_GP(game).chars[i].WriteToSavegame(out, _GP(game).chars2[i]);
 		_GP(charextra)[i].WriteToSavegame(out);
 		Properties::WriteValues(_GP(play).charProps[i], out);
 		if (_G(loaded_game_file_version) <= kGameVersion_272)
 			WriteTimesRun272(*_GP(game).intrChar[i], out);
-		// character movement path cache
-		_GP(mls)[CHMLSOFFS + i].WriteToFile(out);
 	}
 	return HSaveError::None();
 }
 
-HSaveError ReadCharacters(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
+HSaveError ReadCharacters(Stream *in, int32_t cmp_ver, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
 	HSaveError err;
 	if (!AssertGameContent(err, in->ReadInt32(), _GP(game).numcharacters, "Characters"))
 		return err;
 	for (int i = 0; i < _GP(game).numcharacters; ++i) {
-		_GP(game).chars[i].ReadFromFile(in);
-		_GP(charextra)[i].ReadFromSavegame(in, cmp_ver);
+		_GP(game).chars[i].ReadFromSavegame(in, _GP(game).chars2[i], static_cast<CharacterSvgVersion>(cmp_ver));
+		_GP(charextra)[i].ReadFromSavegame(in, static_cast<CharacterSvgVersion>(cmp_ver));
 		Properties::ReadValues(_GP(play).charProps[i], in);
 		if (_G(loaded_game_file_version) <= kGameVersion_272)
 			ReadTimesRun272(*_GP(game).intrChar[i], in);
-		// character movement path cache
-		err = _GP(mls)[CHMLSOFFS + i].ReadFromFile(in, cmp_ver > 0 ? 1 : 0);
-		if (!err)
-			return err;
+		// character movement path (for old saves)
+		if (cmp_ver < kCharSvgVersion_36109) {
+			err = _GP(mls)[CHMLSOFFS + i].ReadFromSavegame(in, kMoveSvgVersion_350);
+			if (!err)
+				return err;
+		}
 	}
 	return err;
 }
@@ -517,7 +535,7 @@ HSaveError WriteDialogs(Stream *out) {
 	return HSaveError::None();
 }
 
-HSaveError ReadDialogs(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
+HSaveError ReadDialogs(Stream *in, int32_t /*cmp_ver*/, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
 	HSaveError err;
 	if (!AssertGameContent(err, in->ReadInt32(), _GP(game).numdialog, "Dialogs"))
 		return err;
@@ -573,7 +591,7 @@ HSaveError WriteGUI(Stream *out) {
 	return HSaveError::None();
 }
 
-HSaveError ReadGUI(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
+HSaveError ReadGUI(Stream *in, int32_t cmp_ver, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
 	HSaveError err;
 	const GuiSvgVersion svg_ver = (GuiSvgVersion)cmp_ver;
 	// GUI state
@@ -629,7 +647,6 @@ HSaveError ReadGUI(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, 
 	// Animated buttons
 	if (!AssertFormatTagStrict(err, in, "AnimatedButtons"))
 		return err;
-	RemoveAllButtonAnimations();
 	int anim_count = in->ReadInt32();
 	for (int i = 0; i < anim_count; ++i) {
 		AnimatingGUIButton abut;
@@ -650,7 +667,7 @@ HSaveError WriteInventory(Stream *out) {
 	return HSaveError::None();
 }
 
-HSaveError ReadInventory(Stream *in, int32_t /*cmp_ver*/, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
+HSaveError ReadInventory(Stream *in, int32_t /*cmp_ver*/, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
 	HSaveError err;
 	if (!AssertGameContent(err, in->ReadInt32(), _GP(game).numinvitems, "Inventory Items"))
 		return err;
@@ -671,7 +688,7 @@ HSaveError WriteMouseCursors(Stream *out) {
 	return HSaveError::None();
 }
 
-HSaveError ReadMouseCursors(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
+HSaveError ReadMouseCursors(Stream *in, int32_t cmp_ver, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
 	HSaveError err;
 	if (!AssertGameContent(err, in->ReadInt32(), _GP(game).numcursors, "Mouse Cursors"))
 		return err;
@@ -696,7 +713,7 @@ HSaveError WriteViews(Stream *out) {
 	return HSaveError::None();
 }
 
-HSaveError ReadViews(Stream *in, int32_t /*cmp_ver*/, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
+HSaveError ReadViews(Stream *in, int32_t /*cmp_ver*/, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
 	HSaveError err;
 	if (!AssertGameContent(err, in->ReadInt32(), _GP(game).numviews, "Views"))
 		return err;
@@ -740,45 +757,57 @@ HSaveError WriteDynamicSprites(Stream *out) {
 	return HSaveError::None();
 }
 
-HSaveError ReadDynamicSprites(Stream *in, int32_t /*cmp_ver*/, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
+HSaveError ReadDynamicSprites(Stream *in, int32_t /*cmp_ver*/, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
 	HSaveError err;
 	const int spr_count = in->ReadInt32();
 	// ensure the sprite set is at least large enough
-	// to accomodate top dynamic sprite index
+	// to accommodate top dynamic sprite index
 	const int top_index = in->ReadInt32();
 	_GP(spriteset).EnlargeTo(top_index);
 	for (int i = 0; i < spr_count; ++i) {
 		int id = in->ReadInt32();
 		int flags = in->ReadInt32();
-		add_dynamic_sprite(id, read_serialized_bitmap(in));
-		_GP(game).SpriteInfos[id].Flags = flags;
+		std::unique_ptr<Bitmap> image(read_serialized_bitmap(in));
+		add_dynamic_sprite(id, std::move(image), (flags & SPF_ALPHACHANNEL) != 0, flags);
 	}
 	return err;
 }
 
 HSaveError WriteOverlays(Stream *out) {
-	out->WriteInt32(_GP(screenover).size());
-	for (const auto &over : _GP(screenover)) {
-		over.WriteToFile(out);
-		if (!over.IsSpriteReference())
-			serialize_bitmap(over.GetImage(), out);
+	const auto &overs = get_overlays();
+	// Calculate and save valid overlays only
+	uint32_t valid_count = 0;
+	soff_t count_off = out->GetPosition();
+	out->WriteInt32(0);
+	for (const auto &over : overs) {
+		if (over.type < 0)
+			continue;
+		valid_count++;
+		over.WriteToSavegame(out);
 	}
+	out->Seek(count_off, kSeekBegin);
+	out->WriteInt32(valid_count);
+	out->Seek(0, kSeekEnd);
 	return HSaveError::None();
 }
 
-HSaveError ReadOverlays(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
+HSaveError ReadOverlays(Stream *in, int32_t cmp_ver, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData &r_data) {
+	// Remember that overlay indexes may be non-sequential
+	// the vector may be resized during read
 	size_t over_count = in->ReadInt32();
+	auto &overs = get_overlays();
+	overs.resize(over_count); // reserve minimal size
 	for (size_t i = 0; i < over_count; ++i) {
 		ScreenOverlay over;
 		bool has_bitmap;
-		over.ReadFromFile(in, has_bitmap, cmp_ver);
+		over.ReadFromSavegame(in, has_bitmap, cmp_ver);
+		if (over.type < 0)
+			continue; // safety abort
 		if (has_bitmap)
-			over.SetImage(read_serialized_bitmap(in));
-		if (over.scaleWidth <= 0 || over.scaleHeight <= 0) {
-			over.scaleWidth = over.GetImage()->GetWidth();
-			over.scaleHeight = over.GetImage()->GetHeight();
-		}
-		_GP(screenover).push_back(std::move(over));
+			r_data.OverlayImages[over.type].reset(read_serialized_bitmap(in));
+		if (overs.size() <= static_cast<uint32_t>(over.type))
+			overs.resize(over.type + 1);
+		overs[over.type] = std::move(over);
 	}
 	return HSaveError::None();
 }
@@ -790,13 +819,13 @@ HSaveError WriteDynamicSurfaces(Stream *out) {
 			out->WriteInt8(0);
 		} else {
 			out->WriteInt8(1);
-			serialize_bitmap(_G(dynamicallyCreatedSurfaces)[i], out);
+			serialize_bitmap(_G(dynamicallyCreatedSurfaces)[i].get(), out);
 		}
 	}
 	return HSaveError::None();
 }
 
-HSaveError ReadDynamicSurfaces(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, RestoredData &r_data) {
+HSaveError ReadDynamicSurfaces(Stream *in, int32_t /*cmp_ver*/, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData &r_data) {
 	HSaveError err;
 	if (!AssertCompatLimit(err, in->ReadInt32(), MAX_DYNAMIC_SURFACES, "Dynamic Surfaces"))
 		return err;
@@ -804,9 +833,9 @@ HSaveError ReadDynamicSurfaces(Stream *in, int32_t cmp_ver, const PreservedParam
 	r_data.DynamicSurfaces.resize(MAX_DYNAMIC_SURFACES);
 	for (int i = 0; i < MAX_DYNAMIC_SURFACES; ++i) {
 		if (in->ReadInt8() == 0)
-			r_data.DynamicSurfaces[i] = nullptr;
+			r_data.DynamicSurfaces[i].reset();
 		else
-			r_data.DynamicSurfaces[i] = read_serialized_bitmap(in);
+			r_data.DynamicSurfaces[i].reset(read_serialized_bitmap(in));
 	}
 	return err;
 }
@@ -828,15 +857,16 @@ HSaveError WriteScriptModules(Stream *out) {
 	return HSaveError::None();
 }
 
-HSaveError ReadScriptModules(Stream *in, int32_t cmp_ver, const PreservedParams &pp, RestoredData &r_data) {
+HSaveError ReadScriptModules(Stream *in, int32_t /*cmp_ver*/, soff_t cmp_size, const PreservedParams &pp, RestoredData &r_data) {
 	HSaveError err;
 	// read the global script data segment
 	int data_len = in->ReadInt32();
 	if (!AssertGameContent(err, data_len, pp.GlScDataSize, "global script data"))
 		return err;
 	r_data.GlobalScript.Len = data_len;
-	r_data.GlobalScript.Data.reset(new char[data_len]);
-	in->Read(r_data.GlobalScript.Data.get(), data_len);
+	r_data.GlobalScript.Data.resize(data_len);
+	if (data_len > 0)
+		in->Read(&r_data.GlobalScript.Data.front(), data_len);
 
 	if (!AssertGameContent(err, in->ReadInt32(), _G(numScriptModules), "Script Modules"))
 		return err;
@@ -846,8 +876,9 @@ HSaveError ReadScriptModules(Stream *in, int32_t cmp_ver, const PreservedParams 
 		if (!AssertGameObjectContent(err, data_len, pp.ScMdDataSize[i], "script module data", "module", i))
 			return err;
 		r_data.ScriptModules[i].Len = data_len;
-		r_data.ScriptModules[i].Data.reset(new char[data_len]);
-		in->Read(r_data.ScriptModules[i].Data.get(), data_len);
+		r_data.ScriptModules[i].Data.resize(data_len);
+		if (data_len > 0)
+			in->Read(&r_data.ScriptModules[i].Data.front(), data_len);
 	}
 	return err;
 }
@@ -861,7 +892,7 @@ HSaveError WriteRoomStates(Stream *out) {
 			if (roomstat->beenhere) {
 				out->WriteInt32(i);
 				WriteFormatTag(out, "RoomState", true);
-				roomstat->WriteToSavegame(out);
+				roomstat->WriteToSavegame(out, _G(loaded_game_file_version));
 				WriteFormatTag(out, "RoomState", false);
 			} else
 				out->WriteInt32(-1);
@@ -871,7 +902,7 @@ HSaveError WriteRoomStates(Stream *out) {
 	return HSaveError::None();
 }
 
-HSaveError ReadRoomStates(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
+HSaveError ReadRoomStates(Stream *in, int32_t cmp_ver, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
 	HSaveError err;
 	int roomstat_count = in->ReadInt32();
 	for (; roomstat_count > 0; --roomstat_count) {
@@ -883,7 +914,7 @@ HSaveError ReadRoomStates(Stream *in, int32_t cmp_ver, const PreservedParams & /
 			if (!AssertFormatTagStrict(err, in, "RoomState", true))
 				return err;
 			RoomStatus *roomstat = getRoomStatus(id);
-			roomstat->ReadFromSavegame(in, cmp_ver);
+			roomstat->ReadFromSavegame(in, _G(loaded_game_file_version), (RoomStatSvgVersion)cmp_ver);
 			if (!AssertFormatTagStrict(err, in, "RoomState", false))
 				return err;
 		}
@@ -904,23 +935,16 @@ HSaveError WriteThisRoom(Stream *out) {
 	}
 	out->WriteBool(_G(raw_saved_screen) != nullptr);
 	if (_G(raw_saved_screen))
-		serialize_bitmap(_G(raw_saved_screen), out);
+		serialize_bitmap(_G(raw_saved_screen).get(), out);
 
 	// room region state
 	for (int i = 0; i < MAX_ROOM_REGIONS; ++i) {
 		out->WriteInt32(_GP(thisroom).Regions[i].Light);
 		out->WriteInt32(_GP(thisroom).Regions[i].Tint);
 	}
-	for (int i = 0; i < MAX_WALK_AREAS + 1; ++i) {
+	for (int i = 0; i < MAX_WALK_AREAS; ++i) {
 		out->WriteInt32(_GP(thisroom).WalkAreas[i].ScalingFar);
 		out->WriteInt32(_GP(thisroom).WalkAreas[i].ScalingNear);
-	}
-
-	// room object movement paths cache
-	// CHECKME: not sure why it saves (object count + 1) move lists
-	out->WriteInt32(_GP(thisroom).Objects.size() + 1);
-	for (size_t i = 0; i < _GP(thisroom).Objects.size() + 1; ++i) {
-		_GP(mls)[i].WriteToFile(out);
 	}
 
 	// room music volume
@@ -931,11 +955,11 @@ HSaveError WriteThisRoom(Stream *out) {
 	out->WriteBool(persist);
 	// write the current troom state, in case they save in temporary room
 	if (!persist)
-		_GP(troom).WriteToSavegame(out);
+		_GP(troom).WriteToSavegame(out, _G(loaded_game_file_version));
 	return HSaveError::None();
 }
 
-HSaveError ReadThisRoom(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, RestoredData &r_data) {
+HSaveError ReadThisRoom(Stream *in, int32_t cmp_ver, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData &r_data) {
 	HSaveError err;
 	_G(displayed_room) = in->ReadInt32();
 	if (_G(displayed_room) < 0)
@@ -950,26 +974,28 @@ HSaveError ReadThisRoom(Stream *in, int32_t cmp_ver, const PreservedParams & /*p
 			r_data.RoomBkgScene[i] = nullptr;
 	}
 	if (in->ReadBool())
-		_G(raw_saved_screen) = read_serialized_bitmap(in);
+		_G(raw_saved_screen).reset(read_serialized_bitmap(in));
 
 	// room region state
 	for (int i = 0; i < MAX_ROOM_REGIONS; ++i) {
 		r_data.RoomLightLevels[i] = in->ReadInt32();
 		r_data.RoomTintLevels[i] = in->ReadInt32();
 	}
-	for (int i = 0; i < MAX_WALK_AREAS + 1; ++i) {
+	for (int i = 0; i < MAX_WALK_AREAS; ++i) {
 		r_data.RoomZoomLevels1[i] = in->ReadInt32();
 		r_data.RoomZoomLevels2[i] = in->ReadInt32();
 	}
 
-	// room object movement paths cache
-	int objmls_count = in->ReadInt32();
-	if (!AssertCompatLimit(err, objmls_count, CHMLSOFFS, "room object move lists"))
-		return err;
-	for (int i = 0; i < objmls_count; ++i) {
-		err = _GP(mls)[i].ReadFromFile(in, cmp_ver > 0 ? 1 : 0); // FIXME cmp_ver, ugly
-		if (!err)
+	// room object movement paths, for old saves
+	if (cmp_ver < kRoomStatSvgVersion_36109) {
+		int objmls_count = in->ReadInt32();
+		if (!AssertCompatLimit(err, objmls_count, CHMLSOFFS, "room object move lists"))
 			return err;
+		for (int i = 0; i < objmls_count; ++i) {
+			err = _GP(mls)[i].ReadFromSavegame(in, kMoveSvgVersion_350);
+			if (!err)
+				return err;
+		}
 	}
 
 	// save the new room music vol for later use
@@ -977,9 +1003,34 @@ HSaveError ReadThisRoom(Stream *in, int32_t cmp_ver, const PreservedParams & /*p
 
 	// read the current troom state, in case they saved in temporary room
 	if (!in->ReadBool())
-		_GP(troom).ReadFromSavegame(in, cmp_ver);
+		_GP(troom).ReadFromSavegame(in, _G(loaded_game_file_version), (RoomStatSvgVersion)cmp_ver);
 
 	return HSaveError::None();
+}
+
+HSaveError WriteMoveLists(Stream *out) {
+	out->WriteInt32(static_cast<int32_t>(_GP(mls).size()));
+	for (const auto &movelist : _GP(mls)) {
+		movelist.WriteToSavegame(out);
+	}
+	return HSaveError::None();
+}
+
+HSaveError ReadMoveLists(Stream *in, int32_t cmp_ver, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
+	HSaveError err;
+	size_t movelist_count = in->ReadInt32();
+	// TODO: this assertion is needed only because mls size is fixed to the
+	// number of characters + max number of objects, where each game object
+	// has a fixed movelist index. It may be removed if movelists will be
+	// allocated on demand with an arbitrary index instead.
+	if (!AssertGameContent(err, movelist_count, _GP(mls).size(), "Move Lists"))
+		return err;
+	for (size_t i = 0; i < movelist_count; ++i) {
+		err = _GP(mls)[i].ReadFromSavegame(in, cmp_ver);
+		if (!err)
+			return err;
+	}
+	return err;
 }
 
 HSaveError WriteManagedPool(Stream *out) {
@@ -987,7 +1038,7 @@ HSaveError WriteManagedPool(Stream *out) {
 	return HSaveError::None();
 }
 
-HSaveError ReadManagedPool(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
+HSaveError ReadManagedPool(Stream *in, int32_t /*cmp_ver*/, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
 	if (ccUnserializeAllObjects(in, &_GP(ccUnserializer))) {
 		return new SavegameError(kSvgErr_GameObjectInitFailed,
 		                         String::FromFormat("Managed pool deserialization failed: %s", cc_get_error().ErrorString.GetCStr()));
@@ -996,18 +1047,12 @@ HSaveError ReadManagedPool(Stream *in, int32_t cmp_ver, const PreservedParams & 
 }
 
 HSaveError WritePluginData(Stream *out) {
-	auto pluginFileHandle = AGSE_SAVEGAME;
-	pl_set_file_handle(pluginFileHandle, out);
-	pl_run_plugin_hooks(AGSE_SAVEGAME, pluginFileHandle);
-	pl_clear_file_handle();
+	WritePluginSaveData(out);
 	return HSaveError::None();
 }
 
-HSaveError ReadPluginData(Stream *in, int32_t cmp_ver, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
-	auto pluginFileHandle = AGSE_RESTOREGAME;
-	pl_set_file_handle(pluginFileHandle, in);
-	pl_run_plugin_hooks(AGSE_RESTOREGAME, pluginFileHandle);
-	pl_clear_file_handle();
+HSaveError ReadPluginData(Stream *in, int32_t cmp_ver, soff_t cmp_size, const PreservedParams & /*pp*/, RestoredData & /*r_data*/) {
+	ReadPluginSaveData(in, static_cast<PluginSvgVersion>(cmp_ver), cmp_size);
 	return HSaveError::None();
 }
 
@@ -1018,30 +1063,32 @@ struct ComponentHandler {
 	int32_t            Version; // current version to write and the highest supported version
 	int32_t            LowestVersion; // lowest supported version that the engine can read
 	HSaveError(*Serialize)(Stream *);
-	HSaveError(*Unserialize)(Stream *, int32_t cmp_ver, const PreservedParams &, RestoredData &);
+	HSaveError(*Unserialize)(Stream *, int32_t cmp_ver, soff_t cmp_size, const PreservedParams &, RestoredData &);
 };
 
 // Array of supported components
 struct ComponentHandlers {
-	const ComponentHandler _items[17] = {
+	// NOTE: the new format values should now be defined as AGS version
+	// at which a change was introduced, represented as NN,NN,NN,NN.
+	const ComponentHandler _items[18] = {
 		{
 			"Game State",
-			kGSSvgVersion_350_10,
+			kGSSvgVersion_361_14,
 			kGSSvgVersion_Initial,
 			WriteGameState,
 			ReadGameState
 		},
 		{
 			"Audio",
-			2,
-			0,
+			kAudioSvgVersion_36130,
+			kAudioSvgVersion_Initial,
 			WriteAudio,
 			ReadAudio
 		},
 		{
 			"Characters",
-			2,
-			0,
+			kCharSvgVersion_36115,
+			kCharSvgVersion_350, // skip pre-alpha 3.5.0 ver
 			WriteCharacters,
 			ReadCharacters
 		},
@@ -1068,8 +1115,8 @@ struct ComponentHandlers {
 		},
 		{
 			"Mouse Cursors",
-			1,
-			0,
+			kCursorSvgVersion_36016,
+			kCursorSvgVersion_Initial,
 			WriteMouseCursors,
 			ReadMouseCursors
 		},
@@ -1089,8 +1136,8 @@ struct ComponentHandlers {
 		},
 		{
 			"Overlays",
-			3,
-			0,
+			kOverSvgVersion_36108,
+			kOverSvgVersion_Initial,
 			WriteOverlays,
 			ReadOverlays
 		},
@@ -1110,17 +1157,24 @@ struct ComponentHandlers {
 		},
 		{
 			"Room States",
-			3,
-			0,
+			kRoomStatSvgVersion_36109,
+			kRoomStatSvgVersion_350_Mismatch, // support mismatching 3.5.0 ver here
 			WriteRoomStates,
 			ReadRoomStates
 		},
 		{
 			"Loaded Room State",
-			3, // must correspond to "Room States"
-			0,
+			kRoomStatSvgVersion_36109, // must correspond to "Room States"
+			kRoomStatSvgVersion_350, // skip pre-alpha 3.5.0 ver
 			WriteThisRoom,
 			ReadThisRoom
+		},
+		{
+			"Move Lists",
+			kMoveSvgVersion_36109,
+			kMoveSvgVersion_350, // skip pre-alpha 3.5.0 ver
+			WriteMoveLists,
+			ReadMoveLists
 		},
 		{
 			"Managed Pool",
@@ -1131,8 +1185,8 @@ struct ComponentHandlers {
 		},
 		{
 			"Plugin Data",
-			0,
-			0,
+			kPluginSvgVersion_36115,
+			kPluginSvgVersion_Initial,
 			WritePluginData,
 			ReadPluginData
 		},
@@ -1216,7 +1270,7 @@ HSaveError ReadComponent(Stream *in, SvgCmpReadHelper &hlp, ComponentInfo &info)
 		return new SavegameError(kSvgErr_UnsupportedComponent);
 	if (info.Version > handler->Version || info.Version < handler->LowestVersion)
 		return new SavegameError(kSvgErr_UnsupportedComponentVersion, String::FromFormat("Saved version: %d, supported: %d - %d", info.Version, handler->LowestVersion, handler->Version));
-	HSaveError err = handler->Unserialize(in, info.Version, hlp.PP, hlp.RData);
+	HSaveError err = handler->Unserialize(in, info.Version, info.DataSize, hlp.PP, hlp.RData);
 	if (!err)
 		return err;
 	if (in->GetPosition() - info.DataOffset != info.DataSize)
@@ -1253,7 +1307,6 @@ HSaveError ReadAll(Stream *in, SavegameVersion svg_version, const PreservedParam
 					idx, info.Name.IsEmpty() ? "unknown" : info.Name.GetCStr(), info.Version, info.Offset),
 				err);
 		}
-		update_polled_stuff_if_runtime();
 		idx++;
 	} while (!in->EOS());
 	return new SavegameError(kSvgErr_ComponentListClosingTagMissing);
@@ -1284,7 +1337,6 @@ HSaveError WriteAllCommon(Stream *out) {
 			                         String::FromFormat("Component: (#%d) %s", type, (*g_componentHandlers)[type].Name.GetCStr()),
 			                         err);
 		}
-		update_polled_stuff_if_runtime();
 	}
 	WriteFormatTag(out, ComponentListTag, false);
 	return HSaveError::None();

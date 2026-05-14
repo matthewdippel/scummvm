@@ -73,10 +73,8 @@ CREATE_DOSOUND_FORWARD(DoSoundSetLoop)
 reg_t kDoSoundMac32(EngineState *s, int argc, reg_t *argv) {
 	// Several SCI 2.1 Middle Mac games, but not all, contain a modified kDoSound
 	//  in which all but eleven subops were removed, changing their subop values to
-	//  zero through ten. PQSWAT then restored all of the subops, but kept the new
-	//  subop values that removing caused in the first place, and assigned new
-	//  values to the restored subops. It is the only game that does this and it
-	//  only uses two of them.
+	//  zero through ten. PQSWAT and HOYLE5 Solitaire restored all of the subops,
+	//  but kept the new values that removing caused in the first place.
 	switch (argv[0].toUint16()) {
 	case 0:
 		return g_sci->_soundCmd->kDoSoundMasterVolume(s, argc - 1, argv + 1);
@@ -100,11 +98,19 @@ reg_t kDoSoundMac32(EngineState *s, int argc, reg_t *argv) {
 		return g_sci->_soundCmd->kDoSoundSetLoop(s, argc - 1, argv + 1);
 	case 10:
 		return g_sci->_soundCmd->kDoSoundUpdateCues(s, argc - 1, argv + 1);
-	// PQSWAT only
+	// PQSWAT, HOYLE5 solitaire
 	case 12: // kDoSoundRestore
 		return kEmpty(s, argc - 1, argv + 1);
 	case 13:
 		return g_sci->_soundCmd->kDoSoundGetPolyphony(s, argc - 1, argv + 1);
+	case 14:
+		return g_sci->_soundCmd->kDoSoundSuspend(s, argc - 1, argv + 1);
+	case 15:
+		return g_sci->_soundCmd->kDoSoundSetHold(s, argc - 1, argv + 1);
+	case 17:
+		return g_sci->_soundCmd->kDoSoundSetPriority(s, argc - 1, argv + 1);
+	case 18:
+		return g_sci->_soundCmd->kDoSoundSendMidi(s, argc - 1, argv + 1);
 	default:
 		break;
 	}
@@ -168,13 +174,15 @@ reg_t kDoAudio(EngineState *s, int argc, reg_t *argv) {
 	if (g_sci->_features->usesCdTrack()) {
 		if (g_sci->getGameId() == GID_MOTHERGOOSE256) {
 			// The CD audio version of Mothergoose256 CD is unique with a
-			// custom interpreter for its audio. English is only in the CD
-			// audio track while the other four languages are only in audio
-			// resource files. This is transparent to the scripts which are
-			// the same in all versions. The interpreter detected when
-			// English was selected and used CD audio in that case.
-			if (g_sci->getSciLanguage() == K_LANG_ENGLISH &&
-				argv[0].toUint16() != kSciAudioLanguage) {
+			// custom interpreter. Instead of using AUDIO001 files for English,
+			// the interpreter is hard-coded to use CD audio when the language
+			// is set to English. Otherwise, it uses the normal kDoAudio code
+			// to use AUDIO### files for the other four languages
+			// This is transparent to the scripts; they are the same as in the
+			// version that uses AUDIO001 for English and not CD Audio.
+			int audioLanguage = g_sci->getResMan()->getAudioLanguage();
+			bool english = (audioLanguage == K_LANG_NONE) || (audioLanguage == K_LANG_ENGLISH);
+			if (english && argv[0].toUint16() != kSciAudioLanguage) {
 				return kDoCdAudio(s, argc, argv);
 			}
 		} else {
@@ -236,9 +244,25 @@ reg_t kDoAudio(EngineState *s, int argc, reg_t *argv) {
 		debugC(kDebugLevelSound, "kDoAudio: resume");
 		g_sci->_audio->resumeAudio();
 		break;
-	case kSciAudioPosition:
-		//debugC(kDebugLevelSound, "kDoAudio: get position");	// too verbose
-		return make_reg(0, g_sci->_audio->getAudioPosition());
+	case kSciAudioPosition: {
+		// SSCI queried the audio driver's AudioLoc function and returned the result.
+		// The driver returned the location in ticks if audio was playing, otherwise -1.
+		// The driver could only play one piece of audio at a time, and it could have
+		// been playing either a digital sample from kDoSound or speech from kDoAudio.
+		// We have two separate components for these interfaces, so we must check both.
+		int audioPosition = g_sci->_audio->getAudioPosition();
+		if (audioPosition == -1) {
+			// kDoAudio is not playing speech, so now we check the kDoSound interface.
+			// SoundCommandParser does not keep track of the audio position in ticks
+			// for digital samples, so we can't return the real position. Scripts only
+			// care about the exact tick value for speech, otherwise it only matters
+			// if the result is -1 or not, so just return 1 if a sample is playing.
+			if (g_sci->_soundCmd->isDigitalSamplePlaying()) {
+				audioPosition = 1;
+			}
+		}
+		return make_reg(0, audioPosition);
+	}
 	case kSciAudioRate:
 		debugC(kDebugLevelSound, "kDoAudio: set audio rate to %d", argv[1].toUint16());
 		g_sci->_audio->setAudioRate(argv[1].toUint16());
@@ -251,42 +275,58 @@ reg_t kDoAudio(EngineState *s, int argc, reg_t *argv) {
 		break;
 	}
 	case kSciAudioLanguage:
-		// In SCI1.1: tests for digital audio support
 		if (getSciVersion() == SCI_VERSION_1_1) {
+			// SCI1.1: tests for digital audio support
 			debugC(kDebugLevelSound, "kDoAudio: audio capability test");
 			return make_reg(0, 1);
 		} else {
-			int16 language = argv[1].toSint16();
+			// SCI1: sets audio language, queries current language
+			int newLanguage = argv[1].toSint16();
+			int previousLanguage = g_sci->getResMan()->getAudioLanguage();
 
-			// athrxx: It seems from disasm that the original KQ5 FM-Towns loads a default language (Japanese) audio map at the beginning
-			// right after loading the video and audio drivers. The -1 language argument in here simply means that the original will stick
-			// with Japanese. Instead of doing that we switch to the language selected in the launcher.
-			if (g_sci->getPlatform() == Common::kPlatformFMTowns && language == -1) {
-				// FM-Towns calls us to get the current language / also set the default language
-				// This doesn't just happen right at the start, but also when the user clicks on the Sierra logo in the game menu
-				// It uses the result of this call to either show "English Voices" or "Japanese Voices".
-
-				// Language should have been set by setLauncherLanguage() already (or could have been modified by the scripts).
-				// Get this language setting, so that the chosen language will get set for resource manager.
-				language = g_sci->getSciLanguage();
+			// Handle the CD audio version of Mothergoose256 CD.
+			// See above; when the language is English, kDoCdAudio is used
+			// for all subops except this one.
+			if (g_sci->_features->usesCdTrack()) {
+				// Unload language audio to indicate that the current language is
+				// English, and return success. There are no English audio files.
+				if (newLanguage == K_LANG_ENGLISH) {
+					g_sci->getResMan()->unloadAudioLanguage();
+					debugC(kDebugLevelSound, "kDoAudio: set language to %d", newLanguage);
+					return make_reg(0, newLanguage);
+				}
+				if (previousLanguage == K_LANG_NONE) {
+					previousLanguage = K_LANG_ENGLISH;
+				}
 			}
 
-			debugC(kDebugLevelSound, "kDoAudio: set language to %d", language);
-
-			if (language != -1)
-				g_sci->getResMan()->setAudioLanguage(language);
-
-			kLanguage kLang = g_sci->getSciLanguage();
-			if (g_sci->_features->usesCdTrack() && language == K_LANG_ENGLISH) {
-				// Mothergoose 256 CD has a multi-lingual version with English only on CD audio,
-				// so setAudioLanguage() will fail because there are no English resource files.
-				// The scripts cycle through languages to test which are available for the main
-				// menu, so setting English must succeed. This was handled by a custom interpreter.
-				kLang = K_LANG_ENGLISH;
+			if (newLanguage == -1) {
+				if (previousLanguage == K_LANG_NONE) {
+					// Initialize default language, fall back on English.
+					// The original interpreter had a language global with a hard-coded initial value.
+					// For example, KQ5 PC was set to English, FM-Towns was set Japanese.
+					// We initialize from getSciLanguage() to use our own default, or the launcher language
+					int initialLanguage = g_sci->getSciLanguage();
+					if (!g_sci->getResMan()->setAudioLanguage(initialLanguage) && initialLanguage != K_LANG_ENGLISH) {
+						initialLanguage = K_LANG_ENGLISH;
+						g_sci->getResMan()->setAudioLanguage(initialLanguage);
+					}
+					debugC(kDebugLevelSound, "kDoAudio: initialized language to %d", initialLanguage);
+					return make_reg(0, initialLanguage);
+				} else {
+					debugC(kDebugLevelSound, "kDoAudio: current language: %d", previousLanguage);
+					return make_reg(0, previousLanguage);
+				}
 			}
-			g_sci->setSciLanguage(kLang);
 
-			return make_reg(0, kLang);
+			if (g_sci->getResMan()->setAudioLanguage(newLanguage)) {
+				debugC(kDebugLevelSound, "kDoAudio: set language to %d", newLanguage);
+				return make_reg(0, newLanguage);
+			} else {
+				g_sci->getResMan()->setAudioLanguage(previousLanguage);
+				debugC(kDebugLevelSound, "kDoAudio: error setting language: %d, using: %d", newLanguage, previousLanguage);
+				return make_reg(0, previousLanguage);
+			}
 		}
 		break;
 	case kSciAudioCD:
@@ -328,11 +368,6 @@ reg_t kDoAudio(EngineState *s, int argc, reg_t *argv) {
 		//  a change. The Narrator class also does this to detect
 		//  if speech was interrupted so that the game can continue.
 		return make_reg(0, g_sci->_audio->getPlayCounter());
-	case 17:
-		// Seems to be some sort of audio sync, used in SQ6. Silenced the
-		// warning due to the high level of spam it produces. (takes no params)
-		//warning("kDoAudio: Unhandled case 17, %d extra arguments passed", argc - 1);
-		break;
 	default:
 		warning("kDoAudio: Unhandled case %d, %d extra arguments passed", argv[0].toUint16(), argc - 1);
 	}
@@ -350,8 +385,15 @@ reg_t kDoSync(EngineState *s, int argc, reg_t *argv) {
 		if (argc == 3) {
 			id = ResourceId(kResourceTypeSync, argv[2].toUint16());
 		} else if (argc == 7) {
-			id = ResourceId(kResourceTypeSync36, argv[2].toUint16(), argv[3].toUint16(), argv[4].toUint16(),
-							argv[5].toUint16(), argv[6].toUint16());
+			if (g_sci->getGameId() == GID_SLATER && g_sci->getPlatform() == Common::kPlatformMacintosh) {
+				// SLATER Macintosh does not support sync36 tuples, but the scripts
+				// still pass 7 parameters because it was modified from the PC
+				// version. Ignore the extra parameters as the Mac interpreter does.
+				id = ResourceId(kResourceTypeSync, argv[2].toUint16());
+			} else {
+				id = ResourceId(kResourceTypeSync36, argv[2].toUint16(), argv[3].toUint16(), argv[4].toUint16(),
+				                argv[5].toUint16(), argv[6].toUint16());
+			}
 		} else {
 			warning("kDoSync: Start called with an unknown number of parameters (%d)", argc);
 			return s->r_acc;
@@ -500,7 +542,7 @@ reg_t kSetLanguage(EngineState *s, int argc, reg_t *argv) {
 	// Used by script 90 of MUMG Deluxe from the main menu to toggle between
 	// English and Spanish in some versions and English and Spanish and
 	// French and German in others.
-	const Common::String audioDirectory = s->_segMan->getString(argv[0]);
+	const Common::Path audioDirectory(s->_segMan->getString(argv[0]));
 	if (g_sci->getPlatform() == Common::kPlatformMacintosh) {
 		g_sci->getResMan()->changeMacAudioDirectory(audioDirectory);
 	} else {

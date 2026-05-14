@@ -22,6 +22,7 @@
 #ifndef ULTIMA8_GUMPS_READABLEGUMP_H
 #define ULTIMA8_GUMPS_READABLEGUMP_H
 
+#include "common/str.h"
 #include "ultima/ultima8/gumps/modal_gump.h"
 #include "ultima/ultima8/usecode/intrinsics.h"
 #include "ultima/ultima8/misc/classtype.h"
@@ -35,12 +36,12 @@ namespace Ultima8 {
 class ReadableGump : public ModalGump {
 	uint16 _shapeNum;
 	int _fontNum;
-	Std::string _text;
+	Common::String _text;
 public:
 	ENABLE_RUNTIME_CLASSTYPE()
 
 	ReadableGump();
-	ReadableGump(ObjId owner, uint16 shape, int font, const Std::string &msg);
+	ReadableGump(ObjId owner, uint16 shape, int font, const Common::String &msg);
 	~ReadableGump() override;
 
 	// Close on mouse click on key press

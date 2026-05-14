@@ -22,17 +22,16 @@
 #ifndef SCI_GRAPHICS_VIDEO32_H
 #define SCI_GRAPHICS_VIDEO32_H
 
-#ifdef USE_RGB_COLOR
 #include "common/config-manager.h" // for ConfMan
-#endif
+#include "common/path.h"          // for Path
 #include "common/ptr.h"
 #include "common/rect.h"          // for Rect
 #include "common/scummsys.h"      // for int16, uint8, uint16, int32
-#include "common/str.h"           // for String
 #include "sci/engine/vm_types.h"  // for reg_t
 #include "sci/video/robot_decoder.h" // for RobotDecoder
 #include "sci/sound/audio32.h"    // for Audio32::kMaxVolume
 #include "video/avi_decoder.h"    // for AVIDecoder::setVolume
+#include "video/subtitles.h"      // for Video::Subtitles
 
 namespace Video {
 class AdvancedVMDDecoder;
@@ -70,11 +69,8 @@ public:
 		_eventMan(eventMan),
 		_decoder(decoder),
 		_needsUpdate(false),
-		_currentFrame(nullptr)
-#ifdef USE_RGB_COLOR
-		,
+		_currentFrame(nullptr),
 		_hqVideoMode(false)
-#endif
 		{}
 
 	virtual ~VideoPlayer() {}
@@ -92,7 +88,7 @@ protected:
 	 * ensure that the current system is actually capable of playing back the
 	 * video.
 	 */
-	bool open(const Common::String &fileName);
+	bool open(const Common::Path &fileName);
 
 	/**
 	 * Reinitializes the system hardware surface for playback of high-quality
@@ -102,14 +98,13 @@ protected:
 	 * @returns whether or not the system surface was reinitialized for
 	 * high-quality scaled video.
 	 */
-	bool startHQVideo();
+	bool startHQVideo(const Graphics::PixelFormat &format);
 
 	/**
 	 * Determines whether or not the currently loaded video meets the criteria
 	 * for high-quality scaled output.
 	 */
 	virtual bool shouldStartHQVideo() const {
-#ifdef USE_RGB_COLOR
 		if (!ConfMan.getBool("enable_hq_video")) {
 			return false;
 		}
@@ -120,9 +115,6 @@ protected:
 		}
 
 		return true;
-#else
-		return false;
-#endif
 	}
 
 	/**
@@ -159,13 +151,31 @@ protected:
 	 * Renders a video frame to an intermediate surface using low-quality
 	 * scaling, black-lining, or direct copy, depending upon the passed flags.
 	 */
-	template <typename PixelType>
 	void renderLQToSurface(Graphics::Surface &out, const Graphics::Surface &nextFrame, const bool doublePixels, const bool blackLines) const;
+
+	/**
+	 * Renders a video frame to an intermediate surface using low-quality
+	 * scaling.
+	 */
+	template <typename PixelType>
+	void renderLQToSurfaceDouble(Graphics::Surface &out, const Graphics::Surface &nextFrame, int lineCount) const;
 
 	/**
 	 * Sets the draw rect, clipping it to the screen's dimensions if necessary.
 	 */
 	void setDrawRect(const int16 x, const int16 y, const int16 width, const int16 height);
+
+	/**
+	 * Sets the subtitle position according to the draw rect and overlay size.
+	 *
+	 */
+	void setSubtitlePosition() const;
+
+	/**
+	 * Displays a message if the backend doesn't support the video format used
+	 * by the video.
+	 */
+	void showUnsupportedFormatDialog();
 
 	/**
 	 * The rectangle where the video will be drawn, in screen coordinates.
@@ -184,13 +194,16 @@ protected:
 	 */
 	const Graphics::Surface* _currentFrame;
 
-#ifdef USE_RGB_COLOR
+	/**
+	 * Video SRT subtitles used by fan translation projects for phantasmagoria 1 & 2.
+	 */
+	mutable Video::Subtitles _subtitles;
+
 	/**
 	 * Whether or not the player is currently in high-quality video rendering
 	 * mode.
 	 */
 	bool _hqVideoMode;
-#endif
 };
 
 #pragma mark SEQPlayer
@@ -207,7 +220,7 @@ public:
 	 * Plays a SEQ animation with the given file name, with each frame being
 	 * displayed for `numTicks` ticks.
 	 */
-	void play(const Common::String &fileName, const int16 numTicks, const int16 x, const int16 y);
+	void play(const Common::Path &fileName, const int16 numTicks, const int16 x, const int16 y);
 };
 
 #pragma mark -
@@ -237,7 +250,7 @@ public:
 	/**
 	 * Opens a stream to an AVI resource.
 	 */
-	IOStatus open(const Common::String &fileName);
+	IOStatus open(const Common::Path &fileName);
 
 	/**
 	 * Initializes the AVI rendering parameters for the current AVI. This must
@@ -288,7 +301,7 @@ public:
 	/**
 	 * Plays a QuickTime animation with the given file name
 	 */
-	void play(const Common::String& fileName);
+	void play(const Common::Path &fileName);
 };
 
 #pragma mark -
@@ -343,7 +356,7 @@ public:
 	/**
 	 * Opens a stream to a VMD resource.
 	 */
-	IOStatus open(const Common::String &fileName, const OpenFlags flags);
+	IOStatus open(const Common::Path &fileName, const OpenFlags flags);
 
 	/**
 	 * Initializes the VMD rendering parameters for the current VMD. This must
@@ -500,7 +513,6 @@ private:
 	 */
 	void fillPalette(const uint8 rawPalette[256 * 3], Palette &outPalette) const;
 
-#ifdef USE_RGB_COLOR
 	/**
 	 * Redraws areas of the screen outside of the video to the system buffer.
 	 * This is used whenever palette changes occur and the video is rendering in
@@ -527,18 +539,13 @@ private:
 
 		return true;
 	}
-#endif
 
 	/**
 	 * Determines whether or not the video should use the compositing renderer
 	 * instead of the overlay renderer.
 	 */
 	bool shouldUseCompositing() const {
-#ifdef USE_RGB_COLOR
 		return isNormallyComposited() && !shouldStartHQVideo();
-#else
-		return isNormallyComposited();
-#endif
 	}
 
 	bool isNormallyComposited() const {
@@ -805,6 +812,7 @@ private:
 	RobotDecoder _robotPlayer;
 	DuckPlayer _duckPlayer;
 };
+
 } // End of namespace Sci
 
-#endif
+#endif // SCI_GRAPHICS_VIDEO32_H

@@ -57,7 +57,11 @@ public:
 	 */
 	void readFromStream(Common::ReadStream *stream);
 
+#if defined(_MSC_VER) && _MSC_VER < 1910 // HACK: C2248 bug in MSVC 2015
+public:
+#else
 protected:
+#endif
 	MatrixType() : MatrixBase<dim, 1>() { }
 	MatrixType(const float *data) : MatrixBase<dim, 1>(data) { }
 	MatrixType(const MatrixBase<dim, 1> &m) : MatrixBase<dim, 1>(m) { }
@@ -125,7 +129,7 @@ void MatrixType<dim, 1>::readFromStream(Common::ReadStream *stream) {
 
 
 template<int dim>
-Common::StreamDebug &operator<<(Common::StreamDebug dbg, const Math::Matrix<dim, 1> &v) {
+Common::StreamDebug &operator<<(Common::StreamDebug &dbg, const Math::Matrix<dim, 1> &v) {
 	dbg.nospace() << "Vector<" << dim << ">(" << v.getValue(0);
 	for (int i = 1; i < dim; ++i) {
 		dbg << ", " << v.getValue(i);

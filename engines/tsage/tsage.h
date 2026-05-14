@@ -25,16 +25,43 @@
 #include "engines/engine.h"
 #include "gui/debugger.h"
 
-#include "tsage/core.h"
 #include "tsage/resources.h"
 #include "tsage/debugger.h"
 #include "tsage/events.h"
-#include "tsage/graphics.h"
 #include "tsage/resources.h"
 #include "tsage/detection.h"
 
 
 namespace TsAGE {
+
+enum TSAGEAction {
+	kActionNone,
+	kActionEscape,
+	kActionReturn,
+	kActionHelp,
+	kActionSoundOptions,
+	kActionQuitGame,
+	kActionRestartGame,
+	kActionSaveGame,
+	kActionRestoreGame,
+	kActionCredits,
+	kActionPauseGame,
+	kActionWalk,
+	kActionLook,
+	kActionUse,
+	kActionTalk,
+	kActionMoveUpCrawlNorth,
+	kActionMoveDownCrawlSouth,
+	kActionMoveLeftCrawlWest,
+	kActionMoveRightCrawlEast,
+	kActionIncreaseSpeed,
+	kActionDecreaseSpeed,
+	kActionMinimumSpeed,
+	kActionMaximumSpeed,
+	kActionLowSpeed,
+	kActionMediumSpeed,
+	kActionDrawCards
+};
 
 enum {
 	kRingDebugScripts = 1 << 0,
@@ -57,12 +84,12 @@ public:
 	uint32 getGameID() const;
 	uint32 getFeatures() const;
 	Common::Language getLanguage() const;
-	Common::String getPrimaryFilename() const;
+	Common::Path getPrimaryFilename() const;
 
 	virtual Common::Error init();
 	Common::Error run() override;
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 	void syncSoundSettings() override;

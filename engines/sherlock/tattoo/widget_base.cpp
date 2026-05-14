@@ -135,42 +135,18 @@ void WidgetBase::drawBackground() {
 
 Common::String WidgetBase::splitLines(const Common::String &str, Common::StringArray &lines, int maxWidth, uint maxLines) {
 	Talk &talk = *_vm->_talk;
-	const char *strP = str.c_str();
 
-	// Loop counting up lines
 	lines.clear();
-	do {
-		int width = 0;
-		const char *spaceP = nullptr;
-		const char *lineStartP = strP;
-
-		// Find how many characters will fit on the next line
-		while (width < maxWidth && *strP && ((byte)*strP < talk._opcodes[OP_SWITCH_SPEAKER] ||
-				(byte)*strP == talk._opcodes[OP_NULL])) {
-			width += _surface.charWidth(*strP);
-
-			// Keep track of the last space
-			if (*strP == ' ')
-				spaceP = strP;
-			++strP;
-		}
-
-		// If the line was too wide to fit on a single line, go back to the last space
-		// if there was one, or otherwise simply break the line at this point
-		if (width >= maxWidth && spaceP != nullptr)
-			strP = spaceP;
-
-		// Add the line to the output array
-		lines.push_back(Common::String(lineStartP, strP));
-
-		// Move the string ahead to the next line
-		if (*strP == ' ' || *strP == 13)
-			++strP;
-	} while (*strP && (lines.size() < maxLines) && ((byte)*strP < talk._opcodes[OP_SWITCH_SPEAKER]
-			|| (byte)*strP == talk._opcodes[OP_NULL]));
+	uint idx;
+	for (idx = 0; idx < str.size(); idx++)
+		if (str[idx] >= talk._opcodes[OP_SWITCH_SPEAKER] && str[idx] != talk._opcodes[OP_NULL])
+			break;
+	Common::String rest;
+	Common::Array<Common::String> arr = _surface.wordWrap(str.substr(0, idx), maxWidth, rest, Common::String::npos, maxLines);
+	lines.swap(arr);
 
 	// Return any remaining text left over
-	return *strP ? Common::String(strP) : Common::String();
+	return rest + str.substr(idx);
 }
 
 void WidgetBase::restrictToScreen() {
@@ -315,15 +291,15 @@ void WidgetBase::handleScrollbarEvents(int index, int pageSize, int count) {
 void WidgetBase::handleScrolling(int &scrollIndex, int pageSize, int max) {
 	Events &events = *_vm->_events;
 	TattooUserInterface &ui = *(TattooUserInterface *)_vm->_ui;
-	Common::KeyCode keycode = ui._keyState.keycode;
+	Common::CustomEventType action = ui._action;
 	Common::Point mousePos = events.mousePos();
 
 	Common::Rect r = getScrollBarBounds();
 	r.translate(_bounds.left, _bounds.top);
 
-	if (ui._scrollHighlight != SH_NONE || keycode == Common::KEYCODE_HOME || keycode == Common::KEYCODE_END
-		|| keycode == Common::KEYCODE_PAGEUP || keycode == Common::KEYCODE_PAGEDOWN
-		|| keycode == Common::KEYCODE_UP || keycode == Common::KEYCODE_DOWN) {
+	if (ui._scrollHighlight != SH_NONE || action == kActionTattooWidgetScrollStart || action == kActionTattooWidgetScrollEnd
+		|| action == kActionTattooWidgetScrollPageUp || action == kActionTattooWidgetScrollPageDown
+		|| action == kActionTattooWidgetScrollUp || action == kActionTattooWidgetScrollDown) {
 		// Check for the scrollbar
 		if (ui._scrollHighlight == SH_THUMBNAIL) {
 			int yp = mousePos.y;
@@ -342,15 +318,15 @@ void WidgetBase::handleScrolling(int &scrollIndex, int pageSize, int max) {
 			_dialogTimer = (_dialogTimer == 0) ? frameNum + pageSize : frameNum + 1;
 
 			// Check for Scroll Up
-			if ((ui._scrollHighlight == SH_SCROLL_UP || keycode == Common::KEYCODE_UP) && scrollIndex)
+			if ((ui._scrollHighlight == SH_SCROLL_UP || action == kActionTattooWidgetScrollUp) && scrollIndex)
 				--scrollIndex;
 
 			// Check for Page Up
-			else if ((ui._scrollHighlight == SH_PAGE_UP || keycode == Common::KEYCODE_PAGEUP) && scrollIndex)
+			else if ((ui._scrollHighlight == SH_PAGE_UP || action == kActionTattooWidgetScrollPageUp) && scrollIndex)
 				scrollIndex -= pageSize;
 
 			// Check for Page Down
-			else if ((ui._scrollHighlight == SH_PAGE_DOWN || keycode == Common::KEYCODE_PAGEDOWN)
+			else if ((ui._scrollHighlight == SH_PAGE_DOWN || action == kActionTattooWidgetScrollPageDown)
 				&& (scrollIndex + pageSize < max)) {
 				scrollIndex += pageSize;
 				if (scrollIndex + pageSize >max)
@@ -358,14 +334,14 @@ void WidgetBase::handleScrolling(int &scrollIndex, int pageSize, int max) {
 			}
 
 			// Check for Scroll Down
-			else if ((ui._scrollHighlight == SH_SCROLL_DOWN || keycode == Common::KEYCODE_DOWN) && (scrollIndex + pageSize < max))
+			else if ((ui._scrollHighlight == SH_SCROLL_DOWN || action == kActionTattooWidgetScrollDown) && (scrollIndex + pageSize < max))
 				++scrollIndex;
 		}
 
-		if (keycode == Common::KEYCODE_END)
+		if (action == kActionTattooWidgetScrollEnd)
 			scrollIndex = max - pageSize;
 
-		if (scrollIndex < 0 || keycode == Common::KEYCODE_HOME)
+		if (scrollIndex < 0 || action == kActionTattooWidgetScrollStart)
 			scrollIndex = 0;
 	}
 }

@@ -20,15 +20,16 @@
  */
 
 #include "ultima/ultima8/gumps/difficulty_gump.h"
-#include "ultima/ultima8/graphics/render_surface.h"
-#include "ultima/ultima8/graphics/gump_shape_archive.h"
-#include "ultima/ultima8/graphics/palette_manager.h"
+#include "ultima/ultima8/gfx/render_surface.h"
+#include "ultima/ultima8/gfx/gump_shape_archive.h"
+#include "ultima/ultima8/gfx/palette_manager.h"
+#include "ultima/ultima8/gfx/texture.h"
 #include "ultima/ultima8/ultima8.h"
 #include "ultima/ultima8/games/game_data.h"
 #include "ultima/ultima8/kernel/mouse.h"
 #include "ultima/ultima8/world/world.h"
-#include "ultima/ultima8/graphics/shape.h"
-#include "ultima/ultima8/graphics/shape_frame.h"
+#include "ultima/ultima8/gfx/shape.h"
+#include "ultima/ultima8/gfx/shape_frame.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -57,8 +58,7 @@ void DifficultyGump::InitGump(Gump *newparent, bool take_focus) {
 	ModalGump::InitGump(newparent, take_focus);
 
 	Mouse *mouse = Mouse::get_instance();
-	mouse->pushMouseCursor();
-	mouse->setMouseCursor(Mouse::MOUSE_HAND);
+	mouse->pushMouseCursor(Mouse::MOUSE_HAND);
 
 	_dims.top = 0;
 	_dims.left = 0;
@@ -117,7 +117,7 @@ void DifficultyGump::InitGump(Gump *newparent, bool take_focus) {
 
 		_buttonHeight = MAX(_buttonHeight, leftFrame->_height);
 		_buttonHeight = MAX(_buttonHeight, rightFrame->_height);
-		_buttonWidth = MAX(_buttonWidth, leftFrame->_width + rightFrame->_width);
+		_buttonWidth = MAX(_buttonWidth, static_cast<int16>(leftFrame->_width + rightFrame->_width));
 	}
 
 	// remove focus from children (just in case)
@@ -137,12 +137,13 @@ void DifficultyGump::OnFocus(bool gain) {
 void DifficultyGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool scaled) {
 	// Paint a highlight around the current level
 	int highlihght_y = BUTTON_Y + ((_highlighted - 1) * (BUTTON_SPACE + BUTTON_HEIGHT));
-	surf->Fill32(0xFF808080, BUTTON_X - 1, highlihght_y - 1, _buttonWidth + 2, _buttonHeight + 2);
+	uint32 color = TEX32_PACK_RGB(0x80, 0x80, 0x80);
+	surf->fill32(color, BUTTON_X - 1, highlihght_y - 1, _buttonWidth + 2, _buttonHeight + 2);
 	ModalGump::PaintThis(surf, lerp_factor, scaled);
 }
 
 void DifficultyGump::onMouseClick(int button, int32 mx, int32 my) {
-	if (button == Shared::BUTTON_LEFT) {
+	if (button == Mouse::BUTTON_LEFT) {
 		Gump *gump = FindGump(mx, my);
 		if (gump && gump->GetIndex() > 0) {
 			int idx = gump->GetIndex();

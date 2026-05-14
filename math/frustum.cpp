@@ -29,7 +29,7 @@ Frustum::Frustum() {
 void Frustum::setup(const Math::Matrix4 &matrix) {
 	// Based on "Fast Extraction of Viewing Frustum Planes from the
 	// World-View-Projection matrix" by Gil Gribb and Klaus Hartmann.
-	// http://www.cs.otago.ac.nz/postgrads/alexis/planeExtraction.pdf
+	// https://web.archive.org/web/20140211075800/http://www.cs.otago.ac.nz/postgrads/alexis/planeExtraction.pdf
 
 	_planes[0]._normal.x() = matrix.getValue(3, 0) + matrix.getValue(0, 0);
 	_planes[0]._normal.y() = matrix.getValue(3, 1) + matrix.getValue(0, 1);
@@ -88,5 +88,18 @@ bool Frustum::isInside(const Math::AABB &aabb) const {
 
 	return true;
 }
+
+bool Frustum::isTriangleInside(const Math::Vector3d &v0, const Math::Vector3d &v1, const Math::Vector3d &v2) const {
+	for (int i = 0; i < 6; ++i) {
+		const Plane &plane = _planes[i];
+		// Inside if any point is above the plane. On the plane is in
+		if (plane.getSignedDistance(v0) < 0.0f
+				&& plane.getSignedDistance(v1) < 0.0f
+				&& plane.getSignedDistance(v2) < 0.0f)
+			return false;
+	}
+	return true;
+}
+
 
 }

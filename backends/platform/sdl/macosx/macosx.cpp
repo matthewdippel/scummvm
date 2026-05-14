@@ -33,7 +33,11 @@
 #include "backends/platform/sdl/macosx/macosx-window.h"
 #include "backends/updates/macosx/macosx-updates.h"
 #include "backends/taskbar/macosx/macosx-taskbar.h"
+#ifdef USE_NS_SPEECH_SYNTHESIZER
 #include "backends/text-to-speech/macosx/macosx-text-to-speech.h"
+#else
+#include "backends/text-to-speech/avfaudio/avfaudio-text-to-speech.h"
+#endif
 #include "backends/dialogs/macosx/macosx-dialogs.h"
 #include "backends/platform/sdl/macosx/macosx_wrapper.h"
 #include "backends/fs/posix/posix-fs.h"
@@ -114,8 +118,26 @@ void OSystem_MacOSX::initBackend() {
 
 #ifdef USE_TTS
 	// Initialize Text to Speech manager
+#ifdef USE_NS_SPEECH_SYNTHESIZER
 	_textToSpeechManager = new MacOSXTextToSpeechManager();
+#else
+	_textToSpeechManager = new AVFAudioTextToSpeechManager();
 #endif
+#endif
+
+	// Migrate savepath.
+	// It used to be in ~/Documents/ScummVM Savegames/, but was changed to use the application support
+	// directory. To migrate old config files we use a flag to indicate if the config file was migrated.
+	// This allows detecting old config files. If the flag is not set we:
+	// 1. Set the flag
+	// 2. If the config file has no custom savepath and has some games, we set the savepath to the old default.
+	if (!ConfMan.hasKey("macos_savepath_migrated", Common::ConfigManager::kApplicationDomain)) {
+		if (!ConfMan.hasKey("savepath", Common::ConfigManager::kApplicationDomain) && !ConfMan.getGameDomains().empty()) {
+			ConfMan.set("savepath", getDocumentsPathMacOSX() + "/ScummVM Savegames", Common::ConfigManager::kApplicationDomain);
+		}
+		ConfMan.setBool("macos_savepath_migrated", true, Common::ConfigManager::kApplicationDomain);
+		ConfMan.flushToDisk();
+	}
 
 	// Invoke parent implementation of this method
 	OSystem_POSIX::initBackend();
@@ -132,7 +154,7 @@ void OSystem_MacOSX::addSysArchivesToSearchSet(Common::SearchSet &s, int priorit
 	OSystem_POSIX::addSysArchivesToSearchSet(s, priority);
 
 	// Get URL of the Resource directory of the .app bundle
-	Common::String bundlePath = getResourceAppBundlePathMacOSX();
+	Common::Path bundlePath(getResourceAppBundlePathMacOSX(), Common::Path::kNativeSeparator);
 	if (!bundlePath.empty()) {
 		// Success: search with a depth of 2 so the shaders are found
 		s.add("__OSX_BUNDLE__", new Common::FSDirectory(bundlePath, 2), priority);
@@ -157,23 +179,13 @@ bool OSystem_MacOSX::displayLogFile() {
 	if (_logFilePath.empty())
 		return false;
 
-	CFURLRef url = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, (const UInt8 *)_logFilePath.c_str(), _logFilePath.size(), false);
+	Common::String logFilePath(_logFilePath.toString(Common::Path::kNativeSeparator));
+
+	CFURLRef url = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, (const UInt8 *)logFilePath.c_str(), logFilePath.size(), false);
 	OSStatus err = LSOpenCFURLRef(url, NULL);
 	CFRelease(url);
 
 	return err != noErr;
-}
-
-bool OSystem_MacOSX::hasTextInClipboard() {
-	return hasTextInClipboardMacOSX();
-}
-
-Common::U32String OSystem_MacOSX::getTextFromClipboard() {
-	return getTextFromClipboardMacOSX();
-}
-
-bool OSystem_MacOSX::setTextInClipboard(const Common::U32String &text) {
-	return setTextInClipboardMacOSX(text);
 }
 
 bool OSystem_MacOSX::openUrl(const Common::String &url) {
@@ -230,17 +242,16 @@ Common::String OSystem_MacOSX::getSystemLanguage() const {
 #endif // USE_DETECTLANG
 }
 
-Common::String OSystem_MacOSX::getDefaultConfigFileName() {
-	const Common::String baseConfigName = "Library/Preferences/ScummVM Preferences";
+Common::Path OSystem_MacOSX::getDefaultConfigFileName() {
+	const Common::String baseConfigName = "Library/Preferences/" + getMacBundleName() + " Preferences";
 
-	Common::String configFile;
+	Common::Path configFile;
 
 	Common::String prefix = getenv("HOME");
 
 	if (!prefix.empty() && (prefix.size() + 1 + baseConfigName.size()) < MAXPATHLEN) {
 		configFile = prefix;
-		configFile += '/';
-		configFile += baseConfigName;
+		configFile.joinInPlace(baseConfigName);
 	} else {
 		configFile = baseConfigName;
 	}
@@ -248,38 +259,48 @@ Common::String OSystem_MacOSX::getDefaultConfigFileName() {
 	return configFile;
 }
 
-Common::String OSystem_MacOSX::getDefaultLogFileName() {
+Common::Path OSystem_MacOSX::getDefaultLogFileName() {
 	const char *prefix = getenv("HOME");
 	if (prefix == nullptr) {
-		return Common::String();
+		return Common::Path();
 	}
 
 	if (!Posix::assureDirectoryExists("Library/Logs", prefix)) {
-		return Common::String();
+		return Common::Path();
 	}
 
-	return Common::String(prefix) + "/Library/Logs/scummvm.log";
+	Common::String appName = getMacBundleName();
+	appName.toLowercase();
+	return Common::Path(prefix).join(Common::String("Library/Logs/") + appName + ".log");
 }
 
-Common::String OSystem_MacOSX::getDefaultIconsPath() {
+Common::Path OSystem_MacOSX::getDefaultIconsPath() {
 	const Common::String defaultIconsPath = getAppSupportPathMacOSX() + "/Icons";
 
 	if (!Posix::assureDirectoryExists(defaultIconsPath)) {
-		return Common::String();
+		return Common::Path();
 	}
 
-	return defaultIconsPath;
+	return Common::Path(defaultIconsPath);
 }
 
-Common::String OSystem_MacOSX::getScreenshotsPath() {
+Common::Path OSystem_MacOSX::getDefaultDLCsPath() {
+	const Common::Path defaultDLCsPath(getAppSupportPathMacOSX() + "/DLCs");
+
+	if (!Posix::assureDirectoryExists(defaultDLCsPath.toString(Common::Path::kNativeSeparator))) {
+		return Common::Path();
+	}
+
+	return defaultDLCsPath;
+}
+
+Common::Path OSystem_MacOSX::getScreenshotsPath() {
 	// If the user has configured a screenshots path, use it
-	const Common::String path = OSystem_SDL::getScreenshotsPath();
+	const Common::Path path = OSystem_SDL::getScreenshotsPath();
 	if (!path.empty())
 		return path;
 
-	Common::String desktopPath = getDesktopPathMacOSX();
-	if (!desktopPath.empty() && !desktopPath.hasSuffix("/"))
-		desktopPath += "/";
+	Common::Path desktopPath(getDesktopPathMacOSX(), Common::Path::kNativeSeparator);
 	return desktopPath;
 }
 

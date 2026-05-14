@@ -33,7 +33,7 @@ namespace Access {
 
 AccessEngine::AccessEngine(OSystem *syst, const AccessGameDescription *gameDesc)
 	: _gameDescription(gameDesc), Engine(syst), _randomSource("Access"),
-	  _useItem(_flags[99]), _startup(_flags[170]), _manScaleOff(_flags[172]) {
+	  _useItem(_flags[99]), _startup(_flags[170]), _manScaleOff(_flags[172]), _pictureTaken(_flags[176]) {
 	// Set up debug channels
 
 	_aboutBox = nullptr;
@@ -62,7 +62,6 @@ AccessEngine::AccessEngine(OSystem *syst, const AccessGameDescription *gameDesc)
 	_currentMan = 0;
 	_currentManOld = -1;
 	_converseMode = 0;
-	_numAnimTimers = 0;
 	_startup = 0;
 	_currentCharFlag = false;
 	_boxSelect = false;
@@ -79,7 +78,6 @@ AccessEngine::AccessEngine(OSystem *syst, const AccessGameDescription *gameDesc)
 	_establish = nullptr;
 
 	_conversation = 0;
-	_currentMan = 0;
 	_newTime = 0;
 	_newDate = 0;
 	Common::fill(&_objectsTable[0], &_objectsTable[100], (SpriteResource *)nullptr);
@@ -99,15 +97,12 @@ AccessEngine::AccessEngine(OSystem *syst, const AccessGameDescription *gameDesc)
 	_cheatFl = false;
 	_restartFl = false;
 	_printEnd = 0;
-	for (int i = 0; i < 100; i++)
-		_objectsTable[i] = nullptr;
+	ARRAYCLEAR(_objectsTable);
 	_clearSummaryFlag = false;
 
-	for (int i = 0; i < 60; i++)
-		_travel[i] = 0;
+	ARRAYCLEAR(_travel);
 	_startTravelItem = _startTravelBox = 0;
-	for (int i = 0; i < 33; i++)
-		_ask[i] = 0;
+	ARRAYCLEAR(_ask);
 	_startAboutItem = _startAboutBox = 0;
 	_byte26CB5 = 0;
 	_bcnt = 0;
@@ -116,10 +111,13 @@ AccessEngine::AccessEngine(OSystem *syst, const AccessGameDescription *gameDesc)
 	_boxSelectY = 0;
 	_boxSelectYOld = -1;
 	_numLines = 0;
-	_tempList = nullptr;
 	_pictureTaken = 0;
 
 	_vidEnd = false;
+
+	_icons = nullptr;
+
+	ARRAYCLEAR(_countTbl);
 }
 
 AccessEngine::~AccessEngine() {
@@ -141,6 +139,7 @@ AccessEngine::~AccessEngine() {
 	delete _scripts;
 	delete _sound;
 	delete _video;
+	delete _icons;
 
 	freeCells();
 	delete _establish;
@@ -152,28 +151,30 @@ void AccessEngine::setVGA() {
 
 void AccessEngine::initialize() {
 	if (isCD()) {
-		const Common::FSNode gameDataDir(ConfMan.get("path"));
+		const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 		// The CD version contains two versions of the game.
 		// - The MCGA version, in the CDROM folder
 		// - The VESA version, in the TDROM folder
 		// We use the hires version.
-		const Common::FSNode cdromDir = gameDataDir.getChild("tdrom");
+
+		// Use forward slash for the folders separator, as documented for SearchSet::addSubDirectoryMatching()
+		const Common::String subfolderMatchPrefix = "tdrom/";
 
 		for (int idx = 0; idx < 15; ++idx) {
-			Common::String folder = (idx == 0) ? "game" :
-				Common::String::format("chap%.2d", idx);
-			SearchMan.addSubDirectoryMatching(cdromDir, folder);
+			Common::String folder = subfolderMatchPrefix + ((idx == 0) ? "game" : Common::String::format("chap%.2d", idx));
+			SearchMan.addSubDirectoryMatching(gameDataDir, folder);
 		}
 	}
 
 	// Create sub-objects of the engine
 	_animation = new AnimationManager(this);
 	_bubbleBox = new BubbleBox(this, TYPE_2, 64, 32, 130, 122, 0, 0, 0, 0, "");
-	if (getGameID() == GType_MartianMemorandum) {
-		_helpBox = new BubbleBox(this, TYPE_1, 64, 24, 146, 122, 1, 32, 2, 76, "HELP");
-		_travelBox = new BubbleBox(this, TYPE_1, 64, 32, 194, 122, 1, 24, 2, 74, "TRAVEL");
-		_invBox = new BubbleBox(this, TYPE_1, 64, 32, 146, 122, 1, 32, 2, 76, "INVENTORY");
-		_aboutBox = new BubbleBox(this, TYPE_1, 64, 32, 194, 122, 1, 32, 2, 76, "ASK ABOUT");
+	if (getGameID() == kGameMartianMemorandum) {
+		// Note: add 1 more pixel to width and height to get the right box size.
+		_helpBox = new BubbleBox(this, TYPE_1, 64, 24, 147, 123, 1, 32, 2, 76, "HELP");
+		_travelBox = new BubbleBox(this, TYPE_1, 64, 32, 195, 123, 1, 24, 2, 74, "TRAVEL");
+		_invBox = new BubbleBox(this, TYPE_1, 64, 32, 147, 123, 1, 32, 2, 76, "INVENTORY");
+		_aboutBox = new BubbleBox(this, TYPE_1, 64, 32, 195, 123, 1, 32, 2, 76, "ASK ABOUT");
 	} else {
 		_helpBox = nullptr;
 		_travelBox = nullptr;
@@ -190,6 +191,9 @@ void AccessEngine::initialize() {
 	_midi = new MusicManager(this);
 	_video = new VideoPlayer(this);
 
+	syncSoundSettings();
+	setTotalPlayTime(0);
+
 	setDebugger(Debugger::init(this));
 	_buffer1.create(g_system->getWidth() + TILE_WIDTH, g_system->getHeight());
 	_buffer2.create(g_system->getWidth(), g_system->getHeight());
@@ -201,6 +205,15 @@ void AccessEngine::initialize() {
 		if (saveSlot >= 0 && saveSlot <= 999)
 			_loadSaveSlot = saveSlot;
 	}
+}
+
+const SpriteResource *AccessEngine::getIcons() {
+	if (!_icons) {
+		Resource *iconData = _files->loadFile("ICONS.LZ");
+		_icons = new SpriteResource(this, iconData);
+		delete iconData;
+	}
+	return _icons;
 }
 
 Common::Error AccessEngine::run() {
@@ -223,16 +236,17 @@ int AccessEngine::getRandomNumber(int maxNumber) {
 	return _randomSource.getRandomNumber(maxNumber);
 }
 
-void AccessEngine::loadCells(Common::Array<CellIdent> &cells) {
-	for (uint i = 0; i < cells.size(); ++i) {
-		Resource *spriteData = _files->loadFile(cells[i]);
-		_objectsTable[cells[i]._cell] = new SpriteResource(this, spriteData);
+void AccessEngine::loadCells(const Common::Array<CellIdent> &cells) {
+	for (const auto &cell : cells) {
+		Resource *spriteData = _files->loadFile(cell);
+		assert(_objectsTable[cell._cell] == nullptr); // ensure no leaks
+		_objectsTable[cell._cell] = new SpriteResource(this, spriteData);
 		delete spriteData;
 	}
 }
 
 void AccessEngine::freeCells() {
-	for (int i = 0; i < 100; ++i) {
+	for (int i = 0; i < ARRAYSIZE(_objectsTable); ++i) {
 		delete _objectsTable[i];
 		_objectsTable[i] = nullptr;
 	}
@@ -246,7 +260,7 @@ void AccessEngine::speakText(BaseSurface *s, const Common::String &msg) {
 
 	while (!shouldQuit()) {
 		soundsLeft = _countTbl[curPage];
-		_events->zeroKeys();
+		_events->zeroKeysActions();
 
 		int width = 0;
 		bool lastLine = _fonts._font2->getLine(lines, s->_maxChars * 6, line, width);
@@ -272,7 +286,7 @@ void AccessEngine::speakText(BaseSurface *s, const Common::String &msg) {
 
 				_scripts->cmdFreeSound();
 
-				if (_events->isKeyMousePressed()) {
+				if (_events->isKeyActionMousePressed()) {
 					_sndSubFile += soundsLeft;
 					break;
 				} else {
@@ -309,7 +323,7 @@ void AccessEngine::speakText(BaseSurface *s, const Common::String &msg) {
 			_events->debounceLeft();
 			_sndSubFile += soundsLeft;
 			break;
-		} else if (_events->isKeyPending()) {
+		} else if (_events->isKeyActionPending()) {
 			_sndSubFile += soundsLeft;
 			break;
 		} else {
@@ -337,7 +351,7 @@ void AccessEngine::printText(BaseSurface *s, const Common::String &msg) {
 		s->_printOrg = Common::Point(s->_printStart.x, s->_printOrg.y + 9);
 
 		if (s->_printOrg.y >_printEnd && !lastLine) {
-			_events->waitKeyMouse();
+			_events->waitKeyActionMouse();
 			s->copyBuffer(&_buffer2);
 			s->_printOrg.y = s->_printStart.y;
 		}
@@ -345,7 +359,7 @@ void AccessEngine::printText(BaseSurface *s, const Common::String &msg) {
 		if (lastLine)
 			break;
 	}
-	_events->waitKeyMouse();
+	_events->waitKeyActionMouse();
 }
 
 
@@ -360,8 +374,8 @@ void AccessEngine::plotList1() {
 
 		_imgUnscaled = (ie._flags & IMGFLAG_UNSCALED) != 0;
 		Common::Point pt = ie._position - _screen->_bufferStart;
-		SpriteResource *sprites = ie._spritesPtr;
-		SpriteFrame *frame = sprites->getFrame(ie._frameNumber);
+		const SpriteResource *sprites = ie._spritesPtr;
+		const SpriteFrame *frame = sprites->getFrame(ie._frameNumber);
 
 		Common::Rect bounds(pt.x, pt.y, pt.x + frame->w, pt.y + frame->h);
 		if (!_imgUnscaled) {
@@ -407,8 +421,8 @@ void AccessEngine::plotList1() {
 
 void AccessEngine::copyBlocks() {
 	// Copy the block list from the previous frame
-	for (uint i = 0; i < _oldRects.size(); ++i) {
-		_screen->copyBlock(&_buffer2, _oldRects[i]);
+	for (const auto &rect : _oldRects) {
+		_screen->copyBlock(&_buffer2, rect);
 	}
 
 	copyRects();
@@ -416,9 +430,9 @@ void AccessEngine::copyBlocks() {
 
 void AccessEngine::copyRects() {
 	_oldRects.clear();
-	for (uint i = 0; i < _newRects.size(); ++i) {
-		_screen->copyBlock(&_buffer2, _newRects[i]);
-		_oldRects.push_back(_newRects[i]);
+	for (const auto &rect : _newRects) {
+		_screen->copyBlock(&_buffer2, rect);
+		_oldRects.push_back(rect);
 	}
 }
 
@@ -448,25 +462,30 @@ void AccessEngine::freeChar() {
 	_scripts->freeScriptData();
 	_animation->clearTimers();
 	_animation->freeAnimationData();
+	_player->freeSprites();
 }
 
-Common::Error AccessEngine::saveGameState(int slot, const Common::String &desc, bool isAutosave) {
-	Common::OutSaveFile *out = g_system->getSavefileManager()->openForSaving(
-		getSaveStateName(slot));
-	if (!out)
-		return Common::kCreatingFileFailed;
+void AccessEngine::syncSoundSettings() {
+	Engine::syncSoundSettings();
+	_midi->syncVolume();
+	_sound->syncVolume();
+}
 
-	AccessSavegameHeader header;
-	header._saveName = desc;
-	writeSavegameHeader(out, header);
+Common::Error AccessEngine::saveGameStream(Common::WriteStream *stream, bool isAutosave) {
+	Common::Serializer s(nullptr, stream);
+	return synchronize(s);
+}
 
-	Common::Serializer s(nullptr, out);
-	synchronize(s);
+Common::Error AccessEngine::loadGameStream(Common::SeekableReadStream *stream) {	
+	Common::Serializer s(stream, nullptr);	
+	Common::Error result = synchronize(s);
 
-	out->finalize();
-	delete out;
+	// Set extra post-load state
+	_room->_function = FN_CLEAR1;
+	_timers._timersSavedFlag = false;
+	_events->clearEvents();
 
-	return Common::kNoError;
+	return result;
 }
 
 Common::Error AccessEngine::loadGameState(int slot) {
@@ -479,12 +498,17 @@ Common::Error AccessEngine::loadGameState(int slot) {
 
 	// Load the savaegame header
 	AccessSavegameHeader header;
-	if (!readSavegameHeader(saveFile, header))
-		error("Invalid savegame");
-
+	if (!readSavegameHeader(saveFile, header)) {
+		delete saveFile;
+		return Engine::loadGameState(slot);
+	}
+		
 	// Load most of the savegame data
 	synchronize(s);
 	delete saveFile;
+
+	// Set total playTime (ms) from header
+	setTotalPlayTime(header._totalPlayTime * 1000);
 
 	// Set extra post-load state
 	_room->_function = FN_CLEAR1;
@@ -494,15 +518,16 @@ Common::Error AccessEngine::loadGameState(int slot) {
 	return Common::kNoError;
 }
 
-bool AccessEngine::canLoadGameStateCurrently() {
+
+bool AccessEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	return _canSaveLoad;
 }
 
-bool AccessEngine::canSaveGameStateCurrently() {
+bool AccessEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	return _canSaveLoad;
 }
 
-void AccessEngine::synchronize(Common::Serializer &s) {
+Common::Error AccessEngine::synchronize(Common::Serializer &s) {
 	s.syncAsUint16LE(_conversation);
 	s.syncAsUint16LE(_currentMan);
 	s.syncAsUint32LE(_newTime);
@@ -517,12 +542,15 @@ void AccessEngine::synchronize(Common::Serializer &s) {
 	_timers.synchronize(s);
 	_inventory->synchronize(s);
 	_player->synchronize(s);
+
+	return Common::kNoError;
 }
 
 const char *const SAVEGAME_STR = "ACCESS";
 #define SAVEGAME_STR_SIZE 6
 
-WARN_UNUSED_RESULT bool AccessEngine::readSavegameHeader(Common::InSaveFile *in, AccessSavegameHeader &header, bool skipThumbnail) {
+
+bool AccessEngine::readSavegameHeader(Common::InSaveFile *in, AccessSavegameHeader &header, bool skipThumbnail) {
 	char saveIdentBuffer[SAVEGAME_STR_SIZE + 1];
 
 	// Validate the header Id
@@ -535,10 +563,7 @@ WARN_UNUSED_RESULT bool AccessEngine::readSavegameHeader(Common::InSaveFile *in,
 		return false;
 
 	// Read in the string
-	header._saveName.clear();
-	char ch;
-	while ((ch = (char)in->readByte()) != '\0')
-		header._saveName += ch;
+	header._saveName = in->readString();
 
 	// Get the thumbnail
 	if (!Graphics::loadThumbnail(*in, header._thumbnail, skipThumbnail)) {
@@ -551,69 +576,15 @@ WARN_UNUSED_RESULT bool AccessEngine::readSavegameHeader(Common::InSaveFile *in,
 	header._day = in->readSint16LE();
 	header._hour = in->readSint16LE();
 	header._minute = in->readSint16LE();
+
+	// Read Totalframes
 	header._totalFrames = in->readUint32LE();
 
+	// Read the Total PlayTime (if available)
+	if (header._version > 1)
+		header._totalPlayTime = in->readUint32LE();	
+	
 	return true;
-}
-
-void AccessEngine::writeSavegameHeader(Common::OutSaveFile *out, AccessSavegameHeader &header) {
-	// Write out a savegame header
-	out->write(SAVEGAME_STR, SAVEGAME_STR_SIZE + 1);
-
-	out->writeByte(ACCESS_SAVEGAME_VERSION);
-
-	// Write savegame name
-	out->writeString(header._saveName);
-	out->writeByte('\0');
-
-	// Write a thumbnail of the screen
-	uint8 thumbPalette[PALETTE_SIZE];
-	_screen->getPalette(thumbPalette);
-	Graphics::Surface saveThumb;
-	::createThumbnail(&saveThumb, (const byte *)_screen->getPixels(),
-		_screen->w, _screen->h, thumbPalette);
-	Graphics::saveThumbnail(*out, saveThumb);
-	saveThumb.free();
-
-	// Write out the save date/time
-	TimeDate td;
-	g_system->getTimeAndDate(td);
-	out->writeSint16LE(td.tm_year + 1900);
-	out->writeSint16LE(td.tm_mon + 1);
-	out->writeSint16LE(td.tm_mday);
-	out->writeSint16LE(td.tm_hour);
-	out->writeSint16LE(td.tm_min);
-	out->writeUint32LE(_events->getFrameCounter());
-}
-
-void AccessEngine::SPRINTCHR(char c, int fontNum) {
-	warning("TODO: SPRINTCHR");
-	_fonts._font1->drawChar(_screen, c, _screen->_printOrg);
-}
-
-void AccessEngine::PRINTCHR(Common::String msg, int fontNum) {
-	_events->hideCursor();
-	warning("TODO: PRINTCHR - Handle fontNum");
-
-	for (int i = 0; msg[i]; i++) {
-		if (!(_fonts._charSet._hi & 8)) {
-			_fonts._font1->drawChar(_screen, msg[i], _screen->_printOrg);
-			continue;
-		} else if (_fonts._charSet._hi & 2) {
-			Common::Point oldPos = _screen->_printOrg;
-			int oldFontLo = _fonts._charFor._lo;
-
-			_fonts._charFor._lo = 0;
-			_screen->_printOrg.x++;
-			_screen->_printOrg.y++;
-			SPRINTCHR(msg[i], fontNum);
-
-			_screen->_printOrg = oldPos;
-			_fonts._charFor._lo = oldFontLo;
-		}
-		SPRINTCHR(msg[i], fontNum);
-	}
-	_events->showCursor();
 }
 
 bool AccessEngine::shouldQuitOrRestart() {

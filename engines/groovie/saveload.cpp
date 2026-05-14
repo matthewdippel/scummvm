@@ -49,7 +49,7 @@ SaveStateList SaveLoad::listValidSaves(const Common::String &target) {
 	SaveStateList list;
 
 	// some Groovie 2 games use save 0 with a garbage name for internal tracking, other games use slot 0 for Open House mode
-	const Common::U32String reservedName = _("Reserved");
+	const Common::U32String reservedName = _("Reserved"); // I18N: Savegame default name in Groovie engine
 	bool hasReserved = false;
 
 	// Get the list of savefiles
@@ -60,9 +60,8 @@ SaveStateList SaveLoad::listValidSaves(const Common::String &target) {
 	sort(savefiles.begin(), savefiles.end());
 
 	// Fill the information for the existing savegames
-	Common::StringArray::iterator it = savefiles.begin();
-	while (it != savefiles.end()) {
-		const char *ext = strrchr(it->c_str(), '.');
+	for (auto &savefile : savefiles) {
+		const char *ext = strrchr(savefile.c_str(), '.');
 		if (!ext)
 			continue;
 
@@ -83,7 +82,6 @@ SaveStateList SaveLoad::listValidSaves(const Common::String &target) {
 			}
 			list.push_back(descriptor);
 		}
-		it++;
 	}
 
 	if (!hasReserved) {

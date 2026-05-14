@@ -137,7 +137,7 @@ void KyraEngine_MR::showMessageFromCCode(int string, uint8 c0, int) {
 }
 
 void KyraEngine_MR::updateItemCommand(Item item, int str, uint8 c0) {
-	char buffer[100];
+	Common::String buffer;
 	char *src = (char *)getTableEntry(_itemFile, item);
 
 	if (_flags.lang != Common::HE_ISR) {
@@ -148,20 +148,18 @@ void KyraEngine_MR::updateItemCommand(Item item, int str, uint8 c0) {
 			*src = toupper(*src);
 		}
 
-		strcpy(buffer, src);
+		buffer = src;
 
 		if (_lang != 3)
-			strcat(buffer, " ");
+			buffer += " ";
 
-		strcat(buffer, (const char *)getTableEntry(_cCodeFile, str));
+		buffer += (const char *)getTableEntry(_cCodeFile, str);
 	} else {
-		strcpy(buffer, (const char *)getTableEntry(_cCodeFile, str));
-		strcat(buffer, " ");
-		strcat(buffer, src);
-		strcat(buffer, ".");
+		buffer = (const char *)getTableEntry(_cCodeFile, str);
+		buffer = buffer + " " + src + ".";
 	}
 
-	showMessage(buffer, c0, 0xF0);
+	showMessage(buffer.c_str(), c0, 0xF0);
 }
 
 void KyraEngine_MR::updateCommandLine() {
@@ -240,7 +238,7 @@ void KyraEngine_MR::showInventory() {
 		_screen->copyRegion(0, 0, 0, y, 320, height, 2, 0, Screen::CR_NO_P_CHECK);
 		if (times++ == 0)
 			_screen->updateScreen();
-	
+
 		if (_inventoryScrollSpeed == 1 && times == 3) {
 			while (waitTill > _system->getMillis())
 				_system->delayMillis(10);
@@ -620,7 +618,7 @@ int KyraEngine_MR::buttonMoodChange(Button *button) {
 }
 
 int KyraEngine_MR::buttonShowScore(Button *button) {
-	strcpy(_stringBuffer, (const char *)getTableEntry(_cCodeFile, 18));
+	Common::strlcpy(_stringBuffer, (const char *)getTableEntry(_cCodeFile, 18), 500);
 
 	char *buffer = _stringBuffer;
 
@@ -1525,6 +1523,8 @@ int GUI_MR::changeLanguage(Button *caller) {
 	if (!_vm->queryGameFlag(0x1B2)) {
 		++_vm->_lang;
 		_vm->_lang %= _vm->_numLang;
+		// This fan MR translation use Chinese style script file extensions...
+		_vm->_scriptLang = (_vm->_flags.fanLang == Common::CS_CZE && _vm->_lang == 1) ? 3 : _vm->_lang;
 		setupOptionsButtons();
 		renewHighlight(_gameOptions);
 	}

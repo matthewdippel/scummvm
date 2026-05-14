@@ -23,9 +23,9 @@
 #define GRAPHICS_SCREEN_H
 
 #include "graphics/managed_surface.h"
+#include "graphics/dirtyrects.h"
+#include "graphics/palette.h"
 #include "graphics/pixelformat.h"
-#include "common/list.h"
-#include "common/rect.h"
 
 namespace Graphics {
 
@@ -38,9 +38,6 @@ namespace Graphics {
  * @{
  */
 
-#define PALETTE_COUNT 256
-#define PALETTE_SIZE (256 * 3)
-
 /**
  * Implements a specialised surface that represents the screen.
  * It keeps track of any areas of itself that are updated by drawing
@@ -52,17 +49,8 @@ protected:
 	/**
 	 * List of affected areas of the screen
 	 */
-	Common::List<Common::Rect> _dirtyRects;
-protected:
-	/**
-	 * Merges together overlapping dirty areas of the screen
-	 */
-	void mergeDirtyRects();
+	DirtyRectList _dirtyRects;
 
-	/**
-	 * Returns the union of two dirty area rectangles
-	 */
-	bool unionRectangle(Common::Rect &destRect, const Common::Rect &src1, const Common::Rect &src2);
 public:
 	Screen();
 	Screen(int width, int height);
@@ -82,13 +70,13 @@ public:
 	/**
 	 * Clear the current dirty rects list
 	 */
-	virtual void clearDirtyRects() { _dirtyRects.clear(); }
+	void clearDirtyRects() override { _dirtyRects.clear(); }
 
 	/**
 	 * Adds a rectangle to the list of modified areas of the screen during the
 	 * current frame
 	 */
-	virtual void addDirtyRect(const Common::Rect &r);
+	void addDirtyRect(const Common::Rect &r) override;
 
 	/**
 	 * Updates the screen by copying any affected areas to the system
@@ -111,6 +99,15 @@ public:
 	void getPalette(byte *palette, uint start, uint num);
 
 	/**
+	 * Return a portion of the currently active palette as a palette object
+	 */
+	Graphics::Palette getPalette(uint start = 0, uint num = PALETTE_COUNT) {
+		byte tmp[PALETTE_SIZE];
+		getPalette(tmp, start, num);
+		return Graphics::Palette(tmp, num);
+	}
+
+	/**
 	 * Set the palette
 	 */
 	void setPalette(const byte palette[PALETTE_SIZE]);
@@ -119,6 +116,13 @@ public:
 	 * Set a subsection of the palette
 	 */
 	void setPalette(const byte *palette, uint start, uint num);
+
+	/**
+	 * Set a palette based on a passed palette object
+	 */
+	void setPalette(const Graphics::Palette &pal, uint start = 0) {
+		setPalette(pal.data(), start, pal.size());
+	}
 
 	/**
 	 * Clears the current palette, setting all entries to black

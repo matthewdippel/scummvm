@@ -24,12 +24,30 @@
 
 #include "common/ptr.h"
 
+namespace Common {
+
+class FSNode;
+
+} // End of namespace Common
+
 namespace MTropolis {
 
 struct MTropolisGameDescription;
 class ProjectDescription;
 
-Common::SharedPtr<ProjectDescription> bootProject(const MTropolisGameDescription &gameDesc);
+struct BootConfiguration {
+	BootConfiguration();
+
+	uint8 _bitDepth;
+	uint8 _enhancedBitDepth;
+	uint16 _width;
+	uint16 _height;
+
+	Common::SharedPtr<ProjectDescription> _projectDesc;
+};
+
+BootConfiguration bootProject(const MTropolisGameDescription &gameDesc);
+void bootAddSearchPaths(const Common::FSNode &gameDataDir, const MTropolisGameDescription &gameDesc);
 
 } // End of namespace MTropolis
 

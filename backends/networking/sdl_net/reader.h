@@ -39,6 +39,11 @@ enum ReaderState {
 	RS_READING_CONTENT
 };
 
+enum ReaderMode {
+	RM_HTTP_GENERIC,
+	RM_POST_FORM_MULTIPART
+};
+
 /**
  * This is a helper class for Client.
  *
@@ -73,6 +78,7 @@ enum ReaderState {
 
 class Reader {
 	ReaderState _state;
+	ReaderMode _mode;
 	Common::MemoryReadWriteStream *_content;
 	uint32 _bytesLeft;
 
@@ -100,7 +106,7 @@ class Reader {
 
 	void handleFirstHeaders(Common::MemoryReadWriteStream *headers);
 	void parseFirstLine(const Common::String &headers);
-	void parsePathQueryAndAnchor(Common::String pathToParse);
+	void parsePathQueryAndAnchor(const Common::String &pathToParse);
 	void parseQueryParameters();
 
 	void makeWindow(uint32 size);
@@ -119,10 +125,12 @@ public:
 	Reader &operator=(Reader &r);
 
 	bool readFirstHeaders(); //true when ended reading
+	bool readContent(Common::WriteStream *stream); //true when ended reading
 	bool readFirstContent(Common::WriteStream *stream); //true when ended reading
 	bool readBlockHeaders(Common::WriteStream *stream); //true when ended reading
 	bool readBlockContent(Common::WriteStream *stream); //true when ended reading
 
+	void setMode(ReaderMode mode);
 	void setContent(Common::MemoryReadWriteStream *stream);
 
 	bool badRequest() const;
@@ -132,7 +140,7 @@ public:
 	Common::String method() const;
 	Common::String path() const;
 	Common::String query() const;
-	Common::String queryParameter(Common::String name) const;
+	Common::String queryParameter(const Common::String &name) const;
 	Common::String anchor() const;
 
 	static Common::String readEverythingFromMemoryStream(Common::MemoryReadWriteStream *stream);

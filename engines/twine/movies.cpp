@@ -20,12 +20,15 @@
  */
 
 #include "twine/movies.h"
+#include "common/config-manager.h"
+#include "common/debug.h"
 #include "common/endian.h"
 #include "common/file.h"
 #include "common/language.h"
 #include "common/str.h"
 #include "common/system.h"
 #include "graphics/managed_surface.h"
+#include "graphics/palette.h"
 #include "image/gif.h"
 #include "twine/audio/music.h"
 #include "twine/audio/sound.h"
@@ -160,7 +163,7 @@ void Movies::scaleFla2x() {
 	}
 }
 
-void Movies::processFrame() {
+void Movies::drawNextFrameFla() {
 	FLASampleStruct sample;
 
 	_frameData.nbFrames = _file.readSint16LE();
@@ -187,31 +190,39 @@ void Movies::processFrame() {
 		case kLoadPalette: {
 			int16 numOfColor = stream.readSint16LE();
 			int16 startColor = stream.readSint16LE();
-			uint8 *dest = _engine->_screens->_palette + (startColor * 3);
-			stream.read(dest, numOfColor * 3);
+			if (_paletteOrg.size() < (uint)(numOfColor + startColor)) {
+				Graphics::Palette palette(numOfColor + startColor);
+				palette.set(_paletteOrg, 0, _paletteOrg.size());
+				_paletteOrg = palette;
+			}
+			for (int16 i = 0; i < numOfColor; ++i) {
+				const byte r = stream.readByte();
+				const byte g = stream.readByte();
+				const byte b = stream.readByte();
+				_paletteOrg.set(i + startColor, r, g, b);
+			}
 			break;
 		}
 		case kInfo: {
 			int16 innerOpcpde = stream.readSint16LE();
 			switch (innerOpcpde) {
 			case 1: // fla flute
-				_engine->_music->playMidiMusic(26);
+				_engine->_music->playMidiFile(26);
 				break;
 			case 2:
 				// FLA movies don't use cross fade
 				// fade out tricky
 				if (_fadeOut != 1) {
-					_engine->_screens->convertPalToRGBA(_engine->_screens->_palette, _engine->_screens->_paletteRGBACustom);
-					_engine->_screens->fadeToBlack(_engine->_screens->_paletteRGBACustom);
+					_engine->_screens->fadeToBlack(_paletteOrg);
 					_fadeOut = 1;
 				}
 				break;
 			case 3:
-				_flaPaletteVar = true;
+				_flagFirst = true;
 				break;
 			case 4:
 				// TODO: fade out for 1 second before we stop it
-				_engine->_music->stopMidiMusic();
+				_engine->_music->stopMusicMidi();
 				break;
 			}
 			break;
@@ -223,7 +234,7 @@ void Movies::processFrame() {
 			sample.balance = stream.readByte();
 			sample.volumeLeft = stream.readByte();
 			sample.volumeRight = stream.readByte();
-			_engine->_sound->playFlaSample(sample.sampleNum, sample.repeat, sample.balance, sample.volumeLeft, sample.volumeRight);
+			_engine->_sound->playFlaSample(sample.sampleNum, sample.freq, sample.repeat, sample.volumeLeft, sample.volumeRight);
 			break;
 		}
 		case kStopSample: {
@@ -248,7 +259,7 @@ void Movies::processFrame() {
 		}
 		case kBlackFrame: {
 			const Common::Rect rect(0, 0, FLASCREEN_WIDTH - 1, FLASCREEN_HEIGHT - 1);
-			_engine->_interface->drawFilledRect(rect, 0);
+			_engine->_interface->box(rect, 0);
 			break;
 		}
 		case kCopy:
@@ -265,13 +276,14 @@ void Movies::processFrame() {
 			break;
 		}
 		case kSampleBalance: {
-			/* int16 num = */ stream.readSint16LE();
-			/* uint8 offset = */ stream.readByte();
+			const int16 sampleNum = stream.readSint16LE();
+			/* const uint8 offset = */ stream.readByte();
 			stream.skip(1); // padding
-			/* int16 balance = */ stream.readSint16LE();
-			/* uint8 volumeLeft = */ stream.readByte();
-			/* uint8 volumeRight = */ stream.readByte();
-			// TODO: change balance
+			/* const int16 balance = */ stream.readSint16LE();
+			const uint8 volumeLeft = stream.readByte();
+			const uint8 volumeRight = stream.readByte();
+			const int32 channelIdx = _engine->_sound->getSampleChannel(sampleNum);
+			_engine->_sound->setChannelBalance(channelIdx, volumeLeft, volumeRight);
 			break;
 		}
 		default: {
@@ -285,6 +297,7 @@ void Movies::processFrame() {
 
 Movies::Movies(TwinEEngine *engine) : _engine(engine) {}
 
+#ifdef USE_GIF
 void Movies::prepareGIF(int index) {
 	Image::GIFDecoder decoder;
 	Common::SeekableReadStream *stream = HQR::makeReadStream(Resources::HQR_FLAGIF_FILE, index);
@@ -298,17 +311,19 @@ void Movies::prepareGIF(int index) {
 		return;
 	}
 	const Graphics::Surface *surface = decoder.getSurface();
-	_engine->setPalette(0, decoder.getPaletteColorCount(), decoder.getPalette());
+	_engine->setPalette(0, decoder.getPalette().size(), decoder.getPalette().data());
 	Graphics::ManagedSurface& target = _engine->_frontVideoBuffer;
 	const Common::Rect surfaceBounds(0, 0, surface->w, surface->h);
-	target.transBlitFrom(surface, surfaceBounds, target.getBounds(), 0, false, 0, 0xff, nullptr, true);
-	debug(2, "Show gif with id %i from %s", index, Resources::HQR_FLAGIF_FILE);
+	target.blitFrom(*surface, surfaceBounds, target.getBounds());
+	debugC(1, TwinE::kDebugMovies, "Show gif with id %i from %s", index, Resources::HQR_FLAGIF_FILE);
 	delete stream;
 	_engine->delaySkip(5000);
-	_engine->setPalette(_engine->_screens->_paletteRGBA);
+	_engine->setPalette(_engine->_screens->_ptrPal);
 }
+#endif
 
 void Movies::playGIFMovie(const char *flaName) {
+#ifdef USE_GIF
 	if (!Common::File::exists(Resources::HQR_FLAGIF_FILE)) {
 		warning("%s file doesn't exist", Resources::HQR_FLAGIF_FILE);
 		return;
@@ -317,7 +332,7 @@ void Movies::playGIFMovie(const char *flaName) {
 	Common::String name(flaName);
 	name.toLowercase();
 
-	debug(1, "Play gif %s", name.c_str());
+	debugC(1, TwinE::kDebugMovies, "Play gif %s", name.c_str());
 	// TODO: use the HQR 23th entry (movies informations)
 	// TODO: there are gifs [1-18]
 	if (name == FLA_INTROD) {
@@ -354,14 +369,19 @@ void Movies::playGIFMovie(const char *flaName) {
 	} else {
 		warning("unknown gif image: %s", name.c_str());
 	}
+#else
+	warning("No GIF support compiled in");
+#endif
 }
 
-bool Movies::playMovie(const char *name) {
+bool Movies::playMovie(const char *name) { // PlayAnimFla
 	if (_engine->isLBA2()) {
 		const int index = _engine->_resources->findSmkMovieIndex(name);
+		if (index == -1) {
+			return false;
+		}
 		return playSmkMovie(name, index);
 	}
-	_engine->_sound->stopSamples();
 
 	Common::String fileNamePath = name;
 	const size_t n = fileNamePath.findLastOf(".");
@@ -378,13 +398,15 @@ bool Movies::playMovie(const char *name) {
 	_fadeOutFrames = 0;
 
 	_file.close();
-	if (!_file.open(fileNamePath + FLA_EXT)) {
+	if (!_file.open(Common::Path(fileNamePath + FLA_EXT))) {
 		warning("Failed to open fla movie '%s'", fileNamePath.c_str());
 		playGIFMovie(fileNamePath.c_str());
+		_engine->_screens->setBlackPal();
+		_engine->_screens->clearScreen();
 		return true;
 	}
 
-	const uint32 version = _file.readUint32LE();
+	const uint32 version = _file.readUint32BE();
 	_file.skip(2); // version field is 5 bytes - and one padding byte
 	_flaHeaderData.numOfFrames = _file.readUint32LE();
 	_flaHeaderData.speed = _file.readByte();
@@ -400,14 +422,14 @@ bool Movies::playMovie(const char *name) {
 	_file.skip(4 * _samplesInFla);
 
 	bool finished = false;
-	if (version != MKTAG('V', '1', '.', '3')) {
+	if (version == MKTAG('V', '1', '.', '3')) {
 		int32 currentFrame = 0;
 
-		debug("Play fla: %s", name);
+		debugC(1, TwinE::kDebugMovies, "Play fla: %s", name);
 
 		ScopedKeyMap scopedKeyMap(_engine, cutsceneKeyMapId);
 
-		_flaPaletteVar = true;
+		_flagFirst = true;
 		do {
 			FrameMarker frame(_engine, _flaHeaderData.speed);
 			_engine->readKeys();
@@ -418,36 +440,41 @@ bool Movies::playMovie(const char *name) {
 				finished = true;
 				break;
 			}
-			processFrame();
+			drawNextFrameFla();
 			scaleFla2x();
 			_engine->_frontVideoBuffer.blitFrom(_engine->_imageBuffer, _engine->_imageBuffer.getBounds(), _engine->_frontVideoBuffer.getBounds());
 
 			// Only blit to screen if isn't a fade
 			if (_fadeOut == -1) {
-				_engine->_screens->convertPalToRGBA(_engine->_screens->_palette, _engine->_screens->_paletteRGBACustom);
 				if (currentFrame == 0) {
 					// fade in the first frame
-					_engine->_screens->fadeIn(_engine->_screens->_paletteRGBACustom);
+					_engine->_screens->fadeToPal(_paletteOrg);
 				} else {
-					_engine->setPalette(_engine->_screens->_paletteRGBACustom);
+					_engine->setPalette(_paletteOrg);
 				}
 			}
 
 			// TRICKY: fade in tricky
 			if (_fadeOutFrames >= 2) {
-				_engine->_screens->convertPalToRGBA(_engine->_screens->_palette, _engine->_screens->_paletteRGBACustom);
-				_engine->_screens->fadeToPal(_engine->_screens->_paletteRGBACustom);
+				_engine->_screens->fadeToPal(_paletteOrg);
 				_fadeOut = -1;
 				_fadeOutFrames = 0;
 			}
 
 			currentFrame++;
 		} while (!_engine->_input->toggleAbortAction());
+	} else {
+		warning("Unsupported fla version: %u, %s", version, fileNamePath.c_str());
 	}
 
-	_engine->_screens->fadeToBlack(_engine->_screens->_paletteRGBACustom);
+	// this might happen if the movie was interrupted before it even started to load the palette.
+	if (!_paletteOrg.empty()) {
+		_engine->_screens->fadeToBlack(_paletteOrg);
+	}
 
 	_engine->_sound->stopSamples();
+	_engine->_screens->setBlackPal();
+	_engine->_screens->clearScreen();
 	return finished;
 }
 
@@ -480,7 +507,7 @@ bool Movies::playSmkMovie(const char *name, int index) {
 	decoder.start();
 
 	decoder.setAudioTrack(0); // music
-	if (_engine->_cfgfile.Voice) {
+	if (ConfMan.getInt("audio_language") > 0) {
 		int additionalAudioTrack = -1;
 		if (!scumm_strnicmp(name, "INTRO", 5)) {
 			switch (_engine->getGameLang()) {
@@ -499,10 +526,10 @@ bool Movies::playSmkMovie(const char *name, int index) {
 			}
 		}
 		const int speechVolume = _engine->_system->getMixer()->getVolumeForSoundType(Audio::Mixer::kSpeechSoundType);
-		debug(3, "Play additional speech track: %i (of %i tracks)", additionalAudioTrack, decoder.getAudioTrackCount());
+		debugC(1, TwinE::kDebugMovies, "Play additional speech track: %i (of %i tracks)", additionalAudioTrack, decoder.getAudioTrackCount());
 		decoder.enableLanguage(additionalAudioTrack, speechVolume);
 	} else {
-		debug(3, "Disabled smacker speech");
+		debugC(1, TwinE::kDebugMovies, "Disabled smacker speech");
 	}
 
 	for (;;) {
@@ -526,7 +553,7 @@ bool Movies::playSmkMovie(const char *name, int index) {
 
 			Graphics::ManagedSurface& target = _engine->_frontVideoBuffer;
 			const Common::Rect frameBounds(0, 0, frameSurf->w, frameSurf->h);
-			target.transBlitFrom(*frameSurf, frameBounds, target.getBounds(), 0, false, 0, 0xff, nullptr, true);
+			target.blitFrom(*frameSurf, frameBounds, target.getBounds());
 		}
 	}
 

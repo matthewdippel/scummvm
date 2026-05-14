@@ -30,6 +30,10 @@ namespace Common {
 class File;
 }
 
+namespace Image {
+class ImageDecoder;
+}
+
 namespace Ultima {
 namespace Ultima4 {
 
@@ -113,7 +117,7 @@ public:
 	bool _xu4Graphic;            /**< an original xu4 graphic not part of u4dos or the VGA upgrade */
 	ImageFixup _fixup;           /**< a routine to do miscellaneous fixes to the image */
 	Image *_image;               /**< the image we're describing */
-	Std::map<Common::String, SubImage *> _subImages;
+	Common::HashMap<Common::String, SubImage *> _subImages;
 
 	bool hasBlackBackground();
 };
@@ -140,7 +144,7 @@ public:
 	 * Free up any background images used only in the animations.
 	 */
 	void freeIntroBackgrounds();
-	const Std::vector<Common::String> &getSetNames();
+	const Common::Array<Common::String> &getSetNames();
 	Common::File *getImageFile(ImageInfo *info);
 	bool imageExists(ImageInfo *info);
 
@@ -191,9 +195,14 @@ private:
 	 */
 	void update(Settings *newSettings);
 
+	/**
+	 * Create an image decoder for the specified file type.
+	 */
+	::Image::ImageDecoder *createDecoder(const Common::String &fileType, int width, int height, int bpp);
+
 	static ImageMgr *_instance;
-	Std::map<Common::String, ImageSet *> _imageSets;
-	Std::vector<Common::String> _imageSetNames;
+	Common::HashMap<Common::String, ImageSet *> _imageSets;
+	Common::Array<Common::String> _imageSetNames;
 	ImageSet *_baseSet;
 	ImageInfo _screenInfo;
 	uint *_abyssData;

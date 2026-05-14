@@ -104,6 +104,11 @@ namespace AGS3 {
 #error "Unknown platform"
 #endif
 
+#if 0
+#define AGS_PLATFORM_WINDOWS_MINGW (1)
+#else
+#define AGS_PLATFORM_WINDOWS_MINGW (0)
+#endif
 
 #if defined(__LP64__)
 // LP64 machine, macOS or Linux
@@ -129,23 +134,30 @@ namespace AGS3 {
 #error "No endianness defined"
 #endif
 
-#if defined(_DEBUG)
-#define AGS_PLATFORM_DEBUG  (1)
-#elif ! defined(NDEBUG)
-#define AGS_PLATFORM_DEBUG  (1)
-#else
-#define AGS_PLATFORM_DEBUG  (0)
+#if defined(SCUMM_NEED_ALIGNMENT)
+#define AGS_STRICT_ALIGNMENT
 #endif
 
+#define AGS_PLATFORM_DESKTOP ((AGS_PLATFORM_OS_WINDOWS) || (AGS_PLATFORM_OS_LINUX) || (AGS_PLATFORM_OS_MACOS))
+
+#define AGS_PLATFORM_MOBILE ((AGS_PLATFORM_OS_ANDROID) || (AGS_PLATFORM_OS_IOS))
+
 #define AGS_HAS_DIRECT3D (AGS_PLATFORM_OS_WINDOWS)
-#define AGS_HAS_OPENGL (AGS_PLATFORM_OS_WINDOWS || AGS_PLATFORM_OS_ANDROID || AGS_PLATFORM_OS_IOS || AGS_PLATFORM_OS_LINUX)
+#define AGS_HAS_OPENGL ((AGS_PLATFORM_OS_WINDOWS) || (AGS_PLATFORM_OS_LINUX) || (AGS_PLATFORM_MOBILE))
 #define AGS_OPENGL_ES2 (AGS_PLATFORM_OS_ANDROID)
 
 // Only allow searching around for game data on desktop systems;
 // otherwise use explicit argument either from program wrapper, command-line
 // or read from default config.
-#define AGS_SEARCH_FOR_GAME_ON_LAUNCH (AGS_PLATFORM_OS_WINDOWS || AGS_PLATFORM_OS_LINUX || AGS_PLATFORM_OS_MACOS)
+#define AGS_SEARCH_FOR_GAME_ON_LAUNCH ((AGS_PLATFORM_OS_WINDOWS) || (AGS_PLATFORM_OS_LINUX) || (AGS_PLATFORM_OS_MACOS))
 
+#if !defined(DEBUG_MANAGED_OBJECTS)
+	#define DEBUG_MANAGED_OBJECTS (0)
+#endif
+
+#if !defined(DEBUG_SPRITECACHE)
+	#define DEBUG_SPRITECACHE (0)
+#endif
 
 } // namespace AGS3
 

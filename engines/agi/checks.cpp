@@ -107,10 +107,6 @@ bool AgiEngine::checkPriority(ScreenObjEntry *screenObj) {
 	bool touchedWater = false;
 	bool touchedTrigger = false;
 	bool touchedControl = true;
-	int16 curX;
-	int16 curY;
-	int16 celX;
-	byte screenPriority = 0;
 
 	if (!(screenObj->flags & fFixedPriority)) {
 		// Priority bands
@@ -118,14 +114,13 @@ bool AgiEngine::checkPriority(ScreenObjEntry *screenObj) {
 	}
 
 	if (screenObj->priority != 0x0f) {
-
 		touchedWater = true;
 
-		curX = screenObj->xPos;
-		curY = screenObj->yPos;
+		int16 curX = screenObj->xPos;
+		int16 curY = screenObj->yPos;
 
-		for (celX = 0; celX < screenObj->xSize; celX++, curX++) {
-			screenPriority = _gfx->getPriority(curX, curY);
+		for (int16 celX = 0; celX < screenObj->xSize; celX++, curX++) {
+			byte screenPriority = _gfx->getPriority(curX, curY);
 
 			if (screenPriority == 0) {  // unconditional black. no go at all!
 				touchedControl = false;
@@ -162,8 +157,17 @@ bool AgiEngine::checkPriority(ScreenObjEntry *screenObj) {
 
 	// Check ego
 	if (screenObj->objectNr == 0) {
-		setFlag(VM_FLAG_EGO_TOUCHED_P2, touchedTrigger ? true : false);
-		setFlag(VM_FLAG_EGO_WATER, touchedWater ? true : false);
+		setFlag(VM_FLAG_EGO_TOUCHED_P2, touchedTrigger);
+		setFlag(VM_FLAG_EGO_WATER, touchedWater);
+
+		// WORKAROUND: KQ3 infinite falling, bug #13379
+		// Falling off of the ladder in room 22 or the stairs in room 64 can
+		// cause ego to fall forever in place. In both rooms, and possibly
+		// others, an unrelated black priority line overlaps with fall paths.
+		// This also occurs in the original. Ignore these lines when falling.
+		if (!touchedControl && getGameID() == GID_KQ3 && screenObj->currentViewNr == 11) {
+			touchedControl = true;
+		}
 	}
 
 	return touchedControl;
@@ -181,13 +185,11 @@ bool AgiEngine::checkPriority(ScreenObjEntry *screenObj) {
  * rules, otherwise the previous position will be kept.
  */
 void AgiEngine::updatePosition() {
-	ScreenObjEntry *screenObj;
-	int x, y, oldX, oldY, border;
-
 	setVar(VM_VAR_BORDER_CODE, 0);
 	setVar(VM_VAR_BORDER_TOUCH_EGO, 0);
 	setVar(VM_VAR_BORDER_TOUCH_OBJECT, 0);
 
+	ScreenObjEntry *screenObj;
 	for (screenObj = _game.screenObjTable; screenObj < &_game.screenObjTable[SCREENOBJECTS_MAX]; screenObj++) {
 		if ((screenObj->flags & (fAnimated | fUpdate | fDrawn)) != (fAnimated | fUpdate | fDrawn)) {
 			continue;
@@ -200,19 +202,21 @@ void AgiEngine::updatePosition() {
 
 		screenObj->stepTimeCount = screenObj->stepTime;
 
-		x = oldX = screenObj->xPos;
-		y = oldY = screenObj->yPos;
+		int x = screenObj->xPos;
+		int oldX = x;
+		int y = screenObj->yPos;
+		int oldY = y;
 
 		// If object has moved, update its position
 		if (!(screenObj->flags & fUpdatePos)) {
-			int dx[9] = { 0, 0, 1, 1, 1, 0, -1, -1, -1 };
-			int dy[9] = { 0, -1, -1, 0, 1, 1, 1, 0, -1 };
+			const int dx[9] = { 0, 0, 1, 1, 1, 0, -1, -1, -1 };
+			const int dy[9] = { 0, -1, -1, 0, 1, 1, 1, 0, -1 };
 			x += screenObj->stepSize * dx[screenObj->direction];
 			y += screenObj->stepSize * dy[screenObj->direction];
 		}
 
 		// Now check if it touched the borders
-		border = 0;
+		int border = 0;
 
 		// Check left/right borders
 		if (getVersion() == 0x3086) {
@@ -299,16 +303,15 @@ void AgiEngine::fixPosition(int16 screenObjNr) {
 }
 
 void AgiEngine::fixPosition(ScreenObjEntry *screenObj) {
-	int count, dir, size;
-
 	debugC(4, kDebugLevelSprites, "adjusting view table entry #%d (%d,%d)", screenObj->objectNr, screenObj->xPos, screenObj->yPos);
 
 	// test horizon
 	if ((!(screenObj->flags & fIgnoreHorizon)) && screenObj->yPos <= _game.horizon)
 		screenObj->yPos = _game.horizon + 1;
 
-	dir = 0;
-	count = size = 1;
+	int dir = 0;
+	int count = 1;
+	int size = 1;
 
 	while (!checkPosition(screenObj) || checkCollision(screenObj) || !checkPriority(screenObj)) {
 		switch (dir) {
@@ -346,6 +349,147 @@ void AgiEngine::fixPosition(ScreenObjEntry *screenObj) {
 	}
 
 	debugC(4, kDebugLevelSprites, "view table entry #%d position adjusted to (%d,%d)", screenObj->objectNr, screenObj->xPos, screenObj->yPos);
+}
+
+/**
+ * Tests if ego is facing nearby water without obstacles. Used by opcode 5F in
+ * Black Cauldron AGIv1 to test if the water flask can be filled. Removed from
+ * the interpreter in AGIv2 and replaced with position tests in game scripts.
+ *
+ * Returns distance to water or 250 if water is not found or is blocked.
+ */
+byte AgiEngine::egoNearWater(byte limit) {
+	ScreenObjEntry &ego = _game.screenObjTable[SCREENOBJECTS_EGO_ENTRY];
+	int16 x1 = ego.xPos;
+	int16 x2 = 0;
+	byte direction;
+
+	switch (ego.currentLoopNr) {
+	case 0: // right
+		direction = 3;
+		x1 += ego.xSize;
+		break;
+	case 1: // left
+		direction = 7;
+		break;
+	case 2: // down
+		direction = 5;
+		x1 += (ego.xSize / 2);
+		break;
+	case 3: // up
+		direction = 1;
+		x2 = x1 + ego.xSize;
+		x1--;
+		break;
+	default: // unhandled in original
+		return 250; // no water
+	}
+
+	int16 distance = -1; // uninitialized in original
+	while (x1 != 0) {
+		distance = nearWater(ego, direction, x1, ego.yPos, limit);
+		if (distance != -1) {
+			break;
+		}
+		x1 = x2;
+		x2 = 0;
+	}
+
+	if (distance == -1) {
+		return 250; // no water
+	}
+
+	// adjust ego positions for collision check
+	int16 prevPrevX = ego.xPos_prev;
+	int16 prevPrevY = ego.yPos_prev;
+	ego.xPos_prev = ego.xPos;
+	ego.yPos_prev = ego.yPos;
+	switch (direction) {
+	case 1: // up
+		ego.yPos -= distance;
+		break;
+	case 3: // right
+		ego.xPos += (x1 - ego.xSize);
+		break;
+	case 5: // down
+		ego.yPos += distance;
+		break;
+	case 7: // left
+		ego.xPos -= distance;
+		break;
+	default:
+		break;
+	}
+
+	if (!checkCollision(&ego)) {
+		if (_game.block.active) {
+			if (!(ego.flags & fIgnoreBlocks)) {
+				if (checkBlock(ego.xPos, ego.yPos)) {
+					distance = 250; // no water
+				}
+			}
+		}
+	} else {
+		distance = 250; // no water
+	}
+
+	// restore ego positions
+	ego.xPos = ego.xPos_prev;
+	ego.yPos = ego.yPos_prev;
+	ego.xPos_prev = prevPrevX;
+	ego.yPos_prev = prevPrevY;
+
+	return distance;
+}
+
+/**
+ * Tests if a screen object is near water in a given direction.
+ *
+ * Returns the distance to water or -1 if water is not found or is blocked.
+ *
+ * Note that the original contains a bug that scans left when facing right.
+ * We do not implement this bug. In Black Cauldron AGIv1, it prevents filling
+ * the flask when facing right unless ego is on or facing away from water.
+ */
+int16 AgiEngine::nearWater(ScreenObjEntry &screenObj, byte direction, int16 x, int16 y, byte limit) {
+	int16 dx = 0;
+	int16 dy = 0;
+	switch (direction) {
+	case 1: dy = -1; break;
+	case 3: dx =  1; break;
+	case 5: dy =  1; break;
+	case 7: dx = -1; break;
+	default: break;
+	}
+
+	for (int16 i = 0; i <= limit; i++) {
+		if (!(0 <= x && x < SCRIPT_WIDTH && 0 <= y && y < SCRIPT_HEIGHT)) {
+			break;
+		}
+
+		byte priority = _gfx->getPriority(x, y);
+		x += dx;
+		y += dy;
+
+		// water found?
+		if (priority == 3) {
+			return i;
+		}
+
+		if (screenObj.priority != 15) {
+			// is blocked by priority 0?
+			if (priority == 0) {
+				break;
+			}
+
+			// is blocked by priority 1?
+			if (priority == 1 && !(screenObj.flags & fIgnoreBlocks)) {
+				break;
+			}
+		}
+	}
+
+	return -1; // water not found
 }
 
 } // End of namespace Agi

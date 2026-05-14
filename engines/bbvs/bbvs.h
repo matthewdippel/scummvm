@@ -62,6 +62,16 @@ class SoundMan;
 
 #define BBVS_SAVEGAME_VERSION 0
 
+enum BBVSAction {
+	kActionNone,
+	kActionInventory,
+	kActionLook,
+	kActionTalk,
+	kActionUse,
+	kActionWalk,
+	kActionEscape
+};
+
 enum {
 	kVerbLook      = 0,
 	kVerbUse       = 1,
@@ -252,6 +262,12 @@ public:
 	bool isLoogieDemo() const;
 	bool isLoogieAltDemo() const;
 
+	/**
+	 * Disable support for ScummVM autosaves.
+	 * This engine automatically saves to slot zero on every room change.
+	 * The Continue button on the main menu loads this save.
+	 */
+	int getAutosaveSlot() const override { return -1; }
 private:
 	Graphics::PixelFormat _pixelFormat;
 
@@ -273,6 +289,7 @@ public:
 	int _mouseX, _mouseY;
 	uint _mouseButtons;
 	Common::KeyCode _keyCode;
+	Common::CustomEventType _customAction;
 
 	int _mouseCursorSpriteIndex;
 
@@ -358,7 +375,7 @@ public:
 	void loadScene(int sceneNum);
 	void initScene(bool sounds);
 	bool changeScene();
-	bool update(int mouseX, int mouseY, uint mouseButtons, Common::KeyCode keyCode);
+	bool update(int mouseX, int mouseY, uint mouseButtons, Common::CustomEventType customAction);
 
 	void buildDrawList(DrawList &drawList);
 
@@ -429,8 +446,8 @@ public:
 
 	bool _isSaveAllowed;
 
-	bool canLoadGameStateCurrently() override { return _isSaveAllowed; }
-	bool canSaveGameStateCurrently() override { return _isSaveAllowed; }
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override { return _isSaveAllowed; }
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override { return _isSaveAllowed; }
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &description, bool isAutosave = false) override;
 	void savegame(const char *filename, const char *description);

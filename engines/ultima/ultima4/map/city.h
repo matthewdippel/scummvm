@@ -36,7 +36,7 @@ struct PersonRole {
 	int _id;
 };
 
-typedef Std::vector<Person *> PersonList;
+typedef Common::Array<Person *> PersonList;
 typedef Common::List<PersonRole *> PersonRoleList;
 
 class City : public Map {
@@ -75,9 +75,9 @@ public:
 	Common::String _name;
 	Common::String _type;
 	PersonList _persons;
-	Common::String _tlkFname;
+	Common::Path _tlkFname;
 	PersonRoleList _personRoles;
-	Std::vector<Dialogue *> _extraDialogues;
+	Common::Array<Dialogue *> _extraDialogues;
 };
 
 /**

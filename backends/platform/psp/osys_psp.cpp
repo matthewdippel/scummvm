@@ -37,6 +37,7 @@
 #include "backends/platform/psp/powerman.h"
 #include "backends/platform/psp/rtc.h"
 
+#include "backends/events/default/default-events.h"
 #include "backends/saves/default/default-saves.h"
 #include "backends/timer/psp/timer.h"
 #include "graphics/surface.h"
@@ -88,6 +89,7 @@ void OSystem_PSP::initBackend() {
 	_imageViewer.setInputHandler(&_inputHandler);
 	_imageViewer.setDisplayManager(&_displayManager);
 
+	_eventManager = new DefaultEventManager(this);
 	_savefileManager = new DefaultSaveFileManager(PSP_DEFAULT_SAVE_PATH);
 
 	_timerManager = new PspTimerManager();
@@ -97,7 +99,7 @@ void OSystem_PSP::initBackend() {
 
 	setupMixer();
 
-	EventsBaseBackend::initBackend();
+	BaseBackend::initBackend();
 }
 
 // Let's us know an engine
@@ -107,7 +109,7 @@ void OSystem_PSP::engineDone() {
 }
 
 bool OSystem_PSP::hasFeature(Feature f) {
-	return (f == kFeatureOverlaySupportsAlpha || f == kFeatureCursorPalette ||
+	return (f == kFeatureOverlaySupportsAlpha || f == kFeatureCursorPalette || f == kFeatureCursorAlpha ||
 			f == kFeatureKbdMouseSpeed || f == kFeatureJoystickDeadzone);
 }
 
@@ -229,12 +231,14 @@ void OSystem_PSP::setShakePos(int shakeXOffset, int shakeYOffset) {
 	_screen.setShakePos(shakeXOffset, shakeYOffset);
 }
 
-void OSystem_PSP::showOverlay() {
+void OSystem_PSP::showOverlay(bool inGUI) {
 	DEBUG_ENTER_FUNC();
 	_pendingUpdate = false;
 	_overlay.setVisible(true);
-	_cursor.setLimits(_overlay.getWidth(), _overlay.getHeight());
-	_cursor.useGlobalScaler(false);	// mouse with overlay is 1:1
+	if (inGUI) {
+		_cursor.setLimits(_overlay.getWidth(), _overlay.getHeight());
+		_cursor.useGlobalScaler(false);	// mouse with overlay is 1:1
+	}
 }
 
 void OSystem_PSP::hideOverlay() {
@@ -272,11 +276,11 @@ void OSystem_PSP::copyRectToOverlay(const void *buf, int pitch, int x, int y, in
 	_overlay.copyFromRect(buf, pitch, x, y, w, h);
 }
 
-int16 OSystem_PSP::getOverlayWidth() {
+int16 OSystem_PSP::getOverlayWidth() const {
 	return (int16)_overlay.getWidth();
 }
 
-int16 OSystem_PSP::getOverlayHeight() {
+int16 OSystem_PSP::getOverlayHeight() const {
 	return (int16)_overlay.getHeight();
 }
 
@@ -303,8 +307,12 @@ void OSystem_PSP::warpMouse(int x, int y) {
 	_cursor.setXY(x, y);
 }
 
-void OSystem_PSP::setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format) {
+void OSystem_PSP::setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format, const byte *mask) {
 	DEBUG_ENTER_FUNC();
+
+	if (mask)
+		PSP_DEBUG_PRINT("OSystem_PSP::setMouseCursor: Masks are not supported");
+
 	_displayManager.waitUntilRenderFinished();
 	_pendingUpdate = false;
 
@@ -431,6 +439,6 @@ void OSystem_PSP::getTimeAndDate(TimeDate &td, bool skipRecord) const {
 	td.tm_wday = t.tm_wday;
 }
 
-Common::String OSystem_PSP::getDefaultConfigFileName() {
+Common::Path OSystem_PSP::getDefaultConfigFileName() {
 	return "ms0:/scummvm.ini";
 }

@@ -35,8 +35,7 @@ namespace AGOS {
 // FIXME: This code counts savegames, but callers in many cases assume
 // that the return value + 1 indicates an empty slot.
 int AGOSEngine::countSaveGames() {
-	Common::StringArray filenames;
-	uint s, numSaveGames = 1;
+	uint numSaveGames = 1;
 	int slotNum;
 	bool marks[256];
 
@@ -45,20 +44,20 @@ int AGOSEngine::countSaveGames() {
 	Common::String tmp = genSaveName(998);
 	assert(tmp.size() >= 4 && tmp[tmp.size()-4] == '.');
 	Common::String prefix = Common::String(tmp.c_str(), tmp.size()-3) + "*";
+	Common::StringArray filenames = _saveFileMan->listSavefiles(prefix);
 
 	memset(marks, false, 256 * sizeof(bool));	//assume no savegames for this title
-	filenames = _saveFileMan->listSavefiles(prefix);
 
-	for (Common::StringArray::const_iterator file = filenames.begin(); file != filenames.end(); ++file){
-		//Obtain the last 3 digits of the filename, since they correspond to the save slot
-		assert(file->size() >= 4);
-		slotNum = atoi(file->c_str() + file->size() - 3);
+	for (const auto &filename : filenames){
+		// Obtain the last 3 digits of the filename, since they correspond to the save slot
+		assert(filename.size() >= 4);
+		slotNum = atoi(filename.c_str() + filename.size() - 3);
 		if (slotNum >= 0 && slotNum < 256)
 			marks[slotNum] = true;	//mark this slot as valid
 	}
 
 	// locate first empty slot
-	for (s = 1; s < 256; s++) {
+	for (uint s = 1; s < 256; s++) {
 		if (marks[s])
 			numSaveGames++;
 	}
@@ -222,7 +221,7 @@ bool AGOSEngine_Waxworks::confirmOverWrite(WindowBlock *window) {
 }
 
 bool AGOSEngine_Elvira2::confirmOverWrite(WindowBlock *window) {
-	// Original verison never confirmed
+	// Original version never confirmed
 	return true;
 }
 
@@ -289,6 +288,11 @@ int16 AGOSEngine::matchSaveGame(const char *name, uint16 max) {
 	}
 
 	return -1;
+}
+
+void AGOSEngine::enterSaveLoadScreen(bool entering) {
+	_system->setFeatureState(OSystem::kFeatureVirtualKeyboard, entering);
+	getEventManager()->getKeymapper()->getKeymap("game-shortcuts")->setEnabled(!entering);
 }
 
 void AGOSEngine::userGame(bool load) {
@@ -1053,7 +1057,7 @@ bool AGOSEngine::loadGame(const Common::String &filename, bool restartMode) {
 			f = createPak98FileStream("START.PAK");
 		} else {
 			Common::File *file = new Common::File();
-			if (!file->open(filename)) {
+			if (!file->open(Common::Path(filename))) {
 				delete file;
 				file = nullptr;
 			}
@@ -1087,7 +1091,8 @@ bool AGOSEngine::loadGame(const Common::String &filename, bool restartMode) {
 	// add all timers
 	killAllTimers();
 	for (num = f->readUint32BE(); num; num--) {
-		uint32 timeout = f->readUint32BE();
+		// See comment below inAGOSEngine_Elvira2::loadGame(): The timers are just as broken for Elvira as for the other games.
+		int32 timeout = (int16)f->readSint32BE();
 		uint16 subroutine_id = f->readUint16BE();
 		addTimeEvent(timeout, subroutine_id);
 	}
@@ -1233,7 +1238,7 @@ bool AGOSEngine_Elvira2::loadGame(const Common::String &filename, bool restartMo
 	if (restartMode) {
 		// Load restart state
 		Common::File *file = new Common::File();
-		if (!file->open(filename)) {
+		if (!file->open(Common::Path(filename))) {
 			delete file;
 			file = nullptr;
 		}
@@ -1272,7 +1277,15 @@ bool AGOSEngine_Elvira2::loadGame(const Common::String &filename, bool restartMo
 	// add all timers
 	killAllTimers();
 	for (num = f->readUint32BE(); num; num--) {
-		uint32 timeout = f->readUint32BE();
+		// WORKAROUND for older (corrupt) savegames. Games with short timer intervals may write negative timeouts into the save files. The
+		// original interpreter does that, too. I have checked it in the DOSBox debugger. We didn't handle this well, treating the negative
+		// values as very large positive values. This effectively disabled the timers. In most cases this seems to have gone unnoticed, but
+		// it also caused bug #14886 ("Waxworks crashing at Egypt Level 3, corrupting save file"). Waxworks runs a timer every 10 seconds
+		// that cleans up the items chain and failure to do so causes that bug. The design of the timers in the original interpreter is poor,
+		// but at least it somehow survives. Now, unfortunately, we don't have savegame versioning in this engine, so I can't simply limit
+		// a fix to old savegames. However, it is so highly unlikely that a valid timer would exceed 32767 seconds (= 9 hours) that I
+		// consider this safe.
+		int32 timeout = (int16)f->readSint32BE();
 		uint16 subroutine_id = f->readUint16BE();
 		addTimeEvent(timeout, subroutine_id);
 	}

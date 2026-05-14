@@ -19,7 +19,7 @@
  *
  */
 
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 #include "ultima/nuvie/core/nuvie_defs.h"
 #include "ultima/nuvie/misc/u6_misc.h"
 #include "ultima/nuvie/gui/gui.h"
@@ -30,7 +30,7 @@ namespace Ultima {
 namespace Nuvie {
 
 GUI_Console::GUI_Console(uint16 x, uint16 y, uint16 w, uint16 h)
-	: GUI_Widget(NULL, x, y, w, h) {
+	: GUI_Widget(nullptr, x, y, w, h) {
 	bg_color = new GUI_Color(0, 0, 0);
 	font = new GUI_Font(1);
 	font->setColoring(0xff, 0xff, 0xff, 0, 0, 0);
@@ -46,20 +46,16 @@ GUI_Console::~GUI_Console() {
 /* Map the color to the display */
 void GUI_Console::SetDisplay(Screen *s) {
 	GUI_Widget::SetDisplay(s);
-	bg_color->map_color(surface);
+	bg_color->map_color(surface->format);
 }
 
 /* Show the widget  */
 void GUI_Console:: Display(bool full_redraw) {
-	Common::Rect framerect;
-
-	framerect = area;
-
-	SDL_FillRect(surface, &framerect, bg_color->sdl_color);
+	SDL_FillRect(surface, &area, bg_color->sdl_color);
 
 	uint16 i = 0;
-	for (Std::list<Std::string>::iterator it = data.begin(); it != data.end(); it++) {
-		font->textOut(surface, area.left, area.top + i * font->charHeight(), (*it).c_str(), false);
+	for (const Common::String &s : data) {
+		font->textOut(surface, area.left, area.top + i * font->charHeight(), s.c_str(), false);
 		i++;
 	}
 	screen->update(area.left, area.top, area.width(), area.height());
@@ -67,16 +63,16 @@ void GUI_Console:: Display(bool full_redraw) {
 	return;
 }
 
-void GUI_Console::AddLine(Std::string line) {
-	uint16 len = line.length();
+void GUI_Console::AddLine(const Common::String &line) {
+	uint16 len = line.size();
 	uint16 i;
 
 	if (len > num_cols) {
 		for (i = 0; i + num_cols < len; i += num_cols)
-			data.push_back(Std::string(line.substr(i, num_cols)));
+			data.push_back(Common::String(line.substr(i, num_cols)));
 
 		if (i < len)
-			data.push_back(Std::string(line.substr(i, len - i)));
+			data.push_back(Common::String(line.substr(i, len - i)));
 	} else
 		data.push_back(line);
 
@@ -85,7 +81,7 @@ void GUI_Console::AddLine(Std::string line) {
 		data.pop_front();
 }
 
-GUI_status GUI_Console::MouseDown(int x, int y, Shared::MouseButton button) {
+GUI_status GUI_Console::MouseDown(int x, int y, Events::MouseButton button) {
 
 
 //grab_focus();
@@ -93,7 +89,7 @@ GUI_status GUI_Console::MouseDown(int x, int y, Shared::MouseButton button) {
 	return GUI_YUM;
 }
 
-GUI_status GUI_Console::MouseUp(int x, int y, Shared::MouseButton button) {
+GUI_status GUI_Console::MouseUp(int x, int y, Events::MouseButton button) {
 
 // release_focus();
 
@@ -106,7 +102,7 @@ GUI_status GUI_Console::MouseMotion(int x, int y, uint8 state) {
 //GUI::get_gui()->moveWidget(this,dx,dy);
 // Redraw();
 
-	return (GUI_YUM);
+	return GUI_YUM;
 }
 
 } // End of namespace Nuvie

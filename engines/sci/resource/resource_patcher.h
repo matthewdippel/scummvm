@@ -43,11 +43,18 @@ enum ResourcePatchOp {
 	kEndOfPatch
 };
 
+enum SciMedia : uint;
+
 struct GameResourcePatch {
 	/**
 	 * The game to patch.
 	 */
 	SciGameId gameId;
+
+	/**
+	 * The media to patch. Use SCI_MEDIA_ALL for all.
+	 */
+	SciMedia media;
 
 	/**
 	 * The language to patch. Use `Common::UNK_LANG` to apply the patch to all
@@ -82,7 +89,7 @@ struct GameResourcePatch {
  */
 class ResourcePatcher : public ResourceSource {
 public:
-	ResourcePatcher(const SciGameId gameId, const Common::Language gameLanguage);
+	ResourcePatcher(const SciGameId gameId, const bool isCD, const Common::Platform platform, const Common::Language gameLanguage);
 
 	~ResourcePatcher() override {}
 
@@ -119,11 +126,6 @@ private:
 		 * data.
 		 */
 		int32 delta;
-
-		PatchSizes(uint32 exp, int32 d) {
-			expected = exp;
-			delta = d;
-		}
 	};
 
 	typedef Common::Array<GameResourcePatch> PatchList;
@@ -145,7 +147,7 @@ private:
 	PatchSizes calculatePatchSizes(const byte *patchData) const;
 
 	/**
-	 * Reads an block size from the patch data, validates it, and advances the
+	 * Reads a block size from the patch data, validates it, and advances the
 	 * patch data pointer.
 	 */
 	int32 readBlockSize(const byte * &patchData) const;

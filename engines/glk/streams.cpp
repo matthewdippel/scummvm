@@ -27,7 +27,6 @@
 #include "gui/saveload.h"
 #include "common/file.h"
 #include "common/savefile.h"
-#include "common/translation.h"
 
 namespace Glk {
 
@@ -236,6 +235,9 @@ void WindowStream::setHyperlink(uint linkVal) {
 }
 
 void WindowStream::setZColors(uint fg, uint bg) {
+	// record that the game has spoken a colour command
+	Windows::_gotBgColor = true;
+	
 	if (!_writable || !g_conf->_styleHint)
 		return;
 
@@ -267,21 +269,27 @@ void WindowStream::setZColors(uint fg, uint bg) {
 
 	if (/*bg != zcolor_Transparent &&*/ bg != zcolor_Cursor) {
 		if (bg == zcolor_Default) {
-			_window->_attr.bgset = false;
-			_window->_attr.bgcolor = 0;
-			Windows::_overrideBgSet = false;
-			Windows::_overrideBgVal = 0;
-
-			g_conf->_windowColor = g_conf->_windowSave;
-			g_conf->_borderColor = g_conf->_borderSave;
+			// only process default if neither game nor user override is active
+			if (!Windows::_overrideBgSet && !g_conf->_windowColorOverride) {
+				_window->_attr.bgset = false;
+				_window->_attr.bgcolor = 0;
+				Windows::_overrideBgSet = false;
+				Windows::_overrideBgVal = 0;
+				if (g_conf->_windowColor == g_conf->parseColor("ffffff")) {
+					g_conf->_windowColor = g_conf->_windowSave;
+					g_conf->_borderColor = g_conf->_borderSave;
+				}
+			}
 		} else if (bg != zcolor_Current) {
 			_window->_attr.bgset = true;
 			_window->_attr.bgcolor = bg;
-			Windows::_overrideBgSet = true;
-			Windows::_overrideBgVal = bg;
+			if (!g_conf->_windowColorOverride) {
+				Windows::_overrideBgSet = true;
+				Windows::_overrideBgVal = bg;
 
-			g_conf->_windowColor = back;
-			g_conf->_borderColor = back;
+				g_conf->_windowColor = back;
+				g_conf->_borderColor = back;
+			}
 		}
 	}
 
@@ -1326,7 +1334,7 @@ FileStream::FileStream(Streams *streams, frefid_t fref, uint fmode, uint rock, b
 		setStream(_outSave);
 
 	} else if (fmode == filemode_Read) {
-		if (_file.open(fname)) {
+		if (_file.open(Common::Path(fname))) {
 			setStream(&_file);
 		} else {
 			_inSave = g_system->getSavefileManager()->openForLoading(fname);
@@ -1429,18 +1437,18 @@ frefid_t Streams::createByPrompt(uint usage, FileMode fmode, uint rock) {
 	case fileusage_SavedGame: {
 		if (fmode == filemode_Write) {
 			// Select a savegame slot
-			GUI::SaveLoadChooser *dialog = new GUI::SaveLoadChooser(_("Save game:"), _("Save"), true);
+			GUI::SaveLoadChooser dialog(true);
 
-			int slot = dialog->runModalWithCurrentTarget();
+			int slot = dialog.runModalWithCurrentTarget();
 			if (slot >= 0) {
-				Common::String desc = dialog->getResultString();
+				Common::String desc = dialog.getResultString();
 				return createRef(slot, desc, usage, rock);
 			}
 		} else if (fmode == filemode_Read) {
 			// Load a savegame slot
-			GUI::SaveLoadChooser *dialog = new GUI::SaveLoadChooser(_("Restore game:"), _("Restore"), false);
+			GUI::SaveLoadChooser dialog(false);
 
-			int slot = dialog->runModalWithCurrentTarget();
+			int slot = dialog.runModalWithCurrentTarget();
 			if (slot >= 0) {
 				return createRef(slot, "", usage, rock);
 			}
@@ -1550,7 +1558,7 @@ bool FileReference::exists() const {
 	Common::String filename;
 
 	if (_slotNumber == -1) {
-		if (Common::File::exists(_filename))
+		if (Common::File::exists(Common::Path(_filename)))
 			return true;
 		filename = _filename;
 	} else {

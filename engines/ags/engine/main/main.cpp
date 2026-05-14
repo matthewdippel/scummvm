@@ -20,7 +20,7 @@
  */
 
 #include "ags/shared/core/platform.h"
-#include "ags/lib/std/set.h"
+#include "common/std/set.h"
 #include "ags/lib/allegro.h" // allegro_exit
 #include "ags/shared/ac/common.h"
 #include "ags/engine/ac/game_setup.h"
@@ -39,6 +39,7 @@
 #include "ags/shared/util/directory.h"
 #include "ags/shared/util/path.h"
 #include "ags/shared/util/string_compat.h"
+#include "ags/shared/util/string_utils.h"
 #include "ags/globals.h"
 
 namespace AGS3 {
@@ -46,20 +47,8 @@ namespace AGS3 {
 using namespace AGS::Shared;
 using namespace AGS::Engine;
 
-// this needs to be updated if the "play" struct changes
-#define SVG_VERSION_BWCOMPAT_MAJOR      3
-#define SVG_VERSION_BWCOMPAT_MINOR      2
-#define SVG_VERSION_BWCOMPAT_RELEASE    0
-#define SVG_VERSION_BWCOMPAT_REVISION   1103
-// CHECKME: we may lower this down, if we find that earlier versions may still
-// load new savedgames
-#define SVG_VERSION_FWCOMPAT_MAJOR      3
-#define SVG_VERSION_FWCOMPAT_MINOR      2
-#define SVG_VERSION_FWCOMPAT_RELEASE    1
-#define SVG_VERSION_FWCOMPAT_REVISION   1111
-
 void main_init(int argc, const char *argv[]) {
-	_G(our_eip) = -999;
+	set_our_eip(-999);
 
 	// Init libraries: set text encoding
 	set_uformat(U_UTF8);
@@ -69,8 +58,6 @@ void main_init(int argc, const char *argv[]) {
 #if defined (BUILD_STR)
 	_G(EngineVersion).BuildInfo = BUILD_STR;
 #endif
-	_G(SavedgameLowestBackwardCompatVersion) = Version(SVG_VERSION_BWCOMPAT_MAJOR, SVG_VERSION_BWCOMPAT_MINOR, SVG_VERSION_BWCOMPAT_RELEASE, SVG_VERSION_BWCOMPAT_REVISION);
-	_G(SavedgameLowestForwardCompatVersion) = Version(SVG_VERSION_FWCOMPAT_MAJOR, SVG_VERSION_FWCOMPAT_MINOR, SVG_VERSION_FWCOMPAT_RELEASE, SVG_VERSION_FWCOMPAT_REVISION);
 
 	_G(platform) = AGSPlatformDriver::GetDriver();
 	_G(platform)->SetCommandArgs(argv, argc);
@@ -82,13 +69,10 @@ void main_init(int argc, const char *argv[]) {
 
 String get_engine_string() {
 	return String::FromFormat("Adventure Game Studio v%s Interpreter\n"
-	                          "Copyright (c) 1999-2011 Chris Jones and " ACI_COPYRIGHT_YEARS " others\n"
-#ifdef BUILD_STR
-	                          "ACI version %s (Build: %s)\n",
-	                          _G(EngineVersion).ShortString.GetCStr(), _G(EngineVersion).LongString.GetCStr(), _G(EngineVersion).BuildInfo.GetCStr());
-#else
-	                          "ACI version %s\n", _G(EngineVersion).ShortString.GetCStr(), _G(EngineVersion).LongString.GetCStr());
-#endif
+							  "Copyright (c) 1999-2011 Chris Jones and " ACI_COPYRIGHT_YEARS " others\n"
+							  "Engine version %s\n",
+							  _G(EngineVersion).ShortString.GetCStr(),
+							  get_engine_version_and_build().GetCStr());
 }
 
 void main_print_help() {
@@ -96,6 +80,8 @@ void main_print_help() {
 	                          "Usage: ags [OPTIONS] [GAMEFILE or DIRECTORY]\n\n"
 	                          //--------------------------------------------------------------------------------|
 	                          "Options:\n"
+                              "  --background                 Keeps game running in background\n"
+                              "                               (this does not work in exclusive fullscreen)\n"
                               "  --clear-cache-on-room-change Clears sprite cache on every room change\n"
 	                          "  --conf FILEPATH              Specify explicit config file to read on startup\n"
 #if AGS_PLATFORM_OS_WINDOWS
@@ -111,9 +97,11 @@ void main_print_help() {
 #endif
 	                          "  --gfxfilter FILTER [SCALING]\n"
 	                          "                               Request graphics filter. Available options:\n"
-	                          "                                 hqx, linear, none, stdscale\n"
-	                          "                                 (support differs between graphic drivers);\n"
-	                          "                                 scaling is specified by integer number\n"
+							  "                                 stdscale, linear\n"
+							  "                               (support may differ between graphic drivers);\n"
+							  "                               Scaling is specified as:\n"
+							  "                                 proportional, round, stretch,\n"
+							  "                                 or an explicit integer multiplier.\n"
 	                          "  --help                       Print this help message and stop\n"
 	                          "  --loadsavedgame FILEPATH     Load savegame on startup\n"
 	                          "  --localuserconf              Read and write user config in the game's \n"
@@ -140,9 +128,7 @@ void main_print_help() {
 	                          "                                 --log-file=all:warn\n"
 	                          "  --log-file-path=PATH         Define custom path for the log file\n"
 	                          //--------------------------------------------------------------------------------|
-#if AGS_PLATFORM_OS_WINDOWS
 	                          "  --no-message-box             Disable alerts as modal message boxes\n"
-#endif
 		                      "  --no-translation             Use default game language on start\n"
 	                          "  --noiface                    Don't draw game GUI\n"
 	                          "  --noscript                   Don't run room scripts; *WARNING:* unreliable\n"
@@ -225,8 +211,7 @@ int main_process_cmdline(ConfigTree &cfg, int argc, const char *argv[]) {
 			if (argc < ee + 2)
 				break;
 			_GP(play).takeover_data = atoi(argv[ee + 1]);
-			strncpy(_GP(play).takeover_from, argv[ee + 2], 49);
-			_GP(play).takeover_from[49] = 0;
+			snprintf(_GP(play).takeover_from, sizeof(_GP(play).takeover_from), "%s", argv[ee + 2]);
 			ee += 2;
 		} else if (ags_stricmp(arg, "--clear-cache-on-room-change") == 0) {
 			cfg["misc"]["clear_cache_on_room_change"] = "1";
@@ -250,17 +235,27 @@ int main_process_cmdline(ConfigTree &cfg, int argc, const char *argv[]) {
 		else if ((ags_stricmp(arg, "--gfxdriver") == 0) && (argc > ee + 1)) {
 			cfg["graphics"]["driver"] = argv[++ee];
 		} else if ((ags_stricmp(arg, "--gfxfilter") == 0) && (argc > ee + 1)) {
-			// NOTE: we make an assumption here that if user provides scaling factor,
-			// this factor means to be applied to windowed mode only.
 			cfg["graphics"]["filter"] = argv[++ee];
-			if (argc > ee + 1 && argv[ee + 1][0] != '-')
-				cfg["graphics"]["game_scale_win"] = argv[++ee];
-			else
-				cfg["graphics"]["game_scale_win"] = "max_round";
+			if (argc > ee + 1 && argv[ee + 1][0] != '-') {
+				// NOTE: we make an assumption here that if user provides scaling
+				// multiplier, then it's meant to be applied to windowed mode only;
+				// Otherwise the scaling style is applied to both.
+				String scale_value = argv[++ee];
+				int scale_mul = StrUtil::StringToInt(scale_value);
+				if (scale_mul > 0) {
+					cfg["graphics"]["window"] = String::FromFormat("x%d", scale_mul);
+					cfg["graphics"]["game_scale_win"] = "round";
+				} else {
+					cfg["graphics"]["game_scale_fs"] = scale_value;
+					cfg["graphics"]["game_scale_win"] = scale_value;
+				}
+			}
 		} else if ((ags_stricmp(arg, "--translation") == 0) && (argc > ee + 1)) {
 			cfg["language"]["translation"] = argv[++ee];
 		} else if (ags_stricmp(arg, "--no-translation") == 0) {
 			cfg["language"]["translation"] = "";
+		} else if (ags_stricmp(arg, "--background") == 0) {
+			cfg["override"]["multitasking"] = "1";
 		} else if (ags_stricmp(arg, "--fps") == 0)
 			cfg["misc"]["show_fps"] = "1";
 		else if (ags_stricmp(arg, "--test") == 0) _G(debug_flags) |= DBG_DEBUGMODE;

@@ -35,6 +35,8 @@
 
 #include <alsa/asoundlib.h>
 
+#define MIDI_USB_HACK
+
 /*
  *     ALSA sequencer driver
  * Mostly cut'n'pasted from Virtual Tiny Keyboard (vkeybd) by Takashi Iwai
@@ -69,11 +71,11 @@ static int check_permission(snd_seq_port_info_t *pinfo) {
 class MidiDriver_ALSA : public MidiDriver_MPU401 {
 public:
 	MidiDriver_ALSA(int client, int port);
-	int open();
-	bool isOpen() const { return _isOpen; }
-	void close();
+	int open() override;
+	bool isOpen() const override { return _isOpen; }
+	void close() override;
 	void send(uint32 b) override;
-	void sysEx(const byte *msg, uint16 length);
+	void sysEx(const byte *msg, uint16 length) override;
 
 private:
 	void send_event(int do_flush);
@@ -217,10 +219,12 @@ void MidiDriver_ALSA::send(uint32 b) {
 		/* is it this simple ? Wow... */
 		snd_seq_ev_set_controller(&ev, chanID, midiCmd[1], midiCmd[2]);
 
+#ifdef MIDI_USB_HACK
 		// We save the volume of the first MIDI channel here to utilize it in
 		// our workaround for broken USB-MIDI cables.
 		if (chanID == 0 && midiCmd[1] == 0x07)
 			_channel0Volume = midiCmd[2];
+#endif
 
 		send_event(1);
 		break;
@@ -228,21 +232,25 @@ void MidiDriver_ALSA::send(uint32 b) {
 		snd_seq_ev_set_pgmchange(&ev, chanID, midiCmd[1]);
 		send_event(0);
 
+#ifdef MIDI_USB_HACK
 		// Send a volume change command to work around a firmware bug in common
 		// USB-MIDI cables. If the first MIDI command in a USB packet is a
 		// Cx or Dx command, the second command in the packet is dropped
 		// somewhere.
 		send(0x07B0 | (_channel0Volume << 16));
+#endif
 		break;
 	case 0xD0:
 		snd_seq_ev_set_chanpress(&ev, chanID, midiCmd[1]);
 		send_event(1);
 
+#ifdef MIDI_USB_HACK
 		// Send a volume change command to work around a firmware bug in common
 		// USB-MIDI cables. If the first MIDI command in a USB packet is a
 		// Cx or Dx command, the second command in the packet is dropped
 		// somewhere.
 		send(0x07B0 | (_channel0Volume << 16));
+#endif
 		break;
 	case 0xE0: {
 		// long theBend = ((((long)midiCmd[1] + (long)(midiCmd[2] << 7))) - 0x2000) / 4;
@@ -266,7 +274,7 @@ void MidiDriver_ALSA::sysEx(const byte *msg, uint16 length) {
 		return;
 	}
 
-	unsigned char buf[266];
+	unsigned char buf[270];
 
 	assert(length + 2 <= ARRAYSIZE(buf));
 
@@ -416,8 +424,8 @@ MusicDevices AlsaMusicPlugin::getDevices() const {
 
 	// Add the remaining devices in the order they were found.
 
-	for (d = alsaDevices.begin(); d != alsaDevices.end(); ++d)
-		devices.push_back(MusicDevice(this, d->getName(), d->getType()));
+	for (auto &device : alsaDevices)
+		devices.push_back(MusicDevice(this, device.getName(), device.getType()));
 
 	return devices;
 }
@@ -453,12 +461,12 @@ Common::Error AlsaMusicPlugin::createInstance(MidiDriver **mididriver, MidiDrive
 	if (!found && dev) {
 		AlsaDevices alsaDevices = getAlsaDevices();
 
-		for (AlsaDevices::iterator d = alsaDevices.begin(); d != alsaDevices.end(); ++d) {
-			MusicDevice device(this, d->getName(), d->getType());
+		for (auto &d : alsaDevices) {
+			MusicDevice device(this, d.getName(), d.getType());
 
 			if (device.getCompleteId().equals(MidiDriver::getDeviceString(dev, MidiDriver::kDeviceId))) {
 				found = true;
-				seq_client = d->getClient();
+				seq_client = d.getClient();
 				seq_port = -1;
 				break;
 			}

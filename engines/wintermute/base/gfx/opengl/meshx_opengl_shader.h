@@ -25,10 +25,13 @@
  * Copyright (c) 2003-2013 Jan Nedoma and contributors
  */
 
-#ifndef WINTERMUTE_MESH_X_OPENGL_SHADER_H
-#define WINTERMUTE_MESH_X_OPENGL_SHADER_H
+#ifndef WINTERMUTE_XMESH_OPENGL_SHADER_H
+#define WINTERMUTE_XMESH_OPENGL_SHADER_H
 
-#include "engines/wintermute/base/gfx/x/meshx.h"
+#include "engines/wintermute/base/gfx/xmesh.h"
+
+class Effect3D;
+class Effect3DParams;
 
 #if defined(USE_OPENGL_SHADERS)
 
@@ -36,15 +39,18 @@
 
 namespace Wintermute {
 
-class MeshXOpenGLShader : public MeshX {
+class XMeshOpenGLShader : public XMesh {
 public:
-	MeshXOpenGLShader(BaseGame *inGame, OpenGL::Shader *shader, OpenGL::Shader *flatShadowShader);
-	~MeshXOpenGLShader() override;
+	XMeshOpenGLShader(BaseGame *inGame, OpenGL::Shader *shader, OpenGL::Shader *flatShadowShader);
+	~XMeshOpenGLShader() override;
 
-	bool loadFromX(const Common::String &filename, XFileLexer &lexer, Common::Array<MaterialReference> &materialReferences) override;
-	bool render(ModelX *model) override;
-	bool renderFlatShadowModel() override;
+	bool loadFromXData(const char *filename, XFileData *xobj) override;
+	bool render(XModel *model) override;
+	bool renderFlatShadowModel(uint32 shadowColor) override;
 	bool update(FrameNode *parentFrame) override;
+
+private:
+	void renderEffect(Material *material);
 
 protected:
 	GLuint _vertexBuffer;

@@ -26,8 +26,10 @@
 
 namespace AGS3 {
 
-const char *get_engine_name();
-const char *get_engine_version();
+const char			*get_engine_name();
+const char			*get_engine_version();
+AGS::Shared::String  get_engine_version_and_build();
+
 void        show_preload();
 void        engine_init_game_settings();
 int         initialize_engine(const AGS::Shared::ConfigTree &startup_opts);
@@ -59,6 +61,7 @@ struct ResourcePaths {
 	PackLocation AudioPak;   // audio package
 	PackLocation SpeechPak;  // voice-over package
 	String       DataDir;    // path to the data directory
+	bool		 VoiceAvail = false; // tells whether voice files available in either location
 	// NOTE: optional directories are currently only for compatibility with Editor (game test runs)
 	// This is bit ugly, but remain so until more flexible configuration is designed
 	String       DataDir2;   // optional data directory

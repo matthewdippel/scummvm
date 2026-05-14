@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_UTIL_H
@@ -118,6 +124,7 @@ public:
 	void waitMouseDown();
 	void waitMouseRelease(char drawMouse);
 	void forceMouseUp(bool onlyWhenSynced = false);
+	void forceMouseButtonsSync();
 
 	void clearPalette();
 	int16 getFrameRate();
@@ -136,7 +143,7 @@ public:
 	static void listDropFront(List *list);
 	static void deleteList(List *list);
 
-	static char *setExtension(char *str, const char *ext);
+	//static char *setExtension(char *str, const char *ext);
 	static Common::String setExtension(const Common::String &str, const Common::String &ext);
 
 	/** Read a constant-length string out of a stream. */

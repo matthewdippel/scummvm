@@ -38,7 +38,7 @@ class InventoryWidget : public GUI_Widget {
 private:
 	Common::Rect arrow_rects[2];
 protected:
-	Configuration *config;
+	const Configuration *config;
 
 	int game_type;
 
@@ -60,16 +60,16 @@ protected:
 	const Tile *empty_tile;
 
 public:
-	InventoryWidget(Configuration *cfg, GUI_CallBack *callback = NULL);
+	InventoryWidget(const Configuration *cfg, GUI_CallBack *callback = nullptr);
 	~InventoryWidget() override;
 
 	bool init(Actor *a, uint16 x, uint16 y, TileManager *tm, ObjManager *om, Font *f);
 	void set_actor(Actor *a);
 	Actor *get_actor() {
-		return (actor);
+		return actor;
 	}
 	Obj *get_container() {
-		return (container_obj);
+		return container_obj;
 	}
 	void set_container(Obj *obj) {
 		container_obj = obj;
@@ -79,16 +79,16 @@ public:
 	Obj *get_prev_container();
 	void set_prev_container();
 	bool is_showing_container() {
-		return (container_obj != NULL ? true : false);
+		return (container_obj != nullptr ? true : false);
 	}
 	void Display(bool full_redraw) override;
 
-	GUI_status MouseDown(int x, int y, Shared::MouseButton button) override;
-	GUI_status MouseUp(int x, int y, Shared::MouseButton button) override;
+	GUI_status MouseDown(int x, int y, Events::MouseButton button) override;
+	GUI_status MouseUp(int x, int y, Events::MouseButton button) override;
 	GUI_status MouseMotion(int x, int y, uint8 state) override;
-	GUI_status MouseDouble(int x, int y, Shared::MouseButton button) override;
-	GUI_status MouseClick(int x, int y, Shared::MouseButton button) override;
-	GUI_status MouseDelayed(int x, int y, Shared::MouseButton button) override;
+	GUI_status MouseDouble(int x, int y, Events::MouseButton button) override;
+	GUI_status MouseClick(int x, int y, Events::MouseButton button) override;
+	GUI_status MouseDelayed(int x, int y, Events::MouseButton button) override;
 	GUI_status MouseWheel(sint32 x, sint32 y) override;
 	void drag_drop_success(int x, int y, int message, void *data) override;
 	void drag_drop_failed(int x, int y, int message, void *data) override;
@@ -98,7 +98,7 @@ public:
 
 	void drag_draw(int x, int y, int message, void *data) override;
 
-	uint8 get_num_rows() {
+	uint8 get_num_rows() const {
 		return game_type == NUVIE_GAME_U6 ? 3 : 4;
 	}
 

@@ -22,6 +22,7 @@
 #ifndef ULTIMA8_GUMPS_CRUPICKUPGUMP_H
 #define ULTIMA8_GUMPS_CRUPICKUPGUMP_H
 
+#include "common/str.h"
 #include "ultima/ultima8/gumps/gump.h"
 #include "ultima/ultima8/misc/classtype.h"
 
@@ -68,7 +69,7 @@ private:
 	uint32 _itemShapeNo;
 	uint16 _gumpShapeNo;
 	uint16 _gumpFrameNo;
-	Std::string _itemName;
+	Common::String _itemName;
 	uint16 _q;
 	bool _showCount;
 };

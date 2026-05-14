@@ -61,9 +61,18 @@ namespace Hopkins {
 #define SCREEN_WIDTH 640
 #define SCREEN_HEIGHT 480
 
+enum HOPKINSAction {
+	kActionNone,
+	kActionEscape,
+	kActionInventory,
+	kActionSave,
+	kActionLoad,
+	kActionOptions
+};
+
 enum HopkinsDebugChannels {
-	kDebugPath     = 1 << 0,
-	kDebugGraphics = 1 << 1
+	kDebugPath = 1,
+	kDebugGraphics,
 };
 
 /**
@@ -111,7 +120,7 @@ private:
 
 	void handleOceanMouseEvents();
 	void setSubmarineSprites();
-	void handleOceanMaze(int16 curExitId, Common::String backgroundFilename, Directions defaultDirection, int16 exit1, int16 exit2, int16 exit3, int16 exit4, int16 soundId);
+	void handleOceanMaze(int16 curExitId, const Common::Path &backgroundFilename, Directions defaultDirection, int16 exit1, int16 exit2, int16 exit3, int16 exit4, int16 soundId);
 	void loadCredits();
 	void displayCredits(int startPosY, byte *buffer, char color);
 	void displayCredits();
@@ -160,8 +169,8 @@ public:
 	const Common::String &getTargetName() const;
 
 	int getRandomNumber(int maxNumber);
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 

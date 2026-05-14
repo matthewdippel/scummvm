@@ -19,6 +19,8 @@
  *
  */
 
+#include "common/translation.h"
+
 namespace Sherlock {
 
 static const SherlockGameDescription gameDescriptions[] = {
@@ -220,11 +222,11 @@ static const SherlockGameDescription gameDescriptions[] = {
 		// Provided by AquariumTroop
 		{
 			"scalpel",
-			_s("Missing game code"), // Reason for being unsupported
+			nullptr,
 			AD_ENTRY1s("talk.lib", "334c7d468860f20eafbcd002891f0c6b", 173935),
 			Common::ZH_TWN,
 			Common::kPlatformDOS,
-			ADGF_UNSUPPORTED,
+			ADGF_NO_FLAGS,
 			GUIO1(GUIO_NOSPEECH)
 		},
 		GType_SerratedScalpel,
@@ -253,6 +255,22 @@ static const SherlockGameDescription gameDescriptions[] = {
 			"CD",
 			AD_ENTRY1s("talk.lib", "9639a756b0993ebd71cb5f4d8b78b2dc", 765134),
 			Common::EN_ANY,
+			Common::kPlatformDOS,
+			ADGF_NO_FLAGS,
+			GUIO3(GAMEOPTION_ORIGINAL_SAVES, GAMEOPTION_HELP_STYLE, GAMEOPTION_TRANSPARENT_WINDOWS)
+		},
+		GType_RoseTattoo,
+	},
+
+	{
+		// Case of the Rose Tattoo - Russian CD
+		{
+			"rosetattoo",
+			"CD",
+			/* talk.lib is actually different from English but first 5000 bytes and sizes are identical.  */
+			AD_ENTRY2s("talk.lib", "9639a756b0993ebd71cb5f4d8b78b2dc", 765134,
+				   "font.vgs", "t:11a7df2e63cfc6e48415f62c3ec291d5", 8959),
+			Common::RU_RUS,
 			Common::kPlatformDOS,
 			ADGF_NO_FLAGS,
 			GUIO3(GAMEOPTION_ORIGINAL_SAVES, GAMEOPTION_HELP_STYLE, GAMEOPTION_TRANSPARENT_WINDOWS)
@@ -292,11 +310,12 @@ static const SherlockGameDescription gameDescriptions[] = {
 
 	{
 		// Case of the Rose Tattoo - Chinese CD
+		// TODO: Fix Inventory Item context menus: https://bugs.scummvm.org/ticket/16497
 		{
 			"rosetattoo",
 			"CD",
 			AD_ENTRY1s("talk.lib", "dfd699efdce02a045f46d15da2d44b76", 582381),
-			Common::ZH_ANY,
+			Common::ZH_CHN,
 			Common::kPlatformDOS,
 			ADGF_UNSTABLE,
 			GUIO3(GAMEOPTION_ORIGINAL_SAVES, GAMEOPTION_HELP_STYLE, GAMEOPTION_TRANSPARENT_WINDOWS)

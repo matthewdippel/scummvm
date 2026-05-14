@@ -23,21 +23,23 @@
 #define NANCY_ACTION_SECONDARYVIDEO_H
 
 #include "engines/nancy/video.h"
-#include "engines/nancy/commontypes.h"
-#include "engines/nancy/renderobject.h"
-
 #include "engines/nancy/action/actionrecord.h"
 
 namespace Nancy {
 namespace Action {
 
-// ActionRecord that shows NPC animations outside of dialogue. Supports
-// different animations depending on whether the NPC is hovered by the mouse
-class PlaySecondaryVideo : public ActionRecord, public RenderObject {
+// Shows an (optionally) looping AVF video, which can move around
+// the screen with the background frame. When hovered, the video can
+// play a special animation instead of the normal looping one.
+// Used for character animations _outside_ of conversations.
+class PlaySecondaryVideo : public RenderActionRecord {
 public:
+	static const byte kNoVideoHotspots	= 1;
+	static const byte kVideoHotspots	= 2;
+
 	enum HoverState { kNoHover, kHover, kEndHover };
 
-	PlaySecondaryVideo(uint chan, RenderObject &redrawFrom) : RenderObject(redrawFrom, 8), channel(chan) {}
+	PlaySecondaryVideo() : RenderActionRecord(8) {}
 	virtual ~PlaySecondaryVideo() { _decoder.close(); }
 
 	void init() override;
@@ -48,21 +50,29 @@ public:
 	void readData(Common::SeekableReadStream &stream) override;
 	void execute() override;
 
-	Common::String _filename;
-	Common::String _paletteFilename;
-	uint16 _loopFirstFrame = 0; // 0x1E
-	uint16 _loopLastFrame = 0; // 0x20
-	uint16 _onHoverFirstFrame = 0; // 0x22
-	uint16 _onHoverLastFrame = 0; // 0x24
-	uint16 _onHoverEndFirstFrame = 0; // 0x26
-	uint16 _onHoverEndLastFrame = 0; // 0x28
-	SceneChangeDescription _sceneChange; // 0x2A
-	// unknown byte
-	Common::Array<SecondaryVideoDescription> _videoDescs; // 0x35
+	Common::Path _filename;
+	Common::Path _paletteFilename;
+	// Common::Path _bitmapOverlayFilename
+
+	// TVD only
+	uint16 _videoFormat = kLargeVideoFormat;
+	uint16 _videoHotspots = kVideoHotspots;
+
+	uint16 _loopFirstFrame = 0;
+	uint16 _loopLastFrame = 0;
+	uint16 _onHoverFirstFrame = 0;
+	uint16 _onHoverLastFrame = 0;
+	uint16 _onHoverEndFirstFrame = 0;
+	uint16 _onHoverEndLastFrame = 0;
+	SceneChangeDescription _sceneChange;
+
+	Common::Array<SecondaryVideoDescription> _videoDescs;
+
+	bool canHaveHotspot() const override { return true; }
+	bool isViewportRelative() const override { return true; }
 
 protected:
-	Common::String getRecordTypeName() const override { return Common::String::format("PlaySecondaryVideoChan%i", channel); }
-	bool isViewportRelative() const override { return true; }
+	Common::String getRecordTypeName() const override { return "PlaySecondaryVideo"; }
 
 	Graphics::ManagedSurface _fullFrame;
 	HoverState _hoverState = kNoHover;
@@ -71,8 +81,6 @@ protected:
 	int _currentViewportScroll = -1;
 	bool _isInFrame = false;
 	bool _isHovered = false;
-
-	uint channel;
 };
 
 } // End of namespace Action

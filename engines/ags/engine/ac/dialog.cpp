@@ -63,6 +63,7 @@
 #include "ags/shared/debugging/out.h"
 #include "ags/engine/script/script_api.h"
 #include "ags/engine/script/script_runtime.h"
+#include "ags/engine/ac/dynobj/cc_dialog.h"
 #include "ags/engine/ac/dynobj/script_string.h"
 #include "ags/ags.h"
 #include "ags/globals.h"
@@ -145,6 +146,10 @@ int Dialog_GetID(ScriptDialog *sd) {
 	return sd->id;
 }
 
+const char *Dialog_GetScriptName(ScriptDialog *sd) {
+	return CreateNewScriptString(_GP(game).dialogScriptNames[sd->id]);
+}
+
 //=============================================================================
 
 #define RUN_DIALOG_STAY          -1
@@ -175,14 +180,14 @@ int run_dialog_script(int dialogID, int offse, int optionIndex) {
 		char func_name[100];
 		snprintf(func_name, sizeof(func_name), "_run_dialog%d", dialogID);
 		RuntimeScriptValue params[]{ optionIndex };
-		RunScriptFunction(_G(dialogScriptsInst), func_name, 1, params);
+		RunScriptFunction(_G(dialogScriptsInst).get(), func_name, 1, params);
 		result = _G(dialogScriptsInst)->returnValue;
 	} else {
 		// old dialog format
 		if (offse == -1)
 			return result;
 
-		unsigned char *script = _G(old_dialog_scripts)[dialogID].get() + offse;
+		unsigned char *script = _G(old_dialog_scripts)[dialogID].data() + offse;
 
 		unsigned short param1 = 0;
 		unsigned short param2 = 0;
@@ -258,7 +263,8 @@ int run_dialog_script(int dialogID, int offse, int optionIndex) {
 			case DCMD_NEWROOM:
 				get_dialog_script_parameters(script, &param1, nullptr);
 				NewRoom(param1);
-				_G(in_new_room) = 1;
+				if (_G(in_new_room) <= 0)
+					_G(in_new_room) = 1; // set only in case NewRoom was scheduled
 				result = RUN_DIALOG_STOP_DIALOG;
 				script_running = false;
 				break;
@@ -364,7 +370,7 @@ int write_dialog_options(Bitmap *ds, bool ds_has_alpha, int dlgxp, int curyp, in
 			break_up_text_into_lines(get_translation(dtop->optionnames[(int)disporder[i]]), _GP(Lines), areawid-(2*padding+2+bullet_wid), usingfont);\
 			needheight += get_text_lines_surf_height(usingfont, _GP(Lines).Count()) + data_to_game_coord(_GP(game).options[OPT_DIALOGGAP]);\
 		}\
-		if (parserInput) needheight += parserInput->Height + data_to_game_coord(_GP(game).options[OPT_DIALOGGAP]);\
+		if (parserInput) needheight += parserInput->GetHeight() + data_to_game_coord(_GP(game).options[OPT_DIALOGGAP]);\
 	}
 
 
@@ -381,7 +387,7 @@ bool get_custom_dialog_options_dimensions(int dlgnum) {
 	_GP(ccDialogOptionsRendering).Reset();
 	_GP(ccDialogOptionsRendering).dialogID = dlgnum;
 
-	_GP(getDialogOptionsDimensionsFunc).params[0].SetDynamicObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
+	_GP(getDialogOptionsDimensionsFunc).params[0].SetScriptObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
 	run_function_on_non_blocking_thread(&_GP(getDialogOptionsDimensionsFunc));
 
 	if ((_GP(ccDialogOptionsRendering).width > 0) &&
@@ -425,6 +431,7 @@ struct DialogOptions {
 	int parserActivated;
 
 	int curyp;
+	bool needRedraw;
 	bool wantRefresh;
 	bool usingCustomRendering;
 	int orixp;
@@ -444,7 +451,15 @@ struct DialogOptions {
 	void Prepare(int _dlgnum, bool _runGameLoopsInBackground);
 	void Show();
 	void Redraw();
+	// Runs the dialog options update;
+	// returns whether should continue to run options loop, or stop
 	bool Run();
+	// Process all the buffered key events;
+	// returns whether should continue to run options loop, or stop
+	bool RunKeyControls();
+	// Process single key event
+	// returns whether should continue to run options loop, or stop
+	bool RunKey(const KeyInput &ki);
 	void Close();
 };
 
@@ -470,8 +485,6 @@ void DialogOptions::Prepare(int _dlgnum, bool _runGameLoopsInBackground) {
 
 	_GP(play).in_conversation ++;
 
-	update_polled_stuff_if_runtime();
-
 	if (_GP(game).dialog_bullet > 0)
 		bullet_wid = _GP(game).SpriteInfos[_GP(game).dialog_bullet].Width + 3;
 
@@ -480,8 +493,6 @@ void DialogOptions::Prepare(int _dlgnum, bool _runGameLoopsInBackground) {
 		bullet_wid += get_text_width_outlined("9. ", usingfont);
 
 	_G(said_text) = 0;
-
-	update_polled_stuff_if_runtime();
 
 	const Rect &ui_view = _GP(play).GetUIViewport();
 	tempScrn = BitmapHelper::CreateBitmap(ui_view.GetWidth(), ui_view.GetHeight(), _GP(game).GetColorDepth());
@@ -496,7 +507,7 @@ void DialogOptions::Prepare(int _dlgnum, bool _runGameLoopsInBackground) {
 	parserActivated = 0;
 	if ((dtop->topicFlags & DTFLG_SHOWPARSER) && (_GP(play).disable_dialog_parser == 0)) {
 		parserInput = new GUITextBox();
-		parserInput->Height = lineheight + get_fixed_pixel_size(4);
+		parserInput->SetHeight(lineheight + get_fixed_pixel_size(4));
 		parserInput->SetShowBorder(true);
 		parserInput->Font = usingfont;
 	}
@@ -588,6 +599,7 @@ void DialogOptions::Show() {
 
 	orixp = dlgxp;
 	oriyp = dlgyp;
+	needRedraw = false;
 	wantRefresh = false;
 	mouseison = -10;
 
@@ -596,7 +608,7 @@ void DialogOptions::Show() {
 
 	// Close custom dialog options
 	if (usingCustomRendering) {
-		_GP(runDialogOptionCloseFunc).params[0].SetDynamicObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
+		_GP(runDialogOptionCloseFunc).params[0].SetScriptObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
 		run_function_on_non_blocking_thread(&_GP(runDialogOptionCloseFunc));
 	}
 }
@@ -626,7 +638,7 @@ void DialogOptions::Redraw() {
 		_G(dialogOptionsRenderingSurface)->hasAlphaChannel = _GP(ccDialogOptionsRendering).hasAlphaChannel;
 		options_surface_has_alpha = _G(dialogOptionsRenderingSurface)->hasAlphaChannel != 0;
 
-		_GP(renderDialogOptionsFunc).params[0].SetDynamicObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
+		_GP(renderDialogOptionsFunc).params[0].SetScriptObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
 		run_function_on_non_blocking_thread(&_GP(renderDialogOptionsFunc));
 
 		if (!_GP(ccDialogOptionsRendering).surfaceAccessed)
@@ -732,15 +744,9 @@ void DialogOptions::Redraw() {
 		if (dlgyp < dirtyy)
 			dirtyy = dlgyp;
 
-		//curyp = dlgyp + 1;
 		curyp = dlgyp;
 		curyp = write_dialog_options(ds, options_surface_has_alpha, dlgxp, curyp, numdisp, mouseison, areawid, bullet_wid, usingfont, dtop, disporder, dispyp, linespacing, forecol, padding);
 
-		/*if (curyp > _GP(play).viewport.GetHeight()) {
-		  dlgyp = _GP(play).viewport.GetHeight() - (curyp - dlgyp);
-		  ds->FillRect(Rect(0,dlgyp-1,_GP(play).viewport.GetWidth()-1,_GP(play).viewport.GetHeight()-1);
-		  goto redraw_options;
-		}*/
 		if (parserInput)
 			parserInput->X = dlgxp;
 	}
@@ -748,7 +754,7 @@ void DialogOptions::Redraw() {
 	if (parserInput) {
 		// Set up the text box, if present
 		parserInput->Y = curyp + data_to_game_coord(_GP(game).options[OPT_DIALOGGAP]);
-		parserInput->Width = areawid - get_fixed_pixel_size(10);
+		parserInput->SetWidth(areawid - get_fixed_pixel_size(10));
 		parserInput->TextColor = _G(playerchar)->talkcolor;
 		if (mouseison == DLG_OPTION_PARSER)
 			parserInput->TextColor = forecol;
@@ -757,21 +763,17 @@ void DialogOptions::Redraw() {
 			draw_gui_sprite_v330(ds, _GP(game).dialog_bullet, parserInput->X, parserInput->Y, options_surface_has_alpha);
 		}
 
-		parserInput->Width -= bullet_wid;
+		parserInput->SetWidth(parserInput->GetWidth() - bullet_wid);
 		parserInput->X += bullet_wid;
 
-		parserInput->Draw(ds);
+		parserInput->Draw(ds, parserInput->X, parserInput->Y);
 		parserInput->IsActivated = false;
 	}
 
 	wantRefresh = false;
 
-	update_polled_stuff_if_runtime();
-
 	subBitmap = recycle_bitmap(subBitmap,
 		_G(gfxDriver)->GetCompatibleBitmapFormat(tempScrn->GetColorDepth()), dirtywidth, dirtyheight);
-
-	update_polled_stuff_if_runtime();
 
 	if (usingCustomRendering) {
 		subBitmap->Blit(tempScrn, 0, 0, 0, 0, tempScrn->GetWidth(), tempScrn->GetHeight());
@@ -802,7 +804,6 @@ bool DialogOptions::Run() {
 	sys_evt_process_pending();
 
 	const bool new_custom_render = usingCustomRendering && _GP(game).options[OPT_DIALOGOPTIONSAPI] >= 0;
-	const bool old_keyhandle = _GP(game).options[OPT_KEYHANDLEAPI] == 0;
 
 	if (runGameLoopsInBackground) {
 		_GP(play).disabled_user_interface++;
@@ -810,70 +811,25 @@ bool DialogOptions::Run() {
 		_GP(play).disabled_user_interface--;
 	} else {
 		update_audio_system_on_game_loop();
+		UpdateCursorAndDrawables();
 		render_graphics(ddb, dirtyx, dirtyy);
 	}
 
 	if (new_custom_render) {
-		_GP(runDialogOptionRepExecFunc).params[0].SetDynamicObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
+		_GP(runDialogOptionRepExecFunc).params[0].SetScriptObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
 		run_function_on_non_blocking_thread(&_GP(runDialogOptionRepExecFunc));
 	}
 
-	KeyInput ki;
-	if (run_service_key_controls(ki) && !_GP(play).IsIgnoringInput()) {
-		eAGSKeyCode gkey = ki.Key;
-		if (parserInput) {
-			wantRefresh = true;
-			// type into the parser 
-			// TODO: find out what are these key commands, and are these documented?
-			if ((gkey == eAGSKeyCodeF3) || ((gkey == eAGSKeyCodeSpace) && (parserInput->Text.GetLength() == 0))) {
-				// write previous contents into textbox (F3 or Space when box is empty)
-				size_t last_len = ustrlen(_GP(play).lastParserEntry);
-				size_t cur_len = ustrlen(parserInput->Text.GetCStr());
-				// [ikm] CHECKME: tbh I don't quite get the logic here (it was like this in original code);
-				// but what we do is copying only the last part of the previous string
-				if (cur_len < last_len) {
-					const char *entry = _GP(play).lastParserEntry;
-					// TODO: utility function for advancing N utf-8 chars
-					for (size_t i = 0; i < cur_len; ++i) ugetxc(&entry);
-					parserInput->Text.Append(entry);
-				}
+	needRedraw = false;
 
-				//ags_domouse(DOMOUSE_DISABLE);
-				Redraw();
-				return true; // continue running loop
-			} else if ((gkey >= eAGSKeyCodeSpace) || (gkey == eAGSKeyCodeReturn) || (gkey == eAGSKeyCodeBackspace)) {
-				parserInput->OnKeyPress(ki);
-				if (!parserInput->IsActivated) {
-					//ags_domouse(DOMOUSE_DISABLE);
-					Redraw();
-					return true; // continue running loop
-				}
-			}
-		} else if (new_custom_render) {
-			if (old_keyhandle || (ki.UChar == 0)) {
-				// "dialog_options_key_press"
-				_GP(runDialogOptionKeyPressHandlerFunc).params[0].SetDynamicObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
-				_GP(runDialogOptionKeyPressHandlerFunc).params[1].SetInt32(AGSKeyToScriptKey(gkey));
-				_GP(runDialogOptionKeyPressHandlerFunc).params[2].SetInt32(ki.Mod);
-				run_function_on_non_blocking_thread(&_GP(runDialogOptionKeyPressHandlerFunc));
-			}
-			if (!old_keyhandle && (ki.UChar > 0)) {
-				// "dialog_options_text_input"
-				_GP(runDialogOptionTextInputHandlerFunc).params[0].SetDynamicObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
-				_GP(runDialogOptionTextInputHandlerFunc).params[1].SetInt32(ki.UChar);
-				run_function_on_non_blocking_thread(&_GP(runDialogOptionKeyPressHandlerFunc));
-			}
-		}
-		// Allow selection of options by keyboard shortcuts
-		else if (_GP(game).options[OPT_DIALOGNUMBERED] >= kDlgOptKeysOnly &&
-			gkey >= '1' && gkey <= '9') {
-			int numkey = gkey - '1';
-			if (numkey < numdisp) {
-				chose = disporder[numkey];
-				return false; // end dialog options running loop
-			}
-		}
-	}
+	// Handle keyboard
+	if (!RunKeyControls())
+		return false; // end loop
+
+	if (needRedraw)
+		Redraw();
+
+	// Handle mouse
 	mousewason = mouseison;
 	mouseison = -1;
 	if (new_custom_render); // do not automatically detect option under mouse
@@ -881,7 +837,7 @@ bool DialogOptions::Run() {
 		if ((_G(mousex) >= dirtyx) && (_G(mousey) >= dirtyy) &&
 			(_G(mousex) < dirtyx + tempScrn->GetWidth()) &&
 			(_G(mousey) < dirtyy + tempScrn->GetHeight())) {
-			_GP(getDialogOptionUnderCursorFunc).params[0].SetDynamicObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
+			_GP(getDialogOptionUnderCursorFunc).params[0].SetScriptObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
 			run_function_on_non_blocking_thread(&_GP(getDialogOptionUnderCursorFunc));
 
 			if (!_GP(getDialogOptionUnderCursorFunc).atLeastOneImplementationExists)
@@ -899,7 +855,8 @@ bool DialogOptions::Run() {
 				mouseison = i - 1; break;
 			}
 		}
-		if ((mouseison < 0) | (mouseison >= numdisp)) mouseison = -1;
+		if ((mouseison < 0) || (mouseison >= numdisp))
+			mouseison = -1;
 	}
 
 	if (parserInput != nullptr) {
@@ -908,21 +865,21 @@ bool DialogOptions::Run() {
 			relative_mousey -= dirtyy;
 
 		if ((relative_mousey > parserInput->Y) &&
-			(relative_mousey < parserInput->Y + parserInput->Height))
+			(relative_mousey < parserInput->Y + parserInput->GetHeight()))
 			mouseison = DLG_OPTION_PARSER;
 
 		if (parserInput->IsActivated)
 			parserActivated = 1;
 	}
 
-	int mouseButtonPressed = MouseNone;
-	int mouseWheelTurn = 0;
-	if (run_service_mb_controls(mouseButtonPressed, mouseWheelTurn) && mouseButtonPressed >= 0 &&
+	eAGSMouseButton mbut;
+	int mwheelz;
+	if (run_service_mb_controls(mbut, mwheelz) && mbut > kMouseNone &&
 		!_GP(play).IsIgnoringInput()) {
 		if (mouseison < 0 && !new_custom_render) {
 			if (usingCustomRendering) {
-				_GP(runDialogOptionMouseClickHandlerFunc).params[0].SetDynamicObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
-				_GP(runDialogOptionMouseClickHandlerFunc).params[1].SetInt32(mouseButtonPressed + 1);
+				_GP(runDialogOptionMouseClickHandlerFunc).params[0].SetScriptObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
+				_GP(runDialogOptionMouseClickHandlerFunc).params[1].SetInt32(mbut);
 				run_function_on_non_blocking_thread(&_GP(runDialogOptionMouseClickHandlerFunc));
 
 				if (_GP(runDialogOptionMouseClickHandlerFunc).atLeastOneImplementationExists) {
@@ -936,8 +893,8 @@ bool DialogOptions::Run() {
 			// they clicked the text box
 			parserActivated = 1;
 		} else if (new_custom_render) {
-			_GP(runDialogOptionMouseClickHandlerFunc).params[0].SetDynamicObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
-			_GP(runDialogOptionMouseClickHandlerFunc).params[1].SetInt32(mouseButtonPressed + 1);
+			_GP(runDialogOptionMouseClickHandlerFunc).params[0].SetScriptObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
+			_GP(runDialogOptionMouseClickHandlerFunc).params[1].SetInt32(mbut);
 			run_function_on_non_blocking_thread(&_GP(runDialogOptionMouseClickHandlerFunc));
 		} else if (usingCustomRendering) {
 			chose = mouseison;
@@ -949,9 +906,9 @@ bool DialogOptions::Run() {
 	}
 
 	if (usingCustomRendering) {
-		if (mouseWheelTurn != 0) {
-			_GP(runDialogOptionMouseClickHandlerFunc).params[0].SetDynamicObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
-			_GP(runDialogOptionMouseClickHandlerFunc).params[1].SetInt32((mouseWheelTurn < 0) ? 9 : 8);
+		if (mwheelz != 0) {
+			_GP(runDialogOptionMouseClickHandlerFunc).params[0].SetScriptObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
+			_GP(runDialogOptionMouseClickHandlerFunc).params[1].SetInt32((mwheelz < 0) ? 9 : 8);
 			run_function_on_non_blocking_thread(&_GP(runDialogOptionMouseClickHandlerFunc));
 
 			if (!new_custom_render) {
@@ -973,7 +930,6 @@ bool DialogOptions::Run() {
 		}
 	}
 	if (mousewason != mouseison) {
-		//ags_domouse(DOMOUSE_DISABLE);
 		Redraw();
 		return true; // continue running loop
 	}
@@ -989,7 +945,7 @@ bool DialogOptions::Run() {
 		}
 	}
 
-	update_polled_stuff_if_runtime();
+	update_polled_stuff();
 
 	if (!runGameLoopsInBackground && (_GP(play).fast_forward == 0)) { // note if runGameLoopsInBackground then it's called inside UpdateGameOnce
 		WaitForNextFrame();
@@ -998,11 +954,84 @@ bool DialogOptions::Run() {
 	return true; // continue running loop
 }
 
+bool DialogOptions::RunKeyControls() {
+	// Handle all the buffered key events
+	bool do_break = false; // continue the loop or end dialog options
+	while (ags_keyevent_ready()) {
+		KeyInput ki;
+		if (run_service_key_controls(ki) && !_GP(play).IsIgnoringInput()) {
+			if (!do_break && !RunKey(ki)) {
+				ags_clear_input_buffer();
+				do_break = true; // end dialog options
+			}
+		}
+	}
+	return !do_break;
+}
+
+bool DialogOptions::RunKey(const KeyInput &ki) {
+	const bool new_custom_render = usingCustomRendering && _GP(game).options[OPT_DIALOGOPTIONSAPI] >= 0;
+	const bool old_keyhandle = _GP(game).options[OPT_KEYHANDLEAPI] == 0;
+
+	const eAGSKeyCode agskey = ki.Key;
+	if (parserInput) {
+		wantRefresh = true;
+		// type into the parser
+		// TODO: find out what are these key commands, and are these documented?
+		if ((agskey == eAGSKeyCodeF3) || ((agskey == eAGSKeyCodeSpace) && (parserInput->Text.GetLength() == 0))) {
+			// write previous contents into textbox (F3 or Space when box is empty)
+			size_t last_len = ustrlen(_GP(play).lastParserEntry);
+			size_t cur_len = ustrlen(parserInput->Text.GetCStr());
+			// [ikm] CHECKME: tbh I don't quite get the logic here (it was like this in original code);
+			// but what we do is copying only the last part of the previous string
+			if (cur_len < last_len) {
+				const char *entry = _GP(play).lastParserEntry;
+				// TODO: utility function for advancing N utf-8 chars
+				for (size_t i = 0; i < cur_len; ++i) ugetxc(&entry);
+				parserInput->Text.Append(entry);
+			}
+			needRedraw = true;
+			return true; // continue running loop
+		} else if ((ki.UChar > 0) || (agskey == eAGSKeyCodeReturn) || (agskey == eAGSKeyCodeBackspace)) {
+			parserInput->OnKeyPress(ki);
+			if (!parserInput->IsActivated) {
+				needRedraw = true;
+				return true; // continue running loop
+			}
+		}
+	} else if (new_custom_render) {
+		if (old_keyhandle || (ki.UChar == 0)) {
+			// "dialog_options_key_press"
+			_GP(runDialogOptionKeyPressHandlerFunc).params[0].SetScriptObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
+			_GP(runDialogOptionKeyPressHandlerFunc).params[1].SetInt32(AGSKeyToScriptKey(ki.Key));
+			_GP(runDialogOptionKeyPressHandlerFunc).params[2].SetInt32(ki.Mod);
+			run_function_on_non_blocking_thread(&_GP(runDialogOptionKeyPressHandlerFunc));
+		}
+		if (!old_keyhandle && (ki.UChar > 0)) {
+			// "dialog_options_text_input"
+			_GP(runDialogOptionTextInputHandlerFunc).params[0].SetScriptObject(&_GP(ccDialogOptionsRendering), &_GP(ccDialogOptionsRendering));
+			_GP(runDialogOptionTextInputHandlerFunc).params[1].SetInt32(ki.UChar);
+			run_function_on_non_blocking_thread(&_GP(runDialogOptionKeyPressHandlerFunc));
+		}
+	}
+	// Allow selection of options by keyboard shortcuts
+	else if (_GP(game).options[OPT_DIALOGNUMBERED] >= kDlgOptKeysOnly &&
+		agskey >= '1' && agskey <= '9') {
+		int numkey = agskey - '1';
+		if (numkey < numdisp) {
+			chose = disporder[numkey];
+			return false; // end dialog options running loop
+		}
+	}
+	return true; // continue running loop
+}
+
 void DialogOptions::Close() {
 	ags_clear_input_buffer();
 	invalidate_screen();
 
 	if (parserActivated) {
+		assert(parserInput);
 		snprintf(_GP(play).lastParserEntry, MAX_MAXSTRLEN, "%s", parserInput->Text.GetCStr());
 		ParseText(parserInput->Text.GetCStr());
 		chose = CHOSE_TEXTPARSER;
@@ -1159,9 +1188,21 @@ void do_conversation(int dlgnum) {
 //
 //=============================================================================
 
+ScriptDialog *Dialog_GetByName(const char *name) {
+	return static_cast<ScriptDialog *>(ccGetScriptObjectAddress(name, _GP(ccDynamicDialog).GetType()));
+}
+
+RuntimeScriptValue Sc_Dialog_GetByName(const RuntimeScriptValue *params, int32_t param_count) {
+	API_SCALL_OBJ_POBJ(ScriptDialog, _GP(ccDynamicDialog), Dialog_GetByName, const char);
+}
+
 // int (ScriptDialog *sd)
 RuntimeScriptValue Sc_Dialog_GetID(void *self, const RuntimeScriptValue *params, int32_t param_count) {
 	API_OBJCALL_INT(ScriptDialog, Dialog_GetID);
+}
+
+RuntimeScriptValue Sc_Dialog_GetScriptName(void *self, const RuntimeScriptValue *params, int32_t param_count) {
+	API_OBJCALL_OBJ(ScriptDialog, const char, _GP(myScriptStringImpl), Dialog_GetScriptName);
 }
 
 // int (ScriptDialog *sd)
@@ -1186,7 +1227,7 @@ RuntimeScriptValue Sc_Dialog_GetOptionState(void *self, const RuntimeScriptValue
 
 // const char* (ScriptDialog *sd, int option)
 RuntimeScriptValue Sc_Dialog_GetOptionText(void *self, const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_OBJCALL_OBJ_PINT(ScriptDialog, const char, _GP(myScriptStringImpl), Dialog_GetOptionText);
+	API_OBJCALL_OBJ_PINT(ScriptDialog, const char, _GP(myScriptStringImpl), Dialog_GetOptionText);
 }
 
 // int (ScriptDialog *sd, int option)
@@ -1209,16 +1250,22 @@ RuntimeScriptValue Sc_Dialog_Start(void *self, const RuntimeScriptValue *params,
 }
 
 void RegisterDialogAPI() {
-	ccAddExternalObjectFunction("Dialog::get_ID",               Sc_Dialog_GetID);
-	ccAddExternalObjectFunction("Dialog::get_OptionCount",      Sc_Dialog_GetOptionCount);
-	ccAddExternalObjectFunction("Dialog::get_ShowTextParser",   Sc_Dialog_GetShowTextParser);
-	ccAddExternalObjectFunction("Dialog::DisplayOptions^1",     Sc_Dialog_DisplayOptions);
-	ccAddExternalObjectFunction("Dialog::GetOptionState^1",     Sc_Dialog_GetOptionState);
-	ccAddExternalObjectFunction("Dialog::GetOptionText^1",      Sc_Dialog_GetOptionText);
-	ccAddExternalObjectFunction("Dialog::HasOptionBeenChosen^1", Sc_Dialog_HasOptionBeenChosen);
-	ccAddExternalObjectFunction("Dialog::SetHasOptionBeenChosen^2", Sc_Dialog_SetHasOptionBeenChosen);
-	ccAddExternalObjectFunction("Dialog::SetOptionState^2",     Sc_Dialog_SetOptionState);
-	ccAddExternalObjectFunction("Dialog::Start^0",              Sc_Dialog_Start);
+	ScFnRegister dialog_api[] = {
+		{"Dialog::GetByName", API_FN_PAIR(Dialog_GetByName)},
+		{"Dialog::get_ID", API_FN_PAIR(Dialog_GetID)},
+		{"Dialog::get_OptionCount", API_FN_PAIR(Dialog_GetOptionCount)},
+		{"Dialog::get_ScriptName", API_FN_PAIR(Dialog_GetScriptName)},
+		{"Dialog::get_ShowTextParser", API_FN_PAIR(Dialog_GetShowTextParser)},
+		{"Dialog::DisplayOptions^1", API_FN_PAIR(Dialog_DisplayOptions)},
+		{"Dialog::GetOptionState^1", API_FN_PAIR(Dialog_GetOptionState)},
+		{"Dialog::GetOptionText^1", API_FN_PAIR(Dialog_GetOptionText)},
+		{"Dialog::HasOptionBeenChosen^1", API_FN_PAIR(Dialog_HasOptionBeenChosen)},
+		{"Dialog::SetHasOptionBeenChosen^2", API_FN_PAIR(Dialog_SetHasOptionBeenChosen)},
+		{"Dialog::SetOptionState^2", API_FN_PAIR(Dialog_SetOptionState)},
+		{"Dialog::Start^0", API_FN_PAIR(Dialog_Start)},
+	};
+
+	ccAddExternalFunctions361(dialog_api);
 }
 
 } // namespace AGS3

@@ -40,7 +40,7 @@ public:
 	bool showTitleSequence();
 	bool showMainMenu();
 	bool returnToMainMenu();
-	bool playMovie(const Common::String &background, const Common::String &movie, int movieLeft, int movieTop);
+	bool playMovie(const Common::Path &background, const Common::Path &movie, int movieLeft, int movieTop);
 	bool showClosingScreen();
 	bool showFeaturesScreen();
 	bool startNewGame(bool walkthrough = false, bool introMovie = false);
@@ -51,7 +51,8 @@ public:
 	bool setTimerPause(bool pause);
 
 	bool onEraseBackground();
-	void onKeyDown(const Common::KeyState &key, uint flags);
+	void onActionStart(const Common::CustomEventType &action, uint flags);
+	void onActionEnd(const Common::CustomEventType &action, uint flags);
 	void onKeyUp(const Common::KeyState &key, uint flags);
 	void onTimer(uint timer);
 	void onKillFocus(Window *newWindow);

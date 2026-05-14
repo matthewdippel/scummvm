@@ -24,7 +24,6 @@
 //
 #include "ags/engine/ac/game_setup.h"
 #include "ags/shared/ac/game_setup_struct.h"
-#include "ags/engine/ac/game_state.h"
 #include "ags/engine/ac/global_translation.h"
 #include "ags/engine/ac/path_helper.h"
 #include "ags/shared/ac/sprite_cache.h"
@@ -41,7 +40,9 @@
 #include "ags/shared/util/text_stream_reader.h"
 #include "ags/shared/util/path.h"
 #include "ags/shared/util/string_utils.h"
+#include "ags/metaengine.h"
 #include "common/config-manager.h"
+#include "common/language.h"
 
 namespace AGS3 {
 
@@ -59,7 +60,7 @@ WindowSetup parse_window_mode(const String &option, bool as_windowed, WindowSetu
 	// in which case we'll use either a resizing window or a REAL fullscreen mode
 	const WindowMode exp_wmode = as_windowed ? kWnd_Windowed : kWnd_Fullscreen;
 	// Note that for "desktop" we return "default" for windowed, this will result
-	// in refering to the  desktop size but resizing in accordance to the scaling style
+	// in referring to the  desktop size but resizing in accordance to the scaling style
 	if (option.CompareNoCase("desktop") == 0)
 		return as_windowed ? WindowSetup(exp_wmode) : WindowSetup(get_desktop_size(), exp_wmode);
 	// "Native" means using game resolution as a window size
@@ -189,10 +190,10 @@ void config_defaults() {
 
 static void read_legacy_graphics_config(const ConfigTree &cfg) {
 	// Pre-3.* game resolution setup
-	int default_res = CfgReadInt(cfg, "misc", "defaultres", 0);
+	int default_res = CfgReadInt(cfg, "misc", "defaultres", kGameResolution_Default);
 	int screen_res = CfgReadInt(cfg, "misc", "screenres", 0);
-	if ((default_res == kGameResolution_320x200 ||
-		default_res == kGameResolution_320x240) && screen_res > 0) {
+	if (screen_res > 0 &&
+		(default_res >= kGameResolution_Default && default_res <= kGameResolution_320x240)) {
 		_GP(usetup).override_upscale = true; // run low-res game in high-res mode
 	}
 
@@ -260,6 +261,13 @@ static void read_legacy_graphics_config(const ConfigTree &cfg) {
 	}
 
 	_GP(usetup).Screen.Params.RefreshRate = CfgReadInt(cfg, "misc", "refresh");
+	_GP(usetup).enable_antialiasing = CfgReadBoolInt(cfg, "misc", "antialias");
+}
+
+static void read_legacy_config(const ConfigTree &cfg) {
+	read_legacy_graphics_config(cfg);
+
+	_GP(usetup).SpriteCacheSize = CfgReadInt(cfg, "misc", "cachemax", _GP(usetup).SpriteCacheSize);
 }
 
 void override_config_ext(ConfigTree &cfg) {
@@ -267,9 +275,9 @@ void override_config_ext(ConfigTree &cfg) {
 }
 
 void apply_config(const ConfigTree &cfg) {
-	// Legacy graphics settings has to be translated into new options;
+	// Legacy settings have to be translated into new options;
 	// they must be read first, to let newer options override them, if ones are present
-	read_legacy_graphics_config(cfg);
+	read_legacy_config(cfg);
 
 	{
 		// Audio options
@@ -293,9 +301,15 @@ void apply_config(const ConfigTree &cfg) {
 			parse_scaling_option(CfgReadString(cfg, "graphics", "game_scale_win", "round"), _GP(usetup).Screen.WinGameFrame);
 
 		_GP(usetup).Screen.Params.RefreshRate = CfgReadInt(cfg, "graphics", "refresh");
-		_GP(usetup).Screen.Params.VSync = CfgReadBoolInt(cfg, "graphics", "vsync");
+
+		// Use ScummVM options to set the vsync flag, if available
+		if (ConfMan.hasKey("vsync"))
+			_GP(usetup).Screen.Params.VSync = ConfMan.getBool("vsync");
+		else
+			_GP(usetup).Screen.Params.VSync = CfgReadBoolInt(cfg, "graphics", "vsync");
+
 		_GP(usetup).RenderAtScreenRes = CfgReadBoolInt(cfg, "graphics", "render_at_screenres");
-		_GP(usetup).Supersampling = CfgReadInt(cfg, "graphics", "supersampling", 1);
+		_GP(usetup).enable_antialiasing = CfgReadBoolInt(cfg, "graphics", "antialias");
 		_GP(usetup).software_render_driver = CfgReadString(cfg, "graphics", "software_driver");
 
 #ifdef TODO
@@ -305,7 +319,6 @@ void apply_config(const ConfigTree &cfg) {
 			rotation_str, CstrArr<kNumScreenRotationOptions>{ "unlocked", "portrait", "landscape" },
 			_GP(usetup).rotation);
 #endif
-		_GP(usetup).enable_antialiasing = CfgReadBoolInt(cfg, "misc", "antialias");
 
 		// Custom paths
 		_GP(usetup).load_latest_save = CfgReadBoolInt(cfg, "misc", "load_latest_save", _GP(usetup).load_latest_save);
@@ -315,16 +328,42 @@ void apply_config(const ConfigTree &cfg) {
 
 		// Translation / localization
 		Common::String translation;
-		if (ConfMan.getActiveDomain()->tryGetVal("translation", translation) && !translation.empty())
+
+		if (!ConfMan.get("language").empty() && ConfMan.isKeyTemporary("language")) {
+			// Map the language defined in the command-line "language" option to its description
+			Common::Language lang = Common::parseLanguage(ConfMan.get("language"));
+
+			if (lang != Common::Language::UNK_LANG) {
+				Common::String translationCode = Common::getLanguageCode(lang);
+				translationCode.toLowercase();
+				translation = Common::getLanguageDescription(lang);
+				translation.toLowercase();
+
+				// Check if the game actually has such a translation, and set it if it does
+				// The name of translation files can be anything, but in general they are one of:
+				// - English name of the language, for example French.tra or Spanish.tra (covered)
+				// - Translated name of the language, for example polsky.tra or francais.tra (not covered)
+				// - The language code, for example FR.tra or DE.tra (covered)
+				// - And these can be combined with a prefix or suffix, for example Nelly_Polish.tra, english2.tra (covered)
+				Common::StringArray traFileNames = AGSMetaEngine::getGameTranslations(ConfMan.getActiveDomainName());
+				for (Common::StringArray::iterator iter = traFileNames.begin(); iter != traFileNames.end(); ++iter) {
+					Common::String traFileName = *iter;
+					traFileName.toLowercase();
+					if (traFileName.contains(translation) || traFileName.equals(translationCode)) {
+						_GP(usetup).translation = *iter;
+						break;
+					}
+				}
+			}
+		} else if (ConfMan.getActiveDomain()->tryGetVal("translation", translation) && !translation.empty())
 			_GP(usetup).translation = translation;
 		else
 			_GP(usetup).translation = CfgReadString(cfg, "language", "translation");
 
 		// Resource caches and options
 		_GP(usetup).clear_cache_on_room_change = CfgReadBoolInt(cfg, "misc", "clear_cache_on_room_change", _GP(usetup).clear_cache_on_room_change);
-		int cache_size_kb = CfgReadInt(cfg, "misc", "cachemax", DEFAULTCACHESIZE_KB);
-		if (cache_size_kb > 0)
-			_GP(usetup).SpriteCacheSize = cache_size_kb * 1024;
+		_GP(usetup).SpriteCacheSize = CfgReadInt(cfg, "graphics", "sprite_cache_size", _GP(usetup).SpriteCacheSize);
+		_GP(usetup).TextureCacheSize = CfgReadInt(cfg, "graphics", "texture_cache_size", _GP(usetup).TextureCacheSize);
 
 		// Mouse options
 		_GP(usetup).mouse_auto_lock = CfgReadBoolInt(cfg, "mouse", "auto_lock");
@@ -350,12 +389,16 @@ void apply_config(const ConfigTree &cfg) {
 		}
 
 		// Various system options
-		_GP(usetup).multitasking = CfgReadInt(cfg, "misc", "multitasking", 0) != 0;
+		_GP(usetup).multitasking = CfgReadInt(cfg, "misc", "background", 0) != 0;
 
 		// User's overrides and hacks
 		_GP(usetup).override_multitasking = CfgReadInt(cfg, "override", "multitasking", -1);
-		String override_os = CfgReadString(cfg, "override", "os");
 		_GP(usetup).override_script_os = -1;
+		// Looks for the existence of the Linux executable
+		if (File::IsFile(Path::ConcatPaths(_GP(usetup).startup_dir, "ags64"))) {
+			_GP(usetup).override_script_os = eOS_Linux;
+		}
+		String override_os = CfgReadString(cfg, "override", "os");
 		if (override_os.CompareNoCase("dos") == 0) {
 			_GP(usetup).override_script_os = eOS_DOS;
 		} else if (override_os.CompareNoCase("win") == 0) {
@@ -366,6 +409,8 @@ void apply_config(const ConfigTree &cfg) {
 			_GP(usetup).override_script_os = eOS_Mac;
 		}
 		_GP(usetup).override_upscale = CfgReadBoolInt(cfg, "override", "upscale", _GP(usetup).override_upscale);
+		_GP(usetup).legacysave_assume_dataver = static_cast<GameDataVersion>(CfgReadInt(cfg, "override", "legacysave_assume_dataver", kGameVersion_Undefined));
+		_GP(usetup).legacysave_let_gui_diff = CfgReadBoolInt(cfg, "override", "legacysave_let_gui_diff");
 		_GP(usetup).key_save_game = CfgReadInt(cfg, "override", "save_game_key", 0);
 		_GP(usetup).key_restore_game = CfgReadInt(cfg, "override", "restore_game_key", 0);
 	}
@@ -387,7 +432,16 @@ void post_config() {
 }
 
 void save_config_file() {
-	// ScummVM doesn't write out any configuration changes
+	// Translation / localization
+	if (!_GP(usetup).translation.IsEmpty()) {
+		ConfMan.getActiveDomain()->setVal("translation", _GP(usetup).translation.GetCStr());
+		ConfMan.flushToDisk();
+	} else if (ConfMan.getActiveDomain()->contains("translation")) {
+		ConfMan.getActiveDomain()->erase("translation");
+		ConfMan.flushToDisk();
+	}
+
+	// ScummVM doesn't write out other configuration changes
 }
 
 } // namespace AGS3

@@ -125,7 +125,7 @@ bool AIScriptSteele::Update() {
 		break;
 
 	case 3:
-		if (Global_Variable_Query(kVariableChapter) != 3) { // why is this here? double check?
+		if (Global_Variable_Query(kVariableChapter) != 3) { // TODO A BUG? why is this here? double check? redundant?
 			break;
 		}
 
@@ -1291,6 +1291,9 @@ bool AIScriptSteele::GoalChanged(int currentGoalNumber, int newGoalNumber) {
 		Actor_Says(kActorSteele, 850, 16);
 		Actor_Says(kActorDispatcher, 0, kAnimationModeTalk);
 		Actor_Says(kActorDispatcher, 10, kAnimationModeTalk);
+		if (_vm->_cutContent) {
+			Actor_Says(kActorDispatcher, 20, kAnimationModeTalk);
+		}
 		Actor_Face_Actor(kActorMcCoy, kActorSteele, true);
 		Actor_Says(kActorMcCoy, 2980, 12);
 		Actor_Says(kActorSteele, 860, 14);
@@ -2005,6 +2008,7 @@ bool AIScriptSteele::UpdateAnimation(int *animation, int *frame) {
 		// Dummy placeholder, kModelAnimationZubenIdle (406) is a Zuben animation
 		*animation = kModelAnimationZubenIdle;
 		_animationFrame = 0;
+		debugC(6, kDebugAnimation, "AIScriptSteele::UpdateAnimation() - Current _animationState (%d) is placeholder", _animationState);
 		break;
 	}
 	*frame = _animationFrame;

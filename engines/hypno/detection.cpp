@@ -20,15 +20,9 @@
  */
 
 #include "base/plugins.h"
-#include "common/translation.h"
 #include "engines/advancedDetector.h"
 #include "hypno/hypno.h"
-
-#define GAMEOPTION_ORIGINAL_CHEATS   GUIO_GAMEOPTIONS1
-#define GAMEOPTION_INFINITE_HEALTH   GUIO_GAMEOPTIONS2
-#define GAMEOPTION_INFINITE_AMMO     GUIO_GAMEOPTIONS3
-#define GAMEOPTION_UNLOCK_ALL_LEVELS GUIO_GAMEOPTIONS4
-#define GAMEOPTION_RESTORED_CONTENT  GUIO_GAMEOPTIONS5
+#include "hypno/detection.h"
 
 static const DebugChannelDef debugFlagList[] = {
 	{Hypno::kHypnoDebugMedia, "media", "Media debug channel"},
@@ -97,13 +91,33 @@ static const ADGameDescription gameDescriptions[] = {
 		GUIO1(GUIO_NOMIDI)
 	},
 	{
-		"sinistersix", // HE release
+		"sinistersix", // HE release (CD, Installed)
 		nullptr,
 		AD_ENTRY2s("SPIDER.EXE", "dbd912d6f6724c6d44775fc19cfa8ca0", 483359,
 				"MISSIONS.LIB", "585704e26094cbaf14fbee90798e8d5d", 119945),
 		Common::HE_ISR,
 		Common::kPlatformDOS,
 		ADGF_UNSTABLE,
+		GUIO1(GUIO_NOMIDI)
+	},
+	{
+		"sinistersix", // HE release (CD, Not Installed)
+		nullptr,
+		AD_ENTRY2s("DATA.Z", "5068f15089ac05556c2f3f37e06c4f32", 8921748,
+				"MISSIONS.LIB", "585704e26094cbaf14fbee90798e8d5d", 119945),
+		Common::HE_ISR,
+		Common::kPlatformDOS,
+		ADGF_UNSTABLE,
+		GUIO1(GUIO_NOMIDI)
+	},
+	{
+		"wetlands", // Wetlands Demo PC Spiel (October 1995)
+		"EarlyDemo",
+		AD_ENTRY2s("wetlands.exe", "edc5b0c0caf3d5b01d344cb555d9a085", 641411,
+			  "c61.mis", "11e384b3abe0f42995bb61566d877e45", 18497),
+		Common::EN_USA,
+		Common::kPlatformDOS,
+		ADGF_DEMO,
 		GUIO1(GUIO_NOMIDI)
 	},
 	{
@@ -159,6 +173,16 @@ static const ADGameDescription gameDescriptions[] = {
 		GUIO1(GUIO_NOMIDI)
 	},
 	{
+		"wetlands", // Might and Magic Trilogy CD (November 1995) - Chapters 31/52 demo
+		"M&MCD",
+		AD_ENTRY2s("wetlands.exe", "15a6b1b3819ef002438df340509b5373", 642231,
+				"missions.lib", "7e3e5b23ade5ef0df88e9d31f5d669e6", 10188),
+		Common::EN_USA,
+		Common::kPlatformDOS,
+		ADGF_DEMO,
+		GUIO1(GUIO_NOMIDI)
+	},
+	{
 		"wetlands", // Non Interactive: PC Review 49 (November 1995)
 		"NonInteractive",
 		AD_ENTRY2s("playsmks.exe", "edc5b0c0caf3d5b01d344cb555d9a085", 422607,
@@ -182,6 +206,16 @@ static const ADGameDescription gameDescriptions[] = {
 		"wetlands", // Wetlands (US)
 		nullptr,
 		AD_ENTRY2s("wetlands.exe", "15a6b1b3819ef002438df340509b5373", 647447,
+				"missions.lib", "aeaaa8b26ab17e37f060334a311a3ff6", 309793),
+		Common::EN_USA,
+		Common::kPlatformDOS,
+		ADGF_NO_FLAGS,
+		GUIO1(GUIO_NOMIDI)
+	},
+	{
+		"wetlands", // Wetlands 1.1 (US)
+		nullptr,
+		AD_ENTRY2s("wetlands.exe", "15a6b1b3819ef002438df340509b5373", 647411,
 				"missions.lib", "aeaaa8b26ab17e37f060334a311a3ff6", 309793),
 		Common::EN_USA,
 		Common::kPlatformDOS,
@@ -225,7 +259,7 @@ static const ADGameDescription gameDescriptions[] = {
 					"setup.exe", "bac1d734f2606dbdd0816dfa7a5cf518", 160740),
 		Common::EN_USA,
 		Common::kPlatformDOS,
-		ADGF_TESTING,
+		ADGF_NO_FLAGS,
 		GUIO1(GUIO_NOMIDI)
 	},
 	{
@@ -239,65 +273,6 @@ static const ADGameDescription gameDescriptions[] = {
 		GUIO1(GUIO_NOMIDI)
 	},
 	AD_TABLE_END_MARKER
-};
-
-static const ADExtraGuiOptionsMap optionsList[] = {
-	{
-		GAMEOPTION_ORIGINAL_CHEATS,
-		{
-			_s("Enable original cheats"),
-			_s("Allow cheats using the C key."),
-			"cheats",
-			true,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_INFINITE_HEALTH,
-		{
-			_s("Enable infinite health cheat"),
-			_s("Player health will never decrease (except for game over scenes)."),
-			"infiniteHealth",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_INFINITE_AMMO,
-		{
-			_s("Enable infinite ammo cheat"),
-			_s("Player ammo will never decrease."),
-			"infiniteAmmo",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_UNLOCK_ALL_LEVELS,
-		{
-			_s("Unlock all levels"),
-			_s("All levels will be available to play."),
-			"unlockAllLevels",
-			false,
-			0,
-			0
-		}
-	},
-	{
-		GAMEOPTION_RESTORED_CONTENT,
-		{
-			_s("Enable restored content"),
-			_s("Add additional content that is not enabled the original implementation."),
-			"restored",
-			true,
-			0,
-			0
-		}
-	},
-	AD_EXTRA_GUI_OPTIONS_TERMINATOR
 };
 
 } // End of namespace Hypno
@@ -316,19 +291,19 @@ static const char *const directoryGlobs[] = {
 	nullptr
 };
 
-class HypnoMetaEngineDetection : public AdvancedMetaEngineDetection {
+class HypnoMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	HypnoMetaEngineDetection() : AdvancedMetaEngineDetection(Hypno::gameDescriptions, sizeof(ADGameDescription), Hypno::hypnoGames, Hypno::optionsList) {
+	HypnoMetaEngineDetection() : AdvancedMetaEngineDetection(Hypno::gameDescriptions, Hypno::hypnoGames) {
 		_guiOptions = GUIO6(GUIO_NOMIDI, GAMEOPTION_ORIGINAL_CHEATS, GAMEOPTION_INFINITE_HEALTH, GAMEOPTION_INFINITE_AMMO, GAMEOPTION_UNLOCK_ALL_LEVELS, GAMEOPTION_RESTORED_CONTENT);
 		_maxScanDepth = 3;
 		_directoryGlobs = directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "hypno";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Hypno";
 	}
 

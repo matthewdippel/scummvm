@@ -22,10 +22,10 @@
 #ifndef ZVISION_HOTMOV_CONTROL_H
 #define ZVISION_HOTMOV_CONTROL_H
 
-#include "zvision/scripting/control.h"
-
 #include "common/array.h"
+#include "common/path.h"
 #include "common/rect.h"
+#include "zvision/scripting/control.h"
 
 namespace Video {
 	class VideoDecoder;
@@ -41,6 +41,7 @@ public:
 
 private:
 	int32  _framesCount;
+	int32  _frame;
 	int32  _cycle;
 	int32  _cyclesCount;
 	Video::VideoDecoder *_animation;
@@ -52,7 +53,7 @@ public:
 	bool process(uint32 deltaTimeInMillis) override;
 
 private:
-	void readHsFile(const Common::String &fileName);
+	void readHsFile(const Common::Path &fileName);
 };
 
 } // End of namespace ZVision

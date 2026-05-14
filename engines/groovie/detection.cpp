@@ -30,11 +30,6 @@ using namespace Common;
 
 namespace Groovie {
 
-#define GAMEOPTION_T7G_FAST_MOVIE_SPEED GUIO_GAMEOPTIONS1
-#define GAMEOPTION_ORIGINAL_SAVELOAD GUIO_GAMEOPTIONS2
-#define GAMEOPTION_EASIER_AI GUIO_GAMEOPTIONS3
-#define GAMEOPTION_FINAL_HOUR GUIO_GAMEOPTIONS4
-
 static const DebugChannelDef debugFlagList[] = {
 	{Groovie::kDebugVideo, "Video", "Debug video and audio playback"},
 	{Groovie::kDebugResource, "Resource", "Debug resource management"},
@@ -52,6 +47,7 @@ static const PlainGameDescriptor groovieGames[] = {
 	// Games
 	{"t7g", "The 7th Guest"},
 	{"11h", "The 11th Hour: The Sequel to The 7th Guest"},
+	{"11hsu", "The 11th Hour: Souped Up"},
 	{"making11h", "The Making of The 11th Hour"},
 	{"clandestiny", "Clandestiny"},
 	{"unclehenry", "Uncle Henry's Playhouse"},
@@ -62,46 +58,52 @@ static const PlainGameDescriptor groovieGames[] = {
 const int BASE_FLAGS = ADGF_NO_FLAGS;
 
 #define GROOVIEGAME(id, extra, f1, x1, s1, f2, x2, s2, language, platform, flags, guiOptions, version) \
-	{																							\
-		{																				\
-			id, extra,																	\
-			AD_ENTRY2s(f1, x1, s1, f2, x2, s2),											\
-			language, platform, (flags),												\
-			(guiOptions)																\
-		},																				\
-		version																			\
+	{                                                                                                  \
+		{                                                                                              \
+			id, extra,                                                                                 \
+			AD_ENTRY2s(f1, x1, s1, f2, x2, s2),                                                        \
+			language, platform, (flags),                                                               \
+			(guiOptions)                                                                               \
+		},                                                                                             \
+			version                                                                                    \
 	}
 
 
 #define T7GENTRY(extra, f1, x1, s1, f2, x2, s2, language, platform, flags) \
-	GROOVIEGAME("t7g", extra, f1, x1, s1, f2, x2, s2, language, platform, flags, GUIO8(GUIO_MIDIADLIB, GUIO_MIDIMT32, GUIO_MIDIGM, GUIO_NOASPECT, GUIO_NOSFX, GAMEOPTION_T7G_FAST_MOVIE_SPEED, GAMEOPTION_ORIGINAL_SAVELOAD, GAMEOPTION_EASIER_AI), kGroovieT7G)
+	GROOVIEGAME("t7g", extra, f1, x1, s1, f2, x2, s2, language, platform, flags, GUIO10(GUIO_MIDIADLIB, GUIO_MIDIMT32, GUIO_MIDIGM, GUIO_NOASPECT, GUIO_NOSFX, GAMEOPTION_T7G_FAST_MOVIE_SPEED, GAMEOPTION_ORIGINAL_SAVELOAD, GAMEOPTION_EASIER_AI, GAMEOPTION_SLIMHOTSPOTS, GAMEOPTION_SPEEDRUN), kGroovieT7G)
 
 #define T7GNOMIDIENTRY(extra, f1, x1, s1, f2, x2, s2, language, platform, flags, guiOptions) \
-	GROOVIEGAME("t7g", extra, f1, x1, s1, f2, x2, s2, language, platform, flags, (GUIO_NOMIDI GUIO_NOASPECT GUIO_NOSFX GAMEOPTION_T7G_FAST_MOVIE_SPEED guiOptions), kGroovieT7G)
+	GROOVIEGAME("t7g", extra, f1, x1, s1, f2, x2, s2, language, platform, flags, (GUIO_NOMIDI GUIO_NOASPECT GUIO_NOSFX GAMEOPTION_T7G_FAST_MOVIE_SPEED GAMEOPTION_SLIMHOTSPOTS GAMEOPTION_SPEEDRUN guiOptions), kGroovieT7G)
 
 #define T11HENTRY(extra, f1, x1, s1, f2, x2, s2, language, platform, flags) \
-	GROOVIEGAME("11h", extra, f1, x1, s1, f2, x2, s2, language, platform, flags, GUIO6(GUIO_MIDIADLIB, GUIO_MIDIMT32, GUIO_MIDIGM GUIO_NOASPECT, GAMEOPTION_ORIGINAL_SAVELOAD, GAMEOPTION_EASIER_AI, GAMEOPTION_FINAL_HOUR), kGroovieT11H)
+	GROOVIEGAME("11h", extra, f1, x1, s1, f2, x2, s2, language, platform, flags, GUIO8(GUIO_MIDIADLIB, GUIO_MIDIMT32, GUIO_MIDIGM GUIO_NOASPECT, GAMEOPTION_ORIGINAL_SAVELOAD, GAMEOPTION_EASIER_AI, GAMEOPTION_FINAL_HOUR, GAMEOPTION_SLIMHOTSPOTS, GAMEOPTION_SPEEDRUN), kGroovieT11H)
 
 #define T11HDEMOENTRY(extra, f1, x1, s1, f2, x2, s2, language, platform, flags) \
-	GROOVIEGAME("11h", extra, f1, x1, s1, f2, x2, s2, language, platform, flags | ADGF_DEMO, GUIO5(GUIO_NOLAUNCHLOAD, GUIO_MIDIADLIB, GUIO_MIDIMT32, GUIO_MIDIGM, GUIO_NOASPECT), kGroovieT11H)
+	GROOVIEGAME("11h", extra, f1, x1, s1, f2, x2, s2, language, platform, flags | ADGF_DEMO, GUIO7(GUIO_NOLAUNCHLOAD, GUIO_MIDIADLIB, GUIO_MIDIMT32, GUIO_MIDIGM, GUIO_NOASPECT, GAMEOPTION_SLIMHOTSPOTS, GAMEOPTION_SPEEDRUN), kGroovieT11H)
 
 #define T11HMAKINGOFENTRY(f1, x1, s1, f2, x2, s2, language, platform) \
-	GROOVIEGAME("making11h", "", f1, x1, s1, f2, x2, s2, language, platform, ADGF_NO_FLAGS, GUIO4(GUIO_MIDIADLIB, GUIO_MIDIMT32, GUIO_MIDIGM, GUIO_NOASPECT), kGroovieT11H)
+	GROOVIEGAME("making11h", "", f1, x1, s1, f2, x2, s2, language, platform, ADGF_NO_FLAGS, GUIO6(GUIO_MIDIADLIB, GUIO_MIDIMT32, GUIO_MIDIGM, GUIO_NOASPECT, GAMEOPTION_SLIMHOTSPOTS, GAMEOPTION_SPEEDRUN), kGroovieT11H)
 
 #define CLANENTRY(extra, f1, x1, s1, f2, x2, s2, language, platform, flags) \
-	GROOVIEGAME("clandestiny", extra, f1, x1, s1, f2, x2, s2, language, platform, flags, GUIO4(GUIO_NOMIDI, GUIO_NOASPECT, GAMEOPTION_ORIGINAL_SAVELOAD, GAMEOPTION_EASIER_AI), kGroovieCDY)
+	GROOVIEGAME("clandestiny", extra, f1, x1, s1, f2, x2, s2, language, platform, flags, GUIO6(GUIO_NOMIDI, GUIO_NOASPECT, GAMEOPTION_ORIGINAL_SAVELOAD, GAMEOPTION_EASIER_AI, GAMEOPTION_SLIMHOTSPOTS, GAMEOPTION_SPEEDRUN), kGroovieCDY)
 
 #define CLANDEMOENTRY(extra, f1, x1, s1, f2, x2, s2, language, platform, flags) \
-	GROOVIEGAME("clandestiny", extra, f1, x1, s1, f2, x2, s2, language, platform, flags | ADGF_DEMO, GUIO3(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD, GUIO_NOASPECT), kGroovieCDY)
+	GROOVIEGAME("clandestiny", extra, f1, x1, s1, f2, x2, s2, language, platform, flags | ADGF_DEMO, GUIO5(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD, GUIO_NOASPECT, GAMEOPTION_SLIMHOTSPOTS, GAMEOPTION_SPEEDRUN), kGroovieCDY)
 
 #define UHPENTRY(extra, f1, x1, s1, f2, x2, s2, language, platform, flags) \
-	GROOVIEGAME("unclehenry", extra, f1, x1, s1, f2, x2, s2, language, platform, flags, GUIO3(GUIO_NOMIDI, GUIO_NOASPECT, GAMEOPTION_EASIER_AI), kGroovieUHP)
+	GROOVIEGAME("unclehenry", extra, f1, x1, s1, f2, x2, s2, language, platform, flags, GUIO5(GUIO_NOMIDI, GUIO_NOASPECT, GAMEOPTION_EASIER_AI, GAMEOPTION_SLIMHOTSPOTS, GAMEOPTION_SPEEDRUN), kGroovieUHP)
 
 #define TLCENTRY(extra, f1, x1, s1, f2, x2, s2, language, platform, flags) \
-	GROOVIEGAME("tlc", extra, f1, x1, s1, f2, x2, s2, language, platform, flags | ADGF_CD, GUIO2(GUIO_NOMIDI, GUIO_NOASPECT), kGroovieTLC)
+	GROOVIEGAME("tlc", extra, f1, x1, s1, f2, x2, s2, language, platform, flags | ADGF_CD, GUIO4(GUIO_NOMIDI, GUIO_NOASPECT, GAMEOPTION_SLIMHOTSPOTS, GAMEOPTION_SPEEDRUN), kGroovieTLC)
 
 #define TLCDVDENTRY(f1, x1, s1, f2, x2, s2, language, platform) \
-	GROOVIEGAME("tlc", _s("Missing game code"), f1, x1, s1, f2, x2, s2, language, platform, ADGF_UNSUPPORTED | ADGF_DVD, GUIO2(GUIO_NOMIDI, GUIO_NOASPECT), kGroovieTLC)
+	GROOVIEGAME("tlc", MetaEngineDetection::GAME_NOT_IMPLEMENTED, f1, x1, s1, f2, x2, s2, language, platform, ADGF_DVD, GUIO4(GUIO_NOMIDI, GUIO_NOASPECT, GAMEOPTION_SLIMHOTSPOTS, GAMEOPTION_SPEEDRUN), kGroovieTLC)
+
+#define TLCDEMOENTRY(f1, x1, s1, f2, x2, s2, language, platform, flags) \
+	GROOVIEGAME("tlc", "Demo", f1, x1, s1, f2, x2, s2, language, platform, flags | ADGF_DEMO, GUIO3(GUIO_NOMIDI, GUIO_NOASPECT, GUIO_NOLAUNCHLOAD), kGroovieTLC)
+
+#define TLCTRAILERENTRY(f1, x1, s1, f2, x2, s2, language, platform, flags) \
+	GROOVIEGAME("tlc", "Trailer", f1, x1, s1, f2, x2, s2, language, platform, flags | ADGF_DEMO, GUIO3(GUIO_NOMIDI, GUIO_NOASPECT, GUIO_NOLAUNCHLOAD), kGroovieTLC)
 
 // clang-format off
 static const GroovieGameDescription gameDescriptions[] = {
@@ -117,16 +119,16 @@ static const GroovieGameDescription gameDescriptions[] = {
 					"AT.gjd", "bbaa95ce6e600a8ba5b2902326cd11f8", 45171574, EN_ANY, kPlatformDOS, BASE_FLAGS),
 
 	// The 7th Guest Mac English
-	T7GENTRY("", "script.grv", nullptr, -1,// FIXMEMD5
+	T7GENTRY("", "script.grv", nullptr, AD_NO_SIZE,// FIXMEMD5
 					"T7GMac", "acdc4a58dd3f007f65e99b99d78e0bce", 1814029, EN_ANY, kPlatformMacintosh, ADGF_MACRESFORK),
 
 	// The 7th Guest DOS Russian (Akella)
 	T7GENTRY("", "script.grv", "d1b8033b40aa67c076039881eccce90d", 16659,
 					"intro.gjd", nullptr, 31711554, RU_RUS, kPlatformDOS, BASE_FLAGS),
-	
+
 	// The 7th Guest iOS English
 	T7GNOMIDIENTRY("", "script.grv", "d1b8033b40aa67c076039881eccce90d", 16659,
-						"SeventhGuest", nullptr, -1, EN_ANY, kPlatformIOS, BASE_FLAGS, GAMEOPTION_ORIGINAL_SAVELOAD GAMEOPTION_EASIER_AI),
+						"SeventhGuest", nullptr, AD_NO_SIZE, EN_ANY, kPlatformIOS, BASE_FLAGS, GAMEOPTION_ORIGINAL_SAVELOAD GAMEOPTION_EASIER_AI),
 
 	// "Guest" early DOS demo
 	T7GNOMIDIENTRY("The early \"Guest\" demo is not supported", "playtlc.exe", "9cff0e9649ddf49e9fe5168730aa7201", 254768,
@@ -135,13 +137,18 @@ static const GroovieGameDescription gameDescriptions[] = {
 
 /*==== The 11th Hour ====*/
 	// The 11th Hour DOS/Windows English (Available on Steam)
-	T11HENTRY("", "script.grv", "bdb9a783d4debe477ac3856adc454c17", 62447, "introd1.gjd", nullptr, -1, EN_ANY, kPlatformWindows, BASE_FLAGS),
+	T11HENTRY("", "script.grv", "bdb9a783d4debe477ac3856adc454c17", 62447,
+					"introd1.gjd", "9ec3e727182fbe40ee23e786721180eb", 6437077, EN_ANY, kPlatformWindows, BASE_FLAGS),
 
 	// The 11th Hour DOS/Windows German
-	T11HENTRY("", "script.grv", "560e90b47054639668e44a8b365fbe26", 62447, "introd1.gjd", nullptr, -1, DE_DEU, kPlatformWindows, BASE_FLAGS),
+	T11HENTRY("", "script.grv", "560e90b47054639668e44a8b365fbe26", 62447, "introd1.gjd", nullptr, AD_NO_SIZE, DE_DEU, kPlatformWindows, BASE_FLAGS),
 
 	// The 11th Hour DOS/Windows French
-	T11HENTRY("", "script.grv", "752c0a8ea62a1207c8583f3dbc16e6ef", 62447, "introd1.gjd", nullptr, -1, FR_FRA, kPlatformWindows, BASE_FLAGS),
+	T11HENTRY("", "script.grv", "752c0a8ea62a1207c8583f3dbc16e6ef", 62447, "introd1.gjd", nullptr, AD_NO_SIZE, FR_FRA, kPlatformWindows, BASE_FLAGS),
+
+	// The 11th Hour DOS/Windows Russian (Akella)
+	T11HENTRY("", "script.grv", "bdb9a783d4debe477ac3856adc454c17", 62447,
+					"introd1.gjd", "b80c6d88ac576cdd6f98d1e467629108", 1516, RU_RUS, kPlatformWindows, BASE_FLAGS),
 
 	// The 11th Hour Mac English
 	T11HENTRY("", "script.grv", "bdb9a783d4debe477ac3856adc454c17", 62447,
@@ -150,6 +157,11 @@ static const GroovieGameDescription gameDescriptions[] = {
 	// The 11th Hour Mac English (Installed)
 	T11HENTRY("Installed", "script.grv", "bdb9a783d4debe477ac3856adc454c17", 62447,
 					"el01.mov", "70f42dfc25b1488a08011dc45bb5145d", 6039, EN_ANY, kPlatformMacintosh, BASE_FLAGS),
+
+	// The 11th Hour: Souped Up
+	GROOVIEGAME("11hsu", "", "suscript.grv", NULL, AD_NO_SIZE,
+					"introd1.gjd", "9ec3e727182fbe40ee23e786721180eb", 6437077, EN_ANY, kPlatformWindows, BASE_FLAGS,
+					GUIO7(GUIO_MIDIADLIB, GUIO_MIDIMT32, GUIO_MIDIGM GUIO_NOASPECT, GAMEOPTION_ORIGINAL_SAVELOAD, GAMEOPTION_EASIER_AI_DEFAULT, GAMEOPTION_SLIMHOTSPOTS, GAMEOPTION_SPEEDRUN), kGroovieT11H),
 
 /*==== The 11th Hour Demos ====*/
 	// The 11th Hour DOS Interactive Demo English https://archive.org/details/11th_Hour_demo
@@ -167,9 +179,9 @@ static const GroovieGameDescription gameDescriptions[] = {
 /*==== The Making of The 11th Hour ====*/
 	// all are in english even if they came packaged with alternate language versions of the game
 	// I removed the hash check for now so they all match with a single entry since the language field is useless here
-	
+
 	// The Making of The 11th Hour DOS/Windows
-	T11HMAKINGOFENTRY("makingof.grv", nullptr, 994, "zmakd2a.gjd", nullptr, -1, EN_ANY, kPlatformWindows),
+	T11HMAKINGOFENTRY("makingof.grv", nullptr, 994, "zmakd2a.gjd", nullptr, AD_NO_SIZE, EN_ANY, kPlatformWindows),
 
 	/*// The Making of The 11th Hour DOS/Windows English
 	T11HMAKINGOFENTRY(GROOVIEFILES("makingof.grv", "12e1e5eef2c7a9536cd12ac800b31408", 994, "zmakd2a.gjd"), EN_ANY, kPlatformWindows),
@@ -194,7 +206,7 @@ static const GroovieGameDescription gameDescriptions[] = {
 						"The 11th Hour Installer", "bcdb4040b27f15b18f39fb9e496d384a", 1002987, EN_ANY, kPlatformMacintosh, BASE_FLAGS),
 
 	// Clandestiny PC Demo English https://archive.org/details/Clandestiny_demo
-	CLANDEMOENTRY("Demo", "clandemo.grv", "faa863738da1c93673ed58a4b9597a63", 6744, "cddemo.gjd", nullptr, -1, EN_ANY, kPlatformWindows, BASE_FLAGS),
+	CLANDEMOENTRY("Demo", "clandemo.grv", "faa863738da1c93673ed58a4b9597a63", 6744, "cddemo.gjd", nullptr, AD_NO_SIZE, EN_ANY, kPlatformWindows, BASE_FLAGS),
 
 	// Clandestiny PC Trailer English https://downloads.scummvm.org/frs/demos/groovie/clandestiny-dos-ni-demo-en.zip
 	CLANDEMOENTRY("Trailer", "trailer.grv", "a7c8bdc4e8bff621f4f50928a95eaaba", 6,
@@ -202,128 +214,70 @@ static const GroovieGameDescription gameDescriptions[] = {
 
 /*==== Clandestiny ====*/
 	// Clandestiny PC English
-	CLANENTRY("", "clanmain.grv", "dd424120fa1daa9d6b576d0ba22a4936", 54253, "ACT01MUS.MPG", nullptr, -1, EN_ANY, kPlatformWindows, BASE_FLAGS),
+	CLANENTRY("", "clanmain.grv", "dd424120fa1daa9d6b576d0ba22a4936", 54253, "ACT01MUS.MPG", nullptr, AD_NO_SIZE, EN_ANY, kPlatformWindows, BASE_FLAGS),
 
 	// Clandestiny Mac/iOS App Store
-	CLANENTRY("Mac/iOS", "CLANMAIN.GRV", "dd424120fa1daa9d6b576d0ba22a4936", 54253, "ACT01MUS.m4a", nullptr, -1, EN_ANY, kPlatformUnknown, BASE_FLAGS),
+	CLANENTRY("Mac/iOS", "CLANMAIN.GRV", "dd424120fa1daa9d6b576d0ba22a4936", 54253, "ACT01MUS.m4a", nullptr, AD_NO_SIZE, EN_ANY, kPlatformUnknown, BASE_FLAGS),
 
 /*==== Uncle Henry's Playhouse ====*/
 	// Uncle Henry's Playhouse PC English (1996-09-13)
-	UHPENTRY("", "tpot.grv", "849dc7e5309e1b9acf72d8abc9e145df", 11693, "trt7g.gjd", nullptr, -1, EN_ANY, kPlatformWindows, BASE_FLAGS),
+	UHPENTRY("", "tpot.grv", "849dc7e5309e1b9acf72d8abc9e145df", 11693, "trt7g.gjd", nullptr, AD_NO_SIZE, EN_ANY, kPlatformWindows, BASE_FLAGS),
 
 	// Uncle Henry's Playhouse PC German
 	// Funsoft (1997-02-14)
-	UHPENTRY("", "tpot.grv", "30d06af7669004f1ea7a99a5ebdb6935", 10469, "trt7g.gjd", nullptr, -1, DE_DEU, kPlatformWindows, BASE_FLAGS),
+	UHPENTRY("", "tpot.grv", "30d06af7669004f1ea7a99a5ebdb6935", 10469, "trt7g.gjd", nullptr, AD_NO_SIZE, DE_DEU, kPlatformWindows, BASE_FLAGS),
+
+	// Uncle Henry's Playhouse Beta Version PC English (1996-09-05)
+	UHPENTRY("", "tpot.grv", "123113a26d4bdad6d1f88a53ec6b28a3", 11686, "tpt.gjd", nullptr, AD_NO_SIZE, EN_ANY, kPlatformWindows, BASE_FLAGS),
 
 /*==== Tender Loving Care ====*/
 	// Tender Loving Care PC English (CD-ROM 1998-05-01)
-	TLCENTRY("CD", "tlcmain.grv", "47c235155de5103e72675fe7294720b8", 17479, "tlcnav.gjd", nullptr, -1, EN_ANY, kPlatformWindows, ADGF_CD),
+	TLCENTRY("CD", "tlcmain.grv", "47c235155de5103e72675fe7294720b8", 17479, "tlcnav.gjd", nullptr, AD_NO_SIZE, EN_ANY, kPlatformWindows, ADGF_CD),
 
 	// Tender Loving Care PC English (DVD-ROM 1998-06-12)
-	TLCDVDENTRY("tlcmain.grv", "8a591c47d24dde38615e6ea2e79b51a5", 17375, "tlcnav.gjd", nullptr, -1, EN_ANY, kPlatformWindows),
+	TLCDVDENTRY("tlcmain.grv", "8a591c47d24dde38615e6ea2e79b51a5", 17375, "tlcnav.gjd", nullptr, AD_NO_SIZE, EN_ANY, kPlatformWindows),
 
 	// Tender Loving Care PC English (DVD-ROM 1998-08-26)
-	TLCDVDENTRY("tlcmain.grv", "151af191015beb6f662919153e6c28d8", 17379, "tlcnav.gjd", nullptr, -1, EN_ANY, kPlatformWindows),
+	TLCDVDENTRY("tlcmain.grv", "151af191015beb6f662919153e6c28d8", 17379, "tlcnav.gjd", nullptr, AD_NO_SIZE, EN_ANY, kPlatformWindows),
 
 	// Tender Loving Care PC German (CD-ROM 1998-04-08)
 	// "Die Versuchung", Funsoft
-	TLCENTRY("CD", "tlcmain.grv", "3459a25a5f31b430d320cba2e47d3c98", 17353, "tlcnav.gjd", nullptr, -1, DE_DEU, kPlatformWindows, BASE_FLAGS),
+	TLCENTRY("CD", "tlcmain.grv", "3459a25a5f31b430d320cba2e47d3c98", 17353, "tlcnav.gjd", nullptr, AD_NO_SIZE, DE_DEU, kPlatformWindows, BASE_FLAGS),
 
 	// Tender Loving Care PC German (DVD-ROM 1998-08-23)
 	// "Die Versuchung", Conspiracy Entertainment Europe
-	TLCDVDENTRY("tlcmain.grv", "50e62d41ad2cddd0f31ea0a542338387", 17344, "tlcnav.gjd", nullptr, -1, DE_DEU, kPlatformWindows),
+	TLCDVDENTRY("tlcmain.grv", "50e62d41ad2cddd0f31ea0a542338387", 17344, "tlcnav.gjd", nullptr, AD_NO_SIZE, DE_DEU, kPlatformWindows),
 
 	// Tender Loving Care PC Demo German (CD-ROM 1998-03-23)
 	// https://archive.org/details/Tender_Loving_Care_demo
-	{
-		{
-			"tlc", "Demo",
-			AD_ENTRY2s("tlcmain.grv", "6ec818f595eedca6570280af0c681642", 17361, "tlcnav.gjd", nullptr, -1),
-			DE_DEU, kPlatformWindows, ADGF_DEMO,
-			GUIO3(GUIO_NOMIDI, GUIO_NOASPECT, GUIO_NOLAUNCHLOAD)
-		},
-		kGroovieTLC
-	},
+	TLCDEMOENTRY("tlcmain.grv", "6ec818f595eedca6570280af0c681642", 17361, "tlcnav.gjd", nullptr, AD_NO_SIZE, DE_DEU, kPlatformWindows, BASE_FLAGS),
 
 	// Tender Loving Care PC Trailer (CD-ROM 1998-03-23)
 	// On the same disc with the above German demo
-	{
-		{
-			"tlc", "Trailer",
-			AD_ENTRY2s("preview.grv", "d95401509a0ef251e8c340737edf728c", 19,
-							"drama1.gjd", "2a4ca274d832675248e51baf7e537bb3", 390727225),
-			UNK_LANG, kPlatformWindows, ADGF_DEMO,
-			GUIO3(GUIO_NOMIDI, GUIO_NOASPECT, GUIO_NOLAUNCHLOAD)
-		},
-		kGroovieTLC
-	},
+	TLCTRAILERENTRY("preview.grv", "d95401509a0ef251e8c340737edf728c", 19, "drama1.gjd", "2a4ca274d832675248e51baf7e537bb3", 390727225, UNK_LANG, kPlatformWindows, BASE_FLAGS),
+
+	// Tender Loving Care PC Trailer (CD-ROM 1998-05-14)
+	// Included on the English version of the full game. The preview.grv
+	// file is also on the Englissh DVD (1998-09-10), but I do not know if
+	// it actually has the trailer or not. Since the trailer does not
+	// contain any spoken language, it's possible that this entry can be
+	// merged with the German one above.
+	TLCTRAILERENTRY("preview.grv", "d95401509a0ef251e8c340737edf728c", 19, "drama1.gjd", "0ac95ecdd0c8388199bf453de9f7b527", 396742303, UNK_LANG, kPlatformWindows, BASE_FLAGS),
 
 	{AD_TABLE_END_MARKER, kGroovieT7G}
 };
+// clang-format on
 
-static const char *directoryGlobs[] = {
+static const char *const directoryGlobs[] = {
 	"MIDI",
 	"GROOVIE",
 	"MEDIA",
 	nullptr
 };
 
-static const ADExtraGuiOptionsMap optionsList[] = {
-	{
-		GAMEOPTION_T7G_FAST_MOVIE_SPEED,
-		{
-			_s("Fast movie speed"),
-			_s("Play movies at an increased speed"),
-			"fast_movie_speed",
-			false,
-			0,
-			0
-		}
-	},
-
-	{
-		GAMEOPTION_ORIGINAL_SAVELOAD,
-		{
-			_s("Use original save/load screens"),
-			_s("Use the original save/load screens instead of the ScummVM ones"),
-			"originalsaveload",
-			false,
-			0,
-			0
-		}
-	},
-
-	{
-		GAMEOPTION_EASIER_AI,
-		{
-			_s("Easier AI"),
-			_s("Decrease the difficulty of AI puzzles"),
-			"easier_ai",
-			false,
-			0,
-			0
-		}
-	},
-
-	{
-		GAMEOPTION_FINAL_HOUR,
-		{
-			_s("Updated Credits Music"),
-			_s("Play the song The Final Hour during the credits instead of reusing MIDI songs"),
-			"credits_music",
-			false,
-			0,
-			0
-		}
-	},
-
-	AD_EXTRA_GUI_OPTIONS_TERMINATOR
-};
-// clang-format on
-
-class GroovieMetaEngineDetection : public AdvancedMetaEngineDetection {
+class GroovieMetaEngineDetection : public AdvancedMetaEngineDetection<GroovieGameDescription> {
 public:
-	GroovieMetaEngineDetection() : AdvancedMetaEngineDetection(gameDescriptions, sizeof(GroovieGameDescription), groovieGames, optionsList) {
+	GroovieMetaEngineDetection() : AdvancedMetaEngineDetection(gameDescriptions, groovieGames) {
 		// Use kADFlagUseExtraAsHint in order to distinguish the 11th hour from
 		// its "Making of" as well as the Clandestiny Trailer; they all share
 		// the same MD5.
@@ -340,11 +294,11 @@ public:
 		_directoryGlobs = directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "groovie";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Groovie";
 	}
 

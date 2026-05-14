@@ -51,13 +51,13 @@ void VideoSystem::update() {
 
 	interface->update(time - _time);
 
-	mergeDirtyRects();
+	_dirtyRects.merge();
 
 	_allowAddingRects = false;
 	interface->draw();
 	_allowAddingRects = true;
 
-	for (Common::Rect &r : _dirtyRects) {
+	for (const Common::Rect &r : _dirtyRects) {
 		const byte *srcP = (const byte *)getBasePtr(r.left, r.top);
 		g_system->copyRectToScreen(srcP, pitch, r.left, r.top, r.width(), r.height());
 	}
@@ -94,7 +94,7 @@ void VideoSystem::addDirtyRect(Common::Point pos, FlicDecoder &flc) {
 }
 
 void VideoSystem::addDirtyMskRects(Common::Point pos, FlicDecoder &flc) {
-	for (auto rect : flc.getMskRects()) {
+	for (auto &rect : flc.getMskRects()) {
 		addDirtyRect(pos, rect);
 	}
 }
@@ -103,7 +103,7 @@ void VideoSystem::addDirtyMskRects(FlicDecoder &flc) {
 	addDirtyMskRects(Common::Point(0, 0), flc);
 }
 
-const Common::List<Common::Rect> &VideoSystem::rects() const {
+const Graphics::DirtyRectList &VideoSystem::rects() const {
 	return _dirtyRects;
 }
 

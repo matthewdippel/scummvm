@@ -22,6 +22,10 @@
 #ifndef AGS_SHARED_FONT_AGS_FONT_RENDERER_H
 #define AGS_SHARED_FONT_AGS_FONT_RENDERER_H
 
+#include "common/std/utility.h"
+#include "ags/shared/core/types.h"
+#include "ags/shared/util/string.h"
+
 namespace AGS3 {
 
 class BITMAP;
@@ -42,6 +46,31 @@ protected:
 	~IAGSFontRenderer() {}
 };
 
+// Extended font renderer interface.
+// WARNING: this interface is exposed for plugins and declared for the second time in agsplugin.h
+class IAGSFontRenderer2 : public IAGSFontRenderer {
+public:
+	// Returns engine API version this font renderer complies to.
+	// Must not be lower than 26 (this interface was added at API v26).
+	virtual int GetVersion() = 0;
+	// Returns an arbitrary renderer name; this is for informational
+	// purposes only.
+	virtual const char *GetRendererName() = 0;
+	// Returns given font's name (if available).
+	virtual const char *GetFontName(int fontNumber) = 0;
+	// Returns the given font's height: that is the maximal vertical size
+	// that the font glyphs may occupy.
+	virtual int GetFontHeight(int fontNumber) = 0;
+	// Returns the given font's linespacing;
+	// is allowed to return 0, telling that no specific linespacing
+	// is assigned for this font.
+	virtual int GetLineSpacing(int fontNumber) = 0;
+
+protected:
+	IAGSFontRenderer2() {}
+	~IAGSFontRenderer2() {}
+};
+
 // Font render params, mainly for dealing with various compatibility issues.
 struct FontRenderParams {
 	// Font's render multiplier
@@ -51,26 +80,45 @@ struct FontRenderParams {
 
 // Describes loaded font's properties
 struct FontMetrics {
-	int Height = 0; // formal font height value
-	int RealHeight = 0; // real graphical height of a font
-	int CompatHeight = 0; // either formal or real height, depending on compat settings
+	// Nominal font's height, equals to the game-requested size of the font.
+	// This may or not be equal to font's face height; sometimes a font cannot
+	// be scaled exactly to particular size, and then nominal height appears different
+	// (usually - smaller) than the real one.
+	int NominalHeight = 0;
+	// Real font's height, equals to reported ascender + descender.
+	// This is what you normally think as a font's height.
+	int RealHeight = 0;
+	// Compatible height, equals to either NominalHeight or RealHeight,
+	// selected depending on the game settings.
+	// This property is used in calculating linespace, etc.
+	int CompatHeight = 0;
+	// Maximal vertical extent of a font (top; bottom), this tells the actual
+	// graphical bounds that may be occupied by font's glyphs.
+	// In a "proper" font this extent is (0; RealHeight-1), but "bad" fonts may
+	// have individual glyphs exceeding these bounds, in both directions.
+	// Note that "top" may be negative!
+	std::pair<int, int> VExtent;
+
+	inline int ExtentHeight() const { return VExtent.second - VExtent.first; }
 };
 
-// NOTE: this extending interface is not yet exposed to plugins
-class IAGSFontRenderer2 {
+// The strictly internal font renderer interface, not to use in plugin API.
+// Contains methods necessary for built-in font renderers.
+class IAGSFontRendererInternal : public IAGSFontRenderer2 {
 public:
 	// Tells if this is a bitmap font (otherwise it's a vector font)
 	virtual bool IsBitmapFont() = 0;
 	// Load font, applying extended font rendering parameters
-	virtual bool LoadFromDiskEx(int fontNumber, int fontSize, const FontRenderParams *params,
-		FontMetrics *metrics) = 0;
-	// Gets font's name; must return an empty string if no name is available
-	virtual const char *GetName(int fontNumber) = 0;
+	virtual bool LoadFromDiskEx(int fontNumber, int fontSize, AGS::Shared::String *src_filename,
+								const FontRenderParams *params, FontMetrics *metrics) = 0;
+	// Fill FontMetrics struct; note that it may be left cleared if this is not supported
+	virtual void GetFontMetrics(int fontNumber, FontMetrics *metrics) = 0;
 	// Perform any necessary adjustments when the AA mode is toggled
 	virtual void AdjustFontForAntiAlias(int fontNumber, bool aa_mode) = 0;
+
 protected:
-	IAGSFontRenderer2() {}
-	~IAGSFontRenderer2() {}
+	IAGSFontRendererInternal() {}
+	~IAGSFontRendererInternal() {}
 };
 
 } // namespace AGS3

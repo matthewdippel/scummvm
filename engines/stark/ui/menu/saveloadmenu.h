@@ -30,7 +30,7 @@
 namespace Stark {
 
 namespace Gfx {
-class Texture;
+class Bitmap;
 class SurfaceRenderer;
 }
 
@@ -156,8 +156,8 @@ public:
 	bool hasSave() { return _hasSave; }
 
 private:
-	const Color _outlineColor = Color(0x1E, 0x1E, 0x96);
-	const Color _textColor = Color(0x5C, 0x48, 0x3D);
+	const Gfx::Color _outlineColor = Gfx::Color(0x1E, 0x1E, 0x96);
+	const Gfx::Color _textColor = Gfx::Color(0x5C, 0x48, 0x3D);
 
 	int _slot;
 	SaveLoadMenuScreen *_screen;
@@ -165,8 +165,8 @@ private:
 	Common::Point _thumbPos, _textDescPos, _textTimePos;
 	int _thumbWidth, _thumbHeight;
 
-	Gfx::Texture *_texture;
-	Gfx::Texture *_outline;
+	Gfx::Bitmap *_bitmap;
+	Gfx::Bitmap *_outline;
 	Gfx::SurfaceRenderer *_surfaceRenderer;
 
 	VisualText _textDesc, _textTime;

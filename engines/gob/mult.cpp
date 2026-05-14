@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/endian.h"
@@ -122,13 +128,17 @@ void Mult::freeAll() {
 	}
 }
 
-void Mult::freeMult() {
+void Mult::freeMult(bool freeObjectSprites) {
 	clearObjectVideos();
 
 	if (_objects)
 		for (int i = 0; i < _objCount; i++) {
 			delete _objects[i].pPosX;
 			delete _objects[i].pPosY;
+			delete _objects[i].animVariables;
+
+			if (freeObjectSprites)
+				_vm->_draw->freeSprite(50 + i);
 		}
 
 	delete[] _objects;
@@ -170,6 +180,7 @@ void Mult::playMult(int16 startFrame, int16 endFrame, char checkEscape,
 	if (_frame == -1)
 		playMultInit();
 
+	Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
 	do {
 		stop = true;
 
@@ -199,13 +210,19 @@ void Mult::playMult(int16 startFrame, int16 endFrame, char checkEscape,
 		if (_vm->_sound->blasterPlayingSound())
 			stop = false;
 
-		_vm->_util->processInput();
-		if (checkEscape && (_vm->_util->checkKey() == kKeyEscape))
-			stop = true;
+		do {
+			_vm->_util->processInput();
+			if (checkEscape && (_vm->_util->checkKey() == kKeyEscape))
+				stop = true;
+
+			_vm->_util->waitEndFrame();
+		} while (!stop && stopNoClear && ttsMan && ttsMan->isSpeaking());
 
 		_frame++;
-		_vm->_util->waitEndFrame();
 	} while (!stop && !stopNoClear && !_vm->shouldQuit());
+#ifdef USE_TTS
+	_vm->stopTextToSpeech();
+#endif
 
 	if (!stopNoClear) {
 		if (_animDataAllocated) {
@@ -440,6 +457,30 @@ void Mult::doSoundAnim(bool &stop, int16 frame) {
 			if (_vm->_sound->blasterPlayingSound())
 				_vm->_sound->blasterStop(sndKey->fadeLength);
 		}
+	}
+}
+
+int Mult::openObjVideo(const Common::String &file, VideoPlayer::Properties &properties, int animation) {
+	if (animation >= 0)
+		return -1;
+
+	Mult_Object &object = _objects[-animation - 1];
+	if (object.videoSlot > 0)
+		_vm->_vidPlayer->closeVideo(object.videoSlot - 1);
+
+	Common::strlcpy(object.animName, file.c_str(), 16);
+	int slot = _vm->_vidPlayer->openVideo(false, file, properties);
+	object.videoSlot = slot + 1;
+	return slot;
+}
+
+void Mult::closeObjVideo(Mult_Object &object) {
+	if (object.videoSlot > 0) {
+		_vm->_draw->freeSprite(50 - object.pAnimData->animation - 1);
+
+		_vm->_vidPlayer->closeVideo(object.videoSlot - 1);
+		object.videoSlot = 0;
+		object.animName[0] = 0;
 	}
 }
 

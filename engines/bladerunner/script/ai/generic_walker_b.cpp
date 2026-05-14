@@ -303,14 +303,17 @@ bool AIScriptGenericWalkerB::UpdateAnimation(int *animation, int *frame) {
 		// probably for debug purposes
 		*animation = kModelAnimationMaggieExploding;
 		++_animationFrame;
-		if (++_animationFrame >= Slice_Animation_Query_Number_Of_Frames(kModelAnimationMaggieExploding))
-		{
+		if (++_animationFrame >= Slice_Animation_Query_Number_Of_Frames(kModelAnimationMaggieExploding)) {
 			_animationFrame = 0;
 			Actor_Set_Goal_Number(kActorGenwalkerB, kGoalGenwalkerDefault);
 			_animationState = kGenericWalkerBStatesIdle;
 			deltaX = 0.0f;
 			deltaZ = 0.0f;
 		}
+		break;
+
+	default:
+		debugC(6, kDebugAnimation, "AIScriptGenericWalkerB::UpdateAnimation() - Current _animationState (%d) is not supported", _animationState);
 		break;
 	}
 	*frame = _animationFrame;
@@ -331,6 +334,10 @@ bool AIScriptGenericWalkerB::ChangeAnimationMode(int mode) {
 	case kAnimationModeWalk:
 		_animationState = kGenericWalkerBStatesWalk;
 		_animationFrame = 0;
+		break;
+
+	default:
+		debugC(6, kDebugAnimation, "AIScriptGenericWalkerB::ChangeAnimationMode(%d) - Target mode is not supported", mode);
 		break;
 	}
 	return true;
@@ -481,6 +488,10 @@ bool AIScriptGenericWalkerB::preparePath() {
 		isInside = true;
 		if (Random_Query(0, 1)) {
 			AI_Movement_Track_Append(kActorGenwalkerB, 164, 0);
+			// Original code does indeed have duplication of branches here
+			// TODO This could possible indicate intent of different movement tracks for the actor
+			// based on repeated "coin flips", but as it was the code block for each branch was identical.
+#if 0
 			if (Random_Query(0, 1)) {
 				AI_Movement_Track_Append(kActorGenwalkerB, 163, 0);
 				AI_Movement_Track_Append(kActorGenwalkerB, 162, 0);
@@ -488,11 +499,18 @@ bool AIScriptGenericWalkerB::preparePath() {
 				AI_Movement_Track_Append(kActorGenwalkerB, 163, 0);
 				AI_Movement_Track_Append(kActorGenwalkerB, 162, 0);
 			} else {
+#endif
 				AI_Movement_Track_Append(kActorGenwalkerB, 163, 0);
 				AI_Movement_Track_Append(kActorGenwalkerB, 162, 0);
-			}
+			//}
 		} else {
 			AI_Movement_Track_Append(kActorGenwalkerB, 162, 0);
+			// Original code does indeed have duplication of branches here (similar to above)
+			// TODO This could possible indicate intent of different movement tracks for the actor
+			// based on repeated "coin flips", but as it was the code block for each branch was identical.
+			// NOTE The code for generic walker A here is slightly different, setting based on a "coin flip"
+			// the actor's "facing".
+#if 0
 			if (Random_Query(0, 1)) {
 				AI_Movement_Track_Append(kActorGenwalkerB, 163, 0);
 				AI_Movement_Track_Append(kActorGenwalkerB, 164, 0);
@@ -500,9 +518,10 @@ bool AIScriptGenericWalkerB::preparePath() {
 				AI_Movement_Track_Append(kActorGenwalkerB, 163, 0);
 				AI_Movement_Track_Append(kActorGenwalkerB, 164, 0);
 			} else {
+#endif
 				AI_Movement_Track_Append(kActorGenwalkerB, 163, 0);
 				AI_Movement_Track_Append(kActorGenwalkerB, 164, 0);
-			}
+			//}
 		}
 		AI_Movement_Track_Repeat(kActorGenwalkerB);
 		return true;

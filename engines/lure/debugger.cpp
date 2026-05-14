@@ -119,10 +119,10 @@ bool Debugger::cmd_listRooms(int argc, const char **argv) {
 	debugPrintf("Available rooms are:\n");
 	for (RoomDataList::iterator i = rooms.begin(); i != rooms.end(); ++i) {
 		RoomData const &room = **i;
-		// Explictly note the second drawbridge room as "Alt"
+		// Explicitly note the second drawbridge room as "Alt"
 		if (room.roomNumber == 49) {
 			strings.getString(47, buffer);
-			strcat(buffer, " (alt)");
+			Common::strcat_s(buffer, " (alt)");
 		} else {
 			strings.getString(room.roomNumber, buffer);
 		}
@@ -244,7 +244,7 @@ bool Debugger::cmd_hotspots(int argc, const char **argv) {
 			for (i = res.activeHotspots().begin(); i != res.activeHotspots().end(); ++i) {
 				Hotspot const &hotspot = **i;
 
-				if (hotspot.nameId() == 0) strcpy(buffer, "none");
+				if (hotspot.nameId() == 0) Common::strcpy_s(buffer, "none");
 				else strings.getString(hotspot.nameId(), buffer);
 
 				debugPrintf("%4xh - %s pos=(%d,%d,%d)\n", hotspot.hotspotId(), buffer,
@@ -259,7 +259,7 @@ bool Debugger::cmd_hotspots(int argc, const char **argv) {
 				HotspotData const &hotspot = **i;
 
 				if (hotspot.roomNumber == roomNumber) {
-					if (hotspot.nameId == 0) strcpy(buffer, "none");
+					if (hotspot.nameId == 0) Common::strcpy_s(buffer, "none");
 					else strings.getString(hotspot.nameId, buffer);
 
 					debugPrintf("%4xh - %s pos=(%d,%d,%d)\n", hotspot.hotspotId, buffer,
@@ -318,7 +318,7 @@ bool Debugger::cmd_hotspot(int argc, const char **argv) {
 
 		if (h != nullptr) {
 			debugPrintf("Frame Number = %d of %d\n", h->frameNumber(), h->numFrames());
-			debugPrintf("Persistent = %s\n", h->persistant() ? "true" : "false");
+			debugPrintf("Persistent = %s\n", h->persistent() ? "true" : "false");
 		}
 
 	} else if (strcmp(argv[2], "actions") == 0) {

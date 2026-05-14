@@ -22,10 +22,12 @@
 #include "ultima/ultima8/gumps/mini_stats_gump.h"
 
 #include "ultima/ultima8/games/game_data.h"
-#include "ultima/ultima8/graphics/gump_shape_archive.h"
-#include "ultima/ultima8/world/actors/main_actor.h"
-#include "ultima/ultima8/graphics/render_surface.h"
+#include "ultima/ultima8/gfx/gump_shape_archive.h"
+#include "ultima/ultima8/gfx/palette.h"
+#include "ultima/ultima8/gfx/palette_manager.h"
+#include "ultima/ultima8/gfx/render_surface.h"
 #include "ultima/ultima8/kernel/mouse.h"
+#include "ultima/ultima8/world/actors/main_actor.h"
 #include "ultima/ultima8/world/get_object.h"
 
 namespace Ultima {
@@ -39,9 +41,10 @@ static const int manax = 13;
 static const int bary = 19;
 static const int barheight = 14;
 
-static const uint32 hpcolour[] = { 0x980404, 0xBC0C0C, 0xD43030 };
-static const uint32 manacolour[] = { 0x4050FC, 0x1C28FC, 0x0C0CCC };
-
+// TODO: Confirm palette colors for use on mini stats gump
+// These values were closest to previously defined RGB values
+static const uint hpcolour[3] = {41, 39, 37};
+static const uint manacolour[3] = {138, 139, 141};
 
 MiniStatsGump::MiniStatsGump() : Gump() {
 
@@ -86,9 +89,12 @@ void MiniStatsGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool scale
 	else
 		hpheight = (hp * barheight) / maxhp;
 
+	Palette *pal = PaletteManager::get_instance()->getPalette(PaletteManager::Pal_Game);
 	for (int i = 0; i < 3; ++i) {
-		surf->Fill32(hpcolour[i], hpx + i, bary - hpheight + 1, 1, hpheight);
-		surf->Fill32(manacolour[i], manax + i, bary - manaheight + 1, 1, manaheight);
+		Common::Rect32 hprect(hpx + i, bary - hpheight + 1, hpx + i + 1, bary + 1);
+		Common::Rect32 manarect(manax + i, bary - manaheight + 1, manax + i + 1, bary + 1);
+		surf->fillRect(hprect, pal->_native[hpcolour[i]]);
+		surf->fillRect(manarect, pal->_native[manacolour[i]]);
 	}
 }
 
@@ -102,7 +108,7 @@ uint16 MiniStatsGump::TraceObjId(int32 mx, int32 my) {
 }
 
 Gump *MiniStatsGump::onMouseDown(int button, int32 mx, int32 my) {
-	if (button == Shared::BUTTON_LEFT)
+	if (button == Mouse::BUTTON_LEFT)
 		return this;
 
 	return nullptr;

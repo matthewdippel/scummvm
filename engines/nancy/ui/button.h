@@ -32,12 +32,41 @@ namespace UI {
 
 class Button : public RenderObject {
 public:
-	Button(RenderObject &redrawFrom, uint16 zOrder, Graphics::ManagedSurface &surface, const Common::Rect &srcBounds, const Common::Rect &destBounds);
+	Button(uint16 zOrder, Graphics::ManagedSurface &surface,
+			const Common::Rect &clickSrcBounds,
+			const Common::Rect &destBounds,
+			const Common::Rect &hoverSrcBounds = Common::Rect(),
+			const Common::Rect &disabledSrcBounds = Common::Rect(),
+			const Common::Rect &baseSrcBounds = Common::Rect());
 	virtual ~Button() = default;
 
 	void handleInput(NancyInput &input);
 
+	void setDisabled(bool disabled);
+
+	Graphics::ManagedSurface &surf;
+	Common::Rect _clickSrc;
+	Common::Rect _hoverSrc;
+	Common::Rect _disabledSrc;
+	Common::Rect _baseSrc;
+
 	bool _isClicked;
+	bool _isDisabled;
+};
+
+class Toggle : public RenderObject {
+public:
+	Toggle(uint16 zOrder, Graphics::ManagedSurface &surface, const Common::Rect &srcRect, const Common::Rect &destRect);
+	virtual ~Toggle() = default;
+
+	void handleInput(NancyInput &input);
+	void setState(bool toggleState);
+
+	Graphics::ManagedSurface &surf;
+	Common::Rect _clickSrc;
+
+	bool _stateChanged;
+	bool _toggleState;
 };
 
 } // End of namespace UI

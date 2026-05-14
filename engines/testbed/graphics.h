@@ -45,6 +45,8 @@ TestExitStatus fullScreenMode();
 TestExitStatus filteringMode();
 TestExitStatus aspectRatio();
 TestExitStatus palettizedCursors();
+TestExitStatus alphaCursors();
+TestExitStatus maskedCursors();
 TestExitStatus mouseMovements();
 TestExitStatus copyRectToScreen();
 TestExitStatus iconifyWindow();
@@ -55,6 +57,7 @@ TestExitStatus overlayGraphics();
 TestExitStatus paletteRotation();
 TestExitStatus pixelFormatsSupported();
 TestExitStatus pixelFormatsRequired();
+TestExitStatus shaderCompatibility();
 // add more here
 
 } // End of namespace GFXtests

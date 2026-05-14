@@ -62,7 +62,7 @@ class InventoryView : public View {
 	bool show_cursor;
 
 public:
-	InventoryView(Configuration *cfg);
+	InventoryView(const Configuration *cfg);
 	~InventoryView() override;
 
 	bool init(Screen *tmp_screen, void *view_manager, uint16 x, uint16 y, Font *f, Party *p, TileManager *tm, ObjManager *om);
@@ -78,14 +78,14 @@ public:
 	void select_objAtCursor();
 	Obj *get_objAtCursor();
 	InventoryWidget *get_inventory_widget() {
-		return (inventory_widget);
+		return inventory_widget;
 	};
 
 	void Display(bool full_redraw) override;
 	void PlaceOnScreen(Screen *s, GUI_DragManager *dm, int x, int y) override;
 	GUI_status KeyDown(const Common::KeyState &key) override;
 	void simulate_CB_callback();
-	bool is_picking_pocket() {
+	bool is_picking_pocket() const {
 		return picking_pocket;
 	}
 	void lock_to_actor(bool value) {
@@ -101,7 +101,7 @@ protected:
 	void update_cursor();
 	void hide_buttons();
 	void show_buttons();
-	GUI_status MouseDown(int x, int y, Shared::MouseButton button) override;
+	GUI_status MouseDown(int x, int y, Events::MouseButton button) override;
 	GUI_status MouseWheel(sint32 x, sint32 y) override;
 	GUI_status callback(uint16 msg, GUI_CallBack *caller, void *data) override;
 };

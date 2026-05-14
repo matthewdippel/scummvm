@@ -41,6 +41,7 @@ namespace Graphics {
  */
 
 struct Surface;
+class ManagedSurface;
 
 /**
  * Checks for presence of the thumbnail save header.
@@ -63,6 +64,16 @@ bool skipThumbnail(Common::SeekableReadStream &in);
 bool loadThumbnail(Common::SeekableReadStream &in, Graphics::Surface *&thumbnail, bool skipThumbnail = false);
 
 /**
+ * Loads a thumbnail from the given input stream.
+ */
+bool loadThumbnail(Common::SeekableReadStream &in, Graphics::ManagedSurface *&thumbnail, bool skipThumbnail = false);
+
+/**
+ * Creates a thumbnail from screen contents.
+ */
+bool createThumbnail(Graphics::Surface &thumb);
+
+/**
  * Saves a thumbnail to the given write stream.
  * Automatically creates a thumbnail from screen contents.
  */
@@ -80,15 +91,6 @@ bool saveThumbnail(Common::WriteStream &out, const Graphics::Surface &thumb);
  * @return		false if a error occurred
  */
 bool createScreenShot(Graphics::Surface &surf);
-
-/**
- * Scales a passed surface, creating a new surface with the result
- * @param srcImage		Source image to scale
- * @param xSize			New surface width
- * @param ySize			New surface height
- * @remarks Caller is responsible for freeing the returned surface
- */
-Graphics::Surface *scale(const Graphics::Surface &srcImage, int xSize, int ySize);
 
 /** @} */
 } // End of namespace Graphics

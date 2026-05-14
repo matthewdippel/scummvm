@@ -87,15 +87,15 @@
 #include "common/debug.h"
 #include "common/debug-channels.h"
 #include "common/translation.h"
-#include "common/unzip.h"
+#include "common/compression/unzip.h"
 
 #include "gui/message.h"
 
 #include "engines/util.h"
 #include "engines/advancedDetector.h"
 
+#include "graphics/cursorman.h"
 #include "graphics/thumbnail.h"
-#include "audio/mididrv.h"
 
 namespace BladeRunner {
 
@@ -106,6 +106,7 @@ const char *BladeRunnerEngine::kCommonKeymapId = "bladerunner-common";
 BladeRunnerEngine::BladeRunnerEngine(OSystem *syst, const ADGameDescription *desc)
 	: Engine(syst),
 	  _rnd("bladerunner") {
+	_newGameRandomSeed = _rnd.getSeed();
 
 	_windowIsActive     = true;
 	_gameIsRunning      = true;
@@ -128,6 +129,7 @@ BladeRunnerEngine::BladeRunnerEngine(OSystem *syst, const ADGameDescription *des
 	_noDelayMillisFramelimiter    = false;
 	_framesPerSecondMax           = false;
 	_disableStaminaDrain          = false;
+	_spanishCreditsCorrection     = false;
 	_cutContent                   = Common::String(desc->gameId).contains("bladerunner-final");
 	_enhancedEdition              = Common::String(desc->gameId).contains("bladerunner-ee");
 	_validBootParam               = false;
@@ -246,7 +248,7 @@ BladeRunnerEngine::BladeRunnerEngine(OSystem *syst, const ADGameDescription *des
 	_keyRepeatTimeLast = 0;
 	_keyRepeatTimeDelay = 0;
 
-	_activeCustomEvents->clear();
+	_activeCustomEvents.clear();
 	_customEventRepeatTimeLast = 0;
 	_customEventRepeatTimeDelay = 0;
 
@@ -266,7 +268,7 @@ bool BladeRunnerEngine::hasFeature(EngineFeature f) const {
 		f == kSupportsSavingDuringRuntime;
 }
 
-bool BladeRunnerEngine::canLoadGameStateCurrently() {
+bool BladeRunnerEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	return
 		playerHasControl() &&
 		_gameIsRunning &&
@@ -306,7 +308,7 @@ Common::Error BladeRunnerEngine::loadGameState(int slot) {
 	return Common::kNoError;
 }
 
-bool BladeRunnerEngine::canSaveGameStateCurrently() {
+bool BladeRunnerEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	return
 		playerHasControl() &&
 		_gameIsRunning &&
@@ -351,6 +353,12 @@ void BladeRunnerEngine::pauseEngineIntern(bool pause) {
 
 Common::Error BladeRunnerEngine::run() {
 	Common::Array<Common::String> missingFiles;
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
+	SearchMan.addSubDirectoryMatching(gameDataDir, "base");
+	SearchMan.addSubDirectoryMatching(gameDataDir, "cd1");
+	SearchMan.addSubDirectoryMatching(gameDataDir, "cd2");
+	SearchMan.addSubDirectoryMatching(gameDataDir, "cd3");
+	SearchMan.addSubDirectoryMatching(gameDataDir, "cd4");
 	if (!_isNonInteractiveDemo && !checkFiles(missingFiles)) {
 		Common::String missingFileStr = "";
 		for (uint i = 0; i < missingFiles.size(); ++i) {
@@ -362,18 +370,6 @@ Common::Error BladeRunnerEngine::run() {
 		// shutting down
 		return Common::Error(Common::kNoGameDataFoundError, missingFileStr);
 	}
-
-	Common::List<Graphics::PixelFormat> tmpSupportedFormatsList = g_system->getSupportedFormats();
-	if (!tmpSupportedFormatsList.empty()) {
-		_screenPixelFormat = tmpSupportedFormatsList.front();
-	} else {
-		// Workaround for some devices which return an empty supported formats list.
-		// TODO: A better fix for getSupportedFormats() - maybe figure why in only some device it might return an empty list
-		//
-		// Use this as a fallback format - Should be a format supported
-		_screenPixelFormat = Graphics::PixelFormat(2, 5, 5, 5, 1, 11, 6, 1, 0);
-	}
-	debug("Using pixel format: %s", _screenPixelFormat.toString().c_str());
 
 	int16 gameBRWidth = kOriginalGameWidth;
 	int16 gameBRHeight = kOriginalGameHeight;
@@ -387,8 +383,11 @@ Common::Error BladeRunnerEngine::run() {
 		}
 	}
 
-	initGraphics(gameBRWidth, gameBRHeight, &_screenPixelFormat);
-	_system->showMouse(_isNonInteractiveDemo ? false : true);
+	initGraphics(gameBRWidth, gameBRHeight, nullptr);
+	_screenPixelFormat = g_system->getScreenFormat();
+	debug("Using pixel format: %s", _screenPixelFormat.toString().c_str());
+
+	CursorMan.showMouse(_isNonInteractiveDemo ? false : true);
 
 	bool hasSavegames = !SaveFileManager::list(getMetaEngine(), _targetName).empty();
 
@@ -491,12 +490,14 @@ Common::Error BladeRunnerEngine::run() {
 			} else if (hasSavegames) {
 				_kia->_forceOpen = true;
 				_kia->open(kKIASectionLoad);
+			} else {
+				// Despite the redundancy (wrt initializations done in startup()),
+				// newGame() also does some additional setting up explicitly,
+				// so better to keep this here (helps with code readability too
+				// and with using the proper seed for randomization).
+				newGame(kGameDifficultyMedium);
 			}
 		}
-		// TODO: why is the game starting a new game here when everything is done in startup?
-		//  else {
-		// 	newGame(kGameDifficultyMedium);
-		// }
 		gameLoop();
 
 		_mouse->disable();
@@ -524,7 +525,7 @@ Common::Error BladeRunnerEngine::run() {
 bool BladeRunnerEngine::checkFiles(Common::Array<Common::String> &missingFiles) {
 	missingFiles.clear();
 
-	Common::Array<Common::String> requiredFiles;
+	Common::Array<const char *> requiredFiles;
 
 	if (_enhancedEdition) {
 		requiredFiles.push_back("BladeRunner.kpf");
@@ -557,15 +558,9 @@ bool BladeRunnerEngine::checkFiles(Common::Array<Common::String> &missingFiles) 
 	bool hasHdFrames = Common::File::exists("HDFRAMES.DAT");
 
 	if (!hasHdFrames) {
-		requiredFiles.clear();
-		requiredFiles.push_back("CDFRAMES1.DAT");
-		requiredFiles.push_back("CDFRAMES2.DAT");
-		requiredFiles.push_back("CDFRAMES3.DAT");
-		requiredFiles.push_back("CDFRAMES4.DAT");
-
-		for (uint i = 0; i < requiredFiles.size(); ++i) {
-			if (!Common::File::exists(requiredFiles[i])) {
-				missingFiles.push_back(requiredFiles[i]);
+		for (uint i = 1; i <= 4; ++i) {
+			if (!Common::File::exists(Common::Path(Common::String::format("CDFRAMES%d.DAT", i))) && !Common::File::exists(Common::Path(Common::String::format("CD%d/CDFRAMES.DAT", i)))) {
+				missingFiles.push_back(Common::String::format("CD%d/CDFRAMES.DAT", i));
 			}
 		}
 	}
@@ -600,14 +595,16 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 	// Try to load the SUBTITLES.MIX first, before Startup.MIX
 	// allows overriding any identically named resources (such as the original font files and as a bonus also the TRE files for the UI and dialogue menu)
 	_subtitles = new Subtitles(this);
-	if (MIXArchive::exists("SUBTITLES.MIX")) {
-		bool r = openArchive("SUBTITLES.MIX");
-		if (!r)
-			return false;
+	if (!_isNonInteractiveDemo) {
+		if (MIXArchive::exists("SUBTITLES.MIX")) {
+			bool r = openArchive("SUBTITLES.MIX");
+			if (!r)
+				return false;
 
-		_subtitles->init();
-	} else {
-		debug("Download SUBTITLES.MIX from ScummVM's website to enable subtitles");
+			_subtitles->init();
+		} else {
+			debug("Download SUBTITLES.MIX from ScummVM's website to enable subtitles");
+		}
 	}
 
 	_audioMixer = new AudioMixer(this);
@@ -620,18 +617,17 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 
 	_ambientSounds = new AmbientSounds(this);
 
-	// Query the selected music device (defaults to MT_AUTO device).
+	// Get the selected "music device" (defaults to MT_AUTO device)
+	// as set from Audio > Music Device dropdown setting, which commonly is for MIDI driver selection.
+	// Since this engine does not use MIDI, but the setting is still available from the "Global Options... > Audio"
+	// and the specific game options (Game Options... > Audio), we respect only the option "No Music" to avoid end user confusion.
+	// All other options for this dropdown will result in music playing and are treated as irrelevant.
 	Common::String selDevStr = ConfMan.hasKey("music_driver") ? ConfMan.get("music_driver") : Common::String("auto");
-	MidiDriver::DeviceHandle dev = MidiDriver::getDeviceHandle(selDevStr.empty() ? Common::String("auto") : selDevStr);
-	//
-	// We just respect the "No Music" choice (or an invalid choice)
-	//
-	// We're lenient with all the invalid/ irrelevant choices in the Audio Driver dropdown
-	// TODO Ideally these controls (OptionsDialog::addAudioControls()) ie. "Music Device" and "Adlib Emulator"
-	//      should not appear in games like Blade Runner, since they are largely irrelevant
-	//      and may cause confusion when combined/ conflicting with the global settings
-	//      which are by default applied, if the user does not explicitly override them.
-	_noMusicDriver = (MidiDriver::getMusicType(dev) == MT_NULL || MidiDriver::getMusicType(dev) == MT_INVALID);
+	_noMusicDriver = (selDevStr.compareToIgnoreCase(Common::String("null")) == 0);
+
+	if (_noMusicDriver) {
+		warning("AUDIO: MUSIC IS FORCED TO OFF (BY THE MIDI DRIVER SETTING - music_driver was set to \"null\")");
+	}
 
 	// BLADE.INI was read here, but it was replaced by ScummVM configuration
 	//
@@ -643,10 +639,14 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 		ConfMan.registerDefault("sitcom", "false");
 		ConfMan.registerDefault("shorty", "false");
 		ConfMan.registerDefault("disable_stamina_drain", "false");
+		ConfMan.registerDefault("correct_spanish_credits", "false");
 
 		_sitcomMode                = ConfMan.getBool("sitcom");
 		_shortyMode                = ConfMan.getBool("shorty");
 		_disableStaminaDrain       = ConfMan.getBool("disable_stamina_drain");
+		if (_language == Common::ES_ESP) {
+			_spanishCreditsCorrection  = ConfMan.getBool("correct_spanish_credits");
+		}
 
 		// These are static objects in original game
 		_screenEffects = new ScreenEffects(this, 0x8000);
@@ -697,8 +697,8 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 
 		// Seed rand
 
-		_cosTable1024 = new Common::CosineTable(1024); // 10-bits = 1024 points for 2*PI;
-		_sinTable1024 = new Common::SineTable(1024);
+		_cosTable1024 = new Math::CosineTable(1024); // 10-bits = 1024 points for 2*PI;
+		_sinTable1024 = new Math::SineTable(1024);
 
 		_view = new View();
 
@@ -832,6 +832,36 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 		_aiScripts = new AIScripts(this, actorCount);
 
 		initChapterAndScene();
+
+		// Handle Boot Params here:
+		// If this process (loading an explicit set of Chapter, Set and Scene) fails,
+		// then the game will keep with the default Chapter, Set and Scene for a New Game
+		// as set in the initChapterAndScene() above.
+		// If the process succeeds (_bootParam will be true), then in run()
+		// we skip auto-starting a New Game proper or showing the KIA to load a saved game / start new game,
+		// and go directly to gameLoop() to start the game with the custom settings for Chapter, Set and Scene.
+		if (ConfMan.hasKey("boot_param")) {
+			int param = ConfMan.getInt("boot_param"); // CTTTSSS
+			if (param < 1000000 || param >= 6000000) {
+				debug("Invalid boot parameter. Valid format is: CTTTSSS");
+			} else {
+				int chapter = param / 1000000;
+				param -= chapter * 1000000;
+				int set = param / 1000;
+				param -= set * 1000;
+				int scene = param;
+
+				// init chapter to default first chapter (required by dbgAttemptToLoadChapterSetScene())
+				_settings->setChapter(1);
+				_validBootParam = _debugger->dbgAttemptToLoadChapterSetScene(chapter, set, scene);
+				if (_validBootParam) {
+					debug("Explicitly loading Chapter: %d Set: %d Scene: %d", chapter, set, scene);
+				} else {
+					debug("Invalid combination of Chapter Set and Scene ids as boot parameters");
+				}
+			}
+		}
+
 	}
 	return true;
 }
@@ -849,32 +879,8 @@ void BladeRunnerEngine::initChapterAndScene() {
 		_actors[i]->movementTrackNext(true);
 	}
 
-	if (ConfMan.hasKey("boot_param")) {
-		int param = ConfMan.getInt("boot_param"); // CTTTSSS
-		if (param < 1000000 || param >= 6000000) {
-			debug("Invalid boot parameter. Valid format is: CTTTSSS");
-		} else {
-			int chapter = param / 1000000;
-			param -= chapter * 1000000;
-			int set = param / 1000;
-			param -= set * 1000;
-			int scene = param;
-
-			// init chapter to default first chapter (required by dbgAttemptToLoadChapterSetScene())
-			_settings->setChapter(1);
-			_validBootParam = _debugger->dbgAttemptToLoadChapterSetScene(chapter, set, scene);
-			if (_validBootParam) {
-				debug("Explicitly loading Chapter: %d Set: %d Scene: %d", chapter, set, scene);
-			} else {
-				debug("Invalid combination of Chapter Set and Scene ids");
-			}
-		}
-	}
-
-	if (!_validBootParam) {
-		_settings->setChapter(1);
-		_settings->setNewSetAndScene(_gameInfo->getInitialSetId(), _gameInfo->getInitialSceneId());
-	}
+	_settings->setChapter(1);
+	_settings->setNewSetAndScene(_gameInfo->getInitialSetId(), _gameInfo->getInitialSceneId());
 }
 
 void BladeRunnerEngine::shutdown() {
@@ -1278,7 +1284,11 @@ void BladeRunnerEngine::gameTick() {
 		for (int y = 0; y < kOriginalGameHeight; ++y) {
 			for (int x = 0; x < kOriginalGameWidth; ++x) {
 				uint8 a, r, g, b;
-				getGameDataColor(_zbuffer->getData()[y*kOriginalGameWidth + x], a, r, g, b);
+				//getGameDataColor(_zbuffer->getData()[y*kOriginalGameWidth + x], a, r, g, b);
+				a = 1;
+				r = _zbuffer->getData()[y*kOriginalGameWidth + x] / 256;
+				g = r;
+				b = r;
 				void   *dstPixel = _surfaceFront.getBasePtr(x, y);
 				drawPixel(_surfaceFront, dstPixel, _surfaceFront.format.ARGBToColor(a, r, g, b));
 			}
@@ -1427,7 +1437,7 @@ bool BladeRunnerEngine::isAllowedRepeatedCustomEvent(const Common::Event &currev
 // F-keys are not repeated.
 bool BladeRunnerEngine::isAllowedRepeatedKey(const Common::KeyState &currKeyState) {
 	// Return and KP_Enter keys are repeatable in KIA.
-	// This is noticable when choosing an already saved game to overwrite
+	// This is noticeable when choosing an already saved game to overwrite
 	// and holding down Enter would cause the confirmation dialogue to pop up
 	// and it would subsequently confirm it as well.
 	return  currKeyState.keycode == Common::KEYCODE_BACKSPACE
@@ -1545,12 +1555,12 @@ void BladeRunnerEngine::handleEvents() {
 					// fall through
 				case kMpDeleteSelectedSvdGame:
 					if (isAllowedRepeatedCustomEvent(event)
-					    && _activeCustomEvents->size() < kMaxCustomConcurrentRepeatableEvents) {
-						if (_activeCustomEvents->empty()) {
+					    && _activeCustomEvents.size() < kMaxCustomConcurrentRepeatableEvents) {
+						if (_activeCustomEvents.empty()) {
 							_customEventRepeatTimeLast = _time->currentSystem();
 							_customEventRepeatTimeDelay = kKeyRepeatInitialDelay;
 						}
-						_activeCustomEvents->push_back(event);
+						_activeCustomEvents.push_back(event);
 					}
 					handleCustomEventStart(event);
 					break;
@@ -1605,12 +1615,12 @@ void BladeRunnerEngine::handleEvents() {
 	// Some of those may lead to their own internal gameTick() loops (which will call handleEvents()).
 	// Thus, we need to get a new timeNow value here to ensure we're not comparing with a stale version.
 	uint32 timeNow = _time->currentSystem();
-	if (!_activeCustomEvents->empty()
+	if (!_activeCustomEvents.empty()
 	    && (timeNow - _customEventRepeatTimeLast >= _customEventRepeatTimeDelay)) {
 		_customEventRepeatTimeLast = timeNow;
 		_customEventRepeatTimeDelay = kKeyRepeatSustainDelay;
-		uint16 aceSize = _activeCustomEvents->size();
-		for (ActiveCustomEventsArray::iterator it = _activeCustomEvents->begin(); it != _activeCustomEvents->end(); it++) {
+		uint16 aceSize = _activeCustomEvents.size();
+		for (ActiveCustomEventsArray::iterator it = _activeCustomEvents.begin(); it != _activeCustomEvents.end(); it++) {
 			// kbdRepeat field will be unused here since we emulate the kbd repeat behavior anyway,
 			// but maybe it's good to set it for consistency
 			it->kbdRepeat = true;
@@ -1623,7 +1633,7 @@ void BladeRunnerEngine::handleEvents() {
 			// TODO This is probably an indication that this could be reworked
 			//      as something cleaner and safer.
 			//      Or event repetition could be handled by the keymapper code (outside the engine code)
-			if (aceSize != _activeCustomEvents->size()) {
+			if (aceSize != _activeCustomEvents.size()) {
 				break;
 			}
 		}
@@ -1722,7 +1732,7 @@ void BladeRunnerEngine::setExtraCNotify(uint8 val) {
 	_extraCNotify = val;
 }
 
-// Check if an polled event belongs to a currently disabled keymap and, if so, drop it.
+// Check if a polled event belongs to a currently disabled keymap and, if so, drop it.
 bool BladeRunnerEngine::shouldDropRogueCustomEvent(const Common::Event &evt) {
 	if (getEventManager()->getKeymapper() != nullptr) {
 		Common::KeymapArray kmpsArr = getEventManager()->getKeymapper()->getKeymaps();
@@ -1749,18 +1759,18 @@ void BladeRunnerEngine::cleanupPendingRepeatingEvents(const Common::String &keym
 
 	if (getEventManager()->getKeymapper() != nullptr
 	    && getEventManager()->getKeymapper()->getKeymap(keymapperId) != nullptr
-		&& !_activeCustomEvents->empty()) {
+		&& !_activeCustomEvents.empty()) {
 
 		Common::Keymap::ActionArray actionsInKm = getEventManager()->getKeymapper()->getKeymap(keymapperId)->getActions();
 		for (Common::Keymap::ActionArray::iterator kmIt = actionsInKm.begin(); kmIt != actionsInKm.end(); ++kmIt) {
-			for (ActiveCustomEventsArray::iterator actIt = _activeCustomEvents->begin(); actIt != _activeCustomEvents->end(); ++actIt) {
+			for (ActiveCustomEventsArray::iterator actIt = _activeCustomEvents.begin(); actIt != _activeCustomEvents.end(); ++actIt) {
 				if ((actIt->type != Common::EVENT_INVALID) && (actIt->customType == (*kmIt)->event.customType)) {
-					_activeCustomEvents->erase(actIt);
+					_activeCustomEvents.erase(actIt);
 					// When erasing an element from an array, erase(iterator pos)
 					// will return an iterator pointing to the next element in the array.
 					// Thus, we should check if we reached the end() here, to avoid moving
 					// the iterator in the next loop repetition to an invalid memory location.
-					if (actIt == _activeCustomEvents->end()) {
+					if (actIt == _activeCustomEvents.end()) {
 						break;
 					}
 				}
@@ -1770,10 +1780,10 @@ void BladeRunnerEngine::cleanupPendingRepeatingEvents(const Common::String &keym
 }
 
 void BladeRunnerEngine::handleCustomEventStop(Common::Event &event) {
-	if (!_activeCustomEvents->empty()) {
-		for (ActiveCustomEventsArray::iterator it = _activeCustomEvents->begin(); it != _activeCustomEvents->end(); it++) {
+	if (!_activeCustomEvents.empty()) {
+		for (ActiveCustomEventsArray::iterator it = _activeCustomEvents.begin(); it != _activeCustomEvents.end(); it++) {
 			if ((it->type != Common::EVENT_INVALID) && (it->customType == event.customType)) {
-				_activeCustomEvents->erase(it);
+				_activeCustomEvents.erase(it);
 				break;
 			}
 		}
@@ -2414,7 +2424,7 @@ bool BladeRunnerEngine::openArchive(const Common::String &name) {
 		error("openArchive: No more archive slots");
 	}
 
-	_archives[i].open(name);
+	_archives[i].open(Common::Path(name));
 	return _archives[i].isOpen();
 }
 
@@ -2507,10 +2517,11 @@ void BladeRunnerEngine::setSubtitlesEnabled(bool newVal) {
 }
 
 Common::SeekableReadStream *BladeRunnerEngine::getResourceStream(const Common::String &name) {
+	Common::Path path(name);
 	// If the file is extracted from MIX files use it directly, it is used by Russian translation patched by Siberian Studio
-	if (Common::File::exists(name)) {
+	if (Common::File::exists(path)) {
 		Common::File directFile;
-		if (directFile.open(name)) {
+		if (directFile.open(path)) {
 			Common::SeekableReadStream *stream = directFile.readStream(directFile.size());
 			directFile.close();
 			return stream;
@@ -2519,7 +2530,7 @@ Common::SeekableReadStream *BladeRunnerEngine::getResourceStream(const Common::S
 
 	if (_enhancedEdition) {
 		assert(_archive != nullptr);
-		return _archive->createReadStreamForMember(name);
+		return _archive->createReadStreamForMember(path);
 	}
 
 	for (int i = 0; i != kArchiveCount; ++i) {
@@ -2528,7 +2539,7 @@ Common::SeekableReadStream *BladeRunnerEngine::getResourceStream(const Common::S
 		}
 
 		// debug("getResource: Searching archive %s for %s.", _archives[i].getName().c_str(), name.c_str());
-		Common::SeekableReadStream *stream = _archives[i].createReadStreamForMember(name);
+		Common::SeekableReadStream *stream = _archives[i].createReadStreamForMember(path);
 		if (stream) {
 			return stream;
 		}
@@ -2788,6 +2799,13 @@ bool BladeRunnerEngine::loadGame(Common::SeekableReadStream &stream, int version
 }
 
 void BladeRunnerEngine::newGame(int difficulty) {
+	// Set a (new) seed for randomness when starting a new game.
+	// This also makes sure that if there's a custom random seed set in ScummVM's configuration,
+	// that's the one that will be used.
+	_newGameRandomSeed = Common::RandomSource::generateNewSeed();
+	_rnd.setSeed(_newGameRandomSeed );
+	//debug("Random seed for the New Game is: %u", _newGameRandomSeed );
+
 	_settings->reset();
 	_combat->reset();
 
@@ -2814,6 +2832,18 @@ void BladeRunnerEngine::newGame(int difficulty) {
 		_suspectsDatabase->get(i)->reset();
 	}
 
+#if !BLADERUNNER_ORIGINAL_BUGS
+	// Fix for Designers Cut setting in a New Game
+	// The original game would always clear the setting for Designers Cut when starting a New Game,
+	// even if it was set beforehand from the KIA Menu. It would, however, maintain the KIA setting for McCoy's Mood.
+	// By not maintaining the value for Designers Cut when starting a New Game, it was impossible to skip a line
+	// of dialogue for McCoy which plays at the end of the intro of the game, before the player gains control,
+	// and which is actually marked for skipping in Designers Cut mode (see SceneScriptRC01::SceneLoaded())
+	//
+	// Part 1 of fix for Designers Cut setting
+	// Before clearing the _gameFlags check if kFlagDirectorsCut was already set
+	bool isDirectorsCut = _gameFlags->query(kFlagDirectorsCut);
+#endif // BLADERUNNER_ORIGINAL_BUGS
 	_gameFlags->clear();
 
 	for (uint i = 0; i < _gameInfo->getGlobalVarCount(); ++i) {
@@ -2832,6 +2862,16 @@ void BladeRunnerEngine::newGame(int difficulty) {
 
 	InitScript initScript(this);
 	initScript.SCRIPT_Initialize_Game();
+
+#if !BLADERUNNER_ORIGINAL_BUGS
+	// Part 2 of fix for Designers Cut setting
+	// Maintain the flag (if it was set) for the New Game
+	// Note: This is done here, since SCRIPT_Initialize_Game() also clears the game flags
+	if (isDirectorsCut) {
+		_gameFlags->set(kFlagDirectorsCut);
+	}
+#endif // BLADERUNNER_ORIGINAL_BUGS
+
 	_actorUpdateCounter = 0;
 	_actorUpdateTimeLast = 0;
 	initChapterAndScene();

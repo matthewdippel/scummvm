@@ -25,8 +25,6 @@
 
 namespace Scumm {
 
-static bool _native_mt32 = false;
-
 static struct {
 	const char *name;
 	byte program;
@@ -125,17 +123,19 @@ const byte Instrument::_gmRhythmMap[35] = {
 class Instrument_Program : public InstrumentInternal {
 private:
 	byte _program;
-	bool _mt32;
+	byte _bank;
+	bool _soundTypeMT32;
+	bool _nativeMT32Device;
 
 public:
-	Instrument_Program(byte program, bool mt32);
-	Instrument_Program(Common::Serializer &s);
+	Instrument_Program(byte program, byte bank, bool soundTypeMT32, bool nativeMT32Device);
+	Instrument_Program(Common::Serializer &s, bool nativeMT32Device);
 	void saveLoadWithSerializer(Common::Serializer &s) override;
 	void send(MidiChannel *mc) override;
-	void copy_to(Instrument *dest) override { dest->program(_program, _mt32); }
+	void copy_to(Instrument *dest) override { dest->program(_program, _bank, _soundTypeMT32); }
 	bool is_valid() override {
 		return (_program < 128) &&
-		       ((_native_mt32 == _mt32) || (_native_mt32
+		       ((_nativeMT32Device == _soundTypeMT32) || (_nativeMT32Device
 		        ? (MidiDriver::_gmToMt32[_program] < 128)
 		        : (MidiDriver::_mt32ToGm[_program] < 128)));
 	}
@@ -251,16 +251,17 @@ private:
 	RolandInstrument _instrument;
 
 	char _instrument_name[11];
+	bool _nativeMT32Device;
 
 	uint8 getEquivalentGM();
 
 public:
-	Instrument_Roland(const byte *data);
-	Instrument_Roland(Common::Serializer &s);
+	Instrument_Roland(const byte *data, bool nativeMT32Device);
+	Instrument_Roland(Common::Serializer &s, bool nativeMT32Device);
 	void saveLoadWithSerializer(Common::Serializer &s) override;
 	void send(MidiChannel *mc) override;
 	void copy_to(Instrument *dest) override { dest->roland((byte *)&_instrument); }
-	bool is_valid() override { return (_native_mt32 ? true : (_instrument_name[0] != '\0')); }
+	bool is_valid() override { return (_nativeMT32Device ? true : (_instrument_name[0] != '\0')); }
 };
 
 class Instrument_PcSpk : public InstrumentInternal {
@@ -276,30 +277,11 @@ private:
 	byte _instrument[23];
 };
 
-class Instrument_MacSfx : public InstrumentInternal {
-private:
-	byte _program;
-
-public:
-	Instrument_MacSfx(byte program);
-	Instrument_MacSfx(Common::Serializer &s);
-	void saveLoadWithSerializer(Common::Serializer &s) override;
-	void send(MidiChannel *mc) override;
-	void copy_to(Instrument *dest) override { dest->macSfx(_program); }
-	bool is_valid() override {
-		return (_program < 128);
-	}
-};
-
 ////////////////////////////////////////
 //
 // Instrument class members
 //
 ////////////////////////////////////////
-
-void Instrument::nativeMT32(bool native) {
-	_native_mt32 = native;
-}
 
 void Instrument::clear() {
 	delete _instrument;
@@ -307,12 +289,12 @@ void Instrument::clear() {
 	_type = itNone;
 }
 
-void Instrument::program(byte prog, bool mt32) {
+void Instrument::program(byte prog, byte bank, bool mt32SoundType) {
 	clear();
 	if (prog > 127)
 		return;
 	_type = itProgram;
-	_instrument = new Instrument_Program(prog, mt32);
+	_instrument = new Instrument_Program(prog, bank, mt32SoundType, _nativeMT32Device);
 }
 
 void Instrument::adlib(const byte *instrument) {
@@ -328,7 +310,7 @@ void Instrument::roland(const byte *instrument) {
 	if (!instrument)
 		return;
 	_type = itRoland;
-	_instrument = new Instrument_Roland(instrument);
+	_instrument = new Instrument_Roland(instrument, _nativeMT32Device);
 }
 
 void Instrument::pcspk(const byte *instrument) {
@@ -337,14 +319,6 @@ void Instrument::pcspk(const byte *instrument) {
 		return;
 	_type = itPcSpk;
 	_instrument = new Instrument_PcSpk(instrument);
-}
-
-void Instrument::macSfx(byte prog) {
-	clear();
-	if (prog > 127)
-		return;
-	_type = itMacSfx;
-	_instrument = new Instrument_MacSfx(prog);
 }
 
 void Instrument::saveLoadWithSerializer(Common::Serializer &s) {
@@ -359,20 +333,22 @@ void Instrument::saveLoadWithSerializer(Common::Serializer &s) {
 		case itNone:
 			break;
 		case itProgram:
-			_instrument = new Instrument_Program(s);
+			_instrument = new Instrument_Program(s, _nativeMT32Device);
 			break;
 		case itAdLib:
 			_instrument = new Instrument_AdLib(s);
 			break;
 		case itRoland:
-			_instrument = new Instrument_Roland(s);
+			_instrument = new Instrument_Roland(s, _nativeMT32Device);
 			break;
 		case itPcSpk:
 			_instrument = new Instrument_PcSpk(s);
 			break;
-		case itMacSfx:
-			_instrument = new Instrument_MacSfx(s);
-			break;
+		case itMacDeprecated: {
+			byte prog = 255;
+			s.syncAsByte(prog);
+			_instrument = new Instrument_Program(prog, 1, false, false);
+			} break;
 		default:
 			warning("No known instrument classification #%d", (int)_type);
 			_type = itNone;
@@ -386,28 +362,36 @@ void Instrument::saveLoadWithSerializer(Common::Serializer &s) {
 //
 ////////////////////////////////////////
 
-Instrument_Program::Instrument_Program(byte program, bool mt32) :
+Instrument_Program::Instrument_Program(byte program, byte bank, bool soundTypeMT32, bool nativeMT32Device) :
 	_program(program),
-	_mt32(mt32) {
+	_bank(bank),
+	_soundTypeMT32(soundTypeMT32),
+	_nativeMT32Device(nativeMT32Device) {
 	if (program > 127)
 		_program = 255;
 }
 
-Instrument_Program::Instrument_Program(Common::Serializer &s) {
+Instrument_Program::Instrument_Program(Common::Serializer &s, bool nativeMT32Device) :
+	_nativeMT32Device(nativeMT32Device) {
 	_program = 255;
-	_mt32 = false;
+	_bank = 0;
+	_soundTypeMT32 = false;
 	if (!s.isSaving())
 		saveLoadWithSerializer(s);
 }
 
 void Instrument_Program::saveLoadWithSerializer(Common::Serializer &s) {
 	s.syncAsByte(_program);
+	s.syncAsByte(_bank, VER(123));
 	if (s.isSaving()) {
-		s.syncAsByte(_mt32);
+		s.syncAsByte(_soundTypeMT32);
+		s.syncAsByte(_nativeMT32Device);
 	} else {
 		byte tmp;
 		s.syncAsByte(tmp);
-		_mt32 = (tmp > 0);
+		_soundTypeMT32 = (tmp > 0);
+		s.syncAsByte(tmp, VER(122));
+		_nativeMT32Device = (tmp > 0);
 	}
 }
 
@@ -416,10 +400,15 @@ void Instrument_Program::send(MidiChannel *mc) {
 		return;
 
 	byte program = _program;
-	if (_native_mt32 != _mt32)
-		program = _native_mt32 ? MidiDriver::_gmToMt32[program] : MidiDriver::_mt32ToGm[program];
+	if (!_nativeMT32Device && _soundTypeMT32)
+		program =  MidiDriver::_mt32ToGm[program];
+
+	if (_bank)
+		mc->bankSelect(_bank);
 	if (program < 128)
 		mc->programChange(program);
+	if (_bank)
+		mc->bankSelect(0);
 }
 
 ////////////////////////////////////////
@@ -444,7 +433,7 @@ void Instrument_AdLib::saveLoadWithSerializer(Common::Serializer &s) {
 }
 
 void Instrument_AdLib::send(MidiChannel *mc) {
-	mc->sysEx_customInstrument('ADL ', (byte *)&_instrument);
+	mc->sysEx_customInstrument('ADL ', (byte *)&_instrument, sizeof(_instrument));
 }
 
 ////////////////////////////////////////
@@ -453,17 +442,17 @@ void Instrument_AdLib::send(MidiChannel *mc) {
 //
 ////////////////////////////////////////
 
-Instrument_Roland::Instrument_Roland(const byte *data) {
+Instrument_Roland::Instrument_Roland(const byte *data, bool nativeMT32Device) : _nativeMT32Device(nativeMT32Device) {
 	memcpy(&_instrument, data, sizeof(_instrument));
 	memcpy(&_instrument_name, &_instrument.common.name, sizeof(_instrument.common.name));
 	_instrument_name[10] = '\0';
-	if (!_native_mt32 && getEquivalentGM() >= 128) {
+	if (!_nativeMT32Device && getEquivalentGM() >= 128) {
 		debug(0, "MT-32 instrument \"%s\" not supported yet", _instrument_name);
 		_instrument_name[0] = '\0';
 	}
 }
 
-Instrument_Roland::Instrument_Roland(Common::Serializer &s) {
+Instrument_Roland::Instrument_Roland(Common::Serializer &s, bool nativeMT32Device) : _nativeMT32Device(nativeMT32Device) {
 	_instrument_name[0] = '\0';
 	if (!s.isSaving())
 		saveLoadWithSerializer(s);
@@ -476,7 +465,7 @@ void Instrument_Roland::saveLoadWithSerializer(Common::Serializer &s) {
 	if (!s.isSaving()) {
 		memcpy(&_instrument_name, &_instrument.common.name, sizeof(_instrument.common.name));
 		_instrument_name[10] = '\0';
-		if (!_native_mt32 && getEquivalentGM() >= 128) {
+		if (!_nativeMT32Device && getEquivalentGM() >= 128) {
 			debug(2, "MT-32 custom instrument \"%s\" not supported", _instrument_name);
 			_instrument_name[0] = '\0';
 		}
@@ -484,26 +473,8 @@ void Instrument_Roland::saveLoadWithSerializer(Common::Serializer &s) {
 }
 
 void Instrument_Roland::send(MidiChannel *mc) {
-	if (_native_mt32) {
-		if (mc->getNumber() > 8)
-			return;
-		_instrument.device_id = mc->getNumber();
-
-		// Remap instrument to appropriate address space.
-		int address = 0x008000;
-		_instrument.address[0] = (address >> 14) & 0x7F;
-		_instrument.address[1] = (address >>  7) & 0x7F;
-		_instrument.address[2] = (address      ) & 0x7F;
-
-		// Recompute the checksum.
-		byte checksum = 0;
-		byte *ptr = (byte *)&_instrument + 4;
-		int i;
-		for (i = 4; i < (int)sizeof(_instrument) - 1; ++i)
-			checksum -= *ptr++;
-		_instrument.checksum = checksum & 0x7F;
-
-		mc->device()->sysEx((byte *)&_instrument, sizeof(_instrument));
+	if (_nativeMT32Device) {
+		mc->sysEx_customInstrument('ROL ', (byte *)&_instrument, sizeof(_instrument));
 	} else {
 		// Convert to a GM program change.
 		byte program = getEquivalentGM();
@@ -543,37 +514,7 @@ void Instrument_PcSpk::saveLoadWithSerializer(Common::Serializer &s) {
 }
 
 void Instrument_PcSpk::send(MidiChannel *mc) {
-	mc->sysEx_customInstrument('SPK ', (byte *)&_instrument);
+	mc->sysEx_customInstrument('SPK ', (byte *)&_instrument, sizeof(_instrument));
 }
 
-////////////////////////////////////////
-//
-// Instrument_MacSfx class members
-//
-////////////////////////////////////////
-
-Instrument_MacSfx::Instrument_MacSfx(byte program) :
-	_program(program) {
-	if (program > 127) {
-		_program = 255;
-	}
-}
-
-Instrument_MacSfx::Instrument_MacSfx(Common::Serializer &s) {
-	_program = 255;
-	if (!s.isSaving()) {
-		saveLoadWithSerializer(s);
-	}
-}
-
-void Instrument_MacSfx::saveLoadWithSerializer(Common::Serializer &s) {
-	s.syncAsByte(_program);
-}
-
-void Instrument_MacSfx::send(MidiChannel *mc) {
-	if (_program > 127) {
-		return;
-	}
-	mc->sysEx_customInstrument('MAC ', &_program);
-}
 } // End of namespace Scumm

@@ -20,8 +20,6 @@ Graphics modes
 
 Most platforms have either one or two available graphics modes. The most common ones are OpenGL and SDL Surface.
 
-To switch between graphics modes, press :kbd:`Ctrl + Alt` and :kbd:`1` to :kbd:`8`.
-
 OpenGL graphics mode
 *************************************
 
@@ -40,6 +38,8 @@ The original game graphics are upscaled using different graphical filters, which
 If the game originally ran at a resolution of 320x200—which is typical for most SCUMM games—then using a graphics mode with a scale factor of 2x yields 640x400 graphics. A 3x scale factor yields 960x600.
 
 There is always a speed penalty when using a scaler other than Normal 1x.
+
+To cycle forwards or backwards between graphical filters, press :kbd:`Ctrl + Alt` and :kbd:`0` or :kbd:`9` (respectively).
 
 .. figure:: ../images/graphics/graphics_mode/1x.png
 
@@ -79,11 +79,11 @@ There is always a speed penalty when using a scaler other than Normal 1x.
 
 .. figure:: ../images/graphics/graphics_mode/advmame3x.png
 
-    **AdvMAME 3x**: Expands each pixel into 4 new pixels based on the surrounding pixels. Doesn't rely on blurring like 2xSAI, fast.
+    **AdvMAME 3x**: Expands each pixel into 9 new pixels based on the surrounding pixels. Doesn't rely on blurring like 2xSAI, fast.
 
 .. figure:: ../images/graphics/graphics_mode/advmame4x.png
 
-    **AdvMAME 3x**: Expands each pixel into 4 new pixels based on the surrounding pixels. Doesn't rely on blurring like 2xSAI, fast.
+    **AdvMAME 4x**: Expands each pixel into 16 new pixels based on the surrounding pixels. Doesn't rely on blurring like 2xSAI, fast.
 
 .. figure:: ../images/graphics/graphics_mode/sai2x.png
 
@@ -204,6 +204,15 @@ Below are some of the common render modes, to illustrate how the render mode set
 .. figure:: ../images/graphics/render_mode/amiga.png
 
     Maniac Mansion with Amiga (32 color) render mode
+
+Shaders
+------------
+
+Shaders change the way a game is rendered, and can be used to make a game look exactly how you remember it from years past - right down to the border of your Game Boy console and its old LCD screen, or your CRT monitor. Alternatively, use shaders simply to improve the overall look and feel of a game. 
+
+The shaders included in the ScummVM pack are curated from the Libretro repository, and are grouped according to effect. For an overview of specific shaders, see the `Libretro documentation <https://docs.libretro.com/shader/introduction/>`_
+
+
 
 Filter graphics
 ----------------

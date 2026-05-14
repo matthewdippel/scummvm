@@ -70,6 +70,7 @@ struct Port {
 		fontHeight(0), fontId(0), greyedOutput(false),
 		penClr(0), backClr(0xFF), penMode(0), counterTillFree(0) {
 	}
+	virtual ~Port() {}
 
 	bool isWindow() const { return id >= PORTS_FIRSTWINDOWID && id != 0xFFFF; }
 };
@@ -298,4 +299,4 @@ struct PalSchedule {
 
 } // End of namespace Sci
 
-#endif
+#endif // SCI_GRAPHICS_HELPERS_H

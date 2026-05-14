@@ -35,7 +35,7 @@ class BaseGame;
 class SaveThumbHelper {
 public:
 	SaveThumbHelper(BaseGame *inGame);
-	virtual ~SaveThumbHelper(void);
+	virtual ~SaveThumbHelper();
 	bool storeThumbnail(bool doFlip = false);
 	bool storeScummVMThumbNail(bool doFlip = false);
 
@@ -43,7 +43,7 @@ public:
 	BaseImage *_scummVMThumb;
 private:
 	BaseImage *storeThumb(bool doFlip, int width, int height);
-	BaseGame *_gameRef;
+	BaseGame *_game;
 };
 
 } // End of namespace Wintermute

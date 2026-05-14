@@ -45,19 +45,18 @@ protected:
 	/* dimensions */
 	int _charH, _charW;
 
-	byte *_wData;
+	const byte *_wData;
 public:
 	/* use default 8x8 font */
 	GUI_Font(uint8 fontType = GUI_FONT_DEFAULT);
 
 	/* open named BMP file */
-	GUI_Font(char *name);
+	GUI_Font(const char *name);
 
 	/* use given YxY surface */
 	GUI_Font(Graphics::ManagedSurface *bitmap);
 
-	/* copy constructor */
-	GUI_Font(GUI_Font &font);
+	GUI_Font(const GUI_Font &font) = delete;
 
 	virtual ~GUI_Font();
 

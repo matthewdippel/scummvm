@@ -24,6 +24,7 @@
 
 #include "common/rect.h"
 #include "common/platform.h"
+#include "graphics/big5.h"
 #include "graphics/surface.h"
 
 namespace Sherlock {
@@ -34,20 +35,33 @@ class BaseSurface;
 
 class Fonts {
 private:
+	struct ChinaFontCodElement {
+		uint16 a;
+		uint16 b;
+		uint8 c;
+	};
 	static ImageFile *_font;
+	static byte *_chineseFont;
+	static Graphics::Big5Font *_big5Font;
 	static byte _yOffsets[255];
-protected:
-	static SherlockEngine *_vm;
 	static int _fontNumber;
 	static int _fontHeight;
 	static int _widestChar;
 	static uint16 _charCount;
+	static bool _isModifiedEucCn;
+	static bool _isBig5;
+
+	static inline byte translateChar(byte c);
+protected:
+	static SherlockEngine *_vm;
 
 	static void writeString(BaseSurface *surface, const Common::String &str,
 		const Common::Point &pt, int overrideColor = 0);
 
-	static inline byte translateChar(byte c);
 public:
+	static const int kChineseWidth = 16;
+	static const int kChineseHeight = 16;
+
 	/**
 	 * Initialise the font manager
 	 */
@@ -57,6 +71,9 @@ public:
 	 * Frees the font manager
 	 */
 	static void freeFont();
+
+	static bool isModifiedEucCn() { return _isModifiedEucCn; }
+	static bool isBig5() { return _isBig5; }
 
 	/**
 	 * Set the font to use for writing text on the screen
@@ -73,10 +90,17 @@ public:
 	 */
 	int stringHeight(const Common::String &str);
 
+	static Common::String unescape(const Common::String& in);
+
 	/**
 	 * Returns the width of a character in pixels
 	 */
-	int charWidth(unsigned char c);
+	int charWidth(const char *str, int &idx);
+
+	/**
+	 * Returns the width of a character in pixels
+	 */
+	int charWidth(char ch);
 
 	/**
 	 * Returns the width of a character in pixels
@@ -86,7 +110,7 @@ public:
 	/**
 	 * Return the font height
 	 */
-	int fontHeight() const { return _fontHeight; }
+	int fontHeight() const { return _chineseFont || _isBig5 ? MAX(_fontHeight, 16) : _fontHeight; }
 
 	/**
 	 * Return the width of the widest character in the font
@@ -97,6 +121,11 @@ public:
 	 * Return the currently active font number
 	 */
 	int fontNumber() const { return _fontNumber; }
+
+	Common::Array<Common::String> wordWrap(const Common::String &str, uint maxWidth, Common::String &rem,
+					       uint maxChars = Common::String::npos, uint maxLines = Common::String::npos, bool skipHeadAt = false);
+	Common::Array<Common::String> wordWrap(const Common::String &str, uint maxWidth,
+					       uint maxChars = Common::String::npos, uint maxLines = Common::String::npos, bool skipHeadAt = false);
 };
 
 } // End of namespace Sherlock

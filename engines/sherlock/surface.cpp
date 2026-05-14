@@ -55,20 +55,73 @@ void BaseSurface::writeFancyString(const Common::String &str, const Common::Poin
 }
 
 void BaseSurface::SHtransBlitFrom(const ImageFrame &src, const Common::Point &pt,
-		bool flipped, int overrideColor, int scaleVal) {
+		bool flipped, int scaleVal) {
 	Common::Point drawPt(pt.x + src.sDrawXOffset(scaleVal), pt.y + src.sDrawYOffset(scaleVal));
-	SHtransBlitFrom(src._frame, drawPt, flipped, overrideColor, scaleVal);
+	SHtransBlitFrom(src._frame, drawPt, flipped, scaleVal);
 }
 
 void BaseSurface::SHtransBlitFrom(const Graphics::Surface &src, const Common::Point &pt,
-		bool flipped, int overrideColor, int scaleVal) {
+		bool flipped, int scaleVal) {
 	Common::Rect srcRect(0, 0, src.w, src.h);
 	Common::Rect destRect(pt.x, pt.y, pt.x + src.w * SCALE_THRESHOLD / scaleVal,
 		pt.y + src.h * SCALE_THRESHOLD / scaleVal);
 
 	Graphics::Screen::transBlitFrom(src, srcRect, destRect, IS_3DO ? 0 : TRANSPARENCY,
-		flipped, overrideColor);
+		flipped);
 }
 
+void BaseSurface::SHoverrideBlitFrom(const ImageFrame &src, const Common::Point &pt,
+		int overrideColor) {
+	Common::Point drawPt(pt.x + src.sDrawXOffset(SCALE_THRESHOLD), pt.y + src.sDrawYOffset(SCALE_THRESHOLD));
+	SHoverrideBlitFrom(src._frame, drawPt, overrideColor);
+}
+
+void BaseSurface::SHoverrideBlitFrom(const Graphics::Surface &src, const Common::Point &pt,
+		int overrideColor) {
+	Common::Rect srcRect(0, 0, src.w, src.h);
+	Common::Rect destRect(pt.x, pt.y, pt.x + src.w, pt.y + src.h);
+	clip(srcRect, destRect);
+
+	const uint32 transColor = IS_3DO ? 0 : TRANSPARENCY;
+
+	for (int y = 0; y < destRect.height(); y++) {
+		for (int x = 0; x < destRect.width(); x++) {
+			const uint32 srcVal = src.getPixel(srcRect.left + x, srcRect.top + y);
+			if (srcVal == transColor)
+				continue;
+			if (!IS_3DO) {
+				setPixel(destRect.left + x, destRect.top + y, overrideColor);
+			} else {
+				// TODO: actually override the color properly, by mixing it
+				// with the source color
+				setPixel(destRect.left + x, destRect.top + y, srcVal);
+			}
+		}
+	}
+}
+
+void BaseSurface::SHbitmapBlitFrom(const byte *src, int widthSrc, int heightSrc, int pitchSrc, const Common::Point &pt,
+				   int overrideColor) {
+	const byte *ptr = src;
+	int yin = 0, yout = pt.y;
+	int xin = 0, xout = pt.x;
+	byte bit = 0x80;
+	int ymax = MIN(heightSrc, h - pt.y);
+	int xmax = MIN(widthSrc, w - pt.x);
+	int pitchskip = pitchSrc - (xmax / 8);
+	for (yin = 0; yin < ymax; yin++, yout++) {
+		bit = 0x80;
+		for (xin = 0, xout = pt.x; xin < xmax; xin++, xout++) {
+			if (*ptr & bit)
+				setPixel(xout, yout, overrideColor);
+			bit >>= 1;
+			if (!bit) {
+				bit = 0x80;
+				ptr++;
+			}
+		}
+		ptr += pitchskip;
+	}
+}
 
 } // End of namespace Sherlock

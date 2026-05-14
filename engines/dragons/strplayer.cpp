@@ -18,6 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
+#include "common/events.h"
 #include "video/psx_decoder.h"
 #include "dragons/dragons.h"
 #include "dragons/screen.h"
@@ -29,11 +30,11 @@ StrPlayer::StrPlayer(DragonsEngine *vm, Screen *screen) : _vm(vm), _screen(scree
 	_decoder = new Video::PSXStreamDecoder(Video::PSXStreamDecoder::kCD2x);
 }
 
-void StrPlayer::playVideo(const Common::String &filename) {
+void StrPlayer::playVideo(const Common::Path &filename) {
 	bool skipped = false;
 
 	if (!_decoder->loadFile(filename)) {
-		error("Error playing video from %s", filename.c_str());
+		error("Error playing video from %s", filename.toString(Common::Path::kNativeSeparator).c_str());
 	}
 	_decoder->start();
 

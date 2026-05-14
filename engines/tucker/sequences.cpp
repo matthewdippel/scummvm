@@ -26,7 +26,7 @@
 #include "audio/decoders/raw.h"
 #include "audio/decoders/wave.h"
 
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "graphics/surface.h"
 
 #include "tucker/tucker.h"
@@ -578,8 +578,8 @@ void AnimationSequencePlayer::syncTime() {
 		Common::Event ev;
 		while (_event->pollEvent(ev)) {
 			switch (ev.type) {
-			case Common::EVENT_KEYDOWN:
-				if (ev.kbd.keycode == Common::KEYCODE_ESCAPE) {
+			case Common::EVENT_CUSTOM_ENGINE_ACTION_START:
+				if (ev.customType == kActionEscape) {
 					_seqNum = 1;
 				}
 				break;
@@ -601,7 +601,7 @@ Audio::RewindableAudioStream *AnimationSequencePlayer::loadSound(int index, Anim
 	if (stream)
 		return stream;
 
-	Common::String fileName = Common::String::format("audio/%s", _audioFileNamesTable[index]);
+	Common::Path fileName(Common::String::format("audio/%s", _audioFileNamesTable[index]));
 	Common::File *f = new Common::File();
 	if (f->open(fileName)) {
 		int size = 0, rate = 0;

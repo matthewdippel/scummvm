@@ -47,18 +47,18 @@ static const char *const directoryGlobs[] = {
 	0
 };
 
-class TonyMetaEngineDetection : public AdvancedMetaEngineDetection {
+class TonyMetaEngineDetection : public AdvancedMetaEngineDetection<Tony::TonyGameDescription> {
 public:
-	TonyMetaEngineDetection() : AdvancedMetaEngineDetection(Tony::gameDescriptions, sizeof(Tony::TonyGameDescription), tonyGames) {
+	TonyMetaEngineDetection() : AdvancedMetaEngineDetection(Tony::gameDescriptions, tonyGames) {
 		_maxScanDepth = 2;
 		_directoryGlobs = directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "tony";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Tony Tough and the Night of Roasted Moths";
 	}
 

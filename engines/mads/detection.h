@@ -30,16 +30,36 @@ namespace MADS {
 enum {
 	GType_RexNebular = 0,
 	GType_Dragonsphere = 1,
-	GType_Phantom = 2
+	GType_Phantom = 2,
+	GType_Forest = 3
+};
+
+enum {
+	GF_INSTALLER = 1
 };
 
 struct MADSGameDescription {
+	AD_GAME_DESCRIPTION_HELPERS(desc);
+
 	ADGameDescription desc;
 
 	int gameID;
 	uint32 features;
 };
 
-} // End of namespace MADS
+#define GAMEOPTION_EASY_MOUSE          GUIO_GAMEOPTIONS1
+#define GAMEOPTION_ANIMATED_INVENTORY  GUIO_GAMEOPTIONS2
+#define GAMEOPTION_ANIMATED_INTERFACE  GUIO_GAMEOPTIONS3
+#define GAMEOPTION_NAUGHTY_MODE        GUIO_GAMEOPTIONS4
 
-#endif // MADS_DETECTION_H
+#ifdef USE_TTS
+#define GAMEOPTION_TTS_NARRATOR        GUIO_GAMEOPTIONS5
+#endif
+
+#define GAMEOPTION_COPY_PROTECTION     GUIO_GAMEOPTIONS6
+
+#define GAMEOPTION_ORIGINAL_SAVELOAD   GUIO_GAMEOPTIONS7
+
+} // namespace MADS
+
+#endif

@@ -129,9 +129,20 @@ enum WintermuteGameFeatures {
 };
 
 struct WMEGameDescription {
+	AD_GAME_DESCRIPTION_HELPERS(adDesc);
+
 	ADGameDescription adDesc;
 	WMETargetExecutable targetExecutable;
 };
+
+#define GAMEOPTION_SHOW_FPS          GUIO_GAMEOPTIONS1
+#define GAMEOPTION_BILINEAR          GUIO_GAMEOPTIONS2
+#ifdef ENABLE_WME3D
+#define GAMEOPTION_FORCE_2D_RENDERER GUIO_GAMEOPTIONS3
+#endif
+#define GAMEOPTION_TTS               GUIO_GAMEOPTIONS4
+#define GAMEOPTION_USE_IT_VOICES     GUIO_GAMEOPTIONS5
+#define GAMEOPTION_USE_SD_ASSETS     GUIO_GAMEOPTIONS6
 
 } // End of namespace Wintermute
 

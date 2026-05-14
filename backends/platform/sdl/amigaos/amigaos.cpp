@@ -27,8 +27,33 @@
 #include "backends/fs/amigaos/amigaos-fs-factory.h"
 #include "backends/dialogs/amigaos/amigaos-dialogs.h"
 
+static bool cleanupDone = false;
+
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+static bool sdlGLLoadLibrary(const char *path) {
+	return SDL_GL_LoadLibrary(path);
+}
+#else
+static bool sdlGLLoadLibrary(const char *path) {
+	return SDL_GL_LoadLibrary(path) != 0;
+}
+#endif
+
+static void cleanup() {
+	if (!cleanupDone)
+		g_system->destroy();
+}
+
+OSystem_AmigaOS::~OSystem_AmigaOS() {
+	cleanupDone = true;
+}
+
 void OSystem_AmigaOS::init() {
-	// Initialze File System Factory
+	// Register cleanup function to avoid unfreed signals
+	if (atexit(cleanup))
+		warning("Failed to register cleanup function via atexit()");
+
+	// Initialize File System Factory
 	_fsFactory = new AmigaOSFilesystemFactory();
 
 	// Invoke parent implementation of this method
@@ -49,8 +74,10 @@ bool OSystem_AmigaOS::hasFeature(Feature f) {
 }
 
 void OSystem_AmigaOS::initBackend() {
-	// AmigaOS4 SDL provides two OpenGL implementations (OpenGL 1.3 with miniGL and OpenGL ES with OGLES2)
-	// This is chosen by setting the profile mask attribute before the first window creation but after init
+	// AmigaOS4 SDL provides two OpenGL implementations
+	// (OpenGL 1.3 with miniGL and OpenGL ES with OGLES2)
+	// This is chosen by setting the profile mask attribute
+	// before the first window creation but after init
 	int force = 0;
 	if (ConfMan.hasKey("opengl_implementation")) {
 		Common::String implem = ConfMan.get("opengl_implementation");
@@ -66,7 +93,7 @@ void OSystem_AmigaOS::initBackend() {
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-		if (SDL_GL_LoadLibrary(NULL) < 0) {
+		if (!sdlGLLoadLibrary(NULL)) {
 			if (force) {
 				warning("OpenGL implementation chosen is unsupported, falling back");
 				force = 0;
@@ -84,7 +111,7 @@ void OSystem_AmigaOS::initBackend() {
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, 0);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 1);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-		if (SDL_GL_LoadLibrary(NULL) < 0) {
+		if (!sdlGLLoadLibrary(NULL)) {
 			if (force) {
 				warning("OpenGL implementation chosen is unsupported, falling back");
 				force = 0;
@@ -97,7 +124,32 @@ void OSystem_AmigaOS::initBackend() {
 			force = 1;
 		}
 	}
-
+	// First time user defaults
+	ConfMan.registerDefault("audio_buffer_size", "2048");
+	ConfMan.registerDefault("extrapath", Common::Path("extras/"));
+	ConfMan.registerDefault("iconspath", Common::Path("icons/"));
+	ConfMan.registerDefault("pluginspath", Common::Path("plugins/"));
+	ConfMan.registerDefault("savepath", Common::Path("saves/"));
+	ConfMan.registerDefault("themepath", Common::Path("themes/"));
+	// First time .ini defaults
+	if (!ConfMan.hasKey("audio_buffer_size")) {
+		ConfMan.set("audio_buffer_size", "2048");
+	}
+	if (!ConfMan.hasKey("extrapath")) {
+		ConfMan.setPath("extrapath", "extras/");
+	}
+	if (!ConfMan.hasKey("iconspath")) {
+		ConfMan.setPath("iconspath", "icons/");
+	}
+	if (!ConfMan.hasKey("pluginspath")) {
+		ConfMan.setPath("pluginspath", "plugins/");
+	}
+	if (!ConfMan.hasKey("savepath")) {
+		ConfMan.setPath("savepath", "saves/");
+	}
+	if (!ConfMan.hasKey("themepath")) {
+		ConfMan.setPath("themepath", "themes/");
+	}
 	OSystem_SDL::initBackend();
 }
 

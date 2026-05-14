@@ -49,7 +49,7 @@ protected:
 	int offset_x, offset_y; /* original offsets to parent */
 
 	/* Flag -- whether or not the widget should be freed */
-	int status;
+	WIDGET_status status;
 
 	/* should we redraw this widget */
 	bool update_display;
@@ -59,10 +59,10 @@ protected:
 
 	bool focused;
 
-	Std::list<GUI_Widget *>children;
+	Common::List<GUI_Widget *>children;
 	GUI_Widget *parent;
 
-	char *error;
+	char *errorptr;
 	char  errbuf[BUFSIZ];
 
 	GUI_DragManager *gui_drag_manager;
@@ -72,8 +72,8 @@ protected:
 	unsigned int mouseup[3]; /* for 3 buttons */
 	unsigned int mousedown[3]; /* waiting for MouseUp */
 	bool accept_mouseclick[3]; /* which buttons can be [double]clicked */
-	Shared::MouseButton delayed_button; /* a MouseClick can be delayed on one button; 0=none */
-	Shared::MouseButton held_button; /* a MouseDown can be delayed on one button; 0=none */
+	Events::MouseButton delayed_button; /* a MouseClick can be delayed on one button; 0=none */
+	Events::MouseButton held_button; /* a MouseDown can be delayed on one button; 0=none */
 	bool mouse_moved; /* true if mouse moves while button is pressed */
 
 	bool mouse_over; // initialized here; toggled by GUI
@@ -100,7 +100,7 @@ public:
 	virtual void MoveRelative(int dx, int dy);
 	virtual void Move(int32 new_x, int32 new_y);
 	void MoveRelativeToParent(int dx, int dy);
-	bool has_focus() {
+	bool has_focus() const {
 		return focused;
 	}
 	void grab_focus();
@@ -108,7 +108,7 @@ public:
 	void moveToFront();
 	virtual void PlaceOnScreen(Screen *s, GUI_DragManager *dm, int x, int y);
 
-	virtual int  Status(void);  /* Reports status to GUI */
+	virtual WIDGET_status Status(void) const;  /* Reports status to GUI */
 
 	/* Set the bounds of the widget.
 	   If 'w' or 'h' is -1, that parameter will not be changed.
@@ -122,16 +122,16 @@ public:
 	}
 
 	/* Return the bounds of the widget */
-	virtual int X() {
+	virtual int X() const {
 		return area.left;
 	}
-	virtual int Y() {
+	virtual int Y() const {
 		return area.top;
 	}
-	virtual int W() {
+	virtual int W() const {
 		return area.width();
 	}
-	virtual int H() {
+	virtual int H() const {
 		return area.height();
 	}
 
@@ -154,7 +154,7 @@ public:
 	virtual void Redraw(void);
 
 	/* should this widget be redrawn */
-	inline bool needs_redraw() {
+	inline bool needs_redraw() const {
 		return update_display;
 	}
 	/* widget has focus or no widget is focused */
@@ -170,17 +170,17 @@ public:
 	*/
 	virtual GUI_status KeyDown(const Common::KeyState &key);
 	virtual GUI_status KeyUp(Common::KeyState key);
-	virtual GUI_status MouseDown(int x, int y, Shared::MouseButton button);
-	virtual GUI_status MouseUp(int x, int y, Shared::MouseButton button);
+	virtual GUI_status MouseDown(int x, int y, Events::MouseButton button);
+	virtual GUI_status MouseUp(int x, int y, Events::MouseButton button);
 	virtual GUI_status MouseMotion(int x, int y, uint8 state);
 	virtual GUI_status MouseWheel(sint32 x, sint32 y);
 	// <SB-X>
 	virtual GUI_status MouseEnter(uint8 state);
 	virtual GUI_status MouseLeave(uint8 state);
-	virtual GUI_status MouseClick(int x, int y, Shared::MouseButton button);
-	virtual GUI_status MouseDouble(int x, int y, Shared::MouseButton button);
-	virtual GUI_status MouseDelayed(int x, int y, Shared::MouseButton button);
-	virtual GUI_status MouseHeld(int x, int y, Shared::MouseButton button);
+	virtual GUI_status MouseClick(int x, int y, Events::MouseButton button);
+	virtual GUI_status MouseDouble(int x, int y, Events::MouseButton button);
+	virtual GUI_status MouseDelayed(int x, int y, Events::MouseButton button);
+	virtual GUI_status MouseHeld(int x, int y, Events::MouseButton button);
 	// </SB-X>
 
 	bool drag_accept_drop(int x, int y, int message, void *data) override;
@@ -191,9 +191,9 @@ public:
 	 */
 	virtual GUI_status HandleEvent(const Common::Event *event);
 
-	/* Returns NULL if everything is okay, or an error message if not */
+	/* Returns nullptr if everything is okay, or an error message if not */
 	char *Error(void) {
-		return (error);
+		return errorptr;
 	}
 
 	/* yields click state: none, pressed, intermediate */
@@ -217,30 +217,30 @@ protected:
 		va_list ap;
 
 		va_start(ap, fmt);
-		vsprintf(errbuf, fmt, ap);
+		Common::vsprintf_s(errbuf, fmt, ap);
 		va_end(ap);
-		error = errbuf;
+		errorptr = errbuf;
 	}
 
 	// SB-X
 	void set_accept_mouseclick(bool set, int button = 0);
 	void set_mouseup(int set, int button = 0);
 	void set_mousedown(int set, int button = 0);
-	int get_mouseup(int button)  {
+	int get_mouseup(int button) const {
 		if (button > 0 && button < 4) return (mouseup[button - 1]);
-		else return (0);
+		else return 0;
 	}
-	int get_mousedown(int button) {
+	int get_mousedown(int button) const {
 		if (button > 0 && button < 4) return (mousedown[button - 1]);
-		else return (0);
+		else return 0;
 	}
 	void wait_for_mouseclick(int button) {
-		if (button >= Shared::BUTTON_NONE && button < Shared::BUTTON_MIDDLE)
-			delayed_button = (Shared::MouseButton)button;
+		if (button >= Events::BUTTON_NONE && button < Events::BUTTON_MIDDLE)
+			delayed_button = (Events::MouseButton)button;
 	}
 	void wait_for_mousedown(int button) {
-		if (button >= Shared::BUTTON_NONE && button <= Shared::BUTTON_MIDDLE)
-			held_button = (Shared::MouseButton)button;
+		if (button >= Events::BUTTON_NONE && button <= Events::BUTTON_MIDDLE)
+			held_button = (Events::MouseButton)button;
 	}
 	virtual GUI_status try_mouse_delayed();
 };

@@ -23,6 +23,7 @@
 #define SCI_ENGINE_VM_TYPES_H
 
 #include "common/scummsys.h"
+#include "sci/version.h"
 
 namespace Sci {
 
@@ -40,10 +41,31 @@ struct reg_t {
 	SegmentId _segment;
 	uint16 _offset;
 
+	void init(SegmentId segment, uint32 offset);
+
 	SegmentId getSegment() const;
 	void setSegment(SegmentId segment);
-	uint32 getOffset() const;
-	void setOffset(uint32 offset);
+
+	// speed optimization: inline due to frequent calling
+	uint32 getOffset() const {
+		if (getSciVersion() < SCI_VERSION_3) {
+			return _offset;
+		} else {
+			// Return the lower 16 bits from the offset, and the 17th and 18th bits from the segment
+			return ((_segment & 0xC000) << 2) | _offset;
+		}
+	}
+
+	// speed optimization: inline due to frequent calling
+	void setOffset(uint32 offset) {
+		if (getSciVersion() < SCI_VERSION_3) {
+			_offset = offset;
+		} else {
+			// Store the lower 16 bits in the offset, and the 17th and 18th bits in the segment
+			_offset = offset & 0xFFFF;
+			_segment = ((offset & 0x30000) >> 2) | (_segment & 0x3FFF);
+		}
+	}
 
 	inline void incOffset(int32 offset) {
 		setOffset(getOffset() + offset);
@@ -173,15 +195,13 @@ private:
 
 static inline reg_t make_reg(SegmentId segment, uint16 offset) {
 	reg_t r;
-	r.setSegment(segment);
-	r.setOffset(offset);
+	r.init(segment, offset);
 	return r;
 }
 
 static inline reg_t make_reg32(SegmentId segment, uint32 offset) {
 	reg_t r;
-	r.setSegment(segment);
-	r.setOffset(offset);
+	r.init(segment, offset);
 	return r;
 }
 

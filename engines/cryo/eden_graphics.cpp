@@ -25,8 +25,7 @@
 #include "cryo/eden.h"
 #include "cryo/eden_graphics.h"
 
-#include "graphics/conversion.h"
-#include "graphics/palette.h"
+#include "graphics/blit.h"
 #include "video/hnm_decoder.h"
 
 namespace Cryo {
@@ -47,7 +46,7 @@ EdenGraphics::EdenGraphics(EdenGame *game) : _game(game) {
 	_underBarsView = nullptr;
 	_needToFade = false;
 	_eff2pat = 0;
-	
+
 	_savedUnderSubtitles = false;
 	_underSubtitlesViewBuf = nullptr;
 	_hnmViewBuf = nullptr;
@@ -57,7 +56,7 @@ EdenGraphics::EdenGraphics(EdenGame *game) : _game(game) {
 	for (int i = 0; i < 256; ++i) {
 		_globalPalette[i].a = _globalPalette[i].r = _globalPalette[i].g = _globalPalette[i].b = 0;
 		_oldPalette[i].a = _oldPalette[i].r = _oldPalette[i].g = _oldPalette[i].b = 0;
-		_newPalette[i].a = _newPalette[i].r = _newPalette[i].g = _newPalette[i].b = 0; 
+		_newPalette[i].a = _newPalette[i].r = _newPalette[i].g = _newPalette[i].b = 0;
 	}
 
 	_newColor.r = _newColor.g = _newColor.b = 0;
@@ -1028,7 +1027,7 @@ void EdenGraphics::clearScreen() {
 	CLBlitter_UpdateScreen();
 }
 
-void EdenGraphics::colimacon(const int16 pattern[16]) {
+void EdenGraphics::colimacon(const int16 pattern[]) {
 	int16 p, r27, r25;
 
 	int16 ww = _game->_vm->_screenView->_pitch;
@@ -1207,11 +1206,10 @@ void EdenGraphics::showMovie(int16 num, char arg1) {
 		palette[j++] = palette16[i].b >> 8;
 	}
 
-	Video::VideoDecoder *decoder = new Video::HNMDecoder(false, palette);
+	Video::VideoDecoder *decoder = new Video::HNMDecoder(g_system->getScreenFormat(), false, palette);
 	if (!decoder->loadStream(stream)) {
 		warning("Could not load movie %d", num);
 		delete decoder;
-		delete stream;
 		return;
 	}
 

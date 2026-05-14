@@ -20,11 +20,11 @@
  */
 
 #include "ultima/ultima8/gumps/widgets/text_widget.h"
-#include "ultima/ultima8/graphics/fonts/rendered_text.h"
-#include "ultima/ultima8/graphics/render_surface.h"
-#include "ultima/ultima8/graphics/fonts/font_manager.h"
-#include "ultima/ultima8/gumps/bark_gump.h"
+
+#include "ultima/ultima8/gfx/fonts/font_manager.h"
+#include "ultima/ultima8/gfx/fonts/rendered_text.h"
 #include "ultima/ultima8/gumps/ask_gump.h"
+#include "ultima/ultima8/gumps/bark_gump.h"
 #include "ultima/ultima8/gumps/widgets/button_widget.h"
 
 namespace Ultima {
@@ -37,11 +37,12 @@ TextWidget::TextWidget() : Gump(), _gameFont(false), _fontNum(0), _blendColour(0
 		_cachedText(nullptr), _textAlign(Font::TEXT_LEFT) {
 }
 
-TextWidget::TextWidget(int x, int y, const Std::string &txt, bool gamefont, int font,
-					   int w, int h, Font::TextAlign align) :
+TextWidget::TextWidget(int x, int y, const Common::String &txt, bool gamefont, int font,
+					   int w, int h, Font::TextAlign align, bool dopaging) :
 	Gump(x, y, w, h), _text(txt), _gameFont(gamefont), _fontNum(font),
 	_blendColour(0), _currentStart(0), _currentEnd(0), _tx(0), _ty(0),
-	_targetWidth(w), _targetHeight(h), _cachedText(nullptr), _textAlign(align) {
+	_doPaging(dopaging), _targetWidth(w), _targetHeight(h),
+	_cachedText(nullptr), _textAlign(align) {
 }
 
 TextWidget::~TextWidget(void) {
@@ -58,19 +59,19 @@ void TextWidget::InitGump(Gump *newparent, bool take_focus) {
 	_dims.moveTo(0, -font->getBaseline());
 
 	if (_gameFont && getFont()->isHighRes()) {
-		Rect rect(_dims);
+		Common::Rect32 rect(_dims);
 		ScreenSpaceToGumpRect(rect, ROUND_OUTSIDE);
 		_dims.moveTo(0, rect.top);
 
 		// Note that GumpRectToScreenSpace is guaranteed to keep
 		// _targetWidth/_targetHeight zero if they already were.
-		Rect target(_dims);
+		Common::Rect32 target(_dims);
 		GumpRectToScreenSpace(target, ROUND_OUTSIDE);
 
 		_targetWidth = target.width();
 		_targetHeight = target.height();
 
-		Rect sr(0, 0, _targetWidth, _targetHeight);
+		Common::Rect32 sr(0, 0, _targetWidth, _targetHeight);
 		ScreenSpaceToGumpRect(sr, ROUND_OUTSIDE);
 		_dims.setWidth(sr.width());
 		_dims.setHeight(sr.height());
@@ -86,7 +87,7 @@ int TextWidget::getVlead() {
 	int32 vlead = _cachedText->getVlead();
 
 	if (_gameFont && getFont()->isHighRes()) {
-		Rect rect(0, 0, 0, vlead);
+		Common::Rect32 rect(0, 0, 0, vlead);
 		ScreenSpaceToGumpRect(rect, ROUND_OUTSIDE);
 		vlead = rect.height();
 	}
@@ -110,7 +111,7 @@ bool TextWidget::setupNextText() {
 
 	unsigned int remaining;
 	font->getTextSize(_text.substr(_currentStart), _tx, _ty, remaining,
-	                  _targetWidth, _targetHeight, _textAlign, true);
+	                  _targetWidth, _targetHeight, _textAlign, true, _doPaging);
 
 
 	_dims.top = -font->getBaseline();
@@ -125,14 +126,10 @@ bool TextWidget::setupNextText() {
 	if (_gameFont) {
 		Font *fontP = getFont();
 		if (fontP->isHighRes()) {
-			Rect sr(0, 0, _dims.width(), _dims.height());
+			Common::Rect32 sr(0, 0, _dims.width(), _dims.height());
 			ScreenSpaceToGumpRect(sr, ROUND_OUTSIDE);
 			_dims.setWidth(sr.width());
 			_dims.setHeight(sr.height());
-
-			sr = Rect(0, 0, 0, _dims.top);
-			ScreenSpaceToGumpRect(sr, ROUND_OUTSIDE);
-			_dims.moveTo(_dims.left, sr.height());
 		}
 	}
 
@@ -153,7 +150,7 @@ void TextWidget::renderText() {
 		_cachedText = font->renderText(_text.substr(_currentStart,
 		                               _currentEnd - _currentStart),
 		                               remaining, _targetWidth, _targetHeight,
-		                               _textAlign, true);
+		                               _textAlign, true, _doPaging);
 	}
 }
 
@@ -164,7 +161,6 @@ void TextWidget::PaintThis(RenderSurface *surf, int32 lerp_factor, bool scaled) 
 	renderText();
 
 	if (scaled && _gameFont && getFont()->isHighRes()) {
-		surf->FillAlpha(0xFF, _dims.left, _dims.top, _dims.width(), _dims.height());
 		return;
 	}
 
@@ -194,9 +190,8 @@ void TextWidget::PaintComposited(RenderSurface *surf, int32 lerp_factor, int32 s
 	if (dynamic_cast<ButtonWidget *>(_parent) && dynamic_cast<AskGump *>(_parent->GetParent()))
 		return;
 
-	Rect rect(_dims);
+	Common::Rect32 rect(_dims);
 	GumpRectToScreenSpace(rect, ROUND_OUTSIDE);
-	surf->FillAlpha(0x00, rect.left, rect.top, rect.width(), rect.height());
 }
 
 // don't handle any mouse motion events, so let parent handle them for us.
@@ -250,7 +245,7 @@ bool TextWidget::loadData(Common::ReadStream *rs, uint32 version) {
 	int32 tx, ty;
 	unsigned int remaining;
 	font->getTextSize(_text.substr(_currentStart), tx, ty, remaining,
-	                  _targetWidth, _targetHeight, _textAlign, true);
+	                  _targetWidth, _targetHeight, _textAlign, true, _doPaging);
 
 	// Y offset is always baseline
 	_dims.top = -font->getBaseline();

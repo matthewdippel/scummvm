@@ -162,7 +162,7 @@ void Screen_EoB::setDualPalettes(Palette &top, Palette &bottom) {
 	enableDualPaletteMode(120);
 }
 
-AmigaDOSFont::AmigaDOSFont(Resource *res, bool needsLocalizedFont) : _res(res), _needsLocalizedFont(needsLocalizedFont), _width(0), _height(0), _first(0), _last(0), _content(0), _numElements(0), _selectedElement(0), _maxPathLen(256) {
+AmigaDOSFont::AmigaDOSFont(Resource *res, bool needsLocalizedFont) : _res(res), _needsLocalizedFont(needsLocalizedFont), _width(0), _height(0), _first(0), _last(0), _content(0), _numElements(0), _selectedElement(0), _maxPathLen(256), _colorMap(nullptr) {
 	assert(_res);
 }
 
@@ -298,25 +298,21 @@ void AmigaDOSFont::unload() {
 	delete[] _content;
 }
 
-AmigaDOSFont::TextFont *AmigaDOSFont::loadContentFile(const Common::String fileName) {
+AmigaDOSFont::TextFont *AmigaDOSFont::loadContentFile(const Common::Path &fileName) {
 	Common::SeekableReadStreamEndian *str = _res->createEndianAwareReadStream(fileName);
 
-	if (!str && fileName.contains('/')) {
+	if (!str && !fileName.getParent().empty()) {
 		// These content files are usually located in sub directories (i. e. the eobf8.font
 		// has a sub dir named 'eobf8' with a file '8' in it). In case someone put the content
 		// files directly in the game directory we still try to open it.
-		Common::String fileNameAlt = fileName;
-		while (fileNameAlt.firstChar() != '/')
-			fileNameAlt.deleteChar(0);
-		fileNameAlt.deleteChar(0);
-
+		Common::Path fileNameAlt(fileName.baseName(), Common::Path::kNoSeparator);
 		str = _res->createEndianAwareReadStream(fileNameAlt);
 
 		if (!str) {
 			// Someone might even have copied the floppy disks to the game directory with the
 			// full sub directory structure. So we also try that...
-			fileNameAlt = "fonts/";
-			fileNameAlt += fileName;
+			fileNameAlt = Common::Path("fonts");
+			fileNameAlt.joinInPlace(fileName);
 
 			str = _res->createEndianAwareReadStream(fileNameAlt);
 		}
@@ -325,6 +321,7 @@ AmigaDOSFont::TextFont *AmigaDOSFont::loadContentFile(const Common::String fileN
 			errorDialog(0);
 	}
 
+	assert(str);
 	uint32 hunkId = str->readUint32();
 	// Except for some sanity checks we skip all of the Amiga hunk file magic
 	if (hunkId != 0x03f3)
@@ -360,17 +357,19 @@ AmigaDOSFont::TextFont *AmigaDOSFont::loadContentFile(const Common::String fileN
 
 	str->seek(curPos - 18, SEEK_SET);
 	uint32 offset = str->readUint32();
-	fnt->bitmap = offset ? buffer + offset - (curPos - hunkStartPos) : 0;
+	fnt->bitmap = offset ? buffer + offset - (curPos - hunkStartPos) : nullptr;
+	assert(fnt->bitmap);
 	fnt->modulo = str->readUint16();
 
 	offset = str->readUint32();
-	uint16 *loc = (uint16*)(offset ? buffer + offset - (curPos - hunkStartPos) : 0);
+	uint16 *loc = (uint16*)(offset ? buffer + offset - (curPos - hunkStartPos) : nullptr);
+	assert(loc);
 	for (int i = 0; i <= (fnt->lastChar - fnt->firstChar) * 2 + 1; ++i)
 		loc[i] = READ_BE_UINT16(&loc[i]);
 	fnt->location = loc;
 
 	offset = str->readUint32();
-	int16 *idat = offset ? (int16*)(buffer + offset - (curPos - hunkStartPos)) : 0;
+	int16 *idat = offset ? (int16*)(buffer + offset - (curPos - hunkStartPos)) : nullptr;
 	if (idat) {
 		for (int i = 0; i <= (fnt->lastChar - fnt->firstChar) * 2 + 1; ++i)
 			idat[i] = (int16)READ_BE_UINT16(&idat[i]);
@@ -381,7 +380,7 @@ AmigaDOSFont::TextFont *AmigaDOSFont::loadContentFile(const Common::String fileN
 	// This warning will only show up if someone tries to use this code elsewhere. It cannot happen with EOB fonts.
 	if (offset)
 		warning("Trying to load an AmigaDOS font with kerning data. This is not implemented. Font Rendering will not be accurate.");
-	idat = offset ? (int16*)(buffer + offset - (curPos - hunkStartPos)) : 0;
+	idat = offset ? (int16*)(buffer + offset - (curPos - hunkStartPos)) : nullptr;
 	if (idat) {
 		for (int i = 0; i <= (fnt->lastChar - fnt->firstChar) * 2 + 1; ++i)
 			idat[i] = (int16)READ_BE_UINT16(&idat[i]);

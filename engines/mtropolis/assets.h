@@ -38,6 +38,8 @@ public:
 	bool load(AssetLoaderContext &context, const Data::ColorTableAsset &data);
 	AssetType getAssetType() const override;
 
+	const ColorRGB8 *getColors() const;
+
 private:
 	ColorRGB8 _colors[256];
 };
@@ -71,6 +73,7 @@ struct MToonMetadata {
 		uint16 decompressedBytesPerRow;
 		bool isKeyFrame;
 
+		FrameDef();
 		bool load(AssetLoaderContext &context, const Data::MToonAsset::FrameDef &data);
 	};
 
@@ -80,12 +83,16 @@ struct MToonMetadata {
 
 		Common::String name;
 
+		FrameRangeDef();
 		bool load(AssetLoaderContext &context, const Data::MToonAsset::FrameRangeDef &data);
 	};
+
+	MToonMetadata();
 
 	ImageFormat imageFormat;
 
 	Common::Rect rect;
+	Common::Point registrationPoint;
 	uint16 bitsPerPixel;
 	uint32 codecID;
 	uint32 encodingFlags;
@@ -99,11 +106,11 @@ class CachedMToon {
 public:
 	CachedMToon();
 
-	bool loadFromStream(const Common::SharedPtr<MToonMetadata> &metadata, Common::ReadStream *stream, size_t size);
+	bool loadFromStream(const Common::SharedPtr<MToonMetadata> &metadata, Common::ReadStream *stream, size_t size, uint hackFlags);
 
 	void optimize(Runtime *runtime);
 
-	void getOrRenderFrame(uint32 prevFrame, uint32 targetFrame, Common::SharedPtr<Graphics::Surface> &surface) const;
+	void getOrRenderFrame(uint32 prevFrame, uint32 targetFrame, Common::SharedPtr<Graphics::ManagedSurface> &surface) const;
 	const Common::SharedPtr<MToonMetadata> &getMetadata() const;
 
 private:
@@ -111,6 +118,8 @@ private:
 	void optimizeRLE(const Graphics::PixelFormat &targetFormat);
 
 	struct RleFrame {
+		RleFrame();
+
 		uint32 version;
 		uint32 width;
 		uint32 height;
@@ -125,28 +134,33 @@ private:
 	static const uint32 kMToonRLETemporalFramePrefix = 1;
 
 	void decompressFrames(const Common::Array<uint8> &data);
-	void decompressRLEFrameToImage(size_t frameIndex, Graphics::Surface &surface);
+	void decompressRLEFrameToImage(size_t frameIndex, Graphics::ManagedSurface &surface);
 	void loadRLEFrames(const Common::Array<uint8> &data);
 	void decompressRLEFrame(size_t frameIndex);
 	void loadUncompressedFrame(const Common::Array<uint8> &data, size_t frameIndex);
 	void decompressQuickTimeFrame(const Common::Array<uint8> &data, size_t frameIndex);
 
 	template<class TSrcNumber, uint32 TSrcLiteralMask, uint32 TSrcTransparentSkipMask, class TDestNumber, uint32 TDestLiteralMask, uint32 TDestTransparentSkipMask>
-	void rleReformat(RleFrame &frame, const Common::Array<TSrcNumber> &srcData, const Graphics::PixelFormat &srcFormatRef, Common::Array<TDestNumber> &destData, const Graphics::PixelFormat &destFormatRef);
+	void rleReformat(RleFrame &frame, const Common::Array<TSrcNumber> &srcData, const Graphics::PixelFormat &srcFormatRef, Common::Array<TDestNumber> &destData, const Graphics::PixelFormat &destFormatRef, uint hackFlags);
 
 	template<class TNumber, uint32 TLiteralMask, uint32 TTransparentRowSkipMask>
-	static bool decompressMToonRLE(const RleFrame &frame, const Common::Array<TNumber> &coefsArray, Graphics::Surface &surface, bool isBottomUp);
+	static bool decompressMToonRLE(const RleFrame &frame, const Common::Array<TNumber> &coefsArray, Graphics::ManagedSurface &surface, bool isBottomUp, bool isKeyFrame, uint hackFlags);
+
+	template<class TDest, class TSrc>
+	static void checkedMemCpy(Common::Array<TDest> &dest, size_t destIndex, const Common::Array<TSrc> &src, size_t srcIndex, size_t sizeBytes);
 
 	Common::Array<RleFrame> _rleData;
 	bool _isRLETemporalCompressed;
 
-	Common::Array<Common::SharedPtr<Graphics::Surface> > _decompressedFrames;
-	Common::Array<Common::SharedPtr<Graphics::Surface> > _optimizedFrames;
+	Common::Array<Common::SharedPtr<Graphics::ManagedSurface> > _decompressedFrames;
+	Common::Array<Common::SharedPtr<Graphics::ManagedSurface> > _optimizedFrames;
 
 	Graphics::PixelFormat _rleInternalFormat;
 	Graphics::PixelFormat _rleOptimizedFormat;
 
 	Common::SharedPtr<MToonMetadata> _metadata;
+
+	uint _hackFlags;
 };
 
 struct AudioMetadata {
@@ -160,6 +174,8 @@ struct AudioMetadata {
 		kEncodingMace3,
 		kEncodingMace6,
 	};
+
+	AudioMetadata();
 
 	Encoding encoding;
 	uint32 durationMSec;
@@ -217,20 +233,32 @@ private:
 	Common::Array<int> _damagedFrames;
 };
 
+class AVIMovieAsset : public Asset {
+public:
+	bool load(AssetLoaderContext &context, const Data::AVIMovieAsset &data);
+	AssetType getAssetType() const override;
+
+	const Common::String &getExtFileName() const;
+
+private:
+	Common::String _extFileName;
+};
+
 class CachedImage {
 public:
 	CachedImage();
 
-	const Common::SharedPtr<Graphics::Surface> &optimize(Runtime *runtime);
+	const Common::SharedPtr<Graphics::ManagedSurface> &optimize(Runtime *runtime);
 
-	void resetSurface(ColorDepthMode colorDepth, const Common::SharedPtr<Graphics::Surface> &surface);
+	void resetSurface(ColorDepthMode colorDepth, const Common::SharedPtr<Graphics::ManagedSurface> &surface);
+
+	ColorDepthMode getOriginalColorDepth() const;
 
 private:
-	Common::SharedPtr<Graphics::Surface> _surface;
-	Common::SharedPtr<Graphics::Surface> _optimizedSurface;
+	Common::SharedPtr<Graphics::ManagedSurface> _surface;
+	Common::SharedPtr<Graphics::ManagedSurface> _optimizedSurface;
 
 	ColorDepthMode _colorDepth;
-	bool _isOptimized;
 };
 
 class ImageAsset : public Asset {
@@ -269,10 +297,12 @@ private:
 
 struct MToonAsset : public Asset {
 public:
+	MToonAsset();
+
 	bool load(AssetLoaderContext &context, const Data::MToonAsset &data);
 	AssetType getAssetType() const override;
 
-	const Common::SharedPtr<CachedMToon> &loadAndCacheMToon(Runtime *runtime);
+	const Common::SharedPtr<CachedMToon> &loadAndCacheMToon(Runtime *runtime, uint hackFlags);
 
 private:
 	uint32 _frameDataPosition;
@@ -285,6 +315,8 @@ private:
 
 class TextAsset : public Asset {
 public:
+	TextAsset();
+
 	bool load(AssetLoaderContext &context, const Data::TextAsset &data);
 	AssetType getAssetType() const override;
 

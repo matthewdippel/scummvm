@@ -38,10 +38,10 @@ namespace MacVenture {
 // SoundManager
 SoundManager::SoundManager(MacVentureEngine *engine, Audio::Mixer *mixer) {
 	_container = nullptr;
-	Common::String filename = engine->getFilePath(kSoundPathID);
+	Common::Path filename = engine->getFilePath(kSoundPathID);
 	_container = new Container(filename);
 	_mixer = mixer;
-	debugC(1, kMVDebugSound, "Created sound manager with file %s", filename.c_str());
+	debugC(1, kMVDebugSound, "Created sound manager with file %s", filename.toString().c_str());
 }
 
 SoundManager::~SoundManager() {
@@ -196,9 +196,7 @@ void SoundAsset::decode18(Common::SeekableReadStream *stream) {
 		wavtable.push_back(stream->readByte());
 	}
 	_length = stream->readUint32BE() * 2;
-	//Unused
-	stream->readUint16BE();
-	// TODO: It had `| 0` at the end of this line, possible source of bugs.
+	stream->readUint16BE(); // Unused
 	_frequency = (stream->readUint32BE() * 22100 / 0x10000);
 	byte ch = 0;
 	for (uint i = 0; i < _length; i++) {

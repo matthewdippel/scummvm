@@ -78,6 +78,8 @@
 
 namespace Pegasus {
 
+PegasusEngine *g_vm;
+
 PegasusEngine::PegasusEngine(OSystem *syst, const PegasusGameDescription *gamedesc) : Engine(syst), InputHandler(nullptr), _gameDescription(gamedesc),
 		_shellNotification(kJMPDCShellNotificationID, this), _returnHotspot(kInfoReturnSpotID), _itemDragger(this), _bigInfoMovie(kNoDisplayElement),
 		_smallInfoMovie(kNoDisplayElement) {
@@ -101,6 +103,8 @@ PegasusEngine::PegasusEngine(OSystem *syst, const PegasusGameDescription *gamede
 	_chattyArthur = true;
 	_aiSaveStream = nullptr;
 	_heardOverviewVoice = false;
+
+	g_vm = this;
 }
 
 PegasusEngine::~PegasusEngine() {
@@ -207,11 +211,11 @@ Common::Error PegasusEngine::run() {
 	return Common::kNoError;
 }
 
-bool PegasusEngine::canLoadGameStateCurrently() {
+bool PegasusEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	return _loadAllowed && !isDemo();
 }
 
-bool PegasusEngine::canSaveGameStateCurrently() {
+bool PegasusEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	return _saveAllowed && !isDemo() && g_neighborhood;
 }
 
@@ -221,7 +225,7 @@ bool PegasusEngine::detectOpeningClosingDirectory() {
 	// macOS will display this as 'Opening:Closing' and we can use that directly
 	// On other systems, users will need to rename to "Opening_Closing"
 
-	Common::FSNode gameDataDir(ConfMan.get("path"));
+	Common::FSNode gameDataDir(ConfMan.getPath("path"));
 	gameDataDir = gameDataDir.getChild("Images");
 
 	if (!gameDataDir.exists())
@@ -231,20 +235,21 @@ bool PegasusEngine::detectOpeningClosingDirectory() {
 	if (!gameDataDir.getChildren(fsList, Common::FSNode::kListDirectoriesOnly, true))
 		return false;
 
-	for (uint i = 0; i < fsList.size() && _introDirectory.empty(); i++) {
+	Common::String introDirectory;
+	for (uint i = 0; i < fsList.size() && introDirectory.empty(); i++) {
 		Common::String name = fsList[i].getName();
 
 		if (name.equalsIgnoreCase("Opening:Closing"))
-			_introDirectory = name;
+			introDirectory = name;
 		else if (name.equalsIgnoreCase("Opening_Closing"))
-			_introDirectory = name;
+			introDirectory = name;
 	}
 
-	if (_introDirectory.empty())
+	if (introDirectory.empty())
 		return false;
 
-	debug(0, "Detected intro location as '%s'", _introDirectory.c_str());
-	_introDirectory = Common::String("Images/") + _introDirectory;
+	debug(0, "Detected intro location as '%s'", introDirectory.c_str());
+	_introDirectory = Common::Path("Images/").append(introDirectory);
 	return true;
 }
 
@@ -320,7 +325,7 @@ void PegasusEngine::runIntro() {
 	bool skipped = false;
 
 	Video::VideoDecoder *video = new Video::QuickTimeDecoder();
-	if (video->loadFile(_introDirectory + "/BandaiLogo.movie")) {
+	if (video->loadFile(_introDirectory.appendComponent("BandaiLogo.movie"))) {
 		video->setVolume(MIN<uint>(getAmbienceLevel(), 0xFF));
 		video->start();
 
@@ -349,11 +354,11 @@ void PegasusEngine::runIntro() {
 		return;
 
 #ifdef USE_THEORADEC
-	if (isDVD() && Common::File::exists(_introDirectory + "/BigMovie_hq.ogg")) {
+	if (isDVD() && Common::File::exists(_introDirectory.appendComponent("BigMovie_hq.ogg"))) {
 		Video::TheoraDecoder hqVideo;
 		hqVideo.setSoundType(Audio::Mixer::kPlainSoundType);
 
-		if (hqVideo.loadFile(_introDirectory + "/BigMovie_hq.ogg")) {
+		if (hqVideo.loadFile(_introDirectory.appendComponent("BigMovie_hq.ogg"))) {
 			hqVideo.start();
 			playMovieScaled(&hqVideo, 0, 0);
 			return;
@@ -363,8 +368,8 @@ void PegasusEngine::runIntro() {
 
 	video = new Video::QuickTimeDecoder();
 
-	if (!video->loadFile(_introDirectory + "/Big Movie.movie"))
-		if (!video->loadFile(_introDirectory + "/BigMovie.movie"))
+	if (!video->loadFile(_introDirectory.appendComponent("Big Movie.movie")))
+		if (!video->loadFile(_introDirectory.appendComponent("BigMovie.movie")))
 			error("Could not load intro movie");
 
 	video->setVolume(MIN<uint>(getAmbienceLevel(), 0xFF));
@@ -380,7 +385,7 @@ void PegasusEngine::runIntro() {
 }
 
 Common::Error PegasusEngine::showLoadDialog() {
-	GUI::SaveLoadChooser slc(_("Load game:"), _("Load"), false);
+	GUI::SaveLoadChooser slc(false);
 
 	int slot = slc.runModalWithCurrentTarget();
 
@@ -399,7 +404,7 @@ Common::Error PegasusEngine::showLoadDialog() {
 }
 
 Common::Error PegasusEngine::showSaveDialog() {
-	GUI::SaveLoadChooser slc(_("Save game:"), _("Save"), true);
+	GUI::SaveLoadChooser slc(true);
 
 	int slot = slc.runModalWithCurrentTarget();
 
@@ -829,7 +834,7 @@ void PegasusEngine::introTimerExpired() {
 		if (isDVD()) {
 			video = new Video::TheoraDecoder();
 
-			if (!video->loadFile(_introDirectory + "/LilMovie_hq.ogg")) {
+			if (!video->loadFile(_introDirectory.appendComponent("LilMovie_hq.ogg"))) {
 				delete video;
 				video = nullptr;
 			}
@@ -838,7 +843,7 @@ void PegasusEngine::introTimerExpired() {
 
 		if (!video) {
 			video = new Video::QuickTimeDecoder();
-			if (!video->loadFile(_introDirectory + "/LilMovie.movie"))
+			if (!video->loadFile(_introDirectory.appendComponent("LilMovie.movie")))
 				error("Failed to load little movie");
 		}
 
@@ -1002,27 +1007,27 @@ void PegasusEngine::doGameMenuCommand(const GameMenuCommand command) {
 				if (GameState.getEasterEgg()) {
 #ifdef USE_THEORADEC
 					video = new Video::TheoraDecoder();
-					if (!video->loadFile(_introDirectory + "/Closing_hq2.ogg")) {
+					if (!video->loadFile(_introDirectory.appendComponent("Closing_hq2.ogg"))) {
 						delete video;
 						video = nullptr;
 					}
 #endif
 					if (!video) {
 						video = new Video::QuickTimeDecoder();
-						if (!video->loadFile(_introDirectory + "/Closing2.movie"))
+						if (!video->loadFile(_introDirectory.appendComponent("Closing2.movie")))
 							error("Could not load alternate closing movie");
 					}
 				} else {
 #ifdef USE_THEORADEC
 					video = new Video::TheoraDecoder();
-					if (!video->loadFile(_introDirectory + "/Closing_hq1.ogg")) {
+					if (!video->loadFile(_introDirectory.appendComponent("Closing_hq1.ogg"))) {
 						delete video;
 						video = nullptr;
 					}
 #endif
 					if (!video) {
 						video = new Video::QuickTimeDecoder();
-						if (!video->loadFile(_introDirectory + "/Closing.movie"))
+						if (!video->loadFile(_introDirectory.appendComponent("Closing.movie")))
 							error("Could not load closing movie");
 					}
 				}
@@ -1042,14 +1047,14 @@ void PegasusEngine::doGameMenuCommand(const GameMenuCommand command) {
 					// Display new post credits movie
 #ifdef USE_THEORADEC
 					video = new Video::TheoraDecoder();
-					if (!video->loadFile(_introDirectory + "/Closing_hq3.ogg")) {
+					if (!video->loadFile(_introDirectory.appendComponent("Closing_hq3.ogg"))) {
 						delete video;
 						video = nullptr;
 					}
 #endif
 					if (!video) {
 						video = new Video::QuickTimeDecoder();
-						if (!video->loadFile(_introDirectory + "/Closing3.movie"))
+						if (!video->loadFile(_introDirectory.appendComponent("Closing3.movie")))
 							error("Could not load closing 3 movie");
 					}
 
@@ -1416,7 +1421,7 @@ void PegasusEngine::doInterfaceOverview() {
 	_loadRequested = false;
 }
 
-void PegasusEngine::showTempScreen(const Common::String &fileName) {
+void PegasusEngine::showTempScreen(const Common::Path &fileName) {
 	_gfx->doFadeOutSync();
 
 	Picture picture(0);
@@ -1515,18 +1520,18 @@ bool PegasusEngine::playerAlive() {
 	return (_shellNotification.getNotificationFlags() & kPlayerDiedFlag) == 0;
 }
 
-Common::String PegasusEngine::getBriefingMovie() {
+Common::Path PegasusEngine::getBriefingMovie() {
 	if (_neighborhood)
 		return _neighborhood->getBriefingMovie();
 
-	return Common::String();
+	return Common::Path();
 }
 
-Common::String PegasusEngine::getEnvScanMovie() {
+Common::Path PegasusEngine::getEnvScanMovie() {
 	if (_neighborhood)
 		return _neighborhood->getEnvScanMovie();
 
-	return Common::String();
+	return Common::Path();
 }
 
 uint PegasusEngine::getNumHints() {
@@ -1536,11 +1541,11 @@ uint PegasusEngine::getNumHints() {
 	return 0;
 }
 
-Common::String PegasusEngine::getHintMovie(uint hintNum) {
+Common::Path PegasusEngine::getHintMovie(uint hintNum) {
 	if (_neighborhood)
 		return _neighborhood->getHintMovie(hintNum);
 
-	return Common::String();
+	return Common::Path();
 }
 
 bool PegasusEngine::canSolve() {
@@ -1550,12 +1555,12 @@ bool PegasusEngine::canSolve() {
 	return false;
 }
 
-void PegasusEngine::prepareForAIHint(const Common::String &movieName) {
+void PegasusEngine::prepareForAIHint(const Common::Path &movieName) {
 	if (g_neighborhood)
 		g_neighborhood->prepareForAIHint(movieName);
 }
 
-void PegasusEngine::cleanUpAfterAIHint(const Common::String &movieName) {
+void PegasusEngine::cleanUpAfterAIHint(const Common::Path &movieName) {
 	if (g_neighborhood)
 		g_neighborhood->cleanUpAfterAIHint(movieName);
 }
@@ -1967,7 +1972,7 @@ bool PegasusEngine::wantsCursor() {
 	return _gameMenu == nullptr;
 }
 
-void PegasusEngine::updateCursor(const Common::Point, const Hotspot *cursorSpot) {
+void PegasusEngine::updateCursor(const Common::Point &, const Hotspot *cursorSpot) {
 	if (_itemDragger.isTracking()) {
 		_cursor->setCurrentFrameIndex(5);
 	} else {
@@ -2716,7 +2721,7 @@ Common::KeymapArray PegasusEngine::initKeymaps() {
 
 	Action *act;
 
-	act = new Action(kStandardActionMoveUp, _("Up/Zoom In/Move Forward/Open Doors"));
+	act = new Action(kStandardActionMoveUp, _("Up / Zoom in / Move forward / Open door"));
 	act->setCustomEngineActionEvent(kPegasusActionUp);
 	act->addDefaultInputMapping("UP");
 	act->addDefaultInputMapping("KP8");
@@ -2724,7 +2729,7 @@ Common::KeymapArray PegasusEngine::initKeymaps() {
 	act->addDefaultInputMapping("MOUSE_WHEEL_UP");
 	engineKeyMap->addAction(act);
 
-	act = new Action(kStandardActionMoveDown, _("Down/Zoom Out"));
+	act = new Action(kStandardActionMoveDown, _("Down / Zoom out"));
 	act->setCustomEngineActionEvent(kPegasusActionDown);
 	act->addDefaultInputMapping("DOWN");
 	act->addDefaultInputMapping("KP5");
@@ -2732,14 +2737,14 @@ Common::KeymapArray PegasusEngine::initKeymaps() {
 	act->addDefaultInputMapping("MOUSE_WHEEL_DOWN");
 	engineKeyMap->addAction(act);
 
-	act = new Action(kStandardActionMoveLeft, _("Turn Left"));
+	act = new Action(kStandardActionMoveLeft, _("Turn left"));
 	act->setCustomEngineActionEvent(kPegasusActionLeft);
 	act->addDefaultInputMapping("LEFT");
 	act->addDefaultInputMapping("KP4");
 	act->addDefaultInputMapping("JOY_LEFT");
 	engineKeyMap->addAction(act);
 
-	act = new Action(kStandardActionMoveRight, _("Turn Right"));
+	act = new Action(kStandardActionMoveRight, _("Turn right"));
 	act->setCustomEngineActionEvent(kPegasusActionRight);
 	act->addDefaultInputMapping("RIGHT");
 	act->addDefaultInputMapping("KP6");
@@ -2766,14 +2771,14 @@ Common::KeymapArray PegasusEngine::initKeymaps() {
 	// The original doesn't use KP7 for inventory, but we're using it as an alternative for
 	// num lock. KP9 is used for the biochip drawer to balance things out.
 
-	act = new Action("TIV", _("Display/Hide Inventory Tray"));
+	act = new Action("TIV", _("Toggle inventory tray"));
 	act->setCustomEngineActionEvent(kPegasusActionShowInventory);
 	act->addDefaultInputMapping("BACKQUOTE");
 	act->addDefaultInputMapping("KP7");
 	act->addDefaultInputMapping("JOY_LEFT_SHOULDER");
 	engineKeyMap->addAction(act);
 
-	act = new Action("TBI", _("Display/Hide Biochip Tray"));
+	act = new Action("TBI", _("Toggle biochip tray"));
 	act->setCustomEngineActionEvent(kPegasusActionShowBiochip);
 	act->addDefaultInputMapping("BACKSPACE");
 	act->addDefaultInputMapping("KP9");
@@ -2781,21 +2786,21 @@ Common::KeymapArray PegasusEngine::initKeymaps() {
 	act->addDefaultInputMapping("JOY_RIGHT_SHOULDER");
 	engineKeyMap->addAction(act);
 
-	act = new Action("TMA", _("Toggle Center Data Display"));
+	act = new Action("TMA", _("Toggle center data display"));
 	act->setCustomEngineActionEvent(kPegasusActionToggleCenterDisplay);
 	act->addDefaultInputMapping("t");
 	act->addDefaultInputMapping("KP_EQUALS");
 	act->addDefaultInputMapping("JOY_Y");
 	engineKeyMap->addAction(act);
 
-	act = new Action("TIN", _("Display/Hide Info Screen"));
+	act = new Action("TIN", _("Toggle info screen"));
 	act->setCustomEngineActionEvent(kPegasusActionShowInfoScreen);
 	act->addDefaultInputMapping("i");
 	act->addDefaultInputMapping("KP_DIVIDE");
 	act->addDefaultInputMapping("JOY_X");
 	engineKeyMap->addAction(act);
 
-	act = new Action(kStandardActionOpenMainMenu, _("Display/Hide Pause Menu"));
+	act = new Action(kStandardActionOpenMainMenu, _("Toggle pause menu"));
 	act->setCustomEngineActionEvent(kPegasusActionShowPauseMenu);
 	act->addDefaultInputMapping("p");
 	act->addDefaultInputMapping("ESCAPE");
@@ -2817,13 +2822,13 @@ Common::KeymapArray PegasusEngine::initKeymaps() {
 	engineKeyMap->addAction(act);
 
 	// We support meta where available and control elsewhere
-	act = new Action(kStandardActionSave, _("Save Game"));
+	act = new Action(kStandardActionSave, _("Save game"));
 	act->setCustomEngineActionEvent(kPegasusActionSaveGameState);
 	act->addDefaultInputMapping("C+s");
 	act->addDefaultInputMapping("M+s");
 	engineKeyMap->addAction(act);
 
-	act = new Action(kStandardActionLoad, _("Load Game"));
+	act = new Action(kStandardActionLoad, _("Load game"));
 	act->setCustomEngineActionEvent(kPegasusActionLoadGameState);
 	act->addDefaultInputMapping("C+o"); // o for open (original)
 	act->addDefaultInputMapping("M+o");

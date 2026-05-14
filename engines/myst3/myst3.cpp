@@ -53,7 +53,7 @@
 
 #include "image/jpeg.h"
 
-#include "graphics/conversion.h"
+#include "graphics/cursorman.h"
 #include "graphics/renderer.h"
 #include "graphics/yuv_to_rgb.h"
 #include "graphics/framelimiter.h"
@@ -79,7 +79,7 @@ Myst3Engine::Myst3Engine(OSystem *syst, const Myst3GameDescription *version) :
 		_transition(nullptr), _frameLimiter(nullptr), _inventoryManualHide(false) {
 
 	// Add subdirectories to the search path to allow running from a full HDD install
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 	SearchMan.addSubDirectoryMatching(gameDataDir, "bin");
 	SearchMan.addSubDirectoryMatching(gameDataDir, "M3Data");
 	SearchMan.addSubDirectoryMatching(gameDataDir, "M3Data/TEXT");
@@ -163,7 +163,13 @@ Common::Error Myst3Engine::run() {
 	_rnd = new Common::RandomSource("sprint");
 	setDebugger(new Console(this));
 	_scriptEngine = new Script(this);
-	_db = new Database(getPlatform(), getGameLanguage(), getGameLocalizationType());
+	Common::Language lang;
+	if (getGameLayoutType() != kLayoutFlattened) {
+		lang = Common::parseLanguage(ConfMan.get("language"));
+	} else {
+		lang = getGameLanguage();
+	}
+	_db = new Database(getPlatform(), lang, getGameLocalizationType());
 	_state = new GameState(getPlatform(), _db);
 	_scene = new Scene(this);
 	if (getPlatform() == Common::kPlatformXbox) {
@@ -173,7 +179,7 @@ Common::Error Myst3Engine::run() {
 	}
 	_archiveNode = new Archive();
 
-	_system->showMouse(false);
+	CursorMan.showMouse(false);
 
 	settingsInitDefaults();
 	syncSoundSettings();
@@ -252,39 +258,82 @@ void Myst3Engine::openArchives() {
 	Common::String menuLanguage;
 	Common::String textLanguage;
 
-	switch (getGameLanguage()) {
-	case Common::NL_NLD:
-		menuLanguage = "DUTCH";
-		break;
-	case Common::FR_FRA:
-		menuLanguage = "FRENCH";
-		break;
-	case Common::DE_DEU:
-		menuLanguage = "GERMAN";
-		break;
-	case Common::HE_ISR:
-		menuLanguage = "HEBREW";
-		break;
-	case Common::IT_ITA:
-		menuLanguage = "ITALIAN";
-		break;
-	case Common::ES_ESP:
-		menuLanguage = "SPANISH";
-		break;
-	case Common::JA_JPN:
-		menuLanguage = "JAPANESE";
-		break;
-	case Common::PL_POL:
-		menuLanguage = "POLISH";
-		break;
-	case Common::EN_ANY:
-	case Common::RU_RUS:
-	default:
-		menuLanguage = "ENGLISH";
-		break;
+	const uint32 localizationType = getGameLocalizationType();
+	const uint32 layoutType = getGameLayoutType();
+
+	if (layoutType == kLayoutCD || layoutType == kLayoutDVD) {
+		const char *languageDir;
+		switch (_db->getGameLanguageCode()) {
+		case kDutch:
+			languageDir = "Dutch";
+			menuLanguage = "DUTCH";
+			break;
+		case kFrench:
+			languageDir = "French";
+			menuLanguage = "FRENCH";
+			break;
+		case kGerman:
+			languageDir = "German";
+			menuLanguage = "GERMAN";
+			break;
+		case kItalian:
+			languageDir = "Italian";
+			menuLanguage = "ITALIAN";
+			break;
+		case kSpanish:
+			languageDir = "Spanish";
+			menuLanguage = "SPANISH";
+			break;
+		case kEnglish:
+		default:
+			languageDir = "English";
+			menuLanguage = "ENGLISH";
+			break;
+		}
+		Common::Path path(ConfMan.getPath("path"));
+		if (layoutType == kLayoutDVD) {
+			path = path.appendComponent(Common::String::format("Myst III %s", languageDir));
+			menuLanguage = "language";
+		} else {
+			path = path.appendComponent(languageDir);
+		}
+		SearchMan.remove("MYST3_language_dir");
+		SearchMan.addDirectory("MYST3_language_dir", path);
+	} else {
+		switch (getGameLanguage()) {
+		case Common::NL_NLD:
+			menuLanguage = "DUTCH";
+			break;
+		case Common::FR_FRA:
+			menuLanguage = "FRENCH";
+			break;
+		case Common::DE_DEU:
+			menuLanguage = "GERMAN";
+			break;
+		case Common::HE_ISR:
+			menuLanguage = "HEBREW";
+			break;
+		case Common::IT_ITA:
+			menuLanguage = "ITALIAN";
+			break;
+		case Common::ES_ESP:
+			menuLanguage = "SPANISH";
+			break;
+		case Common::JA_JPN:
+			menuLanguage = "JAPANESE";
+			break;
+		case Common::PL_POL:
+			menuLanguage = "POLISH";
+			break;
+		case Common::EN_ANY:
+		case Common::RU_RUS:
+		default:
+			menuLanguage = "ENGLISH";
+			break;
+		}
 	}
 
-	if (getGameLocalizationType() == kLocMulti6) {
+	if (localizationType == kLocMulti6) {
 		switch (ConfMan.getInt("text_language")) {
 		case kDutch:
 			textLanguage = "DUTCH";
@@ -309,14 +358,14 @@ void Myst3Engine::openArchives() {
 	} else if (getGameLanguage() == Common::HE_ISR) {
 		textLanguage = "ENGLISH"; // The Hebrew version does not have a "HEBREW.m3t" file
 	} else {
-		if (getGameLocalizationType() == kLocMonolingual || ConfMan.getInt("text_language")) {
+		if (localizationType == kLocMonolingual || ConfMan.getInt("text_language")) {
 			textLanguage = menuLanguage;
 		} else {
 			textLanguage = "ENGLISH";
 		}
 	}
 
-	if (getGameLocalizationType() != kLocMonolingual && getPlatform() != Common::kPlatformXbox && textLanguage == "ENGLISH") {
+	if (localizationType != kLocMonolingual && getPlatform() != Common::kPlatformXbox && textLanguage == "ENGLISH") {
 		textLanguage = "ENGLISHjp";
 	}
 
@@ -334,7 +383,7 @@ void Myst3Engine::openArchives() {
 
 	addArchive(textLanguage + ".m3t", true);
 
-	if (getGameLocalizationType() != kLocMonolingual || getPlatform() == Common::kPlatformXbox || getGameLanguage() == Common::HE_ISR) {
+	if (localizationType != kLocMonolingual || getPlatform() == Common::kPlatformXbox || getGameLanguage() == Common::HE_ISR) {
 		addArchive(menuLanguage + ".m3u", true);
 	}
 
@@ -358,14 +407,15 @@ void Myst3Engine::closeArchives() {
 
 bool Myst3Engine::checkDatafiles() {
 	if (!SearchMan.hasFile("OVER101.m3o")) {
+		const char* urlForPatchesDownload = "https://www.scummvm.org/frs/extras/patches/";
 		warning("Unable to open the update game archive 'OVER101.m3o'");
 		Common::U32String updateMessage =
-				_("This version of Myst III has not been updated with the latest official patch.\n"
+				Common::U32String::format(_("This version of Myst III has not been updated with the latest official patch.\n"
 						  "Please install the official update corresponding to your game's language.\n"
 						  "The updates can be downloaded from:\n"
-						  "https://www.scummvm.org/frs/extras/patches/");
+						  "%s"), urlForPatchesDownload);
 		warning("%s", updateMessage.encode().c_str());
-		GUI::displayErrorDialog(updateMessage);
+		GUIErrorMessageWithURL(updateMessage, urlForPatchesDownload);
 		return false;
 	}
 
@@ -673,7 +723,7 @@ void Myst3Engine::interactWithHoveredElement() {
 	_sound->playEffect(697, 5);
 }
 
-void Myst3Engine::drawFrame(bool noSwap) {
+void Myst3Engine::drawFrame(bool noSwap, bool pausePreloadedScriptMovies) {
 	_sound->update();
 	_gfx->clear();
 
@@ -706,7 +756,7 @@ void Myst3Engine::drawFrame(bool noSwap) {
 	}
 
 	for (int i = _movies.size() - 1; i >= 0 ; i--) {
-		_movies[i]->update();
+		_movies[i]->update(pausePreloadedScriptMovies);
 		_gfx->renderDrawable(_movies[i], _scene);
 	}
 
@@ -775,8 +825,12 @@ bool Myst3Engine::isInventoryVisible() {
 		return false;
 	}
 
-	// Only draw the inventory when the mouse is inside its area
-	if (isWideScreenModEnabled() && !_inventory->isMouseInside()) {
+	// For widescreen mod:
+	// Only draw the inventory when:
+	// - the mouse is inside its area
+	// - and the cursor is visible
+	// - and the inventory is not empty
+	if (isWideScreenModEnabled() && (!_cursor->isVisible() || !_inventory->isMouseInside() || _inventory->isEmpty())) {
 		return false;
 	}
 
@@ -1087,6 +1141,26 @@ void Myst3Engine::loadMovie(uint16 id, uint16 condition, bool resetCond, bool lo
 		_state->setMovieScriptDriven(0);
 	}
 
+	if (_state->getMoviePreloadToMemory()) {
+		movie->setPreloaded(_state->getMoviePreloadToMemory());
+		_state->setMoviePreloadToMemory(0);
+	}
+
+	if (_state->getMovieNoFrameSkip()) {
+		movie->setNoFrameSkip(_state->getMovieNoFrameSkip());
+		_state->setMovieNoFrameSkip(0);
+	}
+
+	if (_state->getMovieUnk147()) {
+		movie->setUnk147(_state->getMovieUnk147());
+		_state->setMovieUnk147(0);
+	}
+
+	if (_state->getMovieUnk148()) {
+		movie->setUnk148(_state->getMovieUnk148());
+		_state->setMovieUnk148(0);
+	}
+
 	if (_state->getMovieStartFrameVar()) {
 		movie->setStartFrameVar(_state->getMovieStartFrameVar());
 		_state->setMovieStartFrameVar(0);
@@ -1252,8 +1326,7 @@ void Myst3Engine::playSimpleMovie(uint16 id, bool fullframe, bool refreshAmbient
 			_inputEscapePressedNotConsumed = false;
 			break;
 		}
-
-		drawFrame();
+		drawFrame(false, true);
 	}
 
 	_drawables.pop_back();
@@ -1374,11 +1447,7 @@ Graphics::Surface *Myst3Engine::loadTexture(uint16 id) {
 	data->readUint32LE(); // unk 2
 	data->readUint32LE(); // unk 3
 
-#ifdef SCUMM_BIG_ENDIAN
-	Graphics::PixelFormat onDiskFormat = Graphics::PixelFormat(4, 8, 8, 8, 8, 0, 24, 16, 8);
-#else
-	Graphics::PixelFormat onDiskFormat = Graphics::PixelFormat(4, 8, 8, 8, 8, 8, 16, 24, 0);
-#endif
+	Graphics::PixelFormat onDiskFormat = Graphics::PixelFormat::createFormatARGB32();
 
 	Graphics::Surface *s = new Graphics::Surface();
 	s->create(width, height, onDiskFormat);
@@ -1460,6 +1529,9 @@ void Myst3Engine::dragSymbol(uint16 var, uint16 id) {
 	HotSpot *hovered = getHoveredHotspot(nodeData, var);
 	if (hovered) {
 		_cursor->setVisible(false);
+		// Enable free camera movement after placing the symbol on the imaging/scanner table.
+		// Part of fix for #16758
+		_cursor->lockPosition(true);
 		_scriptEngine->run(&hovered->script);
 		_cursor->setVisible(true);
 	}
@@ -1498,12 +1570,12 @@ void Myst3Engine::dragItem(uint16 statusVar, uint16 movie, uint16 frame, uint16 
 	}
 }
 
-bool Myst3Engine::canSaveGameStateCurrently() {
+bool Myst3Engine::canSaveGameStateCurrently(Common::U32String *msg) {
 	bool inMenuWithNoGameLoaded = _state->getLocationRoom() == kRoomMenu && _state->getMenuSavedAge() == 0;
 	return canLoadGameStateCurrently() && !inMenuWithNoGameLoaded && _cursor->isVisible();
 }
 
-bool Myst3Engine::canLoadGameStateCurrently() {
+bool Myst3Engine::canLoadGameStateCurrently(Common::U32String *msg) {
 	// Loading from the GMM is only possible when the game is interactive
 	// This is to prevent loading from inner loops. Loading while
 	// in an inner loop can cause the exit condition to never happen,
@@ -1513,7 +1585,16 @@ bool Myst3Engine::canLoadGameStateCurrently() {
 
 Common::Error Myst3Engine::loadGameState(int slot) {
 	Common::StringArray filenames = Saves::list(_saveFileMan, getPlatform());
-	return loadGameState(filenames[slot], kTransitionNone);
+
+	// Slots are assigned consecutively, starting from slot 1
+	// Get the Save List index for the selected slot
+	int listIndex = (slot == 0) ? slot : slot - 1;
+	// Sanity check
+	if (listIndex >= (int)filenames.size()) {
+		return Common::kReadingFailed;
+	}
+
+	return loadGameState(filenames[listIndex], kTransitionNone);
 }
 
 Common::Error Myst3Engine::loadGameState(Common::String fileName, TransitionType transition) {
@@ -1573,19 +1654,25 @@ static bool isValidSaveFileName(const Common::String &desc) {
 Common::Error Myst3Engine::saveGameState(int slot, const Common::String &desc, bool isAutosave) {
 	assert(!desc.empty());
 
+	Common::String saveName = desc;
 	if (!isValidSaveFileName(desc)) {
-		return Common::Error(Common::kCreatingFileFailed, _("Invalid file name for saving"));
+		if (isAutosave) {
+			// Fall back to the expected English translation
+			saveName = "Autosave";
+		} else {
+			return Common::Error(Common::kCreatingFileFailed, _("Invalid file name for saving"));
+		}
 	}
 
-	// Try to use an already generated thumbnail
-	const Graphics::Surface *thumbnail = _menu->borrowSaveThumbnail();
-	if (!thumbnail) {
+	// If autosaving, get a fresh thumbnail of the game screen
+	if (isAutosave && !_menu->isOpen()) {
 		_menu->generateSaveThumbnail();
 	}
-	thumbnail = _menu->borrowSaveThumbnail();
+	// Use the currently generated thumbnail
+	const Graphics::Surface *thumbnail = _menu->borrowSaveThumbnail();
 	assert(thumbnail);
 
-	return saveGameState(desc, thumbnail, isAutosave);
+	return saveGameState(saveName, thumbnail, isAutosave);
 }
 
 Common::Error Myst3Engine::saveGameState(const Common::String &desc, const Graphics::Surface *thumbnail, bool isAutosave) {
@@ -1848,6 +1935,7 @@ void Myst3Engine::settingsInitDefaults() {
 	ConfMan.registerDefault("mouse_inverted", false);
 	ConfMan.registerDefault("zip_mode", false);
 	ConfMan.registerDefault("subtitles", false);
+	ConfMan.registerDefault("speech_mute", false);
 	ConfMan.registerDefault("vibrations", true); // Xbox specific
 }
 
@@ -1876,13 +1964,23 @@ void Myst3Engine::settingsApplyFromVars() {
 	ConfMan.setInt("mouse_speed", _state->getMouseSpeed());
 	ConfMan.setBool("zip_mode", _state->getZipModeEnabled());
 	ConfMan.setBool("subtitles", _state->getSubtitlesEnabled());
+	ConfMan.setBool("speech_mute", false);
 
 	if (getPlatform() != Common::kPlatformXbox) {
 		ConfMan.setInt("overall_volume", _state->getOverallVolume() * 256 / 100);
 		ConfMan.setInt("music_volume", _state->getMusicVolume() * 256 / 100);
 		ConfMan.setInt("music_frequency", _state->getMusicFrequency());
-		ConfMan.setInt("audio_language", _state->getLanguageAudio());
-		ConfMan.setInt("text_language", _state->getLanguageText());
+		// Don't set languages if they are still the defaults
+		// This will allow the user to change the menu language in ScummVM and
+		// have the other settings follow the change
+		if (ConfMan.hasKey("audio_language") ||
+				ConfMan.getInt("audio_language") != _state->getLanguageAudio()) {
+			ConfMan.setInt("audio_language", _state->getLanguageAudio());
+		}
+		if (ConfMan.hasKey("text_language") ||
+				oldTextLanguage != _state->getLanguageText()) {
+			ConfMan.setInt("text_language", _state->getLanguageText());
+		}
 		ConfMan.setBool("water_effects", _state->getWaterEffects());
 
 		// The language changed, reload the correct archives
@@ -1902,6 +2000,13 @@ void Myst3Engine::settingsApplyFromVars() {
 
 void Myst3Engine::syncSoundSettings() {
 	Engine::syncSoundSettings();
+
+	// If speech_mute is set to true, either in the game domain "Text and speech" settings or inherited from the global settings
+	// translate it to false, since speech cannot be muted in Myst 3.
+	// This will result in a setting of "just subtitles" for the game's domain option "Text and speech" to change to "both" (after the game is run).
+	if (ConfMan.getBool("speech_mute") == true) {
+		ConfMan.setBool("speech_mute", false);
+	}
 
 	uint soundOverall = ConfMan.getInt("overall_volume");
 	uint soundVolumeMusic = ConfMan.getInt("music_volume");

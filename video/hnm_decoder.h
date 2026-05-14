@@ -19,17 +19,30 @@
  *
  */
 
+#include "common/scummsys.h"	// for USE_HNM
+
+#ifdef USE_HNM
+
 #ifndef VIDEO_HNM_DECODER_H
 #define VIDEO_HNM_DECODER_H
 
-#include "common/rational.h"
-#include "graphics/pixelformat.h"
-#include "video/video_decoder.h"
-#include "graphics/surface.h"
 #include "audio/audiostream.h"
+#include "common/rational.h"
+#include "graphics/palette.h"
+#include "graphics/surface.h"
+#include "video/video_decoder.h"
+
+
+namespace Audio {
+class APCStream;
+}
 
 namespace Common {
 class SeekableReadStream;
+}
+
+namespace Image {
+class HNM6Decoder;
 }
 
 namespace Video {
@@ -43,7 +56,7 @@ namespace Video {
  */
 class HNMDecoder : public VideoDecoder {
 public:
-	HNMDecoder(bool loop = false, byte *initialPalette = nullptr);
+	HNMDecoder(const Graphics::PixelFormat &format, bool loop = false, byte *initialPalette = nullptr);
 	~HNMDecoder() override;
 	bool loadStream(Common::SeekableReadStream *stream) override;
 	void readNextPacket() override;
@@ -63,8 +76,8 @@ private:
 		uint32 getNextFrameStartTime() const override { return _nextFrameStartTime.msecs(); }
 
 		void restart() { _lastFrameDelaySamps = 0; }
-		void newFrame(uint32 frameDelay);
 
+		virtual void newFrame(uint32 frameDelay) = 0;
 		virtual void decodeChunk(byte *data, uint32 size,
 		                         uint16 chunkType, uint16 flags) = 0;
 
@@ -84,8 +97,10 @@ private:
 		uint16 getHeight() const override { return _surface.h; }
 		Graphics::PixelFormat getPixelFormat() const override { return _surface.format; }
 		const Graphics::Surface *decodeNextFrame() override { return &_surface; }
-		const byte *getPalette() const override { _dirtyPalette = false; return _palette; }
+		const byte *getPalette() const override { _dirtyPalette = false; return _palette.data(); }
 		bool hasDirtyPalette() const override { return _dirtyPalette; }
+
+		virtual void newFrame(uint32 frameDelay) override;
 
 	protected:
 		HNM45VideoTrack(uint32 width, uint32 height, uint32 frameSize, uint32 frameCount,
@@ -98,7 +113,7 @@ private:
 
 		Graphics::Surface _surface;
 
-		byte _palette[256 * 3];
+		Graphics::Palette _palette;
 		mutable bool _dirtyPalette;
 
 		byte *_frameBufferC;
@@ -142,13 +157,42 @@ private:
 		void decodeFrame(byte *data, uint32 size);
 	};
 
-	class DPCMAudioTrack : public AudioTrack {
+	class HNM6VideoTrack : public HNMVideoTrack {
+	public:
+		HNM6VideoTrack(uint32 width, uint32 height, uint32 frameSize, uint32 frameCount,
+		               uint32 regularFrameDelayMs, uint32 audioSampleRate,
+		               const Graphics::PixelFormat &format);
+		~HNM6VideoTrack() override;
+
+		uint16 getWidth() const override;
+		uint16 getHeight() const override;
+		Graphics::PixelFormat getPixelFormat() const override;
+		bool setOutputPixelFormat(const Graphics::PixelFormat &format) override;
+		const Graphics::Surface *decodeNextFrame() override { return _surface; }
+
+		virtual void newFrame(uint32 frameDelay) override;
+		/** Decode a video chunk. */
+		void decodeChunk(byte *data, uint32 size,
+		                 uint16 chunkType, uint16 flags) override;
+	private:
+		Image::HNM6Decoder *_decoder;
+		const Graphics::Surface *_surface;
+	};
+
+	class HNMAudioTrack : public AudioTrack {
+	public:
+		HNMAudioTrack(Audio::Mixer::SoundType soundType) : AudioTrack(soundType) {}
+
+		virtual uint32 decodeSound(uint16 chunkType, byte *data, uint32 size) = 0;
+	};
+
+	class DPCMAudioTrack : public HNMAudioTrack {
 	public:
 		DPCMAudioTrack(uint16 format, uint16 bits, uint sampleRate, bool stereo,
 		               Audio::Mixer::SoundType soundType);
 		~DPCMAudioTrack() override;
 
-		uint32 decodeSound(byte *data, uint32 size);
+		uint32 decodeSound(uint16 chunkType, byte *data, uint32 size) override;
 	protected:
 		Audio::AudioStream *getAudioStream() const override { return _audioStream; }
 	private:
@@ -161,19 +205,36 @@ private:
 		bool _stereo;
 	};
 
+	class APCAudioTrack : public HNMAudioTrack {
+	public:
+		APCAudioTrack(uint sampleRate, byte stereo,
+		              Audio::Mixer::SoundType soundType);
+		~APCAudioTrack() override;
+
+		uint32 decodeSound(uint16 chunkType, byte *data, uint32 size) override;
+	protected:
+		Audio::AudioStream *getAudioStream() const override;
+	private:
+		Audio::APCStream *_audioStream;
+	};
+
+	Graphics::PixelFormat _format;
 	bool _loop;
 	byte *_initialPalette;
 
 	uint32 _regularFrameDelayMs;
 	// These two pointer are owned by VideoDecoder
 	HNMVideoTrack *_videoTrack;
-	DPCMAudioTrack *_audioTrack;
+	HNMAudioTrack *_audioTrack;
 
 	Common::SeekableReadStream *_stream;
+	bool _alignedChunks;
 	byte *_dataBuffer;
 	uint32 _dataBufferAlloc;
 };
 
 } // End of namespace Video
+
+#endif
 
 #endif

@@ -68,6 +68,7 @@ GlkEngine::~GlkEngine() {
 	delete _streams;
 	delete _windows;
 	delete _conf;
+	g_vm = nullptr;
 }
 
 void GlkEngine::initialize() {
@@ -82,12 +83,15 @@ void GlkEngine::initialize() {
 	_screen->initialize();
 	_clipboard = new Clipboard();
 	_events = new Events();
-	_pcSpeaker = new PCSpeaker(_mixer);
+	_pcSpeaker = new PCSpeaker();
 	_pictures = new Pictures();
 	_selection = new Selection();
 	_sounds = new Sounds();
 	_streams = new Streams();
 	_windows = new Windows(_screen);
+
+	if (_conf->_windowColorOverride || _conf->_windowColor != _conf->parseColor("ffffff"))
+		Windows::_overrideBgSet = true;
 
 	// Setup mixer
 	syncSoundSettings();
@@ -111,7 +115,7 @@ void GlkEngine::createConfiguration() {
 
 Common::Error GlkEngine::run() {
 	// Open up the game file
-	Common::String filename = getFilename();
+	Common::Path filename(getFilename());
 	if (!Common::File::exists(filename))
 		return Common::kNoGameDataFoundError;
 
@@ -124,7 +128,7 @@ Common::Error GlkEngine::run() {
 			return Common::kNoGameDataFoundError;
 	} else {
 		// Check for a secondary blorb file with the same filename
-		Common::StringArray blorbFilenames;
+		Common::Array<Common::Path> blorbFilenames;
 		Blorb::getBlorbFilenames(filename, blorbFilenames, getInterpreterType(), getGameID());
 
 		for (uint idx = 0; idx < blorbFilenames.size(); ++idx) {
@@ -151,13 +155,13 @@ Common::Error GlkEngine::run() {
 	return Common::kNoError;
 }
 
-bool GlkEngine::canLoadGameStateCurrently() {
+bool GlkEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	// Only allow savegames by default when sub-engines are waiting for a line
 	Window *win = _windows->getFocusWindow();
 	return win && (win->_lineRequest || win->_lineRequestUni);
 }
 
-bool GlkEngine::canSaveGameStateCurrently() {
+bool GlkEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	// Only allow savegames by default when sub-engines are waiting for a line
 	Window *win = _windows->getFocusWindow();
 	return win && (win->_lineRequest || win->_lineRequestUni);

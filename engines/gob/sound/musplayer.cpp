@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/stream.h"
@@ -262,8 +268,8 @@ bool MUSPlayer::readSNDTimbres(Common::SeekableReadStream &snd, int timbreCount,
 
 	// Read names
 	byte nameBuffer[10];
-	for (Common::Array<Timbre>::iterator t = _timbres.begin(); t != _timbres.end(); ++t) {
-		if (!readString(snd, t->name, nameBuffer, 9)) {
+	for (auto &timbre : _timbres) {
+		if (!readString(snd, timbre.name, nameBuffer, 9)) {
 			warning("MUSPlayer::readMUSTimbres(): Failed to read timbre name");
 			return false;
 		}
@@ -275,9 +281,9 @@ bool MUSPlayer::readSNDTimbres(Common::SeekableReadStream &snd, int timbreCount,
 	}
 
 	// Read parameters
-	for (Common::Array<Timbre>::iterator t = _timbres.begin(); t != _timbres.end(); ++t) {
+	for (auto &timbre : _timbres) {
 		for (int i = 0; i < (kOperatorsPerVoice * kParamCount); i++)
-			t->params[i] = snd.readUint16LE();
+			timbre.params[i] = snd.readUint16LE();
 	}
 
 	return true;

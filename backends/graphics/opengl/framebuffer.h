@@ -24,13 +24,18 @@
 
 #include "graphics/opengl/system_headers.h"
 
+#include "math/matrix4.h"
+
+#include "common/rotationmode.h"
+
 namespace OpenGL {
+
+class Pipeline;
 
 /**
  * Object describing a framebuffer OpenGL can render to.
  */
 class Framebuffer {
-	friend class Pipeline;
 public:
 	Framebuffer();
 	virtual ~Framebuffer() {};
@@ -39,9 +44,15 @@ public:
 	enum BlendMode {
 		/**
 		 * Newly drawn pixels overwrite the existing contents of the framebuffer
-		 * without mixing with them
+		 * without mixing with them.
 		 */
 		kBlendModeDisabled,
+
+		/**
+		 * Newly drawn pixels overwrite the existing contents of the framebuffer
+		 * without mixing with them. Alpha channel is discarded.
+		 */
+		kBlendModeOpaque,
 
 		/**
 		 * Newly drawn pixels mix with the framebuffer based on their alpha value
@@ -53,10 +64,21 @@ public:
 		 * Newly drawn pixels mix with the framebuffer based on their alpha value
 		 * for transparency.
 		 *
-		 * Requires the image data being drawn to have its color values pre-multipled
+		 * Requires the image data being drawn to have its color values pre-multiplied
 		 * with the alpha value.
 		 */
-		kBlendModePremultipliedTransparency
+		kBlendModePremultipliedTransparency,
+
+		/**
+		 * Newly drawn pixels add to the destination value.
+		 */
+		kBlendModeAdditive,
+
+		/**
+		 * Newly drawn pixels mask out existing pixels based on the alpha value and
+		 * add inversions of the pixels based on the color.
+		 */
+		kBlendModeMaskAlphaAndInvertByColor,
 	};
 
 	/**
@@ -82,14 +104,30 @@ public:
 	/**
 	 * Obtain projection matrix of the framebuffer.
 	 */
-	const GLfloat *getProjectionMatrix() const { return _projectionMatrix; }
+	const Math::Matrix4 &getProjectionMatrix() const { return _projectionMatrix; }
+
+	enum CopyMask {
+		kCopyMaskClearColor   = (1 << 0),
+		kCopyMaskBlendState   = (1 << 1),
+		kCopyMaskScissorState = (1 << 2),
+		kCopyMaskScissorBox   = (1 << 4),
+
+		kCopyMaskAll          = kCopyMaskClearColor | kCopyMaskBlendState |
+		                        kCopyMaskScissorState | kCopyMaskScissorBox,
+	};
+
+	/**
+	 * Copy rendering state from another framebuffer
+	 */
+	void copyRenderStateFrom(const Framebuffer &other, uint copyMask);
+
 protected:
-	bool isActive() const { return _isActive; }
+	bool isActive() const { return _pipeline != nullptr; }
 
 	GLint _viewport[4];
 	void applyViewport();
 
-	GLfloat _projectionMatrix[4*4];
+	Math::Matrix4 _projectionMatrix;
 	void applyProjectionMatrix();
 
 	/**
@@ -107,11 +145,16 @@ protected:
 	 */
 	virtual void deactivateInternal() {}
 
-private:
+public:
+	/**
+	 * Set the size of the target buffer.
+	 */
+	virtual bool setSize(uint width, uint height) = 0;
+
 	/**
 	 * Accessor to activate framebuffer for pipeline.
 	 */
-	void activate();
+	void activate(Pipeline *pipeline);
 
 	/**
 	 * Accessor to deactivate framebuffer from pipeline.
@@ -119,7 +162,7 @@ private:
 	void deactivate();
 
 private:
-	bool _isActive;
+	Pipeline *_pipeline;
 
 	GLfloat _clearColor[4];
 	void applyClearColor();
@@ -140,16 +183,16 @@ private:
 class Backbuffer : public Framebuffer {
 public:
 	/**
-	 * Set the dimensions (a.k.a. size) of the back buffer.
+	 * Set the size of the back buffer.
 	 */
-	void setDimensions(uint width, uint height);
+	bool setSize(uint width, uint height) override;
 
 protected:
-	virtual void activateInternal();
+	void activateInternal() override;
 };
 
 #if !USE_FORCED_GLES
-class GLTexture;
+class Texture;
 
 /**
  * Render to texture framebuffer implementation.
@@ -160,7 +203,7 @@ class GLTexture;
 class TextureTarget : public Framebuffer {
 public:
 	TextureTarget();
-	virtual ~TextureTarget();
+	~TextureTarget() override;
 
 	/**
 	 * Notify that the GL context is about to be destroyed.
@@ -175,18 +218,18 @@ public:
 	/**
 	 * Set size of the texture target.
 	 */
-	void setSize(uint width, uint height);
+	bool setSize(uint width, uint height) override;
 
 	/**
 	 * Query pointer to underlying GL texture.
 	 */
-	GLTexture *getTexture() const { return _texture; }
+	Texture *getTexture() const { return _texture; }
 
 protected:
-	virtual void activateInternal();
+	void activateInternal() override;
 
 private:
-	GLTexture *_texture;
+	Texture *_texture;
 	GLuint _glFBO;
 	bool _needUpdate;
 };

@@ -232,7 +232,7 @@ void EventRecorder::processMillis(uint32 &millis, bool skipRecord) {
 }
 
 bool EventRecorder::processDelayMillis() {
-	return _fastPlayback;
+	return !_fastPlayback;
 }
 
 bool EventRecorder::processAutosave() {
@@ -359,7 +359,7 @@ uint32 EventRecorder::getRandomSeed(const Common::String &name) {
 	if (_recordMode == kRecorderPlayback) {
 		return _playbackFile->getHeader().randomSourceRecords[name];
 	}
-	uint32 result = g_system->getMillis();
+	uint32 result = Common::RandomSource::generateNewSeed();
 	if (_recordMode == kRecorderRecord) {
 		_recordFile->getHeader().randomSourceRecords[name] = result;
 	}
@@ -379,6 +379,9 @@ Common::String EventRecorder::generateRecordFileName(const Common::String &targe
 	return "";
 }
 
+void EventRecorder::setFastPlayback(bool fastPlayback) {
+	_fastPlayback = fastPlayback;
+}
 
 void EventRecorder::init(const Common::String &recordFileName, RecordMode mode) {
 	_fakeMixerManager = new NullMixerManager();
@@ -389,6 +392,7 @@ void EventRecorder::init(const Common::String &recordFileName, RecordMode mode) 
 	_lastScreenshotTime = 0;
 	_recordMode = mode;
 	_needcontinueGame = false;
+	_fastPlayback = false;
 	if (ConfMan.hasKey("disable_display")) {
 		DebugMan.enableDebugChannel("EventRec");
 		gDebugLevel = 1;
@@ -512,6 +516,8 @@ void EventRecorder::getConfigFromDomain(const Common::ConfigManager::Domain *dom
 }
 
 void EventRecorder::getConfig() {
+	_recordFile->getHeader().settingsRecords["double_click_time"] = Common::String::format("%u", static_cast<unsigned int>(g_system->getDoubleClickTime()));
+
 	getConfigFromDomain(ConfMan.getDomain(ConfMan.kApplicationDomain));
 	getConfigFromDomain(ConfMan.getActiveDomain());
 	_recordFile->getHeader().settingsRecords["save_slot"] = ConfMan.get("save_slot");
@@ -760,7 +766,7 @@ SDL_Surface *EventRecorder::getSurface(int width, int height) {
 }
 
 bool EventRecorder::switchMode() {
-	const Plugin *plugin = EngineMan.findPlugin(ConfMan.get("engineid"));
+	const Plugin *plugin = PluginMan.findEnginePlugin(ConfMan.get("engineid"));
 	bool metaInfoSupport = plugin->get<MetaEngine>().hasFeature(MetaEngine::kSavesSupportMetaInfo);
 	bool featuresSupport = metaInfoSupport &&
 						  g_engine->canSaveGameStateCurrently() &&
@@ -774,8 +780,8 @@ bool EventRecorder::switchMode() {
 	SaveStateList saveList = plugin->get<MetaEngine>().listSaves(target.c_str());
 
 	int emptySlot = 1;
-	for (SaveStateList::const_iterator x = saveList.begin(); x != saveList.end(); ++x) {
-		int saveSlot = x->getSaveSlot();
+	for (const auto &x : saveList) {
+		int saveSlot = x.getSaveSlot();
 		if (saveSlot == 0) {
 			continue;
 		}
@@ -808,7 +814,7 @@ bool EventRecorder::checkForContinueGame() {
 
 void EventRecorder::deleteTemporarySave() {
 	if (_temporarySlot == -1) return;
-	const Plugin *plugin = EngineMan.findPlugin(ConfMan.get("engineid"));
+	const Plugin *plugin = PluginMan.findEnginePlugin(ConfMan.get("engineid"));
 	const Common::String target = ConfMan.getActiveDomainName();
 	 plugin->get<MetaEngine>().removeSaveState(target.c_str(), _temporarySlot);
 	_temporarySlot = -1;

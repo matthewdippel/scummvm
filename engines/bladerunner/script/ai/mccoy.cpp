@@ -562,8 +562,7 @@ bool AIScriptMcCoy::GoalChanged(int currentGoalNumber, int newGoalNumber) {
 				Global_Variable_Set(kVariableAffectionTowards, kAffectionTowardsNone);
 			}
 		} else if (affectionTowards == kAffectionTowardsDektora
-		        || affectionTowards == kAffectionTowardsLucy
-		) {
+		        || affectionTowards == kAffectionTowardsLucy) {
 			if (!Game_Flag_Query(kFlagMcCoyIsHelpingReplicants)) {
 				Global_Variable_Set(kVariableAffectionTowards, kAffectionTowardsNone);
 			}
@@ -804,7 +803,7 @@ bool AIScriptMcCoy::UpdateAnimation(int *animation, int *frame) {
 		// animation state 21 is for the full shooting animation
 		*animation = kModelAnimationMcCoyWithGunShooting;
 		_animationFrame = 0;
-		// weird, but thats in game code
+		// weird, but that's in game code
 		if (Slice_Animation_Query_Number_Of_Frames(*animation) <= 0) {
 			_animationFrame = 0;
 			_animationState = 17;
@@ -1422,6 +1421,10 @@ bool AIScriptMcCoy::UpdateAnimation(int *animation, int *frame) {
 			Player_Gains_Control();
 		}
 		break;
+
+	default:
+		debugC(6, kDebugAnimation, "AIScriptMcCoy::UpdateAnimation() - Current _animationState (%d) is not supported", _animationState);
+		break;
 	}
 	*frame = _animationFrame;
 	return true;
@@ -1943,6 +1946,10 @@ bool AIScriptMcCoy::ChangeAnimationMode(int mode) {
 	case 85:
 		_animationFrame = 0;
 		_animationState = 69;
+		break;
+
+	default:
+		debugC(6, kDebugAnimation, "AIScriptMcCoy::ChangeAnimationMode(%d) - Target mode is not supported", mode);
 		break;
 	}
 	return true;

@@ -20,6 +20,7 @@
  */
 
 #define FORBIDDEN_SYMBOL_EXCEPTION_exit
+#define FORCE_TEXT_CONSOLE
 
 #include "common/textconsole.h"
 #include "common/system.h"
@@ -33,6 +34,16 @@ void setErrorOutputFormatter(OutputFormatter f) {
 	s_errorOutputFormatter = f;
 }
 
+static LogWatcher s_logWatcher = nullptr;
+
+void setLogWatcher(LogWatcher f) {
+	s_logWatcher = f;
+}
+
+LogWatcher getLogWatcher() {
+	return s_logWatcher;
+}
+
 static ErrorHandler s_errorHandler = nullptr;
 
 void setErrorHandler(ErrorHandler handler) {
@@ -43,7 +54,8 @@ void setErrorHandler(ErrorHandler handler) {
 } // End of namespace Common
 
 
-#ifndef DISABLE_TEXT_CONSOLE
+// Intentionally always compiled to support FORCE_TEXT_CONSOLE
+//#ifndef DISABLE_TEXT_CONSOLE
 
 void warning(const char *s, ...) {
 	Common::String output;
@@ -53,6 +65,9 @@ void warning(const char *s, ...) {
 	output = Common::String::vformat(s, va);
 	va_end(va);
 
+	if (Common::s_logWatcher)
+   		(*Common::s_logWatcher)(LogMessageType::kWarning, 0, 0, output.c_str());
+
 	output = "WARNING: " + output + "!\n";
 
 	if (g_system)
@@ -61,7 +76,7 @@ void warning(const char *s, ...) {
 	// any OSystem yet.
 }
 
-#endif
+//#endif
 
 void NORETURN_PRE error(const char *s, ...) {
 	// We don't use String::vformat here, as that require
@@ -87,7 +102,10 @@ void NORETURN_PRE error(const char *s, ...) {
 	buf_output[STRINGBUFLEN - 3] = '\0';
 	buf_output[STRINGBUFLEN - 2] = '\0';
 	buf_output[STRINGBUFLEN - 1] = '\0';
-	strcat(buf_output, "!\n");
+	Common::strcat_s(buf_output, "!\n");
+
+	if (Common::s_logWatcher)
+   		(*Common::s_logWatcher)(LogMessageType::kError, 0, 0, buf_output);
 
 	if (g_system)
 		g_system->logMessage(LogMessageType::kError, buf_output);

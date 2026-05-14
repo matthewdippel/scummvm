@@ -25,43 +25,52 @@
 
 namespace MTropolis {
 
-ElementLoaderContext::ElementLoaderContext(Runtime *elc_runtime, size_t elc_streamIndex) : runtime(elc_runtime), streamIndex(elc_streamIndex) {
+ElementLoaderContext::ElementLoaderContext(Runtime *pRuntime, Project *pProject, size_t pStreamIndex)
+	: runtime(pRuntime), project(pProject), streamIndex(pStreamIndex) {
 }
 
 template<typename TElement, typename TElementData>
-class ElementFactory : public IElementFactory {
+class ElementFactory {
 public:
-	Common::SharedPtr<Element> createElement(ElementLoaderContext &context, const Data::DataObject &dataObject) const override;
-	static IElementFactory *getInstance();
+	static Common::SharedPtr<Element> createElement(ElementLoaderContext &context, const Data::DataObject &dataObject);
+	static SIElementFactory *getInstance();
 
 private:
-	static ElementFactory<TElement, TElementData> _instance;
+	static SIElementFactory _instance;
 };
 
 template<typename TElement, typename TElementData>
-Common::SharedPtr<Element> ElementFactory<TElement, TElementData>::createElement(ElementLoaderContext &context, const Data::DataObject &dataObject) const {
-	Common::SharedPtr<TElement> element(new TElement());
+Common::SharedPtr<Element> ElementFactory<TElement, TElementData>::createElement(ElementLoaderContext &context, const Data::DataObject &dataObject) {
+	TElement *tElementPtr = new TElement();
+	Common::SharedPtr<TElement> element(tElementPtr);
+	Element *elementPtr = tElementPtr;
 
-	if (!element->load(context, static_cast<const TElementData &>(dataObject)))
+	if (!element->load(context, static_cast<const TElementData &>(dataObject))) {
 		element.reset();
-	else
-		element->setSelfReference(element);
+	} else {
+		elementPtr->setSelfReference(element);
+		if (elementPtr->getName().empty())
+			elementPtr->tryAutoSetName(context.runtime, context.project);
+	}
 
 	return Common::SharedPtr<Element>(element);
 }
 
 template<typename TElement, typename TElementData>
-IElementFactory *ElementFactory<TElement, TElementData>::getInstance() {
+SIElementFactory *ElementFactory<TElement, TElementData>::getInstance() {
 	return &_instance;
 }
 
 template<typename TElement, typename TElementData>
-ElementFactory<TElement, TElementData> ElementFactory<TElement, TElementData>::_instance;
+SIElementFactory ElementFactory<TElement, TElementData>::_instance = {
+	ElementFactory<TElement, TElementData>::createElement
+};
 
-IElementFactory *getElementFactoryForDataObjectType(const Data::DataObjectTypes::DataObjectType dataObjectType) {
+SIElementFactory *getElementFactoryForDataObjectType(const Data::DataObjectTypes::DataObjectType dataObjectType) {
 	switch (dataObjectType) {
 	case Data::DataObjectTypes::kGraphicElement:
 		return ElementFactory<GraphicElement, Data::GraphicElement>::getInstance();
+	case Data::DataObjectTypes::kAVIMovieElement:
 	case Data::DataObjectTypes::kMovieElement:
 		return ElementFactory<MovieElement, Data::MovieElement>::getInstance();
 	case Data::DataObjectTypes::kImageElement:

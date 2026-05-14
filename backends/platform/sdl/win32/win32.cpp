@@ -48,6 +48,7 @@
 #include "backends/taskbar/win32/win32-taskbar.h"
 #include "backends/updates/win32/win32-updates.h"
 #include "backends/dialogs/win32/win32-dialogs.h"
+#include "backends/printing/win32/win32-printman.h"
 
 #include "common/memstream.h"
 #include "common/ustr.h"
@@ -78,6 +79,14 @@ void OSystem_Win32::init() {
 #if defined(USE_SYSDIALOGS)
 	// Initialize dialog manager
 	_dialogManager = new Win32DialogManager((SdlWindow_Win32*)_window);
+#endif
+
+#if defined(USE_JPEG)
+	initializeJpegLibraryForWin95();
+#endif
+
+#if defined(USE_SYSTEM_PRINTING)
+	_printingManager = createWin32PrintingManager();
 #endif
 
 	// Invoke parent implementation of this method
@@ -158,7 +167,7 @@ bool OSystem_Win32::displayLogFile() {
 
 	// Try opening the log file with the default text editor
 	// log files should be registered as "txtfile" by default and thus open in the default text editor
-	TCHAR *tLogFilePath = Win32::stringToTchar(_logFilePath);
+	TCHAR *tLogFilePath = Win32::stringToTchar(_logFilePath.toString(Common::Path::kNativeSeparator));
 	SHELLEXECUTEINFO sei;
 
 	memset(&sei, 0, sizeof(sei));
@@ -253,7 +262,7 @@ Common::String OSystem_Win32::getSystemLanguage() const {
 	return OSystem_SDL::getSystemLanguage();
 }
 
-Common::String OSystem_Win32::getDefaultIconsPath() {
+Common::Path OSystem_Win32::getDefaultIconsPath() {
 	TCHAR iconsPath[MAX_PATH];
 
 	if (_isPortable) {
@@ -262,21 +271,37 @@ Common::String OSystem_Win32::getDefaultIconsPath() {
 	} else {
 		// Use the Application Data directory of the user profile
 		if (!Win32::getApplicationDataDirectory(iconsPath)) {
-			return Common::String();
+			return Common::Path();
 		}
-		_tcscat(iconsPath, TEXT("\\ScummVM\\Icons"));
+		_tcscat(iconsPath, TEXT("\\Icons\\"));
 		CreateDirectory(iconsPath, nullptr);
 	}
 
-	return Win32::tcharToString(iconsPath);
+	return Common::Path(Win32::tcharToString(iconsPath), Common::Path::kNativeSeparator);
 }
 
-Common::String OSystem_Win32::getScreenshotsPath() {
+Common::Path OSystem_Win32::getDefaultDLCsPath() {
+	TCHAR dlcsPath[MAX_PATH];
+
+	if (_isPortable) {
+		Win32::getProcessDirectory(dlcsPath, MAX_PATH);
+		_tcscat(dlcsPath, TEXT("\\DLCs\\"));
+	} else {
+		// Use the Application Data directory of the user profile
+		if (!Win32::getApplicationDataDirectory(dlcsPath)) {
+			return Common::Path();
+		}
+		_tcscat(dlcsPath, TEXT("\\DLCs\\"));
+		CreateDirectory(dlcsPath, nullptr);
+	}
+
+	return Common::Path(Win32::tcharToString(dlcsPath), Common::Path::kNativeSeparator);
+}
+
+Common::Path OSystem_Win32::getScreenshotsPath() {
 	// If the user has configured a screenshots path, use it
-	Common::String screenshotsPath = ConfMan.get("screenshotpath");
+	Common::Path screenshotsPath = ConfMan.getPath("screenshotpath");
 	if (!screenshotsPath.empty()) {
-		if (!screenshotsPath.hasSuffix("\\") && !screenshotsPath.hasSuffix("/"))
-			screenshotsPath += "\\";
 		return screenshotsPath;
 	}
 
@@ -286,9 +311,12 @@ Common::String OSystem_Win32::getScreenshotsPath() {
 		_tcscat(picturesPath, TEXT("\\Screenshots\\"));
 	} else {
 		// Use the My Pictures folder
-		if (SHGetFolderPathFunc(nullptr, CSIDL_MYPICTURES, nullptr, SHGFP_TYPE_CURRENT, picturesPath) != S_OK) {
-			warning("Unable to access My Pictures directory");
-			return Common::String();
+		HRESULT hr = SHGetFolderPathFunc(nullptr, CSIDL_MYPICTURES, nullptr, SHGFP_TYPE_CURRENT, picturesPath);
+		if (hr != S_OK) {
+			if (hr != E_NOTIMPL) {
+				warning("Unable to locate My Pictures directory");
+			}
+			return Common::Path();
 		}
 		_tcscat(picturesPath, TEXT("\\ScummVM Screenshots\\"));
 	}
@@ -300,10 +328,10 @@ Common::String OSystem_Win32::getScreenshotsPath() {
 			error("Cannot create ScummVM Screenshots folder");
 	}
 
-	return Win32::tcharToString(picturesPath);
+	return Common::Path(Win32::tcharToString(picturesPath), Common::Path::kNativeSeparator);
 }
 
-Common::String OSystem_Win32::getDefaultConfigFileName() {
+Common::Path OSystem_Win32::getDefaultConfigFileName() {
 	TCHAR configFile[MAX_PATH];
 
 	// if this is the first time the default config file name is requested
@@ -350,10 +378,10 @@ Common::String OSystem_Win32::getDefaultConfigFileName() {
 		}
 	}
 
-	return Win32::tcharToString(configFile);
+	return Common::Path(Win32::tcharToString(configFile), Common::Path::kNativeSeparator);
 }
 
-Common::String OSystem_Win32::getDefaultLogFileName() {
+Common::Path OSystem_Win32::getDefaultLogFileName() {
 	TCHAR logFile[MAX_PATH];
 
 	if (_isPortable) {
@@ -361,7 +389,7 @@ Common::String OSystem_Win32::getDefaultLogFileName() {
 	} else {
 		// Use the Application Data directory of the user profile
 		if (!Win32::getApplicationDataDirectory(logFile)) {
-			return Common::String();
+			return Common::Path();
 		}
 		_tcscat(logFile, TEXT("\\Logs"));
 		CreateDirectory(logFile, nullptr);
@@ -369,7 +397,7 @@ Common::String OSystem_Win32::getDefaultLogFileName() {
 
 	_tcscat(logFile, TEXT("\\scummvm.log"));
 
-	return Win32::tcharToString(logFile);
+	return Common::Path(Win32::tcharToString(logFile), Common::Path::kNativeSeparator);
 }
 
 bool OSystem_Win32::detectPortableConfigFile() {
@@ -416,7 +444,7 @@ public:
 	const Common::ArchiveMemberPtr getMember(const Common::Path &path) const override;
 	Common::SeekableReadStream *createReadStreamForMember(const Common::Path &path) const override;
 private:
-	typedef Common::List<Common::String> FilenameList;
+	typedef Common::List<Common::Path> FilenameList;
 
 	FilenameList _files;
 };
@@ -427,7 +455,8 @@ BOOL CALLBACK EnumResNameProc(HMODULE hModule, LPCTSTR lpszType, LPTSTR lpszName
 
 	Win32ResourceArchive *arch = (Win32ResourceArchive *)lParam;
 	Common::String filename = Win32::tcharToString(lpszName);
-	arch->_files.push_back(filename);
+	// We use / as path separator in resources
+	arch->_files.push_back(Common::Path(filename, '/'));
 	return TRUE;
 }
 
@@ -436,9 +465,8 @@ Win32ResourceArchive::Win32ResourceArchive() {
 }
 
 bool Win32ResourceArchive::hasFile(const Common::Path &path) const {
-	Common::String name = path.toString();
-	for (FilenameList::const_iterator i = _files.begin(); i != _files.end(); ++i) {
-		if (i->equalsIgnoreCase(name))
+	for (const auto &curPath : _files) {
+		if (curPath.equalsIgnoreCase(path))
 			return true;
 	}
 
@@ -449,18 +477,18 @@ int Win32ResourceArchive::listMembers(Common::ArchiveMemberList &list) const {
 	int count = 0;
 
 	for (FilenameList::const_iterator i = _files.begin(); i != _files.end(); ++i, ++count)
-		list.push_back(Common::ArchiveMemberPtr(new Common::GenericArchiveMember(*i, this)));
+		list.push_back(Common::ArchiveMemberPtr(new Common::GenericArchiveMember(*i, *this)));
 
 	return count;
 }
 
 const Common::ArchiveMemberPtr Win32ResourceArchive::getMember(const Common::Path &path) const {
-	Common::String name = path.toString();
-	return Common::ArchiveMemberPtr(new Common::GenericArchiveMember(name, this));
+	return Common::ArchiveMemberPtr(new Common::GenericArchiveMember(path, *this));
 }
 
 Common::SeekableReadStream *Win32ResourceArchive::createReadStreamForMember(const Common::Path &path) const {
-	Common::String name = path.toString();
+	// We store paths in resources using / separator
+	Common::String name = path.toString('/');
 	TCHAR *tName = Win32::stringToTchar(name);
 	HRSRC resource = FindResource(nullptr, tName, MAKEINTRESOURCE(256));
 	free(tName);
@@ -497,5 +525,27 @@ void OSystem_Win32::addSysArchivesToSearchSet(Common::SearchSet &s, int priority
 AudioCDManager *OSystem_Win32::createAudioCDManager() {
 	return createWin32AudioCDManager();
 }
+
+uint32 OSystem_Win32::getOSDoubleClickTime() const {
+	return GetDoubleClickTime();
+}
+
+// libjpeg-turbo uses SSE instructions that error on at least some Win95 machines.
+// These can be disabled with an environment variable. Fixes bug #13643
+#if defined(USE_JPEG)
+void OSystem_Win32::initializeJpegLibraryForWin95() {
+	OSVERSIONINFO versionInfo;
+	ZeroMemory(&versionInfo, sizeof(versionInfo));
+	versionInfo.dwOSVersionInfoSize = sizeof(versionInfo);
+	GetVersionEx(&versionInfo);
+
+	// Is Win95?
+	if (versionInfo.dwMajorVersion == 4 && versionInfo.dwMinorVersion == 0) {
+		// Disable SSE instructions in libjpeg-turbo.
+		// This limits detected extensions to 3DNOW and MMX.
+		_tputenv(TEXT("JSIMD_FORCE3DNOW=1"));
+	}
+}
+#endif
 
 #endif

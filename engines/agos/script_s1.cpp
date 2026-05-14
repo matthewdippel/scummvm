@@ -22,7 +22,7 @@
 #include "common/system.h"
 #include "common/localization.h"
 
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 
 #include "agos/agos.h"
 #include "agos/intern.h"
@@ -309,13 +309,19 @@ void AGOSEngine_Simon1::os1_pauseGame() {
 
 	Common::getLanguageYesNo(_language, keyYes, keyNo);
 
+	Common::Keymapper *keymapper = AGOSEngine::getEventManager()->getKeymapper();
+	keymapper->getKeymap("game-Yes/No")->setEnabled(true);
+
 	while (!shouldQuit()) {
 		delay(1);
-		if (_keyPressed.keycode == keyYes)
+		if (_keyPressed.keycode == keyYes || _action == kActionKeyYes)
 			quitGame();
-		else if (_keyPressed.keycode == keyNo)
+		else if (_keyPressed.keycode == keyNo || _action == kActionKeyNo)
 			break;
 	}
+
+	_action = kActionNone;
+	keymapper->getKeymap("game-Yes/No")->setEnabled(false);
 
 	_system->setFeatureState(OSystem::kFeatureVirtualKeyboard, false);
 }
@@ -378,7 +384,7 @@ void AGOSEngine_Simon1::os1_playEffect() {
 	uint16 soundId = getVarOrWord();
 
 	if (getGameId() == GID_SIMON1DOS)
-		playSfx(soundId, 0, 0, true);
+		playSfx(soundId, 0, 0);
 	else
 		_sound->playEffects(soundId);
 }
@@ -411,11 +417,11 @@ void AGOSEngine_Simon1::os1_screenTextPObj() {
 				k = (j % 10) * 10;
 				k += j / 10;
 				if (!(j % 10))
-					sprintf(buf,"0%d%s", k, stringPtr);
+					Common::sprintf_s(buf,"0%d%s", k, stringPtr);
 				else
-					sprintf(buf,"%d%s", k, stringPtr);
+					Common::sprintf_s(buf,"%d%s", k, stringPtr);
 			} else {
-				sprintf(buf,"%d%s", subObject->objectFlagValue[getOffsetOfChild2Param(subObject, kOFNumber)], stringPtr);
+				Common::sprintf_s(buf,"%d%s", subObject->objectFlagValue[getOffsetOfChild2Param(subObject, kOFNumber)], stringPtr);
 			}
 			stringPtr = buf;
 		}
@@ -540,9 +546,9 @@ void AGOSEngine_Simon1::os1_loadStrings() {
 	_soundFileId = getVarOrWord();
 	if (getPlatform() == Common::kPlatformAmiga && (getFeatures() & GF_TALKIE)) {
 		char buf[13];
-		sprintf(buf, "%d%s", _soundFileId, "Effects");
+		Common::sprintf_s(buf, "%d%s", _soundFileId, "Effects");
 		_sound->readSfxFile(buf);
-		sprintf(buf, "%d%s", _soundFileId, "simon");
+		Common::sprintf_s(buf, "%d%s", _soundFileId, "simon");
 		_sound->readVoiceFile(buf);
 	}
 }

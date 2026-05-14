@@ -268,7 +268,7 @@ global short ap, vp, np, pp, op; /* Points to first word in actor, verb, noun,
 
 
 
-/* The following needs to be kept consistant with ext_voc[] in
+/* The following needs to be kept consistent with ext_voc[] in
    agil.c */
 typedef enum {wthe, wmy, wa, wan, wthen, wp, wsc, wand, wc, wits, wall, wundo, wlook, wg,
 			  wpick, wgo, wexits, wtalk, wtake, wdoor, wagain, wbut, wexcept,
@@ -276,7 +276,7 @@ typedef enum {wthe, wmy, wa, wan, wthen, wp, wsc, wand, wc, wits, wall, wundo, w
 			  wdverb, wdnoun, wdadjective, wdprep, wdobject, wdname,
 			  wstep, w_any, weither, wboth, weveryone, weverybody,
 			  whe, wshe, wit, wthey, whim, wher, wthem, wis, ware, woops,
-			  wwas, wwere,
+			  wwas, wwere, wscream,
 			  win, wout, winto, wat, wto, wacross, winside, wwith, wnear, wfor,
 			  wof, wbehind, wbeside, won, woff, wunder, wfrom, wthrough,
 			  wtoward, wtowards, wbetween, waround, wupon, wthru,
@@ -370,6 +370,8 @@ extern long read_number(void);
 /* -------------------------------------------------------------------- */
 extern void init_stack(void);  /* Set up expression stack */
 extern void clear_stack(void);  /* Set stack back to empty state */
+extern void reset_random(void);  /* Reset random number generator state */
+extern int get_random(int a, int b);  /* Return random number from a to b, inclusive */
 
 /* -------------------------------------------------------------------- */
 /* In OBJECT.C                              */
@@ -470,7 +472,7 @@ extern void agt_endbox(void);
 extern genfile agt_globalfile(int fid); /* When fid=0, return global config file */
 extern rbool agt_option(int optnum, char *optstr[], rbool setflag);
 
-/* These have stubs defined in interface.c that would ened to be
+/* These have stubs defined in interface.c that would need to be
 	commented out if you actually wanted to support these */
 extern void fontcmd(int cmd, int font); /* fontlist[font] */
 extern void pictcmd(int cmd, int pict); /* pictlist[pict] or pixlist[pict] */

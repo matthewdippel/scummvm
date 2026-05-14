@@ -20,7 +20,6 @@
  */
 
 #include "common/config-manager.h"
-#include "common/translation.h"
 #include "gui/saveload.h"
 #include "tsage/dialogs.h"
 #include "tsage/scenes.h"
@@ -265,6 +264,9 @@ void SceneManager::listenerSynchronize(Serializer &s) {
 	g_globals->_sceneManager._scrollerRect.synchronize(s);
 	SYNC_POINTER(g_globals->_scrollFollower);
 	s.syncAsSint16LE(_loadMode);
+	if (s.isLoading()) {
+		_loadMode = 1;
+	}
 }
 
 /*--------------------------------------------------------------------------*/
@@ -274,6 +276,7 @@ Scene::Scene() : _sceneBounds(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT),
 	_sceneMode = 0;
 	_activeScreenNumber = 0;
 	_oldSceneBounds = Rect(4000, 4000, 4100, 4100);
+	g_globals->_sceneManager._scrollerRect = Rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 	Common::fill(&_zoomPercents[0], &_zoomPercents[256], 0);
 
 	_screenNumber = 0;
@@ -428,7 +431,7 @@ void Scene::loadBackground(int xAmount, int yAmount) {
 
 	if ((g_globals->_sceneOffset.x != g_globals->_prevSceneOffset.x) ||
 		(g_globals->_sceneOffset.y != g_globals->_prevSceneOffset.y)) {
-		// Change has happend, so refresh background
+		// Change has happened, so refresh background
 		g_globals->_prevSceneOffset = g_globals->_sceneOffset;
 		refreshBackground(xAmount, yAmount);
 	}
@@ -463,8 +466,8 @@ void Scene::refreshBackground(int xAmount, int yAmount) {
 				// Check if the section is already loaded
 				if ((_enabledSections[xp * 16 + yp] == 0xffff) || ((xAmount == 0) && (yAmount == 0))) {
 					// Chunk isn't loaded, so load it in
-					Graphics::ManagedSurface s = _backSurface.lockSurface();
-					GfxSurface::loadScreenSection(s, xp - xHalfOffset, yp - yHalfOffset, xp, yp);
+					Graphics::ManagedSurface *s = &_backSurface.lockSurface();
+					GfxSurface::loadScreenSection(*s, xp - xHalfOffset, yp - yHalfOffset, xp, yp);
 					_backSurface.unlockSurface();
 					changedFlag = true;
 				} else {
@@ -573,6 +576,8 @@ void Game::restartGame() {
 		else {
 			rc = MessageDialog::show(BlueForce::ESP_RESTART_MSG, ESP_CANCEL_BTN_STRING, BlueForce::ESP_RESTART_BTN_2_STRING);
 		}
+	} else if (g_vm->getLanguage() == Common::RU_RUS) {
+		rc = MessageDialog::show(TsAGE::Ringworld::RUS_RESTART_MSG, RUS_CANCEL_BTN_STRING, TsAGE::Ringworld::RUS_RESTART_BTN_STRING);
 	} else {
 		rc = MessageDialog::show(RESTART_MSG, CANCEL_BTN_STRING, RESTART_BTN_STRING);
 	}
@@ -584,6 +589,8 @@ void Game::saveGame() {
 	if (!g_vm->canSaveGameStateCurrently())
 		if (g_vm->getLanguage() == Common::ES_ESP) {
 			MessageDialog::show(ESP_SAVING_NOT_ALLOWED_MSG, ESP_OK_BTN_STRING);
+		} else if (g_vm->getLanguage() == Common::RU_RUS) {
+			MessageDialog::show(RUS_SAVING_NOT_ALLOWED_MSG, RUS_OK_BTN_STRING);
 		} else {
 			MessageDialog::show(SAVING_NOT_ALLOWED_MSG, OK_BTN_STRING);
 		}
@@ -597,6 +604,8 @@ void Game::restoreGame() {
 	if (!g_vm->canLoadGameStateCurrently())
 		if (g_vm->getLanguage() == Common::ES_ESP) {
 			MessageDialog::show(ESP_RESTORING_NOT_ALLOWED_MSG, ESP_OK_BTN_STRING);
+		} else if (g_vm->getLanguage() == Common::RU_RUS) {
+			MessageDialog::show(RUS_RESTORING_NOT_ALLOWED_MSG, RUS_OK_BTN_STRING);
 		} else {
 			MessageDialog::show(RESTORING_NOT_ALLOWED_MSG, OK_BTN_STRING);
 		}
@@ -615,6 +624,8 @@ void Game::quitGame() {
 		else {
 			rc = MessageDialog::show(BlueForce::ESP_QUIT_CONFIRM_MSG, ESP_CANCEL_BTN_STRING, BlueForce::ESP_QUIT_BTN_STRING);
 		}
+	} else if (g_vm->getLanguage() == Common::RU_RUS) {
+		rc = MessageDialog::show(TsAGE::Ringworld::RUS_QUIT_CONFIRM_MSG, RUS_CANCEL_BTN_STRING, TsAGE::Ringworld::RUS_QUIT_BTN_STRING);
 	} else {
 		rc = MessageDialog::show(QUIT_CONFIRM_MSG, CANCEL_BTN_STRING, QUIT_BTN_STRING);
 	}
@@ -623,11 +634,7 @@ void Game::quitGame() {
 }
 
 void Game::handleSaveLoad(bool saveFlag, int &saveSlot, Common::String &saveName) {
-	GUI::SaveLoadChooser *dialog;
-	if (saveFlag)
-		dialog = new GUI::SaveLoadChooser(_("Save game:"), _("Save"), saveFlag);
-	else
-		dialog = new GUI::SaveLoadChooser(_("Load game:"), _("Load"), saveFlag);
+	GUI::SaveLoadChooser *dialog = new GUI::SaveLoadChooser(saveFlag);
 
 	saveSlot = dialog->runModalWithCurrentTarget();
 	saveName = dialog->getResultString();

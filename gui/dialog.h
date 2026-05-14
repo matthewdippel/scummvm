@@ -66,9 +66,10 @@ protected:
 
 private:
 	int		_result;
+	bool    _handlingMouseWheel;
 
 public:
-	Dialog(int x, int y, int w, int h);
+	Dialog(int x, int y, int w, int h, bool scale = false);
 	Dialog(const Common::String &name);
 
 	virtual int runModal();
@@ -81,6 +82,8 @@ public:
 	void	setFocusWidget(Widget *widget);
 	Widget *getFocusWidget() { return _focusedWidget; }
 
+	bool isDragging() const { return _dragWidget != nullptr; }
+
 	void setTickleWidget(Widget *widget) { _tickleWidget = widget; }
 	void unSetTickleWidget() { _tickleWidget = nullptr; }
 	Widget *getTickleWidget() { return _tickleWidget; }
@@ -89,16 +92,20 @@ public:
 	virtual void lostFocus();
 	virtual void receivedFocus(int x = -1, int y = -1) { if (x >= 0 && y >= 0) handleMouseMoved(x, y, 0); }
 
-protected:
 	virtual void open();
 	virtual void close();
 
+	Widget *findWidget(uint32 type);
+
+protected:
 	/** Recursively mark all the widgets in this dialog as dirty so they are redrawn */
 	void markWidgetsAsDirty();
 
-	/** Draw the dialog in its entirety (background and widgets) */
-	virtual void drawDialog(DrawLayer layerToDraw);
+	/** Returns the maximum dirty rectangle of this dialog */
+	Common::Rect getMaxDirtyRect() const;
 
+	/** Draw the dialog in its entirety (background and widgets) */
+	virtual void drawDialog(DrawLayer layerToDraw, bool resetClipping = true);
 	/** Draw only the dialog's widgets */
 	void drawWidgets();
 
@@ -110,7 +117,7 @@ protected:
 	virtual void handleKeyUp(Common::KeyState state);
 	virtual void handleMouseMoved(int x, int y, int button);
 	virtual void handleMouseLeft(int button) {}
-	virtual void handleOtherEvent(const Common::Event &evt) {}
+	virtual void handleOtherEvent(const Common::Event &evt);
 	void handleCommand(CommandSender *sender, uint32 cmd, uint32 data) override;
 
 	Widget *findWidget(int x, int y); // Find the widget at pos x,y if any

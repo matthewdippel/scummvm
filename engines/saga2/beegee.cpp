@@ -213,7 +213,6 @@ void setAreaSound(const TilePoint &) {
 				regn.min = baseCoords - ((AudVec * r) << kPlatShift); ///kTileUVSize;
 				MetaTileIterator    mIter(g_vm->_currentMapNum, regn);
 				int i = 0;
-				int j = 0;
 
 				TilePoint       dist = AudVec * r << (kPlatShift + 1);
 				dist = dist << 4;
@@ -223,7 +222,6 @@ void setAreaSound(const TilePoint &) {
 				while (mt) {
 					i++;
 					if (getSound(mt)) {
-						j++;
 						TilePoint thisDist = mtPos - baseCoords;
 						if (thisDist.magnitude() < dist.magnitude()) {
 							dist = thisDist;
@@ -237,7 +235,7 @@ void setAreaSound(const TilePoint &) {
 				for (i = 0; i < AUXTHEMES; i++) {
 					if (g_vm->_grandMasterFTA->_aats[i].active) {
 						Location loc = getCenterActor()->notGetWorldLocation();
-						if (g_vm->_grandMasterFTA->_aats[i].l.context == Nothing || loc.context == g_vm->_grandMasterFTA->_aats[i].l.context) {
+						if (g_vm->_grandMasterFTA->_aats[i].l._context == Nothing || loc._context == g_vm->_grandMasterFTA->_aats[i].l._context) {
 							TilePoint tp = (g_vm->_grandMasterFTA->_aats[i].l >> kTileUVShift) - baseCoords;
 							if (tp.magnitude() < dist.magnitude()) {
 								dist = tp;

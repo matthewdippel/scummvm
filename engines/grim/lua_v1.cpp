@@ -53,7 +53,7 @@ byte clamp_color(int c) {
 		return c;
 }
 
-int luaA_passresults();
+int32 luaA_passresults();
 
 void Lua_V1::new_dofile() {
 	const char *fname_str = luaL_check_string(1);
@@ -111,7 +111,7 @@ void Lua_V1::FunctionName() {
 	lua_Object param1 = lua_getparam(1);
 
 	if (!lua_isfunction(param1)) {
-		sprintf(buf, "function InvalidArgsToFunctionName");
+		Common::sprintf_s(buf, "function InvalidArgsToFunctionName");
 		lua_pushstring(buf);
 		return;
 	}
@@ -119,28 +119,29 @@ void Lua_V1::FunctionName() {
 	lua_funcinfo(param1, &filename, &line);
 	switch (*lua_getobjname(param1, &name)) {
 	case 'g':
-		sprintf(buf, "function %.100s", name);
+		Common::sprintf_s(buf, "function %.100s", name);
 		break;
 	case 't':
-		sprintf(buf, "`%.100s' tag method", name);
+		Common::sprintf_s(buf, "`%.100s' tag method", name);
 		break;
 	default:
 		{
 			if (line == 0)
-				sprintf(buf, "main of %.100s", filename);
+				Common::sprintf_s(buf, "main of %.100s", filename);
 			else if (line < 0)
-				sprintf(buf, "%.100s", filename);
+				Common::sprintf_s(buf, "%.100s", filename);
 			else {
-				sprintf(buf, "function (%.100s:%d)", filename, (int)line);
+				Common::sprintf_s(buf, "function (%.100s:%d)", filename, (int)line);
 				filename = nullptr;
 			}
 		}
 	}
 	int curr_line = lua_currentline(param1);
+	size_t pos = strlen(buf);
 	if (curr_line > 0)
-		sprintf(buf + strlen(buf), " at line %d", curr_line);
+		Common::sprintf_s(buf + pos, sizeof(buf) - pos, " at line %d", curr_line);
 	if (filename)
-		sprintf(buf + strlen(buf), " [in file %.100s]", filename);
+		Common::sprintf_s(buf + pos, sizeof(buf) - pos, " [in file %.100s]", filename);
 	lua_pushstring(buf);
 }
 
@@ -512,7 +513,7 @@ void Lua_V1::GetControlState() {
 	if (num >= KEYCODE_AXIS_JOY1_X && num <= KEYCODE_AXIS_MOUSE_Z)
 		lua_pushnumber(g_grim->getControlAxis(num));
 	else {
-		pushbool(g_grim->getControlState(num)); // key down, originaly it push number if key down
+		pushbool(g_grim->getControlState(num)); // key down, originally it push number if key down
 		// pushnil or number, what is is ?
 	}
 }
@@ -723,7 +724,7 @@ void Lua_V1::LockFont() {
 		const char *fontName = lua_getstring(param1);
 		Font *result = g_resourceloader->loadFont(fontName);
 		if (result) {
-			lua_pushusertag(result->getId(), MKTAG('F','O','N','T'));
+			lua_pushusertag(result->getPoolId(), result->getPoolTag());
 			return;
 		}
 	}

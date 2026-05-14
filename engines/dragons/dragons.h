@@ -21,10 +21,9 @@
 #ifndef DRAGONS_DRAGONS_H
 #define DRAGONS_DRAGONS_H
 
-#include "gui/EventRecorder.h"
 #include "engines/engine.h"
-#include "dragons/specialopcodes.h"
 #include "dragons/detection.h"
+#include "common/rect.h"
 
 namespace Dragons {
 
@@ -45,7 +44,7 @@ enum kReadSaveHeaderError {
 	kRSHEIoError = 3
 };
 
-enum Flags {
+enum Flags : uint {
 	ENGINE_FLAG_1 = 1,
 	ENGINE_FLAG_2 = 2,
 	ENGINE_FLAG_4 = 4,
@@ -245,7 +244,7 @@ private:
 protected:
 	bool hasFeature(EngineFeature f) const override;
 public:
-	DragonsEngine(OSystem *syst, const ADGameDescription *desc);
+	DragonsEngine(OSystem *syst, const DragonsGameDescription *desc);
 	~DragonsEngine();
 
 	void updateEvents();
@@ -256,9 +255,9 @@ public:
 	static kReadSaveHeaderError readSaveHeader(Common::SeekableReadStream *in, SaveHeader &header, bool skipThumbnail = true);
 
 	Common::Error loadGameState(int slot) override;
-	bool canLoadGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave) override;
-	bool canSaveGameStateCurrently() override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	void syncSoundSettings() override;
 
 	void updateActorSequences();

@@ -23,6 +23,9 @@
 
 #include "engines/engine.h"
 
+#include "backends/keymapper/keymap.h"
+#include "backends/keymapper/keymapper.h"
+
 #include "common/config-manager.h"
 
 #include "scumm/scumm_v7.h"
@@ -49,6 +52,7 @@ void Insane::runScene(int arraynum) {
 	_currScenePropSubIdx = 0;
 	_currTrsMsg = 0;
 
+	_vm->_insaneKeymap->setEnabled(true);
 	smush_warpMouse(160, 100, -1);
 	putActors();
 	readState();
@@ -140,6 +144,7 @@ void Insane::runScene(int arraynum) {
 		error("Unknown FT_INSANE mode %d", readArray(0));
 	}
 
+	_vm->_insaneKeymap->setEnabled(false);
 	_player->resetAudioTracks();
 	putActors();
 	_enemy[EN_ROTT3].maxdamage = 120;
@@ -155,15 +160,15 @@ void Insane::runScene(int arraynum) {
 		writeArray(54, _actor[0].inventory[INV_WRENCH]);
 		writeArray(55, _actor[0].inventory[INV_DUST]);
 		writeArray(56, _enemy[EN_CAVEFISH].isEmpty);
-		writeArray(337, _enemy[EN_TORQUE].occurences);
-		writeArray(329, _enemy[EN_ROTT1].occurences);
-		writeArray(330, _enemy[EN_ROTT2].occurences);
-		writeArray(331, _enemy[EN_ROTT3].occurences);
-		writeArray(332, _enemy[EN_VULTF1].occurences);
-		writeArray(333, _enemy[EN_VULTM1].occurences);
-		writeArray(334, _enemy[EN_VULTF2].occurences);
-		writeArray(335, _enemy[EN_VULTM2].occurences);
-		writeArray(336, _enemy[EN_CAVEFISH].occurences);
+		writeArray(337, _enemy[EN_TORQUE].occurrences);
+		writeArray(329, _enemy[EN_ROTT1].occurrences);
+		writeArray(330, _enemy[EN_ROTT2].occurrences);
+		writeArray(331, _enemy[EN_ROTT3].occurrences);
+		writeArray(332, _enemy[EN_VULTF1].occurrences);
+		writeArray(333, _enemy[EN_VULTM1].occurrences);
+		writeArray(334, _enemy[EN_VULTF2].occurrences);
+		writeArray(335, _enemy[EN_VULTM2].occurrences);
+		writeArray(336, _enemy[EN_CAVEFISH].occurrences);
 		writeArray(339, _enemy[EN_VULTF2].isEmpty);
 		writeArray(340, _enemy[EN_VULTM2].isEmpty);
 	}
@@ -759,7 +764,7 @@ void Insane::setEnemyCostumes() {
 	_actor[1].tilt = 0;
 	_actor[1].weapon = -1;
 	_actor[1].weaponClass = 2;
-	_enemy[_currEnemy].occurences++;
+	_enemy[_currEnemy].occurrences++;
 	_actor[1].maxdamage = _enemy[_currEnemy].maxdamage;
 	_actor[1].enemyHandler = _enemy[_currEnemy].handler;
 	_actor[1].animWeaponClass = 0;
@@ -1055,17 +1060,17 @@ void Insane::postCase16(byte *renderBitmap, int32 codecparam, int32 setupsan12,
 	int32 tmp;
 
 	turnBen(true);
-	sprintf(buf, "^f01%02o", curFrame & 0x3f);
+	Common::sprintf_s(buf, "^f01%02o", curFrame & 0x3f);
 	smlayer_showStatusMsg(-1, renderBitmap, codecparam, 180, 168, 1, 2, 0, "%s", buf);
 	tmp = 400-curFrame;
 
 	if (tmp < 0)
 		tmp += 1300;
 
-	sprintf(buf, "^f01%04d", tmp);
+	Common::sprintf_s(buf, "^f01%04d", tmp);
 	smlayer_showStatusMsg(-1, renderBitmap, codecparam, 202, 168, 1, 2, 0, "%s", buf);
 
-	sprintf(buf, "^f01%02o", curFrame & 0xff);
+	Common::sprintf_s(buf, "^f01%02x", curFrame & 0xff);
 	smlayer_showStatusMsg(-1, renderBitmap, codecparam, 240, 168, 1, 2, 0, "%s", buf);
 	smlayer_showStatusMsg(-1, renderBitmap, codecparam, 170, 43, 1, 2, 0, "%s", buf);
 
@@ -1334,7 +1339,7 @@ void Insane::postCase12(byte *renderBitmap, int32 codecparam, int32 setupsan12,
 		case EN_ROTT2:
 			turnBen(true);
 
-			if (_enemy[EN_ROTT2].occurences <= 1)
+			if (_enemy[EN_ROTT2].occurrences <= 1)
 				prepareScenePropScene(32, 0, 1);
 			else
 				prepareScenePropScene(33, 0, 1);
@@ -1342,25 +1347,25 @@ void Insane::postCase12(byte *renderBitmap, int32 codecparam, int32 setupsan12,
 		case EN_ROTT3:
 			turnBen(true);
 
-			if (_enemy[EN_ROTT3].occurences <= 1)
+			if (_enemy[EN_ROTT3].occurrences <= 1)
 				prepareScenePropScene(25, 0, 1);
 			break;
 		case EN_VULTF1:
 			turnBen(true);
 
-			if (_enemy[EN_VULTF1].occurences <= 1)
+			if (_enemy[EN_VULTF1].occurrences <= 1)
 				prepareScenePropScene(2, 0, 1);
 			break;
 		case EN_VULTF2:
 			turnBen(true);
 
-			if (_enemy[EN_VULTF2].occurences <= 1)
+			if (_enemy[EN_VULTF2].occurrences <= 1)
 				prepareScenePropScene(9, 0, 1);
 			else
 				prepareScenePropScene(16, 0, 1);
 			break;
 		case EN_VULTM2:
-			if (_enemy[EN_VULTM2].occurences <= 1) {
+			if (_enemy[EN_VULTM2].occurrences <= 1) {
 				turnBen(false);
 				prepareScenePropScene(18, 0, 1);
 				_battleScene = false;
@@ -1382,7 +1387,7 @@ void Insane::postCase12(byte *renderBitmap, int32 codecparam, int32 setupsan12,
 	} else {
 		switch (_currEnemy) {
 		case EN_VULTM2:
-			if (_enemy[EN_VULTM2].occurences <= 1)
+			if (_enemy[EN_VULTM2].occurrences <= 1)
 				turnBen(false);
 			else
 				turnBen(true);

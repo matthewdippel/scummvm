@@ -180,7 +180,7 @@ Scene::Scene(SagaEngine *vm) : _vm(vm) {
 			gDebugLevel = backUpDebugLevel;
 			debug(DUMP_SCENES_LEVEL, "Dump Scene: number %i, descriptor resourceId %i, resourceList resourceId %i", i, _sceneLUT[i], _sceneDescription.resourceListResourceId);
 			debug(DUMP_SCENES_LEVEL, "\tresourceListCount %i", (int)resourceList.size());
-			for (SceneResourceDataArray::iterator j = resourceList.begin(); j != resourceList.end(); ++j) {
+			for (auto &j : resourceList) {
 				if (j->resourceType >= typesCount) {
 					error("wrong resource type %i", j->resourceType);
 				}
@@ -223,14 +223,14 @@ void Scene::getResourceTypes(SAGAResourceTypes *&types, int &typesCount) {
 }
 
 void Scene::drawTextList() {
-	for (TextList::iterator entry = _textList.begin(); entry != _textList.end(); ++entry) {
+	for (auto &entry : _textList) {
 
-		if (entry->display) {
+		if (entry.display) {
 
-			if (entry->useRect) {
-				_vm->_font->textDrawRect(entry->font, entry->text, entry->rect, _vm->KnownColor2ColorId(entry->knownColor), _vm->KnownColor2ColorId(entry->effectKnownColor), entry->flags);
+			if (entry.useRect) {
+				_vm->_font->textDrawRect(entry.font, entry.text, entry.rect, _vm->KnownColor2ColorId(entry.knownColor), _vm->KnownColor2ColorId(entry.effectKnownColor), entry.flags);
 			} else {
-				_vm->_font->textDraw(entry->font, entry->text, entry->point, _vm->KnownColor2ColorId(entry->knownColor), _vm->KnownColor2ColorId(entry->effectKnownColor), entry->flags);
+				_vm->_font->textDraw(entry.font, entry.text, entry.point, _vm->KnownColor2ColorId(entry.knownColor), _vm->KnownColor2ColorId(entry.effectKnownColor), entry.flags);
 			}
 		}
 	}
@@ -434,7 +434,6 @@ void Scene::changeScene(int16 sceneNumber, int actorsEntrance, SceneTransitionTy
 	if (_vm->_hasITESceneSubstitutes) {
 		for (int i = 0; i < ARRAYSIZE(sceneSubstitutes); i++) {
 			if (sceneSubstitutes[i].sceneId == sceneNumber) {
-				const byte *pal;
 				Common::File file;
 				Rect rect;
 				PalEntry cPal[PAL_ENTRIES];
@@ -444,14 +443,12 @@ void Scene::changeScene(int16 sceneNumber, int actorsEntrance, SceneTransitionTy
 				if (file.open(sceneSubstitutes[i].image)) {
 					Image::IFFDecoder decoder;
 					decoder.loadStream(file);
-					pal = decoder.getPalette();
+					const Graphics::Palette &pal = decoder.getPalette();
 					rect.setWidth(decoder.getSurface()->w);
 					rect.setHeight(decoder.getSurface()->h);
 					_vm->_gfx->drawRegion(rect, (const byte *)decoder.getSurface()->getPixels());
 					for (int j = 0; j < PAL_ENTRIES; j++) {
-						cPal[j].red = *pal++;
-						cPal[j].green = *pal++;
-						cPal[j].blue = *pal++;
+						pal.get(j, cPal[j].red, cPal[j].green, cPal[j].blue);
 					}
 					_vm->_gfx->setPalette(cPal);
 
@@ -528,14 +525,19 @@ bool Scene::offscreenPath(Point &testPoint) {
 		return false;
 	}
 
+	int h = _bgMask.h;
+
+	if (h == 0)
+		h = _vm->getDisplayInfo().height;
+
 	point.x = CLIP<int>(testPoint.x, 0, _vm->getDisplayInfo().width - 1);
-	point.y = CLIP<int>(testPoint.y, 0, _bgMask.h - 1);
+	point.y = CLIP<int>(testPoint.y, 0, h - 1);
 	if (point == testPoint) {
 		return false;
 	}
 
-	if (point.y >= _bgMask.h - 1) {
-		point.y = _bgMask.h - 2;
+	if (point.y >= h - 1) {
+		point.y = h - 2;
 	}
 	testPoint = point;
 
@@ -576,7 +578,7 @@ void Scene::loadScene(LoadSceneParams &loadSceneParams) {
 
 #ifdef ENABLE_IHNM
 	if ((_vm->getGameId() == GID_IHNM) && (loadSceneParams.chapter != NO_CHAPTER_CHANGE)) {
-		if (loadSceneParams.loadFlag != kLoadBySceneNumber) {
+		if ((loadSceneParams.loadFlag & kLoadIdTypeMask) != kLoadBySceneNumber) {
 			error("loadScene wrong usage");
 		}
 
@@ -621,13 +623,13 @@ void Scene::loadScene(LoadSceneParams &loadSceneParams) {
 
 #ifdef ENABLE_IHNM
 	if (_vm->getGameId() == GID_IHNM) {
-		if (loadSceneParams.loadFlag == kLoadBySceneNumber) // When will we get rid of it?
+		if ((loadSceneParams.loadFlag & kLoadIdTypeMask) == kLoadBySceneNumber) // When will we get rid of it?
 			if (loadSceneParams.sceneDescriptor <= 0)
 				loadSceneParams.sceneDescriptor = _vm->_resource->getMetaResource()->sceneIndex;
 	}
 #endif
 
-	switch (loadSceneParams.loadFlag) {
+	switch (loadSceneParams.loadFlag & kLoadIdTypeMask) {
 	case kLoadByResourceId:
 		_sceneNumber = 0;		// original assign zero for loaded by resource id
 		_sceneResourceId = loadSceneParams.sceneDescriptor;
@@ -660,7 +662,7 @@ void Scene::loadScene(LoadSceneParams &loadSceneParams) {
 	loadSceneResourceList(_sceneDescription.resourceListResourceId, resourceList);
 
 	// Process resources from scene resource list
-	processSceneResources(resourceList);
+	processSceneResources(resourceList, loadSceneParams.loadFlag);
 
 	if (_sceneDescription.flags & kSceneFlagISO) {
 		_outsetSceneNumber = _sceneNumber;
@@ -864,7 +866,7 @@ void Scene::loadSceneDescriptor(uint32 resourceId) {
 		if (sceneDescriptorData.size() == 16)
 			_sceneDescription.musicResourceId = readS.readSint16();
 	} else {
-		warning("Scene::loadSceneDescriptor: Unknown scene descriptor data size (%d)", sceneDescriptorData.size());
+		error("Scene::loadSceneDescriptor: Unknown scene descriptor data size (%d)", sceneDescriptorData.size());
 	}
 }
 
@@ -891,17 +893,17 @@ void Scene::loadSceneResourceList(uint32 resourceId, SceneResourceDataArray &res
 		// resource table
 		debug(3, "Loading scene resource list");
 
-		for (SceneResourceDataArray::iterator resource = resourceList.begin(); resource != resourceList.end(); ++resource) {
-			resource->resourceId = readS.readUint16();
-			resource->resourceType = readS.readUint16();
+		for (auto &resource : resourceList) {
+			resource.resourceId = readS.readUint16();
+			resource.resourceType = readS.readUint16();
 			// demo version may contain invalid resourceId
-			resource->invalid = !_sceneContext->validResourceId(resource->resourceId);
+			resource.invalid = !_sceneContext->validResourceId(resource.resourceId);
 		}
 
 	}
 }
 
-void Scene::processSceneResources(SceneResourceDataArray &resourceList) {
+void Scene::processSceneResources(SceneResourceDataArray &resourceList, SceneLoadFlags flags) {
 	ByteArray resourceData;
 	const byte *palPointer;
 	SAGAResourceTypes *types = nullptr;
@@ -911,33 +913,39 @@ void Scene::processSceneResources(SceneResourceDataArray &resourceList) {
 	getResourceTypes(types, typesCount);
 
 	// Process the scene resource list
-	for (SceneResourceDataArray::iterator resource = resourceList.begin(); resource != resourceList.end(); ++resource) {
-		if (resource->invalid) {
+	for (auto &resource : resourceList) {
+		if (resource.invalid) {
 			continue;
 		}
-		_vm->_resource->loadResource(_sceneContext, resource->resourceId, resourceData);
+		_vm->_resource->loadResource(_sceneContext, resource.resourceId, resourceData);
 
 
 		if (resourceData.size() >= 6) {
 			if (!memcmp(resourceData.getBuffer(), "DUMMY!", 6)) {
-				resource->invalid = true;
-				warning("DUMMY resource %i", resource->resourceId);
+				resource.invalid = true;
+				warning("DUMMY resource %i", resource.resourceId);
 			}
 		}
 
-		if (resource->invalid) {
+		// Thos resources are bogus. Skip them
+		if (_vm->isITEAmiga() && resourceData.size() == 12 && memcmp(resourceData.getBuffer(), "ECHO is on\r\n", 12) == 0) {
+			resource.invalid = true;
+			warning("DUMMY resource %i", resource.resourceId);
+		}
+
+		if (resource.invalid) {
 			continue;
 		}
 
-		if (resource->resourceType >= typesCount) {
-			error("Scene::processSceneResources() wrong resource type %i", resource->resourceType);
+		if (resource.resourceType >= typesCount) {
+			error("Scene::processSceneResources() wrong resource type %i", resource.resourceType);
 		}
 
-		resType = types[resource->resourceType];
+		resType = types[resource.resourceType];
 
 		switch (resType) {
 		case SAGA_UNKNOWN:
-			warning("UNKNOWN resourceType %i", resource->resourceType);
+			warning("UNKNOWN resourceType %i", resource.resourceType);
 			break;
 		case SAGA_ACTOR:
 			//for (a = actorsInScene; a; a = a->nextInScene)
@@ -959,7 +967,7 @@ void Scene::processSceneResources(SceneResourceDataArray &resourceList) {
 				_bg.buffer,
 				&_bg.w,
 				&_bg.h)) {
-				error("Scene::processSceneResources() Error loading background resource %i", resource->resourceId);
+				error("Scene::processSceneResources() Error loading background resource %i", resource.resourceId);
 			}
 			_bg.loaded = true;
 
@@ -971,7 +979,10 @@ void Scene::processSceneResources(SceneResourceDataArray &resourceList) {
 				error("Scene::ProcessSceneResources(): Duplicate background mask resource encountered");
 
 			debug(3, "Loading BACKGROUND MASK resource.");
-			_vm->decodeBGImage(resourceData, _bgMask.buffer, &_bgMask.w, &_bgMask.h, true);
+			if (flags & kLoadBgMaskIsImage)
+				_vm->decodeBGImage(resourceData, _bgMask.buffer, &_bgMask.w, &_bgMask.h, true);
+			else
+				_vm->decodeBGImageMask(resourceData, _bgMask.buffer, &_bgMask.w, &_bgMask.h, true);
 			_bgMask.loaded = true;
 
 			// At least in ITE the mask needs to be clipped.
@@ -983,7 +994,7 @@ void Scene::processSceneResources(SceneResourceDataArray &resourceList) {
 			break;
 		case SAGA_STRINGS:
 			debug(3, "Loading scene strings resource...");
-			_vm->loadStrings(_sceneStrings, resourceData);
+			_vm->loadStrings(_sceneStrings, resourceData, _vm->isBigEndian());
 			break;
 		case SAGA_OBJECT_MAP:
 			debug(3, "Loading object map resource...");
@@ -1024,7 +1035,7 @@ void Scene::processSceneResources(SceneResourceDataArray &resourceList) {
 			break;
 		case SAGA_ANIM:
 			{
-				uint16 animId = resource->resourceType - 14;
+				uint16 animId = resource.resourceType - 14;
 				debug(3, "Loading animation resource animId=%i", animId);
 				_vm->_anim->load(animId, resourceData);
 			}
@@ -1047,26 +1058,32 @@ void Scene::processSceneResources(SceneResourceDataArray &resourceList) {
 			break;
 		case SAGA_FACES:
 			if (_vm->getGameId() == GID_ITE)
-				_vm->_interface->loadScenePortraits(resource->resourceId);
+				_vm->_interface->loadScenePortraits(resource.resourceId);
 			break;
 		case SAGA_PALETTE:
 			{
 				PalEntry pal[PAL_ENTRIES];
 				byte *palPtr = resourceData.getBuffer();
+				uint16 c;
 
-				if (resourceData.size() < 3 * PAL_ENTRIES)
+				if (resourceData.size() < 3 * _vm->getPalNumEntries())
 					error("Too small scene palette %i", (int)resourceData.size());
 
-				for (uint16 c = 0; c < PAL_ENTRIES; c++) {
+				for (c = 0; c < _vm->getPalNumEntries(); c++) {
 					pal[c].red = *palPtr++;
 					pal[c].green = *palPtr++;
 					pal[c].blue = *palPtr++;
+				}
+				for (; c < PAL_ENTRIES; c++) {
+					pal[c].red = 0;
+					pal[c].green = 0;
+					pal[c].blue = 0;
 				}
 				_vm->_gfx->setPalette(pal);
 			}
 			break;
 		default:
-			error("Scene::ProcessSceneResources() Encountered unknown resource type %i", resource->resourceType);
+			error("Scene::ProcessSceneResources() Encountered unknown resource type %i", resource.resourceType);
 			break;
 		}
 	}

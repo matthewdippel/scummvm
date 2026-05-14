@@ -112,8 +112,8 @@ void GetClientHandler::prepareHeaders() {
 		setHeader("Content-Length", Common::String::format("%u", unsigned(_stream->size())));
 
 	_headers = Common::String::format("HTTP/1.1 %ld %s\r\n", _responseCode, responseMessage(_responseCode));
-	for (Common::HashMap<Common::String, Common::String>::iterator i = _specialHeaders.begin(); i != _specialHeaders.end(); ++i)
-		_headers += i->_key + ": " + i->_value + "\r\n";
+	for (auto &specialHeader : _specialHeaders)
+		_headers += specialHeader._key + ": " + specialHeader._value + "\r\n";
 	_headers += "\r\n";
 
 	_headersPrepared = true;
@@ -155,7 +155,7 @@ void GetClientHandler::handle(Client *client) {
 		client->close();
 }
 
-void GetClientHandler::setHeader(Common::String name, Common::String value) { _specialHeaders[name] = value; }
+void GetClientHandler::setHeader(const Common::String &name, const Common::String &value) { _specialHeaders[name] = value; }
 void GetClientHandler::setResponseCode(long code) { _responseCode = code; }
 
 } // End of namespace Networking

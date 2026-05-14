@@ -745,7 +745,7 @@ void buildPolyModel(int positionX, int positionY, int scale, char *pMask, char *
 
 	dataPointer += 5;
 
-	m_coordCount = (*(dataPointer++)) + 1;	// original uses +1 here but its later substracted again, we could skip it
+	m_coordCount = (*(dataPointer++)) + 1;	// original uses +1 here but its later subtracted again, we could skip it
 	m_first_X = *(dataPointer);
 	dataPointer++;
 	m_first_Y = *(dataPointer);
@@ -833,7 +833,7 @@ void buildPolyModel(int positionX, int positionY, int scale, char *pMask, char *
 
 	// position of the dataPointer is m_coordCount * 2
 
-	int polygonCount = 0;
+	//int polygonCount = 0;
 
 	do {
 		int linesToDraw = *dataPointer++;
@@ -868,7 +868,7 @@ void buildPolyModel(int positionX, int positionY, int scale, char *pMask, char *
 			dataPointer += 4;
 		}
 
-		polygonCount ++;
+		//polygonCount++;
 	} while (*dataPointer != 0xFF);
 }
 
@@ -902,7 +902,7 @@ bool findPoly(char* dataPtr, int positionX, int positionY, int scale, int mouseX
 
 	dataPointer += 5;
 
-	m_coordCount = (*(dataPointer++)) + 1;	// original uses +1 here but its later substracted again, we could skip it
+	m_coordCount = (*(dataPointer++)) + 1;	// original uses +1 here but its later subtracted again, we could skip it
 	m_first_X = *(dataPointer);
 	dataPointer++;
 	m_first_Y = *(dataPointer);
@@ -991,7 +991,7 @@ bool findPoly(char* dataPtr, int positionX, int positionY, int scale, int mouseX
 
 	// position of the dataPointer is m_coordCount * 2
 
-	int polygonCount = 0;
+	//int polygonCount = 0;
 
 	do {
 		int linesToDraw = *dataPointer++;
@@ -1031,7 +1031,7 @@ bool findPoly(char* dataPtr, int positionX, int positionY, int scale, int mouseX
 			dataPointer += 4;
 		}
 
-		polygonCount ++;
+		//polygonCount++;
 	} while (*dataPointer != 0xFF);
 
 	return false;

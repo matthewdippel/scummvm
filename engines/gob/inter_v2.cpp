@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/endian.h"
@@ -379,7 +385,7 @@ void Inter_v2::o2_initMult() {
 	_vm->_draw->_spriteBottom = _vm->_mult->_animHeight;
 	_vm->_draw->_destSpriteX = 0;
 	_vm->_draw->_destSpriteY = 0;
-	_vm->_draw->spriteOperation(0);
+	_vm->_draw->spriteOperation(DRAW_BLITSURF);
 
 	debugC(4, kDebugGraphics, "o2_initMult: x = %d, y = %d, w = %d, h = %d",
 		  _vm->_mult->_animLeft, _vm->_mult->_animTop,
@@ -578,6 +584,13 @@ void Inter_v2::o2_totSub() {
 
 	uint8 flags = _vm->_game->_script->readByte();
 
+	// Skipping the copy protection screen in Adibou 1
+	if (!_vm->_copyProtection && (_vm->getGameType() == kGameTypeAdibou1) && totFile == "p_eleph") {
+		debugC(2, kDebugGameFlow, "Skipping copy protection screen");
+		_varStack.pushInt(1);
+		return;
+	}
+
 	_vm->_game->totSub(flags, totFile);
 }
 
@@ -597,18 +610,18 @@ void Inter_v2::o2_pushVars() {
 		if ((_vm->_game->_script->peekByte() == 25) ||
 				(_vm->_game->_script->peekByte() == 28)) {
 
-			int16 varOff = _vm->_game->_script->readVarIndex();
+			uint16 varOff = _vm->_game->_script->readVarIndex();
 			_vm->_game->_script->skip(1);
 
 			_varStack.pushData(*_variables, varOff, _vm->_global->_inter_animDataSize * 4);
 
 		} else {
-			int16 value;
+			int32 value;
 
 			if (_vm->_game->_script->evalExpr(&value) != 20)
 				value = 0;
 
-			_varStack.pushInt((uint16)value);
+			_varStack.pushInt(value);
 		}
 	}
 }
@@ -616,7 +629,7 @@ void Inter_v2::o2_pushVars() {
 void Inter_v2::o2_popVars() {
 	uint8 count = _vm->_game->_script->readByte();
 	for (int i = 0; i < count; i++) {
-		int16 varOff = _vm->_game->_script->readVarIndex();
+		uint16 varOff = _vm->_game->_script->readVarIndex();
 
 		_varStack.pop(*_variables, varOff);
 	}
@@ -815,6 +828,12 @@ void Inter_v2::o2_initScreen() {
 			_vm->_video->setSize();
 
 		}
+	} else if (_vm->getGameType() == kGameTypeAdibou1 || _vm->getGameType() == kGameTypeAdi2) {
+		if (_vm->is640x400() && width == 640 && height == 480) {
+			// Force height to 400: the game is mostly scaled from the 320x200 version and
+			// never makes use of the space beyond height 400, so we can get rid of it.
+			height = 400;
+		}
 	}
 
 	_vm->_global->_fakeVideoMode = videoMode;
@@ -963,7 +982,11 @@ void Inter_v2::o2_playImd() {
 	bool close = (props.lastFrame == -1);
 	if (props.startFrame == -2) {
 		props.startFrame = 0;
-		props.lastFrame  = 0;
+		if (_vm->getGameType() == kGameTypeAdibou1) {
+			props.lastFrame  = -1;
+			props.noBlock    = true;
+		} else
+			props.lastFrame  = 0;
 		close = false;
 	}
 
@@ -977,11 +1000,11 @@ void Inter_v2::o2_playImd() {
 void Inter_v2::o2_getImdInfo() {
 	Common::String imd = _vm->_game->_script->evalString();
 
-	int16 varX      = _vm->_game->_script->readVarIndex();
-	int16 varY      = _vm->_game->_script->readVarIndex();
-	int16 varFrames = _vm->_game->_script->readVarIndex();
-	int16 varWidth  = _vm->_game->_script->readVarIndex();
-	int16 varHeight = _vm->_game->_script->readVarIndex();
+	uint16 varX      = _vm->_game->_script->readVarIndex();
+	uint16 varY      = _vm->_game->_script->readVarIndex();
+	uint16 varFrames = _vm->_game->_script->readVarIndex();
+	uint16 varWidth  = _vm->_game->_script->readVarIndex();
+	uint16 varHeight = _vm->_game->_script->readVarIndex();
 
 	// WORKAROUND: The nut rolling animation in the administration center
 	// in Woodruff is called "noixroul", but the scripts think it's "noixroule".
@@ -1026,7 +1049,7 @@ void Inter_v2::o2_assign(OpFuncParams &params) {
 		loopCount = 1;
 
 	for (int i = 0; i < loopCount; i++) {
-		int16 result;
+		int32 result;
 		int16 srcType = _vm->_game->_script->evalExpr(&result);
 
 		switch (destType) {
@@ -1171,6 +1194,9 @@ void Inter_v2::o2_addHotspot(OpFuncParams &params) {
 	if (key == 0)
 		key = ABS(id) + 41960;
 
+	_vm->_draw->adjustCoords(0, &left, &top);
+	_vm->_draw->adjustCoords(2, &width, &height);
+
 	if (left < 0) {
 		width += left;
 		left   = 0;
@@ -1181,10 +1207,21 @@ void Inter_v2::o2_addHotspot(OpFuncParams &params) {
 		top     = 0;
 	}
 
-	if (id < 0)
-		_vm->_game->_hotspots->add(0xD000 - id, left & 0xFFFC, top & 0xFFFC,
+	if (id < 0) {
+		int16 hotspotLeft = 0;
+		int16 hotspotTop = 0;
+		if (_vm->getGameType() == kGameTypeAdibou2 || _vm->getGameType() == kGameTypeAdi4) {
+			// The operation is no longer a "floor to previous multiple of 4", but a "minus 4"
+			// NOTE: may be needed by other games as well
+			hotspotLeft = left - 4;
+			hotspotTop  = top  - 4;
+		} else {
+			hotspotLeft = left & 0xFFFC;
+			hotspotTop  = top  & 0xFFFC;
+		}
+		_vm->_game->_hotspots->add(0xD000 - id, hotspotLeft, hotspotTop,
 				left + width + 3, top + height + 3, flags, key, 0, 0, funcPos);
-	else
+	} else
 		_vm->_game->_hotspots->add(0xE000 + id, left, top,
 				left + width - 1, top + height - 1, flags, key, 0, 0, funcPos);
 }
@@ -1217,8 +1254,8 @@ void Inter_v2::o2_getTotTextItemPart(OpFuncParams &params) {
 
 	stringVar = stringStartVar;
 	if (part == -1) {
-		warning("o2_getTotTextItemPart, part == -1");
 		_vm->_draw->_hotspotText = GET_VARO_STR(stringVar);
+		return;
 	}
 
 	WRITE_VARO_UINT8(stringVar, 0);
@@ -1392,6 +1429,7 @@ void Inter_v2::o2_goblinFunc(OpFuncParams &params) {
 	int16 cmd;
 
 	cmd = _vm->_game->_script->readInt16();
+	_vm->_vidPlayer->liveVideosLoop();
 
 	gobParams.paramCount = _vm->_game->_script->readInt16();
 	gobParams.extraData = cmd;
@@ -1432,7 +1470,7 @@ void Inter_v2::o2_getFreeMem(OpFuncParams &params) {
 
 void Inter_v2::o2_checkData(OpFuncParams &params) {
 	Common::String file = _vm->_game->_script->evalString();
-	int16 varOff = _vm->_game->_script->readVarIndex();
+	uint16 varOff = _vm->_game->_script->readVarIndex();
 
 	// WORKAROUND: For some reason, the variable indicating which TOT to load next
 	// is overwritten in the guard house card game in Woodruff.
@@ -1455,7 +1493,13 @@ void Inter_v2::o2_checkData(OpFuncParams &params) {
 	debugC(2, kDebugFileIO, "Requested size of file \"%s\": %d", file.c_str(), size);
 
 	WRITE_VAR_OFFSET(varOff, (size == -1) ? -1 : 50);
-	WRITE_VAR(16, (uint32) size);
+	// WORKAROUND: the "current hotspot" variable (also VAR(16)) is sometimes corrupted here before being read.
+	// We skip writing the file size into VAR(16) here as a workaround (the value is not used anyway).
+	// In some versions of Adibou 1, this sometimes triggers the "quit" action instead of starting
+	// a chosen Read/Count application.
+	// Note: a similar issue has been found in Adibou 2, see o7_checkData().
+	if (_vm->getGameType() != kGameTypeAdibou1  || !_vm->isCurrentTot("KID.TOT"))
+		WRITE_VAR(16, (uint32) size);
 }
 
 void Inter_v2::o2_readData(OpFuncParams &params) {
@@ -1505,6 +1549,15 @@ void Inter_v2::o2_readData(OpFuncParams &params) {
 
 	WRITE_VAR(1, 1);
 	Common::SeekableReadStream *stream = _vm->_dataIO->getFile(file);
+
+	// Fall back to the version from our detection tables, if the VERSION
+	// file does not exist - bug #14857
+	if (!stream && !scumm_stricmp(file, "version") && !offset && size == 5) {
+		Common::strlcpy((char *)buf, _vm->getGameVersion(), 5);
+		WRITE_VAR(1, 0);
+		return;
+	}
+
 	if (!stream)
 		return;
 
@@ -1532,7 +1585,7 @@ void Inter_v2::o2_readData(OpFuncParams &params) {
 void Inter_v2::o2_writeData(OpFuncParams &params) {
 	const char *file = _vm->_game->_script->evalString();
 
-	int16 dataVar = _vm->_game->_script->readVarIndex();
+	uint16 dataVar = _vm->_game->_script->readVarIndex();
 	int32 size    = _vm->_game->_script->readValExpr();
 	int32 offset  = _vm->_game->_script->evalInt();
 
@@ -1565,7 +1618,7 @@ void Inter_v2::o2_loadInfogramesIns(OpGobParams &params) {
 	varName = _vm->_game->_script->readInt16();
 
 	Common::strlcpy(fileName, GET_VAR_STR(varName), 16);
-	strcat(fileName, ".INS");
+	Common::strcat_s(fileName, ".INS");
 
 	_vm->_sound->infogramesLoadInstruments(fileName);
 }
@@ -1577,7 +1630,7 @@ void Inter_v2::o2_playInfogrames(OpGobParams &params) {
 	varName = _vm->_game->_script->readInt16();
 
 	Common::strlcpy(fileName, GET_VAR_STR(varName), 16);
-	strcat(fileName, ".DUM");
+	Common::strcat_s(fileName, ".DUM");
 
 	_vm->_sound->infogramesLoadSong(fileName);
 	_vm->_sound->infogramesPlay();
@@ -1662,9 +1715,9 @@ int16 Inter_v2::loadSound(int16 search) {
 		Common::strlcpy(sndfile, _vm->_game->_script->readString(9), 10);
 
 		if (type == SOUND_ADL)
-			strcat(sndfile, ".ADL");
+			Common::strcat_s(sndfile, ".ADL");
 		else
-			strcat(sndfile, ".SND");
+			Common::strcat_s(sndfile, ".SND");
 
 		int32 dataSize;
 		byte *dataPtr = _vm->_dataIO->getFile(sndfile, dataSize);

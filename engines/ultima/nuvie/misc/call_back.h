@@ -40,7 +40,7 @@ typedef enum {
 	EFFECT_CB_COMPLETE,      /* effect has finished */
 
 	CB_DATA_READY,           /* some data is ready to be retrieved (data=char)*/
-	MSGSCROLL_CB_TEXT_READY, /* text is ready to be retrieved (data=Std::string)*/
+	MSGSCROLL_CB_TEXT_READY, /* text is ready to be retrieved (data=Common::String)*/
 	CB_INPUT_CANCELED        /* input canceled by user */
 } CallbackMessage;
 
@@ -54,18 +54,18 @@ protected:
 
 public:
 	CallBack()  {
-		callback_user_data = NULL;
-		callback_target = NULL;
+		callback_user_data = nullptr;
+		callback_target = nullptr;
 	}
 	virtual ~CallBack() { }
 
 	// receive message
-	virtual uint16 callback(uint16 msg, CallBack *caller, void *data = NULL) {
+	virtual uint16 callback(uint16 msg, CallBack *caller, void *data = nullptr) {
 		DEBUG(0, LEVEL_WARNING, "Unhandled callback. msg (%x)\n", msg);
 		return 0;
 	}
 	// send message
-	uint16 message(uint16 msg, void *msg_data = NULL, void *my_data = NULL) {
+	uint16 message(uint16 msg, void *msg_data = nullptr, void *my_data = nullptr) {
 		if (my_data)
 			set_user_data(my_data);
 		callback_target->set_user_data(callback_user_data);

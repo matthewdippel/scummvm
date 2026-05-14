@@ -21,7 +21,7 @@
 
 // BufferedStream represents a buffered file stream; uses memory buffer
 // during read and write operations to limit number reads and writes on disk
-// and thus improve i/o perfomance.
+// and thus improve i/o performance.
 //
 // BufferedSectionStream is a subclass stream that limits reading by an
 // arbitrary offset range.
@@ -29,7 +29,7 @@
 #ifndef AGS_SHARED_UTIL_BUFFEREDSTREAM_H
 #define AGS_SHARED_UTIL_BUFFEREDSTREAM_H
 
-#include "ags/lib/std/vector.h"
+#include "common/std/vector.h"
 #include "ags/shared/util/file_stream.h"
 #include "ags/shared/util/file.h" // TODO: extract filestream mode constants
 
@@ -65,7 +65,7 @@ public:
 	size_t  Write(const void *buffer, size_t size) override;
 	int32_t WriteByte(uint8_t b) override;
 
-	bool    Seek(soff_t offset, StreamSeek origin) override;
+	soff_t  Seek(soff_t offset, StreamSeek origin) override;
 
 protected:
 	soff_t _start = 0; // valid section starting offset

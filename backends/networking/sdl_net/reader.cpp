@@ -29,6 +29,7 @@ namespace Networking {
 
 Reader::Reader() {
 	_state = RS_NONE;
+	_mode = RM_HTTP_GENERIC;
 	_content = nullptr;
 	_bytesLeft = 0;
 
@@ -150,7 +151,7 @@ bool Reader::readBlockHeadersIntoStream(Common::WriteStream *stream) {
 }
 
 namespace {
-void readFromThatUntilLineEnd(const char *cstr, Common::String needle, Common::String &result) {
+void readFromThatUntilLineEnd(const char *cstr, const Common::String &needle, Common::String &result) {
 	const char *position = strstr(cstr, needle.c_str());
 
 	if (position) {
@@ -217,7 +218,7 @@ void Reader::parseFirstLine(const Common::String &headersToParse) {
 			}
 
 			//check that method is supported
-			if (methodParsed != "GET" && methodParsed != "PUT" && methodParsed != "POST")
+			if (methodParsed != "GET" && methodParsed != "PUT" && methodParsed != "POST" && methodParsed != "OPTIONS")
 				bad = true;
 
 			//check that HTTP/<VERSION> is OK
@@ -232,7 +233,7 @@ void Reader::parseFirstLine(const Common::String &headersToParse) {
 	if (bad) _isBadRequest = true;
 }
 
-void Reader::parsePathQueryAndAnchor(Common::String pathToParse) {
+void Reader::parsePathQueryAndAnchor(const Common::String &pathToParse) {
 	//<path>[?query][#anchor]
 	bool readingPath = true;
 	bool readingQuery = false;
@@ -398,7 +399,51 @@ bool Reader::readFirstHeaders() {
 	return false;
 }
 
+bool Reader::readContent(Common::WriteStream* stream) {
+	if (_mode != RM_HTTP_GENERIC) {
+		warning("Reader::readContent(): bad mode");
+		return false;
+	}
+
+	if (_state != RS_READING_CONTENT) {
+		warning("Reader::readContent(): bad state");
+		return false;
+	}
+
+	if (!bytesLeft())
+		return false;
+
+	byte buffer[1024];
+	while (_availableBytes > 0) {
+		uint32 bytesRead = _content->read(&buffer, 1024);
+		_availableBytes -= bytesRead;
+		_bytesLeft -= bytesRead;
+
+		if (stream)
+			if (stream->write(buffer, bytesRead) != bytesRead) {
+				warning("Reader::readContent(): failed to write buffer to stream");
+				return false;
+			}
+
+		if (_availableBytes == 0)
+			_allContentRead = true;
+
+		if (!bytesLeft())
+			break;
+	}
+
+	if (stream)
+		stream->flush();
+
+	return _allContentRead;
+}
+
 bool Reader::readFirstContent(Common::WriteStream *stream) {
+	if (_mode != RM_POST_FORM_MULTIPART) {
+		warning("Reader::readFirstContent(): bad mode");
+		return false;
+	}
+
 	if (_state != RS_READING_CONTENT) {
 		warning("Reader::readFirstContent(): bad state");
 		return false;
@@ -409,6 +454,11 @@ bool Reader::readFirstContent(Common::WriteStream *stream) {
 }
 
 bool Reader::readBlockHeaders(Common::WriteStream *stream) {
+	if (_mode != RM_POST_FORM_MULTIPART) {
+		warning("Reader::readBlockHeaders(): bad mode");
+		return false;
+	}
+
 	if (_state != RS_READING_HEADERS) {
 		warning("Reader::readBlockHeaders(): bad state");
 		return false;
@@ -421,6 +471,11 @@ bool Reader::readBlockHeaders(Common::WriteStream *stream) {
 }
 
 bool Reader::readBlockContent(Common::WriteStream *stream) {
+	if (_mode != RM_POST_FORM_MULTIPART) {
+		warning("Reader::readBlockContent(): bad mode");
+		return false;
+	}
+
 	if (_state != RS_READING_CONTENT) {
 		warning("Reader::readBlockContent(): bad state");
 		return false;
@@ -450,6 +505,8 @@ bool Reader::readBlockContent(Common::WriteStream *stream) {
 
 uint32 Reader::bytesLeft() const { return _bytesLeft; }
 
+void Reader::setMode(ReaderMode mode) { _mode = mode; }
+
 void Reader::setContent(Common::MemoryReadWriteStream *stream) {
 	_content = stream;
 	_bytesLeft = stream->size() - stream->pos();
@@ -467,7 +524,7 @@ Common::String Reader::path() const { return _path; }
 
 Common::String Reader::query() const { return _query; }
 
-Common::String Reader::queryParameter(Common::String name) const { return _queryParameters.getValOrDefault(name); }
+Common::String Reader::queryParameter(const Common::String &name) const { return _queryParameters.getValOrDefault(name); }
 
 Common::String Reader::anchor() const { return _anchor; }
 

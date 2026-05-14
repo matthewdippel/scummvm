@@ -31,7 +31,7 @@ class PEResources;
 namespace Scumm {
 
 class AI;
-class Net;
+class Map;
 
 class Moonbase {
 public:
@@ -41,11 +41,6 @@ public:
 	int readFromArray(int array, int y, int x);
 	void deallocateArray(int array);
 	int callScummFunction(int scriptNumber, int paramCount,...);
-
-	void blitT14WizImage(uint8 *dst, int dstw, int dsth, int dstPitch, const Common::Rect *clipBox,
-			 uint8 *wizd, int srcx, int srcy, int rawROP, int paramROP);
-	void blitDistortion(byte *bufferData, const int bufferWidth, const int bufferHeight, const int bufferPitch,
-			const Common::Rect *optionalClippingRect, byte *dataStream, const int x, const int y, byte *altSourceBuffer);
 
 	// FOW Stuff
 	bool isFOW(int resNum, int state, uint32 conditionBits) {
@@ -61,11 +56,11 @@ public:
 		int clipY1, int clipX2, int clipY2, int technique, int nFrame);
 
 
-	void renderFOW(uint8 *destSurface, int dstPitch, int dstType, int dstw, int dsth, int flags);
+	void renderFOW(WizMultiTypeBitmap *destSurface);
 
 private:
 	int readFOWVisibilityArray(int array, int y, int x);
-	void renderFOWState(uint8 *destSurface, int dstPitch, int dstType, int dstw, int dsth, int x, int y, int srcw, int srch, int state, int flags);
+	void renderFOWState(WizMultiTypeBitmap *destSurface, int x, int y, int state);
 
 public:
 	int _fowSentinelImage;
@@ -73,9 +68,7 @@ public:
 	uint32 _fowSentinelConditionBits;
 
 	AI *_ai;
-#ifdef USE_LIBCURL
-	Net *_net;
-#endif
+	Map *_map;
 
 private:
 	ScummEngine_v100he *_vm;
@@ -108,7 +101,7 @@ private:
 	int32 _fowRenderTable[32768];
 
 	Common::PEResources *_exe;
-	Common::String _fileName;
+	Common::Path _fileName;
 };
 
 } // End of namespace Scumm

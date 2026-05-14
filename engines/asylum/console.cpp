@@ -339,7 +339,7 @@ bool Console::cmdHelp(int, const char **) {
 	debugPrintf(" scene       - change the scene\n");
 	debugPrintf(" show_script - show script commands\n");
 	debugPrintf(" kill_script - terminate a script\n");
-	debugPrintf(" puzzle      - run an puzzle\n");
+	debugPrintf(" puzzle      - run a puzzle\n");
 	debugPrintf(" insertdisc  - show Insert Disc screen\n");
 	debugPrintf("\n");
 	debugPrintf(" get_status  - get actor's status\n");
@@ -371,14 +371,14 @@ bool Console::cmdListFiles(int argc, const char **argv) {
 		return true;
 	}
 
-	Common::String filter(const_cast<char *>(argv[1]));
+	Common::Path filter(const_cast<char *>(argv[1]), Common::Path::kNativeSeparator);
 
 	Common::ArchiveMemberList list;
 	int count = SearchMan.listMatchingMembers(list, filter);
 
 	debugPrintf("Number of matches: %d\n", count);
-	for (Common::ArchiveMemberList::iterator it = list.begin(); it != list.end(); ++it)
-		debugPrintf(" %s\n", (*it)->getName().c_str());
+	for (const auto &archive : list)
+		debugPrintf(" %s\n", archive->getName().c_str());
 
 	return true;
 }

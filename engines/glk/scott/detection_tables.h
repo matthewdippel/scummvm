@@ -30,7 +30,7 @@
  * https://github.com/angstsmurf/spatterlight/tree/master/terps/scott
  */
 
-#include "common/gui_options.h"
+
 #include "common/language.h"
 #include "engines/game.h"
 
@@ -38,6 +38,8 @@ namespace Glk {
 namespace Scott {
 
 const PlainGameDescriptor SCOTT_GAME_LIST[] = {
+	{ "scottadams",			"Scott Adams IF Game" },
+
 	// Scott Adams games
 	{ "adventureland",		"Adventureland" },
 	{ "pirateadventure",	"Pirate Adventure" },
@@ -47,7 +49,7 @@ const PlainGameDescriptor SCOTT_GAME_LIST[] = {
 	{ "strangeodyssey",		"Strange Odyssey" },
 	{ "mysteryfunhouse",	"Mystery Fun House" },
 	{ "pyramidofdoom",		"Pyramid Of Doom" },
-	{ "ghosttown",			"Ghost Town" },
+	{ "ghosttown_sa",       "Ghost Town (by Scott Adams)" },
 	{ "savageisland",		"Savage Island" },
 	{ "savageisland1",		"Savage Island, Part 1" },
 	{ "savageisland2",		"Savage Island, Part 2" },
@@ -75,19 +77,36 @@ const PlainGameDescriptor SCOTT_GAME_LIST[] = {
 	{ "mysadv1", "11 Mysterious Adventures - Disk 1" },
 	{ "mysadv2", "11 Mysterious Adventures - Disk 2" },
 
+	// Home Brew TI99 Games
+	{ "advocadoadv",	 "The Great Advocado Adventure" },
+	{ "matildadilemma",	 "Matilda's Dilemma" },
+	{ "escapecannibal",	 "Escape from Cannibal Island" },
+	{ "captkiddmystery", "Mystery of Captain Kidd" },
+	{ "advscott",		 "Adventure, Colossal Cave (adaptation)" },
+	{ "advscottmaster",	 "Adventure, Colossal Cave (adaptation) - Masters Game" },
+	{ "computorama",	 "Computorama" },
+	{ "escapealcatraz",	 "Escape from Alcatraz" },
+	{ "gerryplace",		 "Gerry's Place" },
+	{ "grayelftomb",	 "Tomb of the Gray Elf" },
+	{ "knightiron",		 "Knight Ironheart" },
+	{ "moonadv",		 "Moon Adventure" },
+	{ "nessy",			 "Nessy" },
+	{ "travelling",		 "Travelling" },
+
 	// Other Games
 	{ "desert",            "Desert Adventure" },
 	{ "jamesbondadv",      "James Bond Adventure" },
 	{ "burglarsadv",       "Burglar's Adventure" },
 	{ "underseaconquest",  "Undersea Conquest part 1" },
 	{ "gammaworld",        "Gamma World" },
-	{ "marooned",          "Marooned" },
+	{ "marooned_kw",       "Marooned (by Kim Watt)" },
 	{ "minersadv",         "Miner's Adventure" },
 	{ "romulanadv",        "Romulan Adventure" },
 	{ "topsecretadv",      "Top Secret Adventure" },
 	{ "gremlins",		   "Gremlins" },
 	{ "seasofblood",	   "Seas Of Blood" },
 	{ "supergran",		   "Super Gran" },
+	{ "ghostking",		   "Ghost King" },
 
 	{ nullptr, nullptr }
 };
@@ -102,7 +121,7 @@ const GlkDetectionEntry SCOTT_GAMES[] = {
 	DT_ENTRY0("strangeodyssey",    "c57bb6df04dc77a2b232bc5bcab6e417", 17489),
 	DT_ENTRY0("mysteryfunhouse",   "ce2931ac3d5cbc270a5cb7be9e614f6e", 17165),
 	DT_ENTRY0("pyramidofdoom",     "4e6127fad6b5d75eccd3f3b101f8c9c8", 17673),
-	DT_ENTRY0("ghosttown",         "2c08327ab06d5490bd9e367ddaeca627", 17831),
+	DT_ENTRY0("ghosttown_sa",      "2c08327ab06d5490bd9e367ddaeca627", 17831),
 	DT_ENTRY0("savageisland1",     "8feb77f11d32e9567ce2fc7d435eaf44", 19533),
 	DT_ENTRY0("savageisland2",     "20c40a349f7a214ac515fb1d63c30a87", 18367),
 	DT_ENTRY0("goldenvoyage",      "e2a8f956ab215012d1495550c4c11ee8", 18513),
@@ -160,10 +179,11 @@ const GlkDetectionEntry SCOTT_GAMES[] = {
 	DT_ENTRY0("burglarsadv",      "0072d8afcd30aa1577350dcfad269e47", 11541),
 	DT_ENTRY0("underseaconquest", "d57705f8f17f0b6044a575accf9cbfd1",  5616),
 	DT_ENTRY0("gammaworld",       "b980c44e8a49aa9d71e92f6b6bf1d136", 11531),
-	DT_ENTRY0("marooned",         "a1ac54630a0583c19269901ec10cd0b1", 12576),
+	DT_ENTRY0("marooned_kw",      "a1ac54630a0583c19269901ec10cd0b1", 12576),
 	DT_ENTRY0("minersadv",        "0000d9da5a13701601fb3e7399daa128", 11898),
 	DT_ENTRY0("romulanadv",       "d97b5cb5ed66eb276ef9f1c1bae0b8dd", 13959),
 	DT_ENTRY0("topsecretadv",     "effb411e74dfe3a8d69b57b9bc3a2cef", 15575),
+	DT_ENTRY0("ghostking",		  "28d433d9f5d2de99dac460c5e1dfa9c5", 14206),
 
 	// ZX Spectrum games
 	DT_ENTRYP1("marveladventure", "ZXSpectrum", "0eec511d3cde815c73e5464ab0cdbef9", 40727, Common::kPlatformZX),
@@ -247,6 +267,23 @@ const GlkDetectionEntry SCOTT_GAMES[] = {
 	DT_ENTRYP1("savageisland1",		"TI99/4A", "a59c7841037fce63cf54899e8f562f25", 10170, Common::kPlatformTI994),
 	DT_ENTRYP1("savageisland2",		"TI99/4A", "b40ec602d4c4c442b910b4f109929562", 12616, Common::kPlatformTI994),
 	DT_ENTRYP1("goldenvoyage",		"TI99/4A", "ce4a136b4c2f3d56ce0341d830760bb5", 10346, Common::kPlatformTI994),
+
+	// Home Brew
+	DT_ENTRYP1("advocadoadv",		"TI99/4A", "80d6b91ea10c26c8139c4fa39dbd8161", 12416, Common::kPlatformTI994),
+	DT_ENTRYP1("matildadilemma",	"TI99/4A", "d540575c23434b5ff424513820158a84", 13440, Common::kPlatformTI994),
+	DT_ENTRYP1("escapecannibal",	"TI99/4A", "3d0f7d76a81c1fd5c0f2bb52c6dda37e", 12672, Common::kPlatformTI994),
+	DT_ENTRYP1("captkiddmystery",	"TI99/4A", "2ec292ced102259f10bd4089f3d31d27", 11136, Common::kPlatformTI994),
+	DT_ENTRYP1("advscott",			"TI99/4A", "01bbf82b4047294322e63a7622bb9803", 13440, Common::kPlatformTI994),
+	DT_ENTRYP1("advscottmaster",	"TI99/4A", "229b84804d3b74af2fc52e18f6241f36", 10880, Common::kPlatformTI994),
+	DT_ENTRYP1("computorama",		"TI99/4A", "c5e9a015d59c584cd48bffde3f394ff8", 5147,  Common::kPlatformTI994),
+	DT_ENTRYP1("escapealcatraz",	"TI99/4A", "1a01336ce0799f67403d50192a99d63f", 9600,  Common::kPlatformTI994),
+	DT_ENTRYP1("gerryplace",		"TI99/4A", "36f427bd810e60554ef6ff3b91851816", 9600,  Common::kPlatformTI994),
+	DT_ENTRYP1("grayelftomb",		"TI99/4A", "b88a4644652589ff6633c400f4943305", 10112, Common::kPlatformTI994),
+	DT_ENTRYP1("knightiron",		"TI99/4A", "c97aac994799840b634a501599ec5059", 13305, Common::kPlatformTI994),
+	DT_ENTRYP1("moonadv",			"TI99/4A", "40af101895149d397bef50dfdf3cedbd", 9600,  Common::kPlatformTI994),
+	DT_ENTRYP1("nessy",				"TI99/4A", "49d3b3402c49f947577a14f8588f0dcd", 11392, Common::kPlatformTI994),
+	DT_ENTRYP1("travelling",		"TI99/4A", "1f2624be91a256901e555f4d49b09f85", 11648, Common::kPlatformTI994),
+
 	DT_END_MARKER
 };
 

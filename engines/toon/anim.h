@@ -17,6 +17,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, MojoTouch has
+ * exclusively licensed this code on March 23th, 2024, to be used in
+ * closed-source products.
+ * Therefore, any contributions (commits) to it will also be dual-licensed.
+ *
  */
 
 #ifndef TOON_ANIM_H
@@ -41,6 +48,7 @@ struct AnimationFrame {
 	int16 _y2;
 	int32 _ref;
 	uint8 *_data;
+	uint32 _dataSize;
 };
 
 class Animation {
@@ -58,6 +66,7 @@ public:
 	uint8 *_palette;
 	int32 _paletteEntries;
 	char _name[32];
+	bool _shadowFlag;
 
 	bool loadAnimation(const Common::String &file);
 	void drawFrame(Graphics::Surface &surface, int32 frame, int16 x, int16 y);
@@ -65,7 +74,7 @@ public:
 	void drawFrameOnPicture(int32 frame, int16 x, int16 y);
 	void drawFrameWithMask(Graphics::Surface &surface, int32 frame, int16 xx, int16 yy, int32 zz, Picture *mask);
 	void drawFrameWithMaskAndScale(Graphics::Surface &surface, int32 frame, int16 xx, int16 yy, int32 zz, Picture *mask, int32 scale);
-	void drawStrip(int32 offset = 0);
+//	void drawStrip(int32 offset = 0);
 	void applyPalette(int32 offset, int32 srcOffset, int32 numEntries);
 	Common::Rect getFrameRect(int32 frame);
 	int16 getFrameWidth(int32 frame);

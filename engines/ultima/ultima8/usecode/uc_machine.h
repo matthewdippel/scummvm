@@ -22,8 +22,10 @@
 #ifndef ULTIMA8_USECODE_UCMACHINE_H
 #define ULTIMA8_USECODE_UCMACHINE_H
 
+#include "common/hashmap.h"
+#include "common/str.h"
 #include "ultima/ultima8/misc/common_types.h"
-#include "ultima/shared/std/containers.h"
+#include "ultima/ultima8/misc/set.h"
 #include "ultima/ultima8/usecode/intrinsics.h"
 
 namespace Ultima {
@@ -40,7 +42,7 @@ class idMan;
 class UCMachine {
 	friend class Debugger;
 public:
-	UCMachine(Intrinsic *iset, unsigned int icount);
+	UCMachine(const Intrinsic *iset, unsigned int icount);
 	~UCMachine();
 
 	static UCMachine *get_instance() {
@@ -51,7 +53,7 @@ public:
 
 	void execProcess(UCProcess *proc);
 
-	const Std::string &getString(uint16 str) const;
+	const Common::String &getString(uint16 str) const;
 	UCList *getList(uint16 l);
 
 	void freeString(uint16 s);
@@ -90,17 +92,17 @@ public:
 	INTRINSIC(I_numToStr);
 
 protected:
-	void loadIntrinsics(Intrinsic *i, unsigned int icount);
+	void loadIntrinsics(const Intrinsic *i, unsigned int icount);
 
 private:
 	ConvertUsecode *_convUse;
-	Intrinsic *_intrinsics;
+	const Intrinsic *_intrinsics;
 	unsigned int _intrinsicCount;
 
 	GlobalStorage *_globals;
 
-	Std::map<uint16, UCList *> _listHeap;
-	Std::map<uint16, Std::string> _stringHeap;
+	Common::HashMap<uint16, UCList *> _listHeap;
+	Common::HashMap<uint16, Common::String> _stringHeap;
 
 	// Add a string to the list (copies the string)
 	uint16 assignString(const char *str);
@@ -111,14 +113,12 @@ private:
 
 	static UCMachine *_ucMachine;
 
-#ifdef DEBUG
 	// tracing
 	bool _tracingEnabled;
 	bool _traceAll;
-	bool _traceEvents;
-	Std::set<ObjId> _traceObjIDs;
-	Std::set<ProcId> _tracePIDs;
-	Std::set<uint16> _traceClasses;
+	Set<ObjId> _traceObjIDs;
+	Set<ProcId> _tracePIDs;
+	Set<uint16> _traceClasses;
 
 	inline bool trace_show(ProcId pid, ObjId objid, uint16 ucclass) {
 		if (!_tracingEnabled) return false;
@@ -129,11 +129,6 @@ private:
 		return false;
 	}
 
-public:
-	bool trace_event() const {
-		return (_tracingEnabled && (_traceAll || _traceEvents));
-	}
-#endif
 };
 
 } // End of namespace Ultima8

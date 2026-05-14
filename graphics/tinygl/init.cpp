@@ -25,27 +25,118 @@
  * It also has modifications by the ResidualVM-team, which are covered under the GPLv2 (or later).
  */
 
+#include "common/singleton.h"
+#include "common/array.h"
+
+#include "graphics/tinygl/tinygl.h"
 #include "graphics/tinygl/zgl.h"
 #include "graphics/tinygl/zblit.h"
 #include "graphics/tinygl/zdirtyrect.h"
 
 namespace TinyGL {
 
+class GLContextArray : public Common::Singleton<GLContextArray> {
+private:
+
+	Common::Array<GLContext *> _glContextArray;
+
+public:
+
+	GLContext *createContext() {
+		GLContext *ctx = new GLContext;
+		_glContextArray.push_back(ctx);
+		return ctx;
+	}
+
+	void destroyContext(ContextHandle *handle) {
+		for (Common::Array<GLContext *>::iterator it = _glContextArray.begin(); it != _glContextArray.end(); it++) {
+			if (*it == (GLContext *)handle) {
+				(*it)->deinit();
+				delete *it;
+				_glContextArray.erase(it);
+				break;
+			}
+		}
+	}
+
+	void destroyContexts() {
+		for (Common::Array<GLContext *>::iterator it = _glContextArray.begin(); it != _glContextArray.end(); it++) {
+			if (*it != nullptr) {
+				(*it)->deinit();
+				delete *it;
+			}
+		}
+		_glContextArray.clear();
+	}
+
+	bool existsContexts() {
+		return _glContextArray.size() != 0;
+	}
+
+	GLContext *getContext(ContextHandle *handle) {
+		for (Common::Array<GLContext *>::iterator it = _glContextArray.begin(); it != _glContextArray.end(); it++) {
+			if ((*it) == (GLContext *)handle) {
+				return *it;
+			}
+		}
+		return nullptr;
+	}
+};
+
+} // end of namespace TinyGL
+
+namespace Common {
+DECLARE_SINGLETON(TinyGL::GLContextArray);
+}
+
+namespace TinyGL {
+
 GLContext *gl_ctx;
+
+GLContext *gl_get_context() {
+	assert(gl_ctx);
+	return gl_ctx;
+}
+
+ContextHandle *createContext(int screenW, int screenH, Graphics::PixelFormat pixelFormat, int textureSize,
+							 bool enableStencilBuffer, bool dirtyRectsEnable, uint32 drawCallMemorySize) {
+	gl_ctx = GLContextArray::instance().createContext();
+	gl_ctx->init(screenW, screenH, pixelFormat, textureSize, enableStencilBuffer,
+				 dirtyRectsEnable, drawCallMemorySize);
+	return (ContextHandle *)gl_ctx;
+}
+
+void destroyContext() {
+	GLContextArray::instance().destroyContexts();
+	GLContextArray::destroy();
+	gl_ctx = nullptr;
+}
+
+void destroyContext(ContextHandle *handle) {
+	GLContextArray::instance().destroyContext(handle);
+	if ((GLContext *)handle == gl_ctx)
+		gl_ctx = nullptr;
+	if (!GLContextArray::instance().existsContexts())
+		GLContextArray::destroy();
+}
+
+void setContext(ContextHandle *handle) {
+	GLContext *ctx = GLContextArray::instance().getContext(handle);
+	if (ctx == nullptr) {
+		error("TinyGL: makeContextCurrent() Failed get context");
+	}
+	gl_ctx = ctx;
+}
 
 void GLContext::initSharedState() {
 	GLSharedState *s = &shared_state;
 	s->lists = (GLList **)gl_zalloc(sizeof(GLList *) * MAX_DISPLAY_LISTS);
 	s->texture_hash_table = (GLTexture **)gl_zalloc(sizeof(GLTexture *) * TEXTURE_HASH_TABLE_SIZE);
-
-	alloc_texture(0);
 }
 
 void GLContext::endSharedState() {
 	GLSharedState *s = &shared_state;
 
-	uint h = 0;
-	free_texture(h);
 	for (int i = 0; i < MAX_DISPLAY_LISTS; i++) {
 		// TODO
 	}
@@ -54,16 +145,12 @@ void GLContext::endSharedState() {
 	gl_free(s->texture_hash_table);
 }
 
-void createContext(int screenW, int screenH, Graphics::PixelFormat pixelFormat, int textureSize, bool enableStencilBuffer, bool dirtyRectsEnable) {
-	assert(gl_ctx == nullptr);
-	gl_ctx = new GLContext();
-	gl_ctx->init(screenW, screenH, pixelFormat, textureSize, enableStencilBuffer, dirtyRectsEnable);
-}
-
-void GLContext::init(int screenW, int screenH, Graphics::PixelFormat pixelFormat, int textureSize, bool enableStencilBuffer, bool dirtyRectsEnable) {
+void GLContext::init(int screenW, int screenH, Graphics::PixelFormat pixelFormat, int textureSize,
+	             bool enableStencilBuffer, bool dirtyRectsEnable, uint32 drawCallMemorySize) {
 	GLViewport *v;
 
 	_enableDirtyRectangles = dirtyRectsEnable;
+	stencil_buffer_supported = enableStencilBuffer;
 
 	fb = new TinyGL::FrameBuffer(screenW, screenH, pixelFormat, enableStencilBuffer);
 	renderRect = Common::Rect(0, 0, screenW, screenH);
@@ -74,6 +161,7 @@ void GLContext::init(int screenW, int screenH, Graphics::PixelFormat pixelFormat
 		error("glInit: texture size not allowed: %d", textureSize);
 	_textureSize = textureSize;
 	fb->setTextureSizeAndMask(textureSize, (textureSize - 1) << ZB_POINT_ST_FRAC_BITS);
+	fb->setTextureEnvironment(&_texEnv);
 
 	// allocate GLVertex array
 	vertex_max = POLYGON_MAX_VERTEX;
@@ -146,17 +234,12 @@ void GLContext::init(int screenW, int screenH, Graphics::PixelFormat pixelFormat
 
 	// textures
 	texture_2d_enabled = false;
-	current_texture = alloc_texture(0);
+	current_texture = default_texture = alloc_texture(0);
 	maxTextureName = 0;
 	texture_mag_filter = TGL_LINEAR;
 	texture_min_filter = TGL_NEAREST_MIPMAP_LINEAR;
-#if defined(SCUMM_LITTLE_ENDIAN)
-	colorAssociationList.push_back({Graphics::PixelFormat(4, 8, 8, 8, 8, 0, 8, 16, 24), TGL_RGBA, TGL_UNSIGNED_BYTE});
-	colorAssociationList.push_back({Graphics::PixelFormat(3, 8, 8, 8, 0, 0, 8, 16, 0),  TGL_RGB,  TGL_UNSIGNED_BYTE});
-#else
-	colorAssociationList.push_back({Graphics::PixelFormat(4, 8, 8, 8, 8, 24, 16, 8, 0), TGL_RGBA, TGL_UNSIGNED_BYTE});
-	colorAssociationList.push_back({Graphics::PixelFormat(3, 8, 8, 8, 0, 16, 8, 0, 0),  TGL_RGB,  TGL_UNSIGNED_BYTE});
-#endif
+	colorAssociationList.push_back({Graphics::PixelFormat::createFormatRGBA32(),        TGL_RGBA, TGL_UNSIGNED_BYTE});
+	colorAssociationList.push_back({Graphics::PixelFormat::createFormatRGB24(),         TGL_RGB,  TGL_UNSIGNED_BYTE});
 	colorAssociationList.push_back({Graphics::PixelFormat(2, 5, 6, 5, 0, 11, 5, 0, 0),  TGL_RGB,  TGL_UNSIGNED_SHORT_5_6_5});
 	colorAssociationList.push_back({Graphics::PixelFormat(2, 5, 5, 5, 1, 11, 6, 1, 0),  TGL_RGBA, TGL_UNSIGNED_SHORT_5_5_5_1});
 	colorAssociationList.push_back({Graphics::PixelFormat(2, 4, 4, 4, 4, 12, 8, 4, 0),  TGL_RGBA, TGL_UNSIGNED_SHORT_4_4_4_4});
@@ -177,6 +260,12 @@ void GLContext::init(int screenW, int screenH, Graphics::PixelFormat pixelFormat
 	current_cull_face = TGL_BACK;
 	current_shade_model = TGL_SMOOTH;
 	cull_face_enabled = 0;
+
+	// scissor
+	scissor_test_enabled = false;
+	scissor[0] = scissor[1] = 0;
+	scissor[2] = screenW;
+	scissor[3] = screenH;
 
 	// fog
 	fog_enabled = false;
@@ -210,6 +299,10 @@ void GLContext::init(int screenW, int screenH, Graphics::PixelFormat pixelFormat
 	depth_test_enabled = false;
 	depth_func = TGL_LESS;
 	depth_write_mask = true;
+
+	// stipple
+	polygon_stipple_enabled = false;
+	memset(polygon_stipple_pattern, 0xff, sizeof(polygon_stipple_pattern));
 
 	// stencil
 	stencil_test_enabled = false;
@@ -261,27 +354,11 @@ void GLContext::init(int screenW, int screenH, Graphics::PixelFormat pixelFormat
 	// color mask
 	color_mask_red = color_mask_green = color_mask_blue = color_mask_alpha = true;
 
-	const int kDrawCallMemory = 5 * 1024 * 1024;
-
 	_currentAllocatorIndex = 0;
-	_drawCallAllocator[0].initialize(kDrawCallMemory);
-	_drawCallAllocator[1].initialize(kDrawCallMemory);
+	_drawCallAllocator[0].initialize(drawCallMemorySize);
+	_drawCallAllocator[1].initialize(drawCallMemorySize);
 	_debugRectsEnabled = false;
 	_profilingEnabled = false;
-
-	TinyGL::Internal::tglBlitResetScissorRect();
-}
-
-GLContext *gl_get_context() {
-	return gl_ctx;
-}
-
-void destroyContext() {
-	GLContext *c = gl_get_context();
-	assert(c);
-	c->deinit();
-	delete c;
-	gl_ctx = nullptr;
 }
 
 void GLContext::deinit() {
@@ -291,8 +368,10 @@ void GLContext::deinit() {
 	specbuf_cleanup();
 	for (int i = 0; i < 3; i++)
 		gl_free(matrix_stack[i]);
+	free_texture(default_texture);
 	endSharedState();
 	gl_free(vertex);
+	delete fb;
 }
 
 } // end of namespace TinyGL

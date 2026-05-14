@@ -33,11 +33,13 @@ namespace Scumm {
 int newDirToOldDir(int dir);
 int oldDirToNewDir(int dir);
 
-int normalizeAngle(int angle);
+int normalizeAngle(int dirType, int angle);
 int fromSimpleDir(int dirtype, int dir);
 int toSimpleDir(int dirtype, int dir);
 
 void assertRange(int min, int value, int max, const char *desc);
+
+void *reallocateArray(void *buffer, size_t count, size_t size);
 
 } // End of namespace Scumm
 

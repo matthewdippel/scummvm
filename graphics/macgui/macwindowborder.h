@@ -26,7 +26,6 @@
 #include "common/list.h"
 
 #include "graphics/managed_surface.h"
-#include "graphics/transparent_surface.h"
 #include "graphics/primitives.h"
 
 #include "image/bmp.h"
@@ -45,6 +44,16 @@ enum {
 	kWindowBorderMaxFlag   = 1 << 3
 };
 
+enum {
+	kBorderScroll = 1000
+};
+
+enum {
+	kWinBorderWin95Scrollbar = kBorderScroll + 0x00,
+	kWindowBorderWin95NoBorderScrollbar,
+	kWindowBorderMacOSNoBorderScrollbar
+};
+
 struct BorderOffsets {
 	int left;
 	int right;
@@ -54,8 +63,14 @@ struct BorderOffsets {
 	int titleBottom;
 	bool dark;
 	int titlePos;
+	int closeButtonTop;
+	int closeButtonLeft;
+	int closeButtonWidth;
+	int resizeButtonTop;
+	int resizeButtonHeight;
 	int upperScrollHeight;
 	int lowerScrollHeight;
+	int titlePadding;
 };
 
 /**
@@ -77,12 +92,12 @@ public:
 
 	/**
 	 * Add the given surface as the display of the border in the state that is instructed by flag.
-	 * Will fail if there is already an border.
+	 * Will fail if there is already a border.
 	 * @param The surface that will be displayed.
 	 * @param The border type indicated by flag
 	 * @param The title position of bmp image
 	 */
-	void addBorder(TransparentSurface *source, uint32 flags, int titlePos = 0);
+	void addBorder(ManagedSurface *source, uint32 flags, int titlePos = 0);
 
 	/**
 	 * Accessor function for the custom offsets.
@@ -116,6 +131,9 @@ public:
 	BorderOffsets &getOffset();
 	const BorderOffsets &getOffset() const;
 
+	int getMinWidth(uint32 flags) const;
+	int getMinHeight(uint32 flags) const;
+
 	/**
 	 * Blit the desired border (active or inactive) into a destination surface.
 	 * It automatically resizes the border to fit the given surface.
@@ -123,29 +141,30 @@ public:
 	 * @param border type that you want to draw
 	 * @param wm The window manager.
 	 */
-	void blitBorderInto(ManagedSurface &destination, uint32 flags, MacWindowManager *wm);
+	void blitBorderInto(ManagedSurface &destination, uint32 flags, bool maskOnly = false, uint32 maskColor = 0);
 
-	void setTitle(const Common::String& title, int width, MacWindowManager *wm);
+	void setTitle(const Common::String& title, int width);
 
 	void setScroll(int scrollPos, int scrollSize) { _scrollPos = scrollPos, _scrollSize = scrollSize; }
 
-	void drawTitle(ManagedSurface *g, MacWindowManager *wm, int titleOffset);
+	void drawTitle(ManagedSurface *g, int titleOffset, int minWidth);
 
-	void drawScrollBar(ManagedSurface *g, MacWindowManager *wm);
+	void drawScrollBar(ManagedSurface *g);
 
 	// we should call this method as soon as the macwindowborder is constructed
 	void setWindow(MacWindow *window) { _window = window; }
+	void setWindowManager(MacWindowManager *wm) { _wm = wm; }
 
 	void setBorderType(int type);
 
 	void disableBorder();
 
 	void loadBorder(Common::SeekableReadStream &file, uint32 flags, int lo = -1, int ro = -1, int to = -1, int bo = -1);
-	void loadBorder(Common::SeekableReadStream &file, uint32 flags, BorderOffsets offsets);
+	void loadBorder(Common::SeekableReadStream &file, uint32 flags, const BorderOffsets &offsets);
 	void loadInternalBorder(uint32 flags);
 
-	void setBorder(Graphics::TransparentSurface *surface, uint32 flags, int lo = -1, int ro = -1, int to = -1, int bo = -1);
-	void setBorder(Graphics::TransparentSurface *surface, uint32 flags, BorderOffsets offsets);
+	void setBorder(Graphics::ManagedSurface *surface, uint32 flags, int lo = -1, int ro = -1, int to = -1, int bo = -1);
+	void setBorder(Graphics::ManagedSurface *surface, uint32 flags, const BorderOffsets &offsets);
 private:
 	int _scrollPos, _scrollSize;
 	Common::String _title;
@@ -153,7 +172,7 @@ private:
 	Common::Array<NinePatchBitmap *> _border;
 
 	MacWindow *_window;
-
+	MacWindowManager *_wm;
 	BorderOffsets _borderOffsets;
 
 	bool _useInternalBorder;

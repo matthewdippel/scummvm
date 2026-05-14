@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/memstream.h"
@@ -65,8 +71,8 @@ void Map_v1::loadMapObjects(const char *avjFile) {
 	uint32 gobsPos;
 	uint32 objsPos;
 
-	strcpy(avoName, _sourceFile);
-	strcat(avoName, ".avo");
+	Common::strcpy_s(avoName, sizeof(avoName) - 4, _sourceFile);
+	Common::strcat_s(avoName, ".avo");
 
 	int32 size;
 	dataBuf = _vm->_dataIO->getFile(avoName, size);
@@ -151,8 +157,8 @@ void Map_v1::loadSounds(Common::SeekableReadStream &data) {
 	for (int i = 0; i < count; i++) {
 		data.read(buf, 14);
 		buf[14] = 0;
-		strcat(buf, ".SND");
-		strcpy(sndNames[i], buf);
+		Common::strcat_s(buf, ".SND");
+		Common::strcpy_s(sndNames[i], buf);
 	}
 
 	_vm->_sound->sampleLoad(&_vm->_goblin->_soundData[14], SOUND_SND, "diamant1.snd");

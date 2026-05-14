@@ -24,7 +24,6 @@
 #include "common/endian.h"
 #include "common/events.h"
 #include "common/textconsole.h"
-#include "common/translation.h"
 
 #include "graphics/cursorman.h"
 
@@ -312,11 +311,11 @@ void CineEngine::resetEngine() {
 	bgVar0 = 0;
 	var2 = var3 = var4 = lastType20OverlayBgIdx = 0;
 
-	strcpy(newPrcName, "");
-	strcpy(newRelName, "");
-	strcpy(newObjectName, "");
-	strcpy(newMsgName, "");
-	strcpy(currentCtName, "");
+	newPrcName[0] = '\0';
+	newRelName[0] = '\0';
+	newObjectName[0] = '\0';
+	newMsgName[0] = '\0';
+	currentCtName[0] = '\0';
 
 	allowPlayerInput = 0;
 	waitForPlayerClick = 0;
@@ -346,18 +345,18 @@ int CineEngine::scummVMSaveLoadDialog(bool isSave) {
 	int slot;
 
 	if (isSave) {
-		dialog = new GUI::SaveLoadChooser(_("Save game:"), _("Save"), true);
+		dialog = new GUI::SaveLoadChooser(true);
 
 		slot = dialog->runModalWithCurrentTarget();
 		desc = dialog->getResultString();
 
 		if (desc.empty()) {
-			// create our own description for the saved game, the user didnt enter it
+			// create our own description for the saved game, the user didn't enter it
 			desc = dialog->createDefaultSaveDescription(slot);
 		}
 	}
 	else {
-		dialog = new GUI::SaveLoadChooser(_("Restore game:"), _("Restore"), false);
+		dialog = new GUI::SaveLoadChooser(false);
 		slot = dialog->runModalWithCurrentTarget();
 	}
 
@@ -394,6 +393,8 @@ void CineEngine::makeSystemMenu() {
 	int16 numEntry, systemCommand;
 	int16 mouseX, mouseY, mouseButton;
 	int16 selectedSave;
+
+	g_cine->_previousSaid.clear();
 
 	if (disableSystemMenu != 1) {
 		inMenu = true;
@@ -462,7 +463,7 @@ void CineEngine::makeSystemMenu() {
 					if (!makeMenuChoice(confirmMenu, 2, mouseX, mouseY + 8, 100)) {
 						char loadString[256];
 
-						sprintf(loadString, otherMessages[3], currentSaveName[selectedSave]);
+						Common::sprintf_s(loadString, otherMessages[3], currentSaveName[selectedSave]);
 						renderer->drawString(loadString, 0);
 
 						loadGameState(selectedSave);
@@ -508,9 +509,12 @@ void CineEngine::makeSystemMenu() {
 			if (selectedSave >= 0) {
 				CommandeType saveName;
 				saveName[0] = 0;
+				_saveInputMenuOpen = true;
 
-				if (!makeTextEntryMenu(otherMessages[6], saveName, sizeof(CommandeType), 120))
+				if (!makeTextEntryMenu(otherMessages[6], saveName, sizeof(CommandeType), 120)) {
+					_saveInputMenuOpen = false;
 					break;
+				}
 
 				Common::strlcpy(currentSaveName[selectedSave], saveName, sizeof(CommandeType));
 
@@ -530,7 +534,7 @@ void CineEngine::makeSystemMenu() {
 					fHandle->write(currentSaveName, sizeof(currentSaveName));
 					delete fHandle;
 
-					sprintf(saveString, otherMessages[3], currentSaveName[selectedSave]);
+					Common::sprintf_s(saveString, otherMessages[3], currentSaveName[selectedSave]);
 					renderer->drawString(saveString, 0);
 
 					makeSave(saveFileName, getTotalPlayTime() / 1000, Common::String((const char *)currentSaveName), false);
@@ -583,8 +587,12 @@ void processInventory(int16 x, int16 y) {
 		return;
 
 	Common::StringArray list;
-	for (int i = 0; i < listSize; ++i)
+	for (int i = 0; i < listSize; ++i) {
 		list.push_back(objectListCommand[i]);
+		// Some items are duplicated in the inventory, so clear _previousSaid to make sure they are repeated
+		g_cine->_previousSaid.clear();
+		g_cine->sayText(objectListCommand[i], Common::TextToSpeechManager::QUEUE);
+	}
 	SelectionMenu *menu = new SelectionMenu(Common::Point(x, y), menuWidth, list);
 
 	inMenu = true;
@@ -598,6 +606,7 @@ void processInventory(int16 x, int16 y) {
 	manageEvents(PROCESS_INVENTORY, UNTIL_MOUSE_BUTTON_DOWN_UP);
 
 	inMenu = false;
+	g_cine->stopTextToSpeech();
 }
 
 int16 buildObjectListCommand(int16 param) {
@@ -609,7 +618,7 @@ int16 buildObjectListCommand(int16 param) {
 
 	for (i = 0; i < 255; i++) {
 		if (g_cine->_objectTable[i].name[0] && g_cine->_objectTable[i].costume == param) {
-			strcpy(objectListCommand[j], g_cine->_objectTable[i].name);
+			Common::strcpy_s(objectListCommand[j], g_cine->_objectTable[i].name);
 			objListTab[j] = i;
 			j++;
 		}
@@ -804,6 +813,7 @@ void makeFWCommandLine() {
 
 	if (!disableSystemMenu) {
 		isDrawCommandEnabled = 1;
+		g_cine->_previousSaid.clear();
 		renderer->setCommand(g_cine->_commandBuffer);
 	}
 }
@@ -905,18 +915,18 @@ int16 makeMenuChoice(const CommandeType commandList[], uint16 height, uint16 X, 
 			}
 		} else {
 			int selectionValueDiff = 0;
-			while (!g_cine->_keyInputList.empty()) {
-				switch (g_cine->_keyInputList.back().keycode) {
-				case Common::KEYCODE_UP:
+			while (!g_cine->_actionList.empty()) {
+				switch (g_cine->_actionList.back()) {
+				case kActionMenuOptionUp:
 					selectionValueDiff--;
 					break;
-				case Common::KEYCODE_DOWN:
+				case kActionMenuOptionDown:
 					selectionValueDiff++;
 					break;
 				default:
 					break;
 				}
-				g_cine->_keyInputList.pop_back();
+				g_cine->_actionList.pop_back();
 			}
 
 			if (selectionValueDiff != 0) {
@@ -1001,6 +1011,8 @@ void makeActionMenu() {
 	uint16 mouseButton;
 	uint16 mouseX;
 	uint16 mouseY;
+
+	g_cine->_previousSaid.clear();
 
 	inMenu = true;
 
@@ -1442,7 +1454,7 @@ void removeMessages() {
 			// NOTE: These are really removeOverlay calls that have been deferred.
 			// In Operation Stealth's disassembly elements are removed from the
 			// overlay list right in the drawOverlays function (And actually in
-			// some other places too) and that's where incrementing a the overlay's
+			// some other places too) and that's where incrementing the overlay's
 			// last parameter by one if it's negative and testing it for positivity
 			// comes from too.
 			remove = it->type == 3 || (it->type == 2 && (it->color >= 0 || ++(it->color) >= 0));
@@ -1471,8 +1483,8 @@ void checkForPendingDataLoad() {
 	if (newPrcName[0] != 0) {
 		bool loadPrcOk = loadPrc(newPrcName);
 
-		strcpy(currentPrcName, newPrcName);
-		strcpy(newPrcName, "");
+		Common::strcpy_s(currentPrcName, newPrcName);
+		newPrcName[0] = '\0';
 
 		// Check that the loading of the script file was successful before
 		// trying to add script 1 from it to the global scripts list. This
@@ -1490,8 +1502,8 @@ void checkForPendingDataLoad() {
 	if (newRelName[0] != 0) {
 		loadRel(newRelName);
 
-		strcpy(currentRelName, newRelName);
-		strcpy(newRelName, "");
+		Common::strcpy_s(currentRelName, newRelName);
+		newRelName[0] = '\0';
 	}
 
 	if (newObjectName[0] != 0) {
@@ -1499,23 +1511,23 @@ void checkForPendingDataLoad() {
 
 		loadObject(newObjectName);
 
-		strcpy(currentObjectName, newObjectName);
-		strcpy(newObjectName, "");
+		Common::strcpy_s(currentObjectName, newObjectName);
+		newObjectName[0] = '\0';
 	}
 
 	if (newMsgName[0] != 0) {
 		loadMsg(newMsgName);
 
-		strcpy(currentMsgName, newMsgName);
-		strcpy(newMsgName, "");
+		Common::strcpy_s(currentMsgName, newMsgName);
+		newMsgName[0] = '\0';
 	}
 }
 
 void hideMouse() {
 }
 
-void removeExtention(char *dest, const char *source) {
-	strcpy(dest, source);
+void removeExtension(char *dest, const char *source, size_t sz) {
+	Common::strcpy_s(dest, sz, source);
 
 	byte *ptr = (byte *) strchr(dest, '.');
 
@@ -1538,11 +1550,9 @@ void addMessage(byte param1, int16 param2, int16 param3, int16 param4, int16 par
 }
 
 void removeSeq(uint16 param1, uint16 param2, uint16 param3) {
-	Common::List<SeqListElement>::iterator it;
-
-	for (it = g_cine->_seqList.begin(); it != g_cine->_seqList.end(); ++it) {
-		if (it->objIdx == param1 && it->var4 == param2 && it->varE == param3) {
-			it->var4 = -1;
+	for (auto &seq : g_cine->_seqList) {
+		if (seq.objIdx == param1 && seq.var4 == param2 && seq.varE == param3) {
+			seq.var4 = -1;
 			break;
 		}
 	}
@@ -1550,14 +1560,12 @@ void removeSeq(uint16 param1, uint16 param2, uint16 param3) {
 
 // Checked against Operation Stealth 16 color DOS disassembly, should be correct.
 bool isSeqRunning(uint16 param1, uint16 param2, uint16 param3) {
-	Common::List<SeqListElement>::iterator it;
-
-	for (it = g_cine->_seqList.begin(); it != g_cine->_seqList.end(); ++it) {
-		if (it->objIdx == param1 && it->var4 == param2 && it->varE == param3) {
+	for (auto &seq : g_cine->_seqList) {
+		if (seq.objIdx == param1 && seq.var4 == param2 && seq.varE == param3) {
 			// Just to be on the safe side there's a restriction of the
 			// addition's result to 16-bit arithmetic here like in the
 			// original. It's possible that it's not strictly needed.
-			return ((it->var14 + it->var16) & 0xFFFF) == 0;
+			return ((seq.var14 + seq.var16) & 0xFFFF) == 0;
 		}
 	}
 
@@ -1591,12 +1599,12 @@ void addSeqListElement(uint16 objIdx, int16 param1, int16 param2, int16 frame, i
 
 void modifySeqListElement(uint16 objIdx, int16 var4Test, int16 param1, int16 param2, int16 param3, int16 param4) {
 	// Find a suitable list element and modify it
-	for (Common::List<SeqListElement>::iterator it = g_cine->_seqList.begin(); it != g_cine->_seqList.end(); ++it) {
-		if (it->objIdx == objIdx && it->var4 == var4Test) {
-			it->varC  = param1;
-			it->var18 = param2;
-			it->var1A = param3;
-			it->var10 = it->var12 = param4;
+	for (auto &seq : g_cine->_seqList) {
+		if (seq.objIdx == objIdx && seq.var4 == var4Test) {
+			seq.varC  = param1;
+			seq.var18 = param2;
+			seq.var1A = param3;
+			seq.var10 = seq.var12 = param4;
 			break;
 		}
 	}
@@ -1874,14 +1882,12 @@ void processSeqListElement(SeqListElement &element) {
 }
 
 void processSeqList() {
-	Common::List<SeqListElement>::iterator it;
-
-	for (it = g_cine->_seqList.begin(); it != g_cine->_seqList.end(); ++it) {
-		if (it->var4 == -1) {
+	for (auto &seq : g_cine->_seqList) {
+		if (seq.var4 == -1) {
 			continue;
 		}
 
-		processSeqListElement(*it);
+		processSeqListElement(seq);
 	}
 }
 
@@ -1904,6 +1910,8 @@ bool makeTextEntryMenu(const char *messagePtr, char *inputString, int stringMaxL
 
 	TextInputMenu *inputBox = new TextInputMenu(Common::Point(x - 16, y), width + 32, messagePtr);
 	renderer->pushMenu(inputBox);
+
+	g_cine->sayText(messagePtr, Common::TextToSpeechManager::INTERRUPT);
 
 	while (!quit) {
 		if (redraw) {
@@ -1954,7 +1962,7 @@ bool makeTextEntryMenu(const char *messagePtr, char *inputString, int stringMaxL
 				if (inputPos != inputLength) {
 					strncat(tempString, &inputString[inputPos], inputLength - inputPos);
 				}
-				strcpy(inputString, tempString);
+				Common::strcpy_s(inputString, stringMaxLength, tempString);
 				inputLength = strlen(inputString);
 				redraw = true;
 			}
@@ -1980,16 +1988,16 @@ bool makeTextEntryMenu(const char *messagePtr, char *inputString, int stringMaxL
 					ch[0] = ascii;
 					if (inputPos != 1) {
 						strncpy(tempString, inputString, inputPos - 1);
-						strcat(tempString, ch);
+						Common::strcat_s(tempString, ch);
 					}
 					if ((inputLength == 0) || (inputPos == 1)) {
-						strcpy(tempString, ch);
+						Common::strcpy_s(tempString, ch);
 					}
 					if ((inputLength != 0) && (inputPos != inputLength)) {
 						strncat(tempString, &inputString[inputPos - 1], inputLength - inputPos + 1);
 					}
 
-					strcpy(inputString, tempString);
+					Common::strcpy_s(inputString, stringMaxLength, tempString);
 					inputLength = strlen(inputString);
 					inputPos++;
 					redraw = true;
@@ -2001,6 +2009,8 @@ bool makeTextEntryMenu(const char *messagePtr, char *inputString, int stringMaxL
 
 	renderer->popMenu();
 	delete inputBox;
+
+	g_cine->sayText(inputString, Common::TextToSpeechManager::QUEUE);
 
 	if (quit == kRightMouseButton)
 		return false;

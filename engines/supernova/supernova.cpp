@@ -38,7 +38,6 @@
 #include "graphics/cursorman.h"
 #include "graphics/surface.h"
 #include "graphics/screen.h"
-#include "graphics/palette.h"
 #include "graphics/thumbnail.h"
 #include "gui/saveload.h"
 
@@ -49,6 +48,8 @@
 #include "supernova/supernova1/state.h"
 #include "supernova/supernova2/state.h"
 #include "supernova/game-manager.h"
+
+#include "backends/keymapper/keymapper.h"
 
 namespace Supernova {
 
@@ -350,6 +351,11 @@ void SupernovaEngine::setColor63(byte value) {
 }
 
 void SupernovaEngine::setTextSpeed() {
+	// turn off keymapper so that we can select speed using Keys 1-5
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->disableAllGameKeymaps();
+	keymapper->getKeymap("menu")->setEnabled(true);
+
 	const Common::String &textSpeedString = getGameString(kStringTextSpeed);
 	int stringWidth = Screen::textWidth(textSpeedString);
 	int textX = (kScreenWidth - stringWidth) / 2;
@@ -359,11 +365,6 @@ void SupernovaEngine::setTextSpeed() {
 	int boxY = 97;
 	int boxWidth = stringWidth > 110 ? stringWidth : 110;
 	int boxHeight = 27;
-
-	// Disable improved mode temporarilly so that Key 1-5 are received below
-	// instead of being mapped to action selection.
-	bool hasImprovedMode = _improved;
-	_improved = false;
 
 	_gm->animationOff();
 	_gm->saveTime();
@@ -407,7 +408,9 @@ void SupernovaEngine::setTextSpeed() {
 	_gm->loadTime();
 	_gm->animationOn();
 
-	_improved = hasImprovedMode;
+	keymapper->getKeymap("menu")->setEnabled(false);
+	keymapper->getKeymap("supernova-default")->setEnabled(true);
+	keymapper->getKeymap("improved-mode")->setEnabled(true);
 }
 
 void SupernovaEngine::showHelpScreen1() {
@@ -519,14 +522,14 @@ Common::Error SupernovaEngine::showTextReader(const char *extension) {
 	blockName.toUppercase();
 	if ((stream = getBlockFromDatFile(blockName)) == nullptr) {
 		Common::File file;
-		Common::String filename;
+		Common::Path filename;
 		if (_MSPart == 1)
-			filename = Common::String::format("msn.%s", extension);
+			filename = Common::Path(Common::String::format("msn.%s", extension));
 		if (_MSPart == 2)
-			filename = Common::String::format("ms2.%s", extension);
+			filename = Common::Path(Common::String::format("ms2.%s", extension));
 
 		if (!file.open(filename)) {
-			GUIErrorMessageFormat(_("Unable to find '%s' in game folder or the engine data file."), filename.c_str());
+			GUIErrorMessageFormat(_("Unable to find '%s' in game folder or the engine data file."), filename.toString().c_str());
 			return Common::kReadingFailed;
 		}
 		stream = file.readStream(file.size());
@@ -554,6 +557,10 @@ Common::Error SupernovaEngine::showTextReader(const char *extension) {
 	}
 	paletteFadeIn();
 
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->disableAllGameKeymaps();
+	keymapper->getKeymap("text-reader")->setEnabled(true);
+
 	const int linesPerPage = 19;
 	int lineNumber = 0;
 	bool exitReader = false;
@@ -570,21 +577,21 @@ Common::Error SupernovaEngine::showTextReader(const char *extension) {
 			_screen->renderText(line, 6, y, kColorWhite99);
 		}
 		_gm->getInput(true);
-		switch (_gm->_key.keycode) {
-		case Common::KEYCODE_ESCAPE:
+		switch (_gm->_action) {
+		case kActionExit:
 			exitReader = true;
 			break;
-		case Common::KEYCODE_UP:
+		case kActionUp:
 			lineNumber = lineNumber > 0 ? lineNumber - 1 : 0;
 			break;
-		case Common::KEYCODE_DOWN:
+		case kActionDown:
 			lineNumber = lineNumber < linesInFile - (linesPerPage + 1) ? lineNumber + 1
 			                                                           : linesInFile - linesPerPage;
 			break;
-		case Common::KEYCODE_PAGEUP:
+		case kActionPgUp:
 			lineNumber = lineNumber > linesPerPage ? lineNumber - linesPerPage : 0;
 			break;
-		case Common::KEYCODE_PAGEDOWN:
+		case kActionPgDown:
 			lineNumber = lineNumber < linesInFile - (linesPerPage * 2) ? lineNumber + linesPerPage
 			                                                           : linesInFile - linesPerPage;
 			break;
@@ -597,11 +604,19 @@ Common::Error SupernovaEngine::showTextReader(const char *extension) {
 	_gm->loadTime();
 	_gm->animationOn();
 
+	keymapper->getKeymap("text-reader")->setEnabled(false);
+	keymapper->getKeymap("supernova-default")->setEnabled(true);
+	keymapper->getKeymap("improved-mode")->setEnabled(true);
+
 	return Common::kNoError;
 }
 
 bool SupernovaEngine::quitGameDialog() {
 	bool quit = false;
+	
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->disableAllGameKeymaps();
+	keymapper->getKeymap("menu")->setEnabled(true);
 
 	GuiElement guiQuitBox;
 	guiQuitBox.setColor(kColorRed, kColorWhite99, kColorRed, kColorWhite99);
@@ -655,11 +670,15 @@ bool SupernovaEngine::quitGameDialog() {
 	restoreScreen();
 	_gm->animationOn();
 
+	keymapper->getKeymap("menu")->setEnabled(false);
+	keymapper->getKeymap("supernova-default")->setEnabled(true);
+	keymapper->getKeymap("improved-mode")->setEnabled(true);
+
 	return quit;
 }
 
 
-bool SupernovaEngine::canLoadGameStateCurrently() {
+bool SupernovaEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	return _allowLoadGame;
 }
 
@@ -667,7 +686,7 @@ Common::Error SupernovaEngine::loadGameState(int slot) {
 	return (loadGame(slot) ? Common::kNoError : Common::kReadingFailed);
 }
 
-bool SupernovaEngine::canSaveGameStateCurrently() {
+bool SupernovaEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	// Do not allow saving when either _allowSaveGame, _animationEnabled or _guiEnabled is false
 	return _allowSaveGame && _gm->canSaveGameStateCurrently();
 }

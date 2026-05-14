@@ -26,9 +26,12 @@
 #include "common/array.h"
 #include "common/list.h"
 #include "common/hashmap.h"
+#include "common/path.h"
 #include "common/str-array.h"
 
 #include "engines/engine.h"
+
+#include "backends/keymapper/keymapper.h"
 
 class OSystem;
 
@@ -52,6 +55,33 @@ enum {
 	GF_WIN95      = (1 << 2),
 	GF_COMPRESSED = (1 << 3),
 	GF_TRIAL      = (1 << 4)
+};
+
+enum BURIEDActions {
+	kActionNone,
+	kActionQuit,
+	kActionQuitToMainMenu,
+	kActionQuitToMainMenuInv,
+	kActionSkip,
+	kActionMoveUp,
+	kActionMoveLeft,
+	kActionMoveRight,
+	kActionMoveDown,
+	kActionMoveForward,
+	kActionSave,
+	kActionLoad,
+	kActionPause,
+	kActionAIComment,
+	kActionBiochipAI,
+	kActionBiochipBlank,
+	kActionBiochipCloak,
+	kActionBiochipEvidence,
+	kActionBiochipFiles,
+	kActionBiochipInterface,
+	kActionBiochipJump,
+	kActionBiochipTranslate,
+	kActionPoints,
+	kActionControl,
 };
 
 class BuriedConsole;
@@ -78,8 +108,8 @@ public:
 	bool isTrueColor() const;
 	bool isWin95() const;
 	bool isCompressed() const;
-	Common::String getEXEName() const;
-	Common::String getLibraryName() const;
+	Common::Path getEXEName() const;
+	Common::Path getLibraryName() const;
 	Common::Language getLanguage() const;
 
 	bool hasFeature(EngineFeature f) const override;
@@ -87,8 +117,8 @@ public:
 
 	// Resources
 	Common::String getString(uint32 stringID);
-	Common::String getFilePath(uint32 stringID);
-	Common::String getFilePath(int timeZone, int environment, int fileOffset);
+	Common::Path getFilePath(uint32 stringID);
+	Common::Path getFilePath(int timeZone, int environment, int fileOffset);
 	Graphics::WinCursorGroup *getCursorGroup(uint32 cursorGroupID);
 	Common::SeekableReadStream *getBitmapStream(uint32 bitmapID);
 	Common::SeekableReadStream *getNavData(uint32 resourceID);
@@ -127,6 +157,7 @@ public:
 	void processAudioVideoSkipMessages(VideoWindow *video, int soundId);
 	void removeKeyboardMessages(Window *window);
 	void removeMouseMessages(Window *window);
+	void removeActionMessages(Window *window);
 	void removeAllMessages(Window *window);
 	void removeMessages(Window *window, int messageBegin, int messageEnd);
 	bool hasMessage(Window *window, int messageBegin, int messageEnd) const;
@@ -140,10 +171,11 @@ public:
 	bool isControlDown() const;
 	void pauseGame();
 	void showPoints();
+	void enableCutsceneKeymap(bool enable);
 
 	// Save/Load
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::String getSaveStateName(int slot) const override {
 		return Common::String::format("buried.%03d", slot);
 	}

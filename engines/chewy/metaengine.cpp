@@ -21,12 +21,28 @@
 
 #include "common/savefile.h"
 #include "common/system.h"
+#include "common/translation.h"
 #include "base/plugins.h"
 #include "engines/advancedDetector.h"
 #include "chewy/chewy.h"
 #include "chewy/detection.h"
 
 namespace Chewy {
+
+static const ADExtraGuiOptionsMap optionsList[] = {
+	{
+		GAMEOPTION_ORIGINAL_SAVELOAD,
+		{
+			_s("Use original save/load screens"),
+			_s("Use the original save/load screens instead of the ScummVM ones"),
+			"original_menus",
+			false,
+			0,
+			0
+		}
+	},
+	AD_EXTRA_GUI_OPTIONS_TERMINATOR
+};
 
 uint32 ChewyEngine::getFeatures() const {
 	return _gameDescription->desc.flags;
@@ -38,29 +54,26 @@ Common::Language ChewyEngine::getLanguage() const {
 
 } // End of namespace Chewy
 
-class ChewyMetaEngine : public AdvancedMetaEngine {
+class ChewyMetaEngine : public AdvancedMetaEngine<Chewy::ChewyGameDescription> {
 public:
 	const char *getName() const override {
 		return "chewy";
 	}
 
+	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override {
+		return Chewy::optionsList;
+	}
+
 	bool hasFeature(MetaEngineFeature f) const override;
-	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override;
+	Common::Error createInstance(OSystem *syst, Engine **engine, const Chewy::ChewyGameDescription *desc) const override;
 
 	int getMaximumSaveSlot() const override;
 };
 
 bool ChewyMetaEngine::hasFeature(MetaEngineFeature f) const {
 	return
-		(f == kSupportsListSaves) ||
 		(f == kSupportsLoadingDuringStartup) ||
-		(f == kSavesUseExtendedFormat) ||
-		(f == kSimpleSavesNames) ||
-		(f == kSupportsDeleteSave) ||
-		(f == kSavesSupportMetaInfo) ||
-		(f == kSavesSupportThumbnail) ||
-		(f == kSavesSupportCreationDate) ||
-		(f == kSavesSupportPlayTime);
+		checkExtendedSaves(f);
 }
 
 bool Chewy::ChewyEngine::hasFeature(EngineFeature f) const {
@@ -70,8 +83,8 @@ bool Chewy::ChewyEngine::hasFeature(EngineFeature f) const {
 		(f == kSupportsSavingDuringRuntime);
 }
 
-Common::Error ChewyMetaEngine::createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const {
-	*engine = new Chewy::ChewyEngine(syst, (const Chewy::ChewyGameDescription *)desc);
+Common::Error ChewyMetaEngine::createInstance(OSystem *syst, Engine **engine, const Chewy::ChewyGameDescription *desc) const {
+	*engine = new Chewy::ChewyEngine(syst,desc);
 	return Common::kNoError;
 }
 

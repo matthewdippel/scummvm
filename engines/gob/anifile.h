@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_ANIFILE_H
@@ -28,7 +34,7 @@
 #include "common/list.h"
 
 namespace Common {
-	class SeekableSubReadStreamEndian;
+	class SeekableReadStreamEndian;
 }
 
 namespace Gob {
@@ -129,13 +135,13 @@ private:
 
 	// Loading helpers
 
-	void load(Common::SeekableSubReadStreamEndian &ani, const Common::String &fileName);
+	void load(Common::SeekableReadStreamEndian &ani, const Common::String &fileName);
 
-	CMPFile *loadLayer(Common::SeekableSubReadStreamEndian &ani);
+	CMPFile *loadLayer(Common::SeekableReadStreamEndian &ani);
 
 	void loadAnimation(Animation &animation, FrameArray &frames,
-	                   Common::SeekableSubReadStreamEndian &ani);
-	void loadFrames(FrameArray &frames, Common::SeekableSubReadStreamEndian &ani);
+	                   Common::SeekableReadStreamEndian &ani);
+	void loadFrames(FrameArray &frames, Common::SeekableReadStreamEndian &ani);
 
 	// Drawing helpers
 

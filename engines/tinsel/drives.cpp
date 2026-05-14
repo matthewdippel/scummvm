@@ -168,15 +168,15 @@ TinselFile::~TinselFile() {
 	delete _stream;
 }
 
-bool TinselFile::openInternal(const Common::String &filename) {
+bool TinselFile::openInternal(const Common::Path &filename) {
 	_stream = SearchMan.createReadStreamForMember(filename);
 	if (!_stream)
-		_stream = SearchMan.createReadStreamForMember(filename + ".");
+		_stream = SearchMan.createReadStreamForMember(filename.append("."));
 	return _stream != 0;
 }
 
 bool TinselFile::open(const Common::String &filename) {
-	if (openInternal(filename))
+	if (openInternal(Common::Path(filename)))
 		return true;
 
 	if (TinselVersion <= 1)
@@ -193,7 +193,7 @@ bool TinselFile::open(const Common::String &filename) {
 	// Form a filename without the CD number character
 	char newFilename[50];
 	strncpy(newFilename, fname, p - fname);
-	strcpy(newFilename + (p - fname), p + 1);
+	Common::strcpy_s(newFilename + (p - fname), sizeof(newFilename) - (p - fname), p + 1);
 
 	return openInternal(newFilename);
 }

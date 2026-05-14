@@ -29,7 +29,7 @@ namespace TwinE {
 
 class TwinEEngine;
 class ActorStruct;
-struct ActorMoveStruct;
+struct RealValue;
 
 class Movements {
 private:
@@ -104,26 +104,30 @@ private:
 	 */
 	void processSameXZAction(int actorIdx);
 
-	/**
-	 * @return A value of @c true means that the actor should e.g. start reading a sign or checking
-	 * a locker for loot or secrets
-	 */
-	bool processBehaviourExecution(int actorIdx);
+	void processBehaviourExecution(int actorIdx);
 	bool processAttackExecution(int actorIdx);
 	void processManualMovementExecution(int actorIdx);
 	void processManualRotationExecution(int actorIdx);
 
-	bool _heroAction = false;
+	/**
+	 * @return A value of @c true means that the actor should e.g. start reading a sign or checking
+	 * a locker for loot or secrets or talking to an npc - this can get triggered by the SpecialAction binding
+	 * in any behaviour mode
+	 */
+	bool _actionNormal = false;
+	void manualRealAngle(ActorStruct *actor);
 
 public:
 	Movements(TwinEEngine *engine);
+
+	void setActionNormal(bool actionNormal);
 
 	void update();
 
 	/**
 	 * Hero executes the current action of the trigger zone
 	 */
-	bool shouldTriggerZoneAction() const;
+	bool actionNormal() const;
 
 	bool _lastJoyFlag = false;
 
@@ -133,7 +137,7 @@ public:
 	 * Get shadow position
 	 * @param pos Shadow coordinates
 	 */
-	IVec3 getShadowPosition(const IVec3 &pos);
+	IVec3 getShadow(const IVec3 &pos);
 
 	/**
 	 * Set actor safe angle
@@ -142,7 +146,7 @@ public:
 	 * @param stepAngle number of steps
 	 * @param movePtr time pointer to update
 	 */
-	void setActorAngleSafe(int16 startAngle, int16 endAngle, int16 stepAngle, ActorMoveStruct *movePtr);
+	void initRealAngle(int16 startAngle, int16 endAngle, int16 stepAngle, RealValue *movePtr);
 
 	/**
 	 * Clear actors safe angle
@@ -157,7 +161,7 @@ public:
 	 * @param stepAngle number of steps
 	 * @param movePtr time pointer to update
 	 */
-	void setActorAngle(int16 startAngle, int16 endAngle, int16 stepAngle, ActorMoveStruct *movePtr);
+	void initRealValue(int16 startAngle, int16 endAngle, int16 stepAngle, RealValue *movePtr);
 
 	/**
 	 * Get actor angle
@@ -166,34 +170,30 @@ public:
 	 * @param x2 Actor 2 X
 	 * @param z2 Actor 2 Z
 	 */
-	int32 getAngleAndSetTargetActorDistance(int32 x1, int32 z1, int32 x2, int32 z2);
+	int32 getAngle(int32 x1, int32 z1, int32 x2, int32 z2);
 
-	inline int32 getAngleAndSetTargetActorDistance(const IVec3& v1, const IVec3 &v2) {
-		return getAngleAndSetTargetActorDistance(v1.x, v1.z, v2.x, v2.z);
+	inline int32 getAngle(const IVec3& v1, const IVec3 &v2) {
+		return getAngle(v1.x, v1.z, v2.x, v2.z);
 	}
 
 	/**
-	 * Rotate actor with a given angle
-	 * @param x Actor current X coordinate
-	 * @param z Actor current Z coordinate
-	 * @param angle Actor angle to rotate
-	 */
-	IVec3 rotateActor(int32 x, int32 z, int32 angle);
-
-	/**
 	 * Move actor around the scene
-	 * @param angleFrom Current actor angle
-	 * @param angleTo Angle to rotate
-	 * @param speed Rotate speed
+	 * @param start Current actor angle
+	 * @param end Angle to rotate
+	 * @param duration Rotate speed
 	 * @param movePtr Pointer to process movements
 	 */
-	void moveActor(int32 angleFrom, int32 angleTo, int32 speed, ActorMoveStruct *movePtr) const;
+	void initRealAngleConst(int32 start, int32 end, int32 duration, RealValue *movePtr) const;
 
-	void processActorMovements(int32 actorIdx);
+	void doDir(int32 actorIdx);
 };
 
-inline bool Movements::shouldTriggerZoneAction() const {
-	return _heroAction;
+inline void Movements::setActionNormal(bool actionNormal) {
+	_actionNormal = actionNormal;
+}
+
+inline bool Movements::actionNormal() const {
+	return _actionNormal;
 }
 
 } // namespace TwinE

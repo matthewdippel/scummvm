@@ -20,33 +20,33 @@
  */
 
 #include "ultima/ultima8/world/actors/main_actor.h"
-#include "ultima/ultima8/world/teleport_egg.h"
-#include "ultima/ultima8/world/current_map.h"
-#include "ultima/ultima8/kernel/kernel.h"
-#include "ultima/ultima8/world/actors/teleport_to_egg_process.h"
-#include "ultima/ultima8/world/target_reticle_process.h"
-#include "ultima/ultima8/world/camera_process.h"
-#include "ultima/ultima8/graphics/shape_info.h"
-#include "ultima/ultima8/ultima8.h"
-#include "ultima/ultima8/world/actors/avatar_death_process.h"
-#include "ultima/ultima8/kernel/delay_process.h"
-#include "ultima/ultima8/games/game_data.h"
-#include "ultima/ultima8/graphics/anim_dat.h"
-#include "ultima/ultima8/graphics/wpn_ovlay_dat.h"
-#include "ultima/ultima8/graphics/main_shape_archive.h"
-#include "ultima/ultima8/gumps/cru_pickup_area_gump.h"
+
+#include "ultima/ultima.h"
 #include "ultima/ultima8/audio/audio_process.h"
-#include "ultima/ultima8/world/world.h"
-#include "ultima/ultima8/world/get_object.h"
+#include "ultima/ultima8/audio/music_process.h"
+#include "ultima/ultima8/games/game_data.h"
+#include "ultima/ultima8/gfx/anim_dat.h"
+#include "ultima/ultima8/gfx/shape_info.h"
+#include "ultima/ultima8/gfx/wpn_ovlay_dat.h"
+#include "ultima/ultima8/gumps/cru_pickup_area_gump.h"
+#include "ultima/ultima8/kernel/delay_process.h"
+#include "ultima/ultima8/kernel/kernel.h"
+#include "ultima/ultima8/ultima8.h"
 #include "ultima/ultima8/usecode/uc_list.h"
 #include "ultima/ultima8/usecode/uc_machine.h"
-#include "ultima/ultima8/world/loop_script.h"
-#include "ultima/ultima8/world/fire_type.h"
-#include "ultima/ultima8/world/sprite_process.h"
-#include "ultima/ultima8/world/actors/avatar_gravity_process.h"
 #include "ultima/ultima8/world/actors/actor_anim_process.h"
-#include "ultima/ultima8/audio/music_process.h"
-#include "ultima/ultima8/world/actors/anim_action.h"
+#include "ultima/ultima8/world/actors/avatar_death_process.h"
+#include "ultima/ultima8/world/actors/avatar_gravity_process.h"
+#include "ultima/ultima8/world/actors/teleport_to_egg_process.h"
+#include "ultima/ultima8/world/camera_process.h"
+#include "ultima/ultima8/world/current_map.h"
+#include "ultima/ultima8/world/fire_type.h"
+#include "ultima/ultima8/world/get_object.h"
+#include "ultima/ultima8/world/loop_script.h"
+#include "ultima/ultima8/world/sprite_process.h"
+#include "ultima/ultima8/world/target_reticle_process.h"
+#include "ultima/ultima8/world/teleport_egg.h"
+#include "ultima/ultima8/world/world.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -97,10 +97,9 @@ bool MainActor::CanAddItem(Item *item, bool checkwghtvol) {
 		// valid item type?
 		if (equiptype == ShapeInfo::SE_NONE && !backpack) return false;
 
-		Std::list<Item *>::iterator iter;
-		for (iter = _contents.begin(); iter != _contents.end(); ++iter) {
-			uint32 cet = (*iter)->getShapeInfo()->_equipType;
-			bool cbackpack = ((*iter)->getShape() == backpack_shape);
+		for (const auto *i : _contents) {
+			uint32 cet = i->getShapeInfo()->_equipType;
+			bool cbackpack = (i->getShape() == backpack_shape);
 
 			// already have an item with the same equiptype
 			if (cet == equiptype || (cbackpack && backpack)) return false;
@@ -134,8 +133,7 @@ int16 MainActor::addItemCru(Item *item, bool showtoast) {
 		return 0;
 
 	int shapeno = item->getShape();
-	int32 x, y, z;
-	getLocation(x, y, z);
+	Point3 pt = getLocation();
 
 	CruPickupAreaGump *pickupArea = CruPickupAreaGump::get_instance();
 	assert(pickupArea);
@@ -176,7 +174,7 @@ int16 MainActor::addItemCru(Item *item, bool showtoast) {
 			} else {
 				item->setQuality(winfo->_clipSize);
 			}
-			item->setLocation(x, y, z);
+			item->setLocation(pt);
 			item->moveToContainer(this);
 			if (!_activeWeapon)
 				_activeWeapon = item->getObjId();
@@ -371,7 +369,7 @@ void MainActor::teleport(int mapNum, int32 x, int32 y, int32 z) {
 
 	// (attempt to) load the new map
 	if (!world->switchMap(mapNum)) {
-		perr << "MainActor::teleport(): switchMap(" << mapNum << ") failed!" << Std::endl;
+		warning("MainActor::teleport(): switchMap(%d) failed", mapNum);
 		return;
 	}
 
@@ -390,20 +388,18 @@ void MainActor::teleport(int mapNum, int32 x, int32 y, int32 z) {
 // all running processes
 void MainActor::teleport(int mapNum, int teleport_id) {
 	int oldmap = getMapNum();
-	int32 oldx, oldy, oldz;
-	getLocation(oldx, oldy, oldz);
+	Point3 old = getLocation();
 
 	World *world = World::get_instance();
 	CurrentMap *currentmap = world->getCurrentMap();
 
-	pout << "MainActor::teleport(): teleporting to map " << mapNum
-	     << ", egg " << teleport_id << Std::endl;
+	debugC(kDebugActor, "MainActor::teleport(): teleporting to map %d, egg %d", mapNum, teleport_id);
 
 	setMapNum(mapNum);
 
 	// (attempt to) load the new map
 	if (!world->switchMap(mapNum)) {
-		perr << "MainActor::teleport(): switchMap() failed!" << Std::endl;
+		warning("MainActor::teleport(): switchMap() failed");
 		setMapNum(oldmap);
 		return;
 	}
@@ -411,25 +407,23 @@ void MainActor::teleport(int mapNum, int teleport_id) {
 	// find destination
 	TeleportEgg *egg = currentmap->findDestination(teleport_id);
 	if (!egg) {
-		perr << "MainActor::teleport(): destination egg not found!"
-		     << Std::endl;
-		teleport(oldmap, oldx, oldy, oldz);
+		warning("MainActor::teleport(): destination egg not found");
+		teleport(oldmap, old.x, old.y, old.z);
 		return;
 	}
-	int32 xv, yv, zv;
-	egg->getLocation(xv, yv, zv);
+	Point3 pt = egg->getLocation();
 
-	pout << "Found destination: " << xv << "," << yv << "," << zv << Std::endl;
-	egg->dumpInfo();
+	debugC(kDebugActor, "Found destination: %d, %d, %d", pt.x, pt.y, pt.z);
+	debugC(kDebugActor, "%s", egg->dumpInfo().c_str());
 
 	if (GAME_IS_CRUSADER) {
 		// Keep the camera on the avatar (the snap process will update on next move)
 		// We don't add a new camera process here, as that would update the fast area
 		// before the cachein calls above have run.
-		CameraProcess::GetCameraProcess()->moveToLocation(xv, yv, zv);
+		CameraProcess::GetCameraProcess()->moveToLocation(pt);
 	}
 
-	Actor::teleport(mapNum, xv, yv, zv);
+	Actor::teleport(mapNum, pt.x, pt.y, pt.z);
 
 	_justTeleported = true;
 }
@@ -437,10 +431,9 @@ void MainActor::teleport(int mapNum, int teleport_id) {
 uint16 MainActor::getDefenseType() const {
 	uint16 type = 0;
 
-	Std::list<Item *>::const_iterator iter;
-	for (iter = _contents.begin(); iter != _contents.end(); ++iter) {
-		uint32 frameNum = (*iter)->getFrame();
-		const ShapeInfo *si = (*iter)->getShapeInfo();
+	for (const auto *i : _contents) {
+		uint32 frameNum = i->getFrame();
+		const ShapeInfo *si = i->getShapeInfo();
 		if (si->_armourInfo) {
 			type |= si->_armourInfo[frameNum]._defenseType;
 		}
@@ -452,10 +445,9 @@ uint16 MainActor::getDefenseType() const {
 uint32 MainActor::getArmourClass() const {
 	uint32 armour = 0;
 
-	Std::list<Item *>::const_iterator iter;
-	for (iter = _contents.begin(); iter != _contents.end(); ++iter) {
-		uint32 frameNum = (*iter)->getFrame();
-		const ShapeInfo *si = (*iter)->getShapeInfo();
+	for (const auto *i : _contents) {
+		uint32 frameNum = i->getFrame();
+		const ShapeInfo *si = i->getShapeInfo();
 		if (si->_armourInfo) {
 			armour += si->_armourInfo[frameNum]._armourClass;
 		}
@@ -511,6 +503,7 @@ uint16 MainActor::getDamageType() const {
 }
 
 int MainActor::getDamageAmount() const {
+	Common::RandomSource &rs = Ultima8Engine::get_instance()->getRandomSource();
 	int damage = 0;
 
 	if (getLastAnim() == Animation::kick) {
@@ -524,7 +517,7 @@ int MainActor::getDamageAmount() const {
 			kick_bonus = si->_armourInfo[legs->getFrame()]._kickAttackBonus;
 		}
 
-		damage = (getRandom() % (getStr() / 2 + 1)) + kick_bonus;
+		damage = rs.getRandomNumber(getStr() / 2) + kick_bonus;
 
 		return damage;
 
@@ -542,14 +535,14 @@ int MainActor::getDamageAmount() const {
 		int base = si->_weaponInfo->_baseDamage;
 		int mod = si->_weaponInfo->_damageModifier;
 
-		damage = (getRandom() % (mod + 1)) + base + getStr() / 5;
+		damage = rs.getRandomNumber(mod) + base + getStr() / 5;
 
 		return damage;
 	}
 
 	// no weapon?
 
-	damage = (getRandom() % (getStr() / 2 + 1)) + 1;
+	damage = rs.getRandomNumber(getStr() / 2) + 1;
 
 	return damage;
 }
@@ -605,13 +598,15 @@ void MainActor::accumulateStr(int n) {
 	// already max?
 	if (_strength == 25) return; //!! constant
 
+	Common::RandomSource &rs = Ultima8Engine::get_instance()->getRandomSource();
+
 	_accumStr += n;
-	if (_accumStr >= 650 || getRandom() % (650 - _accumStr) == 0) { //!! constant
+	if (_accumStr >= 650 || rs.getRandomNumber(650 - _accumStr) == 0) { //!! constant
 		_strength++;
 		_accumStr = 0;
 		AudioProcess *audioproc = AudioProcess::get_instance();
 		if (audioproc) audioproc->playSFX(0x36, 0x60, 1, 0); //constants!!
-		pout << "Gained _strength!" << Std::endl;
+		debugC(kDebugActor, "Gained _strength!");
 	}
 }
 
@@ -619,13 +614,15 @@ void MainActor::accumulateDex(int n) {
 	// already max?
 	if (_dexterity == 25) return; //!! constant
 
+	Common::RandomSource &rs = Ultima8Engine::get_instance()->getRandomSource();
+
 	_accumDex += n;
-	if (_accumDex >= 650 || getRandom() % (650 - _accumDex) == 0) { //!! constant
+	if (_accumDex >= 650 || rs.getRandomNumber(650 - _accumDex) == 0) { //!! constant
 		_dexterity++;
 		_accumDex = 0;
 		AudioProcess *audioproc = AudioProcess::get_instance();
 		if (audioproc) audioproc->playSFX(0x36, 0x60, 1, 0); //constants!!
-		pout << "Gained _dexterity!" << Std::endl;
+		debugC(kDebugActor, "Gained _dexterity!");
 	}
 }
 
@@ -633,13 +630,15 @@ void MainActor::accumulateInt(int n) {
 	// already max?
 	if (_intelligence == 25) return; //!! constant
 
+	Common::RandomSource &rs = Ultima8Engine::get_instance()->getRandomSource();
+
 	_accumInt += n;
-	if (_accumInt >= 650 || getRandom() % (650 - _accumInt) == 0) { //!! constant
+	if (_accumInt >= 650 || rs.getRandomNumber(650 - _accumInt) == 0) { //!! constant
 		_intelligence++;
 		_accumInt = 0;
 		AudioProcess *audioproc = AudioProcess::get_instance();
 		if (audioproc) audioproc->playSFX(0x36, 0x60, 1, 0); //constants!!
-		pout << "Gained _intelligence!" << Std::endl;
+		debugC(kDebugActor, "Gained _intelligence!");
 	}
 }
 
@@ -702,7 +701,7 @@ void MainActor::addKeycard(int bitno) {
 	_keycards |= (1 << bitno);
 }
 
-static uint16 getIdOfNextItemInList(const Std::vector<Item *> &items, uint16 current) {
+static uint16 getIdOfNextItemInList(const Common::Array<Item *> &items, uint16 current) {
 	const int n = items.size();
 	if (n == 0)
 		return 0;
@@ -720,7 +719,7 @@ static uint16 getIdOfNextItemInList(const Std::vector<Item *> &items, uint16 cur
 }
 
 void MainActor::nextWeapon() {
-	Std::vector<Item *> weapons;
+	Common::Array<Item *> weapons;
 	getItemsWithShapeFamily(weapons, ShapeInfo::SF_CRUWEAPON, true);
 	_activeWeapon = getIdOfNextItemInList(weapons, _activeWeapon);
 
@@ -747,7 +746,7 @@ void MainActor::dropWeapon() {
 }
 
 void MainActor::nextInvItem() {
-	Std::vector<Item *> items;
+	Common::Array<Item *> items;
 	getItemsWithShapeFamily(items, ShapeInfo::SF_CRUINVITEM, true);
 	getItemsWithShapeFamily(items, ShapeInfo::SF_CRUBOMB, true);
 	if (GAME_IS_REMORSE) {
@@ -798,7 +797,7 @@ bool MainActor::loadData(Common::ReadStream *rs, uint32 version) {
 	}
 
 	uint8 namelength = rs->readByte();
-	_name.resize(namelength);
+	_name.assign(namelength, ' ');
 	for (unsigned int i = 0; i < namelength; ++i)
 		_name[i] = rs->readByte();
 
@@ -966,7 +965,7 @@ void MainActor::useInventoryItem(Item *item) {
 	if (!item)
 		return;
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		pout << "Can't use item: avatarInStasis" << Std::endl;
+		debugC(kDebugActor, "Can't use item: avatarInStasis");
 		return;
 	}
 	const int32 shapenum = item->getShape();
@@ -1019,7 +1018,7 @@ int MainActor::receiveShieldHit(int damage, uint16 damage_type) {
 			uint16 shieldstartframe;
 			uint16 shieldendframe;
 			bool remembersprite;
-			int32 x, y, z;
+			Point3 pt;
 
 			switch (shieldtype) {
 			case 1:
@@ -1029,27 +1028,27 @@ int MainActor::receiveShieldHit(int damage, uint16 damage_type) {
 				remembersprite = false;
 				// NOTE: In the game, this is put in the location of the
 				// hit.  For now just put in centre.
-				getCentre(x, y, z);
+				pt = getCentre();
 				break;
 			case 2:
 				shieldsprite = 0x5a9;
 				shieldstartframe = 0;
 				shieldendframe = 6;
 				remembersprite = false;
-				getCentre(x, y, z);
+				pt = getCentre();
 				break;
 			default:
 				shieldsprite = 0x52b;
 				shieldstartframe = 0;
 				shieldendframe = 8;
-				getLocation(x, y, z);
-				x += 0x10;
-				y += 0x18;
+				pt = getLocation();
+				pt.x += 0x10;
+				pt.y += 0x18;
 				remembersprite = true;
 				break;
 			}
 			Process *p = new SpriteProcess(shieldsprite, shieldstartframe,
-										   shieldendframe, 1, 4, x, y, z);
+										   shieldendframe, 1, 4, pt.x, pt.y, pt.z);
 			kernel->addProcess(p);
 			if (remembersprite) {
 				_shieldSpriteProc = p->getPid();

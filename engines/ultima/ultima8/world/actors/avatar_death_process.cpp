@@ -29,7 +29,7 @@
 #include "ultima/ultima8/kernel/delay_process.h"
 #include "ultima/ultima8/gumps/main_menu_process.h"
 #include "ultima/ultima8/gumps/gump_notify_process.h"
-#include "ultima/ultima8/graphics/palette_manager.h"
+#include "ultima/ultima8/gfx/palette_manager.h"
 #include "ultima/ultima8/audio/audio_process.h"
 #include "ultima/ultima8/world/get_object.h"
 
@@ -47,14 +47,14 @@ void AvatarDeathProcess::run() {
 	MainActor *av = getMainActor();
 
 	if (!av) {
-		perr << "AvatarDeathProcess: MainActor object missing" << Std::endl;
+		warning("AvatarDeathProcess: MainActor object missing");
 		// avatar gone??
 		terminate();
 		return;
 	}
 
 	if (!av->hasActorFlags(Actor::ACT_DEAD)) {
-		perr << "AvatarDeathProcess: MainActor not dead" << Std::endl;
+		warning("AvatarDeathProcess: MainActor not dead");
 		// avatar not dead?
 		terminate();
 		return;

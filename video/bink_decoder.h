@@ -47,7 +47,9 @@ namespace Common {
 class SeekableReadStream;
 template <class BITSTREAM>
 class Huffman;
+}
 
+namespace Math {
 class RDFT;
 class DCT;
 }
@@ -123,8 +125,8 @@ private:
 
 		float *coeffsPtr[kAudioChannelsMax];
 
-		Common::RDFT *rdft;
-		Common::DCT  *dct;
+		Math::RDFT *rdft;
+		Math::DCT  *dct;
 
 		AudioInfo();
 		~AudioInfo();
@@ -145,15 +147,22 @@ private:
 
 	class BinkVideoTrack : public FixedRateVideoTrack {
 	public:
-		BinkVideoTrack(uint32 width, uint32 height, const Graphics::PixelFormat &format, uint32 frameCount, const Common::Rational &frameRate, bool swapPlanes, bool hasAlpha, uint32 id);
+		BinkVideoTrack(uint32 width, uint32 height, uint32 frameCount, const Common::Rational &frameRate, bool swapPlanes, bool hasAlpha, uint32 id);
 		~BinkVideoTrack();
 
-		uint16 getWidth() const override { return _surface.w; }
-		uint16 getHeight() const  override{ return _surface.h; }
-		Graphics::PixelFormat getPixelFormat() const override { return _surface.format; }
+		uint16 getWidth() const override { return _width; }
+		uint16 getHeight() const  override{ return _height; }
+		Graphics::PixelFormat getPixelFormat() const override { return _pixelFormat; }
+		bool setOutputPixelFormat(const Graphics::PixelFormat &format) override {
+			if (format.bytesPerPixel != 2 && format.bytesPerPixel != 4)
+				return false;
+			_pixelFormat = format;
+			return true;
+		}
+
 		int getCurFrame() const override { return _curFrame; }
 		int getFrameCount() const override { return _frameCount; }
-		const Graphics::Surface *decodeNextFrame() override { return &_surface; }
+		const Graphics::Surface *decodeNextFrame() override { return _surface; }
 		bool isSeekable() const  override{ return true; }
 		bool seek(const Audio::Timestamp &time) override { return true; }
 		bool rewind() override;
@@ -241,7 +250,10 @@ private:
 		int _curFrame;
 		int _frameCount;
 
-		Graphics::Surface _surface;
+		Graphics::Surface *_surface;
+		Graphics::PixelFormat _pixelFormat;
+		uint16 _width;
+		uint16 _height;
 		int _surfaceWidth; ///< The actual surface width
 		int _surfaceHeight; ///< The actual surface height
 
@@ -320,7 +332,8 @@ private:
 		void readBlockTypes  (VideoFrame &video, Bundle &bundle);
 		void readPatterns    (VideoFrame &video, Bundle &bundle);
 		void readColors      (VideoFrame &video, Bundle &bundle);
-		void readDCS         (VideoFrame &video, Bundle &bundle, int startBits, bool hasSign);
+		template<int startBits, bool hasSign>
+		void readDCS         (VideoFrame &video, Bundle &bundle);
 		void readDCTCoeffs   (VideoFrame &video, int32 *block, bool isIntra);
 		void readResidue     (VideoFrame &video, int16 *block, int masksCount);
 

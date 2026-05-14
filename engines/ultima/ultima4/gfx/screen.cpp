@@ -83,11 +83,10 @@ Screen::~Screen() {
 }
 
 void Screen::init() {
-	Graphics::PixelFormat SCREEN_FORMAT(2, 5, 6, 5, 0, 11, 5, 0, 0);
 	Common::Point size(SCREEN_WIDTH * settings._scale, SCREEN_HEIGHT * settings._scale);
 
-	initGraphics(size.x, size.y, &SCREEN_FORMAT);
-	create(size.x, size.y, SCREEN_FORMAT);
+	initGraphics(size.x, size.y, nullptr);
+	create(size.x, size.y, g_system->getScreenFormat());
 
 	loadMouseCursors();
 	screenLoadGraphicsFromConf();
@@ -96,8 +95,7 @@ void Screen::init() {
 
 	/* find the tile animations for our tileset */
 	_tileAnims = nullptr;
-	for (Std::vector<TileAnimSet *>::const_iterator i = _tileAnimSets.begin(); i != _tileAnimSets.end(); i++) {
-		TileAnimSet *set = *i;
+	for (auto *set : _tileAnimSets) {
 		if (set->_name == settings._videoType)
 			_tileAnims = set;
 	}
@@ -132,9 +130,8 @@ void Screen::clear() {
 	// Clear any pending updates for the current screen
 	update();
 
-	Std::vector<Layout *>::const_iterator i;
-	for (i = _layouts.begin(); i != _layouts.end(); ++i)
-		delete (*i);
+	for (auto *layout : _layouts)
+		delete layout;
 	_layouts.clear();
 
 	ImageMgr::destroy();
@@ -150,7 +147,9 @@ void Screen::clear() {
 void Screen::loadMouseCursors() {
 	// enable or disable the mouse cursor
 	if (settings._mouseOptions._enabled) {
-		Shared::File cursorsFile("data/graphics/cursors.txt");
+		Common::File cursorsFile;
+		if (!cursorsFile.open("data/graphics/cursors.txt"))
+			error("Could not load mouse cursors");
 
 		for (int idx = 0; idx < 5; ++idx)
 			_mouseCursors[idx] = loadMouseCursor(cursorsFile);
@@ -158,9 +157,7 @@ void Screen::loadMouseCursors() {
 		// Set the default initial cursor
 		const uint TRANSPARENT = format.RGBToColor(0x80, 0x80, 0x80);
 		MouseCursorSurface *c = _mouseCursors[MC_DEFAULT];
-		CursorMan.pushCursor(c->getPixels(),
-			MOUSE_CURSOR_SIZE, MOUSE_CURSOR_SIZE,
-			c->_hotspot.x, c->_hotspot.y, TRANSPARENT, false, &format);
+		CursorMan.pushCursor(*c, c->_hotspot.x, c->_hotspot.y, TRANSPARENT, false);
 		CursorMan.showMouse(true);
 
 	} else {
@@ -179,12 +176,11 @@ void Screen::setMouseCursor(MouseCursor cursor) {
 		_currentMouseCursor = cursor;
 
 		const uint TRANSPARENT = format.RGBToColor(0x80, 0x80, 0x80);
-		CursorMan.replaceCursor(c->getPixels(), MOUSE_CURSOR_SIZE, MOUSE_CURSOR_SIZE,
-		                        c->_hotspot.x, c->_hotspot.y, TRANSPARENT, false, &format);
+		CursorMan.replaceCursor(*c, c->_hotspot.x, c->_hotspot.y, TRANSPARENT, false);
 	}
 }
 
-MouseCursorSurface *Screen::loadMouseCursor(Shared::File &src) {
+MouseCursorSurface *Screen::loadMouseCursor(Common::File &src) {
 	uint row, col, endCol, pixel;
 	int hotX, hotY;
 	Common::String line;
@@ -348,19 +344,17 @@ void Screen::screenMessage(const char *fmt, ...) {
 void Screen::screenLoadGraphicsFromConf() {
 	const Config *config = Config::getInstance();
 
-	Std::vector<ConfigElement> graphicsConf = config->getElement("graphics").getChildren();
-	for (Std::vector<ConfigElement>::iterator conf = graphicsConf.begin(); conf != graphicsConf.end(); conf++) {
+	Common::Array<ConfigElement> graphicsConf = config->getElement("graphics").getChildren();
+	for (const auto &conf : graphicsConf) {
 
-		if (conf->getName() == "layout")
-			_layouts.push_back(screenLoadLayoutFromConf(*conf));
-		else if (conf->getName() == "tileanimset")
-			_tileAnimSets.push_back(new TileAnimSet(*conf));
+		if (conf.getName() == "layout")
+			_layouts.push_back(screenLoadLayoutFromConf(conf));
+		else if (conf.getName() == "tileanimset")
+			_tileAnimSets.push_back(new TileAnimSet(conf));
 	}
 
 	_gemLayoutNames.clear();
-	Std::vector<Layout *>::const_iterator i;
-	for (i = _layouts.begin(); i != _layouts.end(); i++) {
-		Layout *layout = *i;
+	for (const auto *layout : _layouts) {
 		if (layout->_type == LAYOUT_GEM) {
 			_gemLayoutNames.push_back(layout->_name);
 		}
@@ -369,9 +363,7 @@ void Screen::screenLoadGraphicsFromConf() {
 	/*
 	 * Find gem layout to use.
 	 */
-	for (i = _layouts.begin(); i != _layouts.end(); i++) {
-		Layout *layout = *i;
-
+	for (auto *layout : _layouts) {
 		if (layout->_type == LAYOUT_GEM && layout->_name == settings._gemLayout) {
 			_gemLayout = layout;
 			break;
@@ -383,29 +375,29 @@ void Screen::screenLoadGraphicsFromConf() {
 
 Layout *Screen::screenLoadLayoutFromConf(const ConfigElement &conf) {
 	Layout *layout;
-	static const char *typeEnumStrings[] = {"standard", "gem", "dungeon_gem", nullptr};
+	static const char *const typeEnumStrings[] = {"standard", "gem", "dungeon_gem", nullptr};
 
 	layout = new Layout();
 	layout->_name = conf.getString("name");
 	layout->_type = static_cast<LayoutType>(conf.getEnum("type", typeEnumStrings));
 
-	Std::vector<ConfigElement> children = conf.getChildren();
-	for (Std::vector<ConfigElement>::iterator i = children.begin(); i != children.end(); i++) {
-		if (i->getName() == "tileshape") {
-			layout->_tileShape.x = i->getInt("width");
-			layout->_tileShape.y = i->getInt("height");
-		} else if (i->getName() == "viewport") {
-			layout->_viewport.left = i->getInt("x");
-			layout->_viewport.top = i->getInt("y");
-			layout->_viewport.setWidth(i->getInt("width"));
-			layout->_viewport.setHeight(i->getInt("height"));
+	Common::Array<ConfigElement> children = conf.getChildren();
+	for (const auto &i : children) {
+		if (i.getName() == "tileshape") {
+			layout->_tileShape.x = i.getInt("width");
+			layout->_tileShape.y = i.getInt("height");
+		} else if (i.getName() == "viewport") {
+			layout->_viewport.left = i.getInt("x");
+			layout->_viewport.top = i.getInt("y");
+			layout->_viewport.setWidth(i.getInt("width"));
+			layout->_viewport.setHeight(i.getInt("height"));
 		}
 	}
 
 	return layout;
 }
 
-Std::vector<MapTile> Screen::screenViewportTile(uint width, uint height, int x, int y, bool &focus) {
+Common::Array<MapTile> Screen::screenViewportTile(uint width, uint height, int x, int y, bool &focus) {
 	MapCoords center = g_context->_location->_coords;
 	static MapTile grass = g_context->_location->_map->_tileSet->getByName("grass")->getId();
 
@@ -426,7 +418,7 @@ Std::vector<MapTile> Screen::screenViewportTile(uint width, uint height, int x, 
 	/* off the edge of the map: pad with grass tiles */
 	if (MAP_IS_OOB(g_context->_location->_map, tc)) {
 		focus = false;
-		Std::vector<MapTile> result;
+		Common::Array<MapTile> result;
 		result.push_back(grass);
 		return result;
 	}
@@ -442,7 +434,7 @@ bool Screen::screenTileUpdate(TileView *view, const Coords &coords, bool redraw)
 	bool focus;
 	MapCoords mc(coords);
 	mc.wrap(g_context->_location->_map);
-	Std::vector<MapTile> tiles = g_context->_location->tilesAt(mc, focus);
+	Common::Array<MapTile> tiles = g_context->_location->tilesAt(mc, focus);
 
 	// Get the screen coordinates
 	int x = coords.x;
@@ -482,7 +474,7 @@ void Screen::screenUpdate(TileView *view, bool showmap, bool blackout) {
 
 		int x, y;
 
-		Std::vector<MapTile> viewportTiles[VIEWPORT_W][VIEWPORT_H];
+		Common::Array<MapTile> viewportTiles[VIEWPORT_W][VIEWPORT_H];
 		bool viewportFocus[VIEWPORT_W][VIEWPORT_H];
 
 		for (y = 0; y < VIEWPORT_H; y++) {
@@ -695,7 +687,7 @@ void Screen::screenSetCursorPos(int x, int y) {
 	_cursorPos.y = y;
 }
 
-void Screen::screenFindLineOfSight(Std::vector<MapTile> viewportTiles[VIEWPORT_W][VIEWPORT_H]) {
+void Screen::screenFindLineOfSight(Common::Array<MapTile> viewportTiles[VIEWPORT_W][VIEWPORT_H]) {
 	int x, y;
 
 	if (!g_context)
@@ -730,7 +722,7 @@ void Screen::screenFindLineOfSight(Std::vector<MapTile> viewportTiles[VIEWPORT_W
 		error("unknown line of sight style %s!\n", settings._lineOfSight.c_str());
 }
 
-void Screen::screenFindLineOfSightDOS(Std::vector<MapTile> viewportTiles[VIEWPORT_W][VIEWPORT_H]) {
+void Screen::screenFindLineOfSightDOS(Common::Array<MapTile> viewportTiles[VIEWPORT_W][VIEWPORT_H]) {
 	int x, y;
 
 	_los[VIEWPORT_W / 2][VIEWPORT_H / 2] = 1;
@@ -810,7 +802,7 @@ void Screen::screenFindLineOfSightDOS(Std::vector<MapTile> viewportTiles[VIEWPOR
 	}
 }
 
-void Screen::screenFindLineOfSightEnhanced(Std::vector<MapTile> viewportTiles[VIEWPORT_W][VIEWPORT_H]) {
+void Screen::screenFindLineOfSightEnhanced(Common::Array<MapTile> viewportTiles[VIEWPORT_W][VIEWPORT_H]) {
 	int x, y;
 
 	/*
@@ -1159,7 +1151,7 @@ void Screen::screenShowGemTile(Layout *layout, Map *map, MapTile &t, bool focus,
 
 	if (map->_type == Map::DUNGEON) {
 		assertMsg(_charSetInfo, "charset not initialized");
-		Std::map<Common::String, int>::iterator charIndex = _dungeonTileChars.find(t.getTileType()->getName());
+		Common::HashMap<Common::String, int>::iterator charIndex = _dungeonTileChars.find(t.getTileType()->getName());
 		if (charIndex != _dungeonTileChars.end()) {
 			_charSetInfo->_image->drawSubRect((layout->_viewport.left + (x * layout->_tileShape.x)) * settings._scale,
 			                                  (layout->_viewport.top + (y * layout->_tileShape.y)) * settings._scale,
@@ -1195,10 +1187,7 @@ void Screen::screenShowGemTile(Layout *layout, Map *map, MapTile &t, bool focus,
 
 Layout *Screen::screenGetGemLayout(const Map *map) {
 	if (map->_type == Map::DUNGEON) {
-		Std::vector<Layout *>::const_iterator i;
-		for (i = _layouts.begin(); i != _layouts.end(); i++) {
-			Layout *layout = *i;
-
+		for (auto *layout : _layouts) {
 			if (layout->_type == LAYOUT_DUNGEONGEM)
 				return layout;
 		}
@@ -1224,8 +1213,8 @@ void Screen::screenGemUpdate() {
 	// TODO: Move the code responsible for determining 'peer' visibility to a non SDL specific part of the code.
 	if (g_context->_location->_map->_type == Map::DUNGEON) {
 		//DO THE SPECIAL DUNGEON MAP TRAVERSAL
-		Std::vector<Std::vector<int> > drawnTiles(layout->_viewport.width(), Std::vector<int>(layout->_viewport.height(), 0));
-		Common::List<Std::pair<int, int> > coordStack;
+		Common::Array<Common::Array<int> > drawnTiles(layout->_viewport.width(), Common::Array<int>(layout->_viewport.height(), 0));
+		Common::List<Common::Pair<int, int> > coordStack;
 
 		//Put the avatar's position on the stack
 		int center_x = layout->_viewport.width() / 2 - 1;
@@ -1233,12 +1222,12 @@ void Screen::screenGemUpdate() {
 		int avt_x = g_context->_location->_coords.x - 1;
 		int avt_y = g_context->_location->_coords.y - 1;
 
-		coordStack.push_back(Std::pair<int, int>(center_x, center_y));
+		coordStack.push_back(Common::Pair<int, int>(center_x, center_y));
 		bool weAreDrawingTheAvatarTile = true;
 
 		//And draw each tile on the growing stack until it is empty
 		while (coordStack.size() > 0) {
-			Std::pair<int, int> currentXY = coordStack.back();
+			Common::Pair<int, int> currentXY = coordStack.back();
 			coordStack.pop_back();
 
 			x = currentXY.first;
@@ -1256,7 +1245,7 @@ void Screen::screenGemUpdate() {
 			// DRAW THE ACTUAL TILE
 			bool focus;
 
-			Std::vector<MapTile> tiles = screenViewportTile(layout->_viewport.width(),
+			Common::Array<MapTile> tiles = screenViewportTile(layout->_viewport.width(),
 			                                                layout->_viewport.height(), x - center_x + avt_x, y - center_y + avt_y, focus);
 			tile = tiles.front();
 
@@ -1275,16 +1264,16 @@ void Screen::screenGemUpdate() {
 				//or the avatar position in those rare circumstances where he is stuck in a wall
 
 				//by adding all relative adjacency combinations to the stack for drawing
-				coordStack.push_back(Std::pair<int, int>(x + 1, y - 1));
-				coordStack.push_back(Std::pair<int, int>(x + 1, y));
-				coordStack.push_back(Std::pair<int, int>(x + 1, y + 1));
+				coordStack.push_back(Common::Pair<int, int>(x + 1, y - 1));
+				coordStack.push_back(Common::Pair<int, int>(x + 1, y));
+				coordStack.push_back(Common::Pair<int, int>(x + 1, y + 1));
 
-				coordStack.push_back(Std::pair<int, int>(x, y - 1));
-				coordStack.push_back(Std::pair<int, int>(x, y + 1));
+				coordStack.push_back(Common::Pair<int, int>(x, y - 1));
+				coordStack.push_back(Common::Pair<int, int>(x, y + 1));
 
-				coordStack.push_back(Std::pair<int, int>(x - 1, y - 1));
-				coordStack.push_back(Std::pair<int, int>(x - 1, y));
-				coordStack.push_back(Std::pair<int, int>(x - 1, y + 1));
+				coordStack.push_back(Common::Pair<int, int>(x - 1, y - 1));
+				coordStack.push_back(Common::Pair<int, int>(x - 1, y));
+				coordStack.push_back(Common::Pair<int, int>(x - 1, y + 1));
 
 				// We only draw the avatar tile once, it is the first tile drawn
 				weAreDrawingTheAvatarTile = false;
@@ -1347,7 +1336,7 @@ Image *Screen::screenScale(Image *src, int scale, int n, int filter) {
 		dest = (*scalerGet("point"))(src, scale, n);
 
 	if (!dest)
-		dest = Image::duplicate(src);
+		dest = Image::duplicate(src, src->format());
 
 	if (isTransparent)
 		dest->setTransparentIndex(transparentIndex);
@@ -1369,7 +1358,7 @@ Image *Screen::screenScaleDown(Image *src, int scale) {
 
 	src->alphaOff();
 
-	dest = Image::create(src->width() / scale, src->height() / scale, src->isIndexed(), Image::HARDWARE);
+	dest = Image::create(src->width() / scale, src->height() / scale, src->format());
 	if (!dest)
 		return nullptr;
 
@@ -1400,15 +1389,15 @@ void inline screenUnlock(){};
 void inline screenWait(int numberOfAnimationFrames){};
 #endif
 
-const Std::vector<Common::String> &screenGetFilterNames() {
+const Common::Array<Common::String> &screenGetFilterNames() {
 	return g_screen->_filterNames;
 }
 
-const Std::vector<Common::String> &screenGetGemLayoutNames() {
+const Common::Array<Common::String> &screenGetGemLayoutNames() {
 	return g_screen->_gemLayoutNames;
 }
 
-const Std::vector<Common::String> &screenGetLineOfSightStyles() {
+const Common::Array<Common::String> &screenGetLineOfSightStyles() {
 	return g_screen->_lineOfSightStyles;
 }
 

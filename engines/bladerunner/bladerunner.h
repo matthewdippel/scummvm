@@ -25,9 +25,7 @@
 #include "bladerunner/archive.h"
 
 #include "common/array.h"
-#include "common/cosinetables.h"
 #include "common/random.h"
-#include "common/sinetables.h"
 #include "common/stream.h"
 #include "common/keyboard.h"
 #include "common/events.h"
@@ -35,6 +33,9 @@
 #include "engines/engine.h"
 
 #include "graphics/surface.h"
+
+#include "math/cosinetables.h"
+#include "math/sinetables.h"
 
 //TODO: change this to debugflag
 #define BLADERUNNER_DEBUG_CONSOLE     0
@@ -55,7 +56,9 @@ struct ADGameDescription;
 namespace BladeRunner {
 
 enum DebugLevels {
-	kDebugScript = 1 << 0
+	kDebugScript = 1,
+	kDebugSound,
+	kDebugAnimation,
 };
 
 class Actor;
@@ -210,11 +213,12 @@ public:
 	ZBuffer           *_zbuffer;
 
 	Common::RandomSource _rnd;
+	uint32 _newGameRandomSeed;
 
 	Debugger *_debugger;
 
-	Common::CosineTable *_cosTable1024;
-	Common::SineTable   *_sinTable1024;
+	Math::CosineTable *_cosTable1024;
+	Math::SineTable   *_sinTable1024;
 
 	bool _isWalkingInterruptible;
 	bool _interruptWalking;
@@ -237,6 +241,7 @@ public:
 	bool _noDelayMillisFramelimiter;
 	bool _framesPerSecondMax;
 	bool _disableStaminaDrain;
+	bool _spanishCreditsCorrection;
 	bool _cutContent;
 	bool _enhancedEdition;
 	bool _validBootParam;
@@ -292,7 +297,7 @@ public:
 	// However, we should probably restrict the active events
 	// (that can be repeated while holding the mapped keys down)
 	// to a maximum of kMaxCustomConcurrentRepeatableEvents
-	ActiveCustomEventsArray _activeCustomEvents[kMaxCustomConcurrentRepeatableEvents];
+	ActiveCustomEventsArray _activeCustomEvents;
 
 	// NOTE We still need keyboard functionality for naming saved games and also for the KIA Easter eggs.
 	//      In KIA keyboard events should be accounted where possible - however some keymaps are still needed
@@ -345,9 +350,9 @@ public:
 	~BladeRunnerEngine() override;
 
 	bool hasFeature(EngineFeature f) const override;
-	bool canLoadGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error loadGameState(int slot) override;
-	bool canSaveGameStateCurrently() override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 	/**
 	* NOTE: Disable support for external autosave (ScummVM's feature).

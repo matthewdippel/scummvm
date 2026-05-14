@@ -26,9 +26,13 @@ ScummVM Team
     Access:
        Arnaud Boutonne
        Paul Gilbert
+       Matthew Duggan
 
     ADL:
        Walter van Niftrik
+
+    AGDS:
+       Vladimir Menshakov
 
     AGI:
        Stuart George
@@ -51,6 +55,7 @@ ScummVM Team
     AGS:
        Paul Gilbert
        Thierry Crozat
+       Walter Agazzi                  - Maintenance, Game archival
        Chris Jones                    - Creator
        Alan Van Drake                 - AGS
        Benjamin Penney                - AGS
@@ -90,6 +95,13 @@ ScummVM Team
        rofl0r                         - AGS
        Berian Williams                - AgsCreditz
 
+    Alcachofa:
+       Hermann Noll
+
+    ALG:
+       Filippos Karapetis
+       David Kment
+
     Asylum:
        Alex Bevilacqua
        Alex Fontoura
@@ -102,6 +114,16 @@ ScummVM Team
     Avalanche:
        Peter Bozso
        Arnaud Boutonne
+
+    awe:
+       Gregory Montoir
+       Paul Gilbert
+
+    Bagel:
+       Arnaud Boutonne
+       Daniel Albano
+       Eugene Sandulenko
+       Paul Gilbert
 
     BBVS:
        Benjamin Haisch
@@ -124,6 +146,10 @@ ScummVM Team
        Arnaud Boutonne
        Paul Gilbert
 
+    Chamber:
+       Retro-Junk;
+       Eugene Sandulenko
+
     Chewy:
        Paul Gilbert
        Eugene Sandulenko
@@ -140,6 +166,9 @@ ScummVM Team
     Composer:
        Alyssa Milburn
 
+    CRAB:
+       Kartik Agarwala
+
     CruisE:
        Paul Gilbert
        Vincent Hamm                   - (retired)
@@ -153,6 +182,14 @@ ScummVM Team
     Cryomni3D:
        Philippe Valembois
 
+    Darkseed:
+       Eric Fry
+
+    DGDS:
+       Matthew Duggan
+       Filippos Karapetis
+       Vasco Alexandre da Silva Costa
+
     Director:
        Eugene Sandulenko
        Crane Yang                     - GSoC Student
@@ -163,7 +200,7 @@ ScummVM Team
        Scott Percival
        Steven Hoefel
        Tobia Tesan
-       Misty De Méo
+       Misty De Meo
 
     DM:
        Arnaud Boutonne
@@ -190,6 +227,17 @@ ScummVM Team
        Vladimir Menshakov
        Willem Jan Palenstijn
 
+    Efh:
+       Arnaud Boutonne
+
+    Freescape:
+       Chris Allen                    - Sound engine programming
+       Dhruv                          - Render engine fixes
+       Gustavo Grieco
+
+    Gamos:
+       Anton Yarcev
+
     Glk:
        Paul Gilbert
        Tor Andersson                  - GarGlk library
@@ -206,8 +254,14 @@ ScummVM Team
     Gob:
        Torbjorn Andersson
        Arnaud Boutonne
+       Simon Delamarre
        Sven Hesse
        Eugene Sandulenko
+
+    Got:
+       Paul Gilbert
+       Arnaud Boutonne
+       Coen Rampen
 
     Griffon:
        Eugene Sandulenko
@@ -240,6 +294,9 @@ ScummVM Team
        Arnaud Boutonne
        Paul Gilbert
 
+    Hpl1:
+       Emanuele Grisenti
+
     Hugo:
        Arnaud Boutonne
        Oystein Eftevaag
@@ -256,6 +313,9 @@ ScummVM Team
     Illusions:
        Benjamin Haisch
        Eric Fry
+
+    Immortal:
+       Michael Hayman
 
     Kingdom:
        Arnaud Boutonne
@@ -276,6 +336,7 @@ ScummVM Team
        Eugene Sandulenko
 
     Lastexpress:
+       Andrea Boscarino               - Engine rewrite
        Matthew Hoops                  - (retired)
        Jordi Vilalta Prat
        Julien Templier
@@ -285,6 +346,10 @@ ScummVM Team
 
     Lure:
        Paul Gilbert
+
+    M4:
+       Paul Gilbert
+       Arnaud Boutonne
 
     MacVenture:
        Borja Lorente                  - GSoC student
@@ -297,6 +362,16 @@ ScummVM Team
        Arnaud Boutonne
        Paul Gilbert
        Filippos Karapetis
+
+    Media Station:
+       Nathanael Gentry
+
+    MM (Xeen):
+       Paul Gilbert
+       Benoit Pierre
+       TheDrakeRaider                 - (M&M1 Gfx Mod)
+       David Goldsmith                - (Xeen analysis)
+       Matt Taylor                    - (Xeen analysis)
 
     Mohawk:
        Bastien Bouclet
@@ -342,6 +417,10 @@ ScummVM Team
        Andrei Prykhodko
        Eugene Sandulenko
 
+    PhoenixVR:
+       Vladimir Menshakov
+       Hermann Noll                   - Help with 3D VR projections
+
     Pink:
        Andrei Prykhodko
        Eugene Sandulenko
@@ -356,6 +435,10 @@ ScummVM Team
 
     Private:
        Gustavo Grieco
+
+    QDEngine:
+       Eugene Sandulenko
+       Kunal Tiwari
 
     Queen:
        David Eriksson                 - (retired)
@@ -389,7 +472,7 @@ ScummVM Team
 
     SCUMM:
        Torbjorn Andersson
-       Andrea Boscarino               - Digital iMUSE, various fixes
+       Andrea Boscarino               - Digital iMUSE, SMUSH audio, GUI
        James Brown                    - (retired)
        Jonathan Gray                  - (retired)
        Vincent Hamm                   - (retired)
@@ -402,6 +485,7 @@ ScummVM Team
        Ludvig Strigeus                - (retired)
 
     SCUMM HE:
+       Andrea Boscarino               - Digital audio, WIZ graphics system
        Jonathan Gray                  - (retired)
        Travis Howell
        Gregory Montoir                - (retired)
@@ -437,6 +521,7 @@ ScummVM Team
 
     Sword1:
        Fabio Battaglia                - PSX version support
+       Andrea Boscarino               - Palette fading, menus, audio
        Thierry Crozat                 - Mac version support
        Robert Goeffringmann           - (retired)
 
@@ -455,6 +540,9 @@ ScummVM Team
     TeenAgent:
        Robert Megone                  - Help with callback rewriting
        Vladimir Menshakov
+
+    Tetraedge:
+       Matthew Duggan
 
     Tinsel:
        Torbjorn Andersson
@@ -481,6 +569,9 @@ ScummVM Team
 
     Toon:
        Sylvain Dupont
+
+    Tot:
+       Gabriel Sanmartín
 
     Touche:
        Gregory Montoir                - (retired)
@@ -510,10 +601,14 @@ ScummVM Team
        Sebastien Viannay              - (retired)
        Martin Gerhardy
 
+    Thimbleweed Park:
+       Valéry Sablonnière
+
     Ultima:
        Paul Gilbert
        Matthew Duggan
        Matthew Jimenez
+       Paul Robson                    - (Akalabeth)
        Daniel c. Wuerl                - (Nuvie)
        Eric Fry                       - (Nuvie)
        Jeremy Newman                  - (Nuvie)
@@ -533,31 +628,44 @@ ScummVM Team
        Ryan Nunn                      - (Pentagram)
        Willem Jan Palenstijn          - (Pentagram)
 
+    V-Cruise:
+       Eric Lasota
+
     Voyeur:
        Arnaud Boutonne
        Paul Gilbert
 
     WAGE:
+       Alikhan Balpykov
        Eugene Sandulenko
+       Alexei Svitkine                - (Java implementation author)
+
+    Watchmaker:
+       Einar Johan Troan Somaen;
+
+    Wayne's World:
+       Arnaud Boutonne
+       Benjamin Haisch
 
     Wintermute:
        Gunnar Birke                   - Wintermute 3D
+       Pawel Kolodziejski             - Wintermute 3D
        Einar Johan T. Somaaen
        Tobia Tesan
-
-    Xeen:
-       Paul Gilbert
-       Benoit Pierre
-       David Goldsmith                - (analysis)
-       Matt Taylor                    - (analysis)
+       lolbot-iichan
 
     Z-Vision:
        Adrian Astley
        Filippos Karapetis
        Anton Yarcev
+       Thomas N McEwan                - Widescreen mod, HQ panoramas, 3D
+                                        audio enhancement
 
   Backend Teams
   -------------
+    Atari:
+       Miro Kropacek
+
     Android:
        Andre Heider
        Angus Lees
@@ -573,9 +681,10 @@ ScummVM Team
        John Willis
 
     iPhone / iPad:
-       Oystein Eftevaag
+       Oystein Eftevaag               - (retired)
        Vincent Benony
        Thierry Crozat
+       Lars Sundstroem
 
     LinuxMoto:
        Lubomyr Lisen
@@ -644,6 +753,9 @@ ScummVM Team
     Raspberry Pi:
        Manuel Alfayate
 
+    Libretro:
+       Giovanni Cascione
+
   Other subsystems
   ----------------
     Infrastructure:
@@ -677,6 +789,9 @@ ScummVM Team
                                         speedups on several ports;
                                         improvements to the sound mixer
        Trembyle                       - Archivist
+       Lothar Serra Mari              - Tackling Tremendously Tedious
+                                        Tasks(tm); ScummVM's Seal of Approval
+                                        (Awp?!)
 
   Website (code)
   --------------
@@ -748,8 +863,9 @@ Other contributions
 
     macOS:
        Max Horn                       - (retired)
-       Oystein Eftevaag
+       Oystein Eftevaag               - (retired)
        Thierry Crozat
+       dwa                            - Tiger/Leopard PPC
 
     Mandriva:
        Dominik Scherer                - (retired)
@@ -783,92 +899,154 @@ Other contributions
        Johannes Schickel              - (retired)
        Lothar Serra Mari
 
-  GUI Translations
-  ----------------
+  GUI Translations (with 10+ translations)
+  ----------------------------------------
      Thierry Crozat                 - Translation Lead
 
+    Arabic:
+       Malek Bellasfar
+
     Basque:
+       Josu Igoa
        Mikel Iturbe Urretxa
 
     Belarusian:
        Ivan Lukyanov
 
+    Belarusian (Taraškievica):
+       Kage
+
     Catalan:
+       Sergi Pérez Labernia
        Jordi Vilalta Prat
+       Xaviu
+
+    Chinese (Simplified Han script):
+       复予
+       Crane yang
+       Xiao Zheng
+       kane159
 
     Czech:
        Zbynik Schwarz
+       AsciiWolf
 
     Danish:
+       Bo Mortensen
        Steffen Nyeland
        scootergrisen
 
     Dutch:
        Ben Castricum
+       SecularSteve
 
     Finnish:
-       Toni Saarela
        Timo Mikkolainen
+       Toni Saarela
+       Linus Virtanen
+       jepael
+       LINUX-SAUNA
 
     French:
        Thierry Crozat
+       dwa
        Purple T
 
     Galician:
        Santiago G. Sanz
 
+    Georgian:
+       NorwayFun
+
     German:
-       Simon Sawatzki
        Lothar Serra Mari
+       Simon Sawatzki
+       SecularSteve
 
     Greek:
-       Thanasis Antoniou
        Filippos Karapetis
+       Antoniou Thanasis
+
+    Hebrew:
+       Niv Baehr
+
+    Hindi:
+       Krish
+       Aditya Mohan
+       Aashwin Vaish
+       barryspacezero
 
     Hungarian:
        Alex Bevilacqua
        George Kormendi
+       Hovánszki Tamás
 
     Italian:
+       Walter Agazzi
        Matteo Angelino
        Paolo Bossi
-       Walter Agazzi
+
+    Japanese:
+       iplaysomegames101
+       VAN-Gluon
+
+    Korean:
+       Joohan Lee
+       Hoseok Seo
+       Won Star
+       papercutter0324
 
     Norwegian (Bokmaal):
+       Thomas Risan
        Einar Johan Somaaen
+       Stian Schultz
 
     Norwegian (Nynorsk):
        Einar Johan Somaaen
 
     Polish:
+       Pawel Kolodziejski
+       Eryk Michalak
        GrajPoPolsku.pl Team
+       SkiffPL
 
     Brazilian Portuguese:
-       ScummBR Team
        Marcel Souza Lemes
+       ScummBR Team
 
     Portuguese:
        Daniel Albano
 
     Russian:
        Eugene Sandulenko
+       iplaysomegames101
 
     Spanish:
        Tomas Maidagan
        Jordi Vilalta Prat
-       IlDucci
        Rodrigo Vegas Sanchez-Ferrero
+       IlDucci
 
     Swedish:
+       Henrik Andersson
        Hampus Flink
        Adrian Fruehwirth
+       Daniel Nylander
+       Sebastian Rasmussen
+
+    Turkish:
+       Ahmet Furkan
+       mdenizdemirci
 
     Ukrainian:
        Lubomyr Lisen
+       Eugene Sandulenko
+       iplaysomegames101
 
   Game Translations
   -----------------
     CGE:
+       Arnaud Boutonne                - Soltys English translation
        Dan Serban                     - Soltys English translation
        Victor Gonzalez                - Soltys Spanish translation
        Alejandro Gomez de la Munoza   - Soltys Spanish translation
@@ -883,6 +1061,8 @@ Other contributions
        Thierry Crozat                 - Improve French translation
 
     Mortevielle:
+       Arnaud Boutonne                - First English translation, improve
+                                        German translation
        Hugo Labrande                  - Improve English translation
        Thierry Crozat                 - Improve English translation
 
@@ -907,6 +1087,9 @@ Other contributions
 
   Icons pack
   ----------
+     Stefan Philippsen              - Primary contributor and coordination
+     Benjamin Funke
+     Daniel Albano
      David Calvert
      Eugene Sandulenko
      J Moretti
@@ -914,9 +1097,9 @@ Other contributions
      Lothar Serra Mari
      Oleg Ermakov
      Olly Dean
-     Stefan Philippsen
+     Walter Agazzi
+     beresk137
      Canuma
-     SupSuper
      Thunderforge
      neuromancer
      nightm4re94
@@ -1015,7 +1198,7 @@ Other contributions
      Hugues Valois                  - Game selection menu
      Jordi Vilalta                  - Numerous code and website clean-up
                                       patches
-     Petr Vyhnak                    - The DCL-INFLATE algorithm, many Win32
+     Petr Vyhnak                    - The DCL-IMPLODE algorithm, many Win32
                                       improvements
      Bas Zoetekouw                  - Man pages, debian package management,
                                       CVS maintenance
@@ -1202,4 +1385,7 @@ Special thanks to
 
    Fabrizio Lagorio from Trecision S.p.A., for finding and providing the
    source code of many of their games.
+
+   Ron Davis for releasing the sources and generously giving away the three
+   chapters of God of Thunder.
 

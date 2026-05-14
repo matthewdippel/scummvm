@@ -63,7 +63,8 @@ protected:
 	/**
 	* Synchronize savegame data
 	*/
-	void synchronize(Common::Serializer &s) override;
+	Common::Error synchronize(Common::Serializer &s) override;
+
 public:
 	InactivePlayer _inactive;
 	bool _charSegSwitch;
@@ -117,7 +118,7 @@ public:
 	*/
 	void freeInactivePlayer();
 
-	void drawHelp(const Common::String str);
+	void drawHelp(const Common::String &str);
 
 	void establish(int esatabIndex, int sub) override;
 

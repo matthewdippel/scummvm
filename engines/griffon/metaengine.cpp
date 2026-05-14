@@ -29,12 +29,38 @@
 #include "backends/keymapper/standard-actions.h"
 
 #include "griffon/griffon.h"
+#include "griffon/detection.h"
 
-class GriffonMetaEngine: public AdvancedMetaEngine {
+#ifdef USE_TTS
+
+static const ADExtraGuiOptionsMap optionsList[] = {
+	{
+		GAMEOPTION_TTS_NARRATOR,
+		{
+			_s("Enable Text to Speech"),
+			_s("Use TTS to read the descriptions (if TTS is available)"),
+			"tts_enabled",
+			false,
+			0,
+			0
+		}
+	},
+	AD_EXTRA_GUI_OPTIONS_TERMINATOR
+};
+
+#endif
+
+class GriffonMetaEngine: public AdvancedMetaEngine<ADGameDescription> {
 public:
 	const char *getName() const override {
 		return "griffon";
 	}
+
+#ifdef USE_TTS
+	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override {
+		return optionsList;
+	}
+#endif
 
 	int getMaximumSaveSlot() const override {
 		return ConfMan.getInt("autosave_period") ? 4 : 3;
@@ -130,7 +156,7 @@ Common::KeymapArray GriffonMetaEngine::initKeymaps(const char *target) const {
 	act->addDefaultInputMapping("JOY_B");
 	engineKeyMap->addAction(act);
 
-	act = new Action("SPEEDUP", _("Speed Up Cutscene"));
+	act = new Action("SPEEDUP", _("Speed up cutscene"));
 	act->setCustomEngineActionEvent(Griffon::kGriffonCutsceneSpeedUp);
 	act->addDefaultInputMapping("LSHIFT");
 	act->addDefaultInputMapping("RSHIFT");

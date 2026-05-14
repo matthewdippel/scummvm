@@ -29,6 +29,7 @@
 #include "mtropolis/render.h"
 #include "mtropolis/runtime.h"
 
+#ifdef MTROPOLIS_DEBUG_ENABLE
 
 namespace MTropolis {
 
@@ -292,7 +293,7 @@ void DebugToolWindowBase::render() {
 				return;
 
 			getSurface()->fillRect(Common::Rect(0, kTopBarHeight, renderWidth, getHeight()), getSurface()->format.RGBToColor(255, 255, 255));
-			getSurface()->rawBlitFrom(*_toolSurface.get(), Common::Rect(srcLeft, srcTop, srcRight, srcBottom), Common::Point(destLeft, destTop + kTopBarHeight), nullptr);
+			getSurface()->rawBlitFrom(*_toolSurface.get(), Common::Rect(srcLeft, srcTop, srcRight, srcBottom), Common::Point(destLeft, destTop + kTopBarHeight));
 		} else {
 			_haveScrollBar = false;
 			cancelScrolling();
@@ -519,6 +520,8 @@ private:
 	};
 
 	struct SceneTreeEntry {
+		SceneTreeEntry();
+
 		SceneTreeEntryUIState uiState;
 		size_t parentIndex;
 		int level;
@@ -527,6 +530,8 @@ private:
 	};
 
 	struct RenderEntry {
+		RenderEntry();
+
 		size_t treeIndex;
 		size_t parentRenderIndex;
 	};
@@ -546,6 +551,13 @@ private:
 };
 
 DebugSceneTreeWindow::SceneTreeEntryUIState::SceneTreeEntryUIState() : expanded(false), selected(false) {
+}
+
+
+DebugSceneTreeWindow::SceneTreeEntry::SceneTreeEntry() : parentIndex(0), level(0), hasChildren(false) {
+}
+
+DebugSceneTreeWindow::RenderEntry::RenderEntry() : treeIndex(0), parentRenderIndex(0) {
 }
 
 DebugSceneTreeWindow::DebugSceneTreeWindow(Debugger *debugger, const WindowParameters &windowParams)
@@ -1262,6 +1274,9 @@ const Common::String &DebugPrimaryTaskList::getName() const {
 	return _name;
 }
 
+Debugger::ToastNotification::ToastNotification() : dismissTime(0) {
+}
+
 
 Debugger::Debugger(Runtime *runtime) : _paused(false), _runtime(runtime) {
 	refreshSceneStatus();
@@ -1499,10 +1514,10 @@ void Debugger::openToolWindow(DebuggerTool tool) {
 		windowRef.reset(new DebugSceneTreeWindow(this, WindowParameters(_runtime, 32, 32, 250, 120, _runtime->getRenderPixelFormat())));
 		break;
 	case kDebuggerToolInspector:
-		windowRef.reset(new DebugInspectorWindow(this, WindowParameters(_runtime, 32, 32, 100, 320, _runtime->getRenderPixelFormat())));
+		windowRef.reset(new DebugInspectorWindow(this, WindowParameters(_runtime, 32, 32, 320, 200, _runtime->getRenderPixelFormat())));
 		break;
 	case kDebuggerToolStepThrough:
-		windowRef.reset(new DebugStepThroughWindow(this, WindowParameters(_runtime, 32, 32, 100, 320, _runtime->getRenderPixelFormat())));
+		windowRef.reset(new DebugStepThroughWindow(this, WindowParameters(_runtime, 32, 32, 200, 100, _runtime->getRenderPixelFormat())));
 		break;
 	default:
 		assert(false);
@@ -1567,3 +1582,5 @@ void Debugger::scanDebuggableStatus(IDebuggable *debuggable, Common::HashMap<Com
 
 
 } // End of namespace MTropolis
+
+#endif

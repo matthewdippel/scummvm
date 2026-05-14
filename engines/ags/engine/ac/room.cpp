@@ -51,6 +51,7 @@
 #include "ags/engine/ac/walk_behind.h"
 #include "ags/engine/ac/dynobj/script_object.h"
 #include "ags/engine/ac/dynobj/script_hotspot.h"
+#include "ags/engine/ac/dynobj/dynobj_manager.h"
 #include "ags/shared/gui/gui_main.h"
 #include "ags/engine/script/cc_instance.h"
 #include "ags/engine/debugging/debug_log.h"
@@ -58,7 +59,7 @@
 #include "ags/shared/debugging/out.h"
 #include "ags/shared/game/room_version.h"
 #include "ags/engine/platform/base/ags_platform_driver.h"
-#include "ags/plugins/ags_plugin.h"
+#include "ags/plugins/ags_plugin_evts.h"
 #include "ags/plugins/plugin_engine.h"
 #include "ags/shared/script/cc_common.h"
 #include "ags/engine/script/script.h"
@@ -72,6 +73,7 @@
 #include "ags/engine/gfx/gfxfilter.h"
 #include "ags/shared/util/math.h"
 #include "ags/engine/media/audio/audio_system.h"
+#include "ags/engine/main/game_run.h"
 #include "ags/shared/debugging/out.h"
 #include "ags/engine/script/script_api.h"
 #include "ags/engine/script/script_runtime.h"
@@ -167,7 +169,6 @@ const char *Room_GetMessages(int index) {
 		return nullptr;
 	}
 	char buffer[STD_BUFFER_SIZE];
-	buffer[0] = 0;
 	replace_tokens(get_translation(_GP(thisroom).Messages[index].GetCStr()), buffer, STD_BUFFER_SIZE);
 	return CreateNewScriptString(buffer);
 }
@@ -176,6 +177,22 @@ bool Room_Exists(int room) {
 	String room_filename;
 	room_filename.Format("room%d.crm", room);
 	return _GP(AssetMgr)->DoesAssetExist(room_filename);
+}
+
+ScriptDrawingSurface *GetDrawingSurfaceForWalkableArea() {
+	return Room_GetDrawingSurfaceForMask(kRoomAreaWalkable);
+}
+
+ScriptDrawingSurface *GetDrawingSurfaceForWalkbehind() {
+	return Room_GetDrawingSurfaceForMask(kRoomAreaWalkBehind);
+}
+
+ScriptDrawingSurface *Hotspot_GetDrawingSurface() {
+	return Room_GetDrawingSurfaceForMask(kRoomAreaHotspot);
+}
+
+ScriptDrawingSurface *Region_GetDrawingSurface() {
+	return Room_GetDrawingSurfaceForMask(kRoomAreaRegion);
 }
 
 //=============================================================================
@@ -187,9 +204,8 @@ void convert_room_background_to_game_res() {
 	if (!_GP(game).AllowRelativeRes() || !_GP(thisroom).IsRelativeRes())
 		return;
 
-	int bkg_width = _GP(thisroom).Width;
-	int bkg_height = _GP(thisroom).Height;
-	data_to_game_coords(&bkg_width, &bkg_height);
+	const int bkg_width = data_to_game_coord(_GP(thisroom).Width);
+	const int bkg_height = data_to_game_coord(_GP(thisroom).Height);
 
 	for (size_t i = 0; i < _GP(thisroom).BgFrameCount; ++i)
 		_GP(thisroom).BgFrames[i].Graphic = FixBitmap(_GP(thisroom).BgFrames[i].Graphic, bkg_width, bkg_height);
@@ -197,26 +213,18 @@ void convert_room_background_to_game_res() {
 	// Fix masks to match resized room background
 	// Walk-behind is always 1:1 with room background size
 	_GP(thisroom).WalkBehindMask = FixBitmap(_GP(thisroom).WalkBehindMask, bkg_width, bkg_height);
-	int mask_width = bkg_width / _GP(thisroom).MaskResolution;
-	int mask_height = bkg_height / _GP(thisroom).MaskResolution;
-	_GP(thisroom).HotspotMask = FixBitmap(_GP(thisroom).HotspotMask, mask_width, mask_height);
-	_GP(thisroom).RegionMask = FixBitmap(_GP(thisroom).RegionMask, mask_width, mask_height);
-	_GP(thisroom).WalkAreaMask = FixBitmap(_GP(thisroom).WalkAreaMask, mask_width, mask_height);
-
-	for (size_t i = 0; i < _GP(thisroom).WalkAreaCount; ++i) {
-		_GP(thisroom).WalkAreas[i].Top = room_to_mask_coord(_GP(thisroom).WalkAreas[i].Top);
-		_GP(thisroom).WalkAreas[i].Bottom = room_to_mask_coord(_GP(thisroom).WalkAreas[i].Bottom);
-	}
+	// For the rest we keep the masks at original res, but update the MaskResolution,
+	// as it must correspond to the runtime data->game coordinate conversion
+	_GP(thisroom).MaskResolution = data_to_game_coord(_GP(thisroom).MaskResolution);
 }
-
 
 void save_room_data_segment() {
 	_G(croom)->FreeScriptData();
 
 	_G(croom)->tsdatasize = _G(roominst)->globaldatasize;
 	if (_G(croom)->tsdatasize > 0) {
-		_G(croom)->tsdata = (char *)malloc(_G(croom)->tsdatasize + 10);
-		memcpy(_G(croom)->tsdata, &_G(roominst)->globaldata[0], _G(croom)->tsdatasize);
+		_G(croom)->tsdata.resize(_G(croom)->tsdatasize);
+		memcpy(_G(croom)->tsdata.data(), &_G(roominst)->globaldata[0], _G(croom)->tsdatasize);
 	}
 
 }
@@ -226,9 +234,14 @@ void unload_old_room() {
 	if (_G(displayed_room) < 0)
 		return;
 
-	debug_script_log("Unloading room %d", _G(displayed_room));
-
 	current_fade_out_effect();
+
+	// room unloaded callback
+	run_room_event(EVROM_AFTERFADEOUT);
+	// global room unloaded event
+	run_on_event(GE_LEAVE_ROOM_AFTERFADE, RuntimeScriptValue().SetInt32(_G(displayed_room)));
+
+	debug_script_log("Unloading room %d", _G(displayed_room));
 
 	dispose_room_drawdata();
 
@@ -251,17 +264,13 @@ void unload_old_room() {
 	if (_G(croom) == nullptr) ;
 	else if (_G(roominst) != nullptr) {
 		save_room_data_segment();
-		delete _G(roominstFork);
-		delete _G(roominst);
-		_G(roominstFork) = nullptr;
-		_G(roominst) = nullptr;
+		FreeRoomScriptInstance();
 	} else _G(croom)->tsdatasize = 0;
-	memset(&_GP(play).walkable_areas_on[0], 1, MAX_WALK_AREAS + 1);
+	memset(&_GP(play).walkable_areas_on[0], 1, MAX_WALK_AREAS);
 	_GP(play).bg_frame = 0;
 	_GP(play).bg_frame_locked = 0;
-	remove_screen_overlay(-1);
-	delete _G(raw_saved_screen);
-	_G(raw_saved_screen) = nullptr;
+	remove_all_overlays();
+	_G(raw_saved_screen).reset();
 	for (int ff = 0; ff < MAX_ROOM_BGFRAMES; ff++)
 		_GP(play).raw_modified[ff] = 0;
 	for (size_t i = 0; i < _GP(thisroom).LocalVariables.size() && i < MAX_GLOBAL_VARIABLES; ++i)
@@ -292,9 +301,8 @@ void unload_old_room() {
 
 	croom_ptr_clear();
 
-	// clear the _GP(actsps) buffers to save memory, since the
-	// objects/characters involved probably aren't on the
-	// new screen. this also ensures all cached data is flushed
+	// clear the draw caches to save memory, since many of the the involved
+	// objects probably aren't on the new screen
 	clear_drawobj_cache();
 
 	// if Hide Player Character was ticked, restore it to visible
@@ -431,16 +439,14 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 		}
 	}
 
-	update_polled_stuff_if_runtime();
-
 	// load the room from disk
-	_G(our_eip) = 200;
+	set_our_eip(200);
 	_GP(thisroom).GameID = NO_GAME_ID_IN_ROOM_FILE;
 	load_room(room_filename, &_GP(thisroom), _GP(game).IsLegacyHiRes(), _GP(game).SpriteInfos);
 
 	if ((_GP(thisroom).GameID != NO_GAME_ID_IN_ROOM_FILE) &&
 	        (_GP(thisroom).GameID != _GP(game).uniqueid)) {
-		quitprintf("!Unable to load '%s'. This room file is assigned to a different _GP(game).", room_filename.GetCStr());
+		quitprintf("!Unable to load '%s'. This room file is assigned to a different game.", room_filename.GetCStr());
 	}
 
 	HError err = LoadRoomScript(&_GP(thisroom), newnum);
@@ -450,8 +456,7 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 
 	convert_room_coordinates_to_data_res(&_GP(thisroom));
 
-	update_polled_stuff_if_runtime();
-	_G(our_eip) = 201;
+	set_our_eip(201);
 
 	_GP(play).room_width = _GP(thisroom).Width;
 	_GP(play).room_height = _GP(thisroom).Height;
@@ -474,19 +479,16 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 	}
 
 	for (size_t i = 0; i < _GP(thisroom).BgFrameCount; ++i) {
-		update_polled_stuff_if_runtime();
 		_GP(thisroom).BgFrames[i].Graphic = PrepareSpriteForUse(_GP(thisroom).BgFrames[i].Graphic, false);
 	}
 
-	update_polled_stuff_if_runtime();
-
-	_G(our_eip) = 202;
+	set_our_eip(202);
 	// Update game viewports
 	if (_GP(game).IsLegacyLetterbox())
 		update_letterbox_mode();
 	SetMouseBounds(0, 0, 0, 0);
 
-	_G(our_eip) = 203;
+	set_our_eip(203);
 	_G(in_new_room) = 1;
 
 	set_color_depth(_GP(game).GetColorDepth());
@@ -504,20 +506,17 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 	// copy the walls screen
 	_G(walkareabackup) = BitmapHelper::CreateBitmapCopy(_GP(thisroom).WalkAreaMask.get());
 
-	_G(our_eip) = 204;
-	update_polled_stuff_if_runtime();
+	set_our_eip(204);
 	redo_walkable_areas();
-	update_polled_stuff_if_runtime();
 	walkbehinds_recalc();
-	update_polled_stuff_if_runtime();
 
-	_G(our_eip) = 205;
+	set_our_eip(205);
 	// setup objects
 	if (forchar != nullptr) {
 		// if not restoring a game, always reset this room
 		reset_temp_room();
 	}
-	if ((newnum >= 0) & (newnum < MAX_ROOMS))
+	if ((newnum >= 0) && (newnum < MAX_ROOMS))
 		_G(croom) = getRoomStatus(newnum);
 	else _G(croom) = &_GP(troom);
 
@@ -541,7 +540,7 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 			_GP(thisroom).LocalVariables[i].Value = _G(croom)->interactionVariableValues[i];
 
 		// Always copy object and hotspot names for < 3.6.0 games, because they were not settable
-		if (_G(loaded_game_file_version) < kGameVersion_360_16) {
+		if ((_G(loaded_game_file_version) < kGameVersion_360_16) ||	(_G(croom)->contentFormat < kRoomStatSvgVersion_36025)) {
 			for (size_t cc = 0; cc < _GP(thisroom).Objects.size(); ++cc)
 				_G(croom)->obj[cc].name = _GP(thisroom).Objects[cc].Name;
 			for (int cc = 0; cc < MAX_ROOM_HOTSPOTS; cc++)
@@ -605,8 +604,8 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 		_G(croom)->beenhere = 1;
 		_G(in_new_room) = 2;
 	}
-
-	update_polled_stuff_if_runtime();
+	// Reset contentFormat hint to avoid doing fixups later
+	_G(croom)->contentFormat = kRoomStatSvgVersion_Current;
 
 	if (_GP(thisroom).EventHandlers == nullptr) {
 		// legacy interactions
@@ -626,21 +625,17 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 		// export the object's script object
 		if (_GP(thisroom).Objects[cc].ScriptName.IsEmpty())
 			continue;
-		ccAddExternalDynamicObject(_GP(thisroom).Objects[cc].ScriptName, &_G(scrObj)[cc], &_GP(ccDynamicObject));
+		ccAddExternalScriptObject(_GP(thisroom).Objects[cc].ScriptName, &_G(scrObj)[cc], &_GP(ccDynamicObject));
 	}
 
 	for (int cc = 0; cc < MAX_ROOM_HOTSPOTS; cc++) {
 		if (_GP(thisroom).Hotspots[cc].ScriptName.IsEmpty())
 			continue;
 
-		ccAddExternalDynamicObject(_GP(thisroom).Hotspots[cc].ScriptName, &_G(scrHotspot)[cc], &_GP(ccDynamicHotspot));
+		ccAddExternalScriptObject(_GP(thisroom).Hotspots[cc].ScriptName, &_G(scrHotspot)[cc], &_GP(ccDynamicHotspot));
 	}
 
-	_G(our_eip) = 206;
-
-	update_polled_stuff_if_runtime();
-
-	_G(our_eip) = 210;
+	set_our_eip(210);
 	if (IS_ANTIALIAS_SPRITES) {
 		// sometimes the palette has corrupt entries, which crash
 		// the create_rgb_table call
@@ -656,7 +651,7 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 		create_rgb_table(&_GP(rgb_table), _G(palette), nullptr);
 		_G(rgb_map) = &_GP(rgb_table);
 	}
-	_G(our_eip) = 211;
+	set_our_eip(211);
 	if (forchar != nullptr) {
 		// if it's not a Restore Game
 
@@ -682,19 +677,17 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 			StopMoving(cc);
 	}
 
-	update_polled_stuff_if_runtime();
-
-	_G(roominst) = nullptr;
+	_G(roominst).reset();
 	if (_G(debug_flags) & DBG_NOSCRIPT) ;
 	else if (_GP(thisroom).CompiledScript != nullptr) {
 		compile_room_script();
 		if (_G(croom)->tsdatasize > 0) {
-			if (_G(croom)->tsdatasize != _G(roominst)->globaldatasize)
+			if (_G(croom)->tsdatasize != (unsigned) _G(roominst)->globaldatasize)
 				quit("room script data segment size has changed");
-			memcpy(&_G(roominst)->globaldata[0], _G(croom)->tsdata, _G(croom)->tsdatasize);
+			memcpy(&_G(roominst)->globaldata[0], _G(croom)->tsdata.data(), _G(croom)->tsdatasize);
 		}
 	}
-	_G(our_eip) = 207;
+	set_our_eip(207);
 	_GP(play).entered_edge = -1;
 
 	if ((_G(new_room_x) != SCR_NO_VALUE) && (forchar != nullptr)) {
@@ -712,7 +705,7 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 	_G(new_room_loop) = SCR_NO_VALUE;
 	_G(new_room_placeonwalkable) = false;
 
-	if ((_G(new_room_pos) > 0) & (forchar != nullptr)) {
+	if ((_G(new_room_pos) > 0) && (forchar != nullptr)) {
 		if (_G(new_room_pos) >= 4000) {
 			_GP(play).entered_edge = 3;
 			forchar->y = _GP(thisroom).Edges.Top + get_fixed_pixel_size(1);
@@ -819,7 +812,7 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 	if (_GP(thisroom).Options.StartupMusic > 0)
 		PlayMusicResetQueue(_GP(thisroom).Options.StartupMusic);
 
-	_G(our_eip) = 208;
+	set_our_eip(208);
 	if (forchar != nullptr) {
 		if (_GP(thisroom).Options.PlayerCharOff == 0) {
 			forchar->on = 1;
@@ -839,12 +832,11 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 	}
 	_G(color_map) = nullptr;
 
-	_G(our_eip) = 209;
-	update_polled_stuff_if_runtime();
+	set_our_eip(209);
 	generate_light_table();
 	update_music_volume();
 
-	// If we are not restoring a save, update cameras to accomodate for this
+	// If we are not restoring a save, update cameras to accommodate for this
 	// new room; otherwise this is done later when cameras are recreated.
 	if (forchar != nullptr) {
 		if (_GP(play).IsAutoRoomViewport())
@@ -854,7 +846,7 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 	}
 	init_room_drawdata();
 
-	_G(our_eip) = 212;
+	set_our_eip(212);
 	invalidate_screen();
 	for (size_t cc = 0; cc < _G(croom)->numobj; cc++) {
 		if (_G(objs)[cc].on == 2)
@@ -869,10 +861,10 @@ void load_new_room(int newnum, CharacterInfo *forchar) {
 	if (_GP(game).color_depth > 1)
 		setpal();
 
-	_G(our_eip) = 220;
-	update_polled_stuff_if_runtime();
+	set_our_eip(220);
+	update_polled_stuff();
 	debug_script_log("Now in room %d", _G(displayed_room));
-	GUI::MarkAllGUIForUpdate();
+	GUI::MarkAllGUIForUpdate(true, true);
 	pl_run_plugin_hooks(AGSE_ENTERROOM, _G(displayed_room));
 }
 
@@ -882,13 +874,11 @@ void new_room(int newnum, CharacterInfo *forchar) {
 
 	debug_script_log("Room change requested to room %d", newnum);
 
-	update_polled_stuff_if_runtime();
-
 	// we are currently running Leaves Screen scripts
 	_G(in_leaves_screen) = newnum;
 
 	// player leaves screen event
-	run_room_event(8);
+	run_room_event(EVROM_LEAVE);
 	// Run the global OnRoomLeave event
 	run_on_event(GE_LEAVE_ROOM, RuntimeScriptValue().SetInt32(_G(displayed_room)));
 
@@ -904,19 +894,14 @@ void new_room(int newnum, CharacterInfo *forchar) {
 		// who is not in the new room. therefore, abort the follow
 		_G(playerchar)->following = -1;
 	}
-	update_polled_stuff_if_runtime();
 
 	// change rooms
 	unload_old_room();
 
 	if (_GP(usetup).clear_cache_on_room_change) {
 		// Delete all cached sprites
-		_GP(spriteset).DisposeAll();
-
-		GUI::MarkAllGUIForUpdate();
+		_GP(spriteset).DisposeAllFreeCached();
 	}
-
-	update_polled_stuff_if_runtime();
 
 	load_new_room(newnum, forchar);
 
@@ -958,13 +943,8 @@ void first_room_initialization() {
 
 void check_new_room() {
 	// if they're in a new room, run Player Enters Screen and on_event(ENTER_ROOM)
-	if ((_G(in_new_room) > 0) & (_G(in_new_room) != 3)) {
-		EventHappened evh;
-		evh.type = EV_RUNEVBLOCK;
-		evh.data1 = EVB_ROOM;
-		evh.data2 = 0;
-		evh.data3 = EVROM_BEFOREFADEIN;
-		evh.player = _GP(game).playercharacter;
+	if ((_G(in_new_room) > 0) && (_G(in_new_room) != 3)) {
+		EventHappened evh(EV_RUNEVBLOCK, EVB_ROOM, 0, EVROM_BEFOREFADEIN, _GP(game).playercharacter);
 		// make sure that any script calls don't re-call enters screen
 		int newroom_was = _G(in_new_room);
 		_G(in_new_room) = 0;
@@ -1028,42 +1008,45 @@ void croom_ptr_clear() {
 	_G(objs) = nullptr;
 }
 
-
-AGS_INLINE int room_to_mask_coord(int coord) {
+// coordinate conversion (data) ---> game ---> (room mask)
+int room_to_mask_coord(int coord) {
 	return coord * _GP(game).GetDataUpscaleMult() / _GP(thisroom).MaskResolution;
 }
 
-AGS_INLINE int mask_to_room_coord(int coord) {
+// coordinate conversion (room mask) ---> game ---> (data)
+int mask_to_room_coord(int coord) {
 	return coord * _GP(thisroom).MaskResolution / _GP(game).GetDataUpscaleMult();
 }
 
-void convert_move_path_to_room_resolution(MoveList *ml) {
+void convert_move_path_to_room_resolution(MoveList *ml, int from_step, int to_step) {
+	if (to_step < 0)
+		to_step = ml->numstage;
+	to_step = CLIP(to_step, 0, ml->numstage - 1);
+	from_step = CLIP(from_step, 0, to_step);
+
+	// If speed is independent from MaskResolution...
 	if ((_GP(game).options[OPT_WALKSPEEDABSOLUTE] != 0) && _GP(game).GetDataUpscaleMult() > 1) {
-		// Speeds are independent from MaskResolution
-		for (int i = 0; i < ml->numstage; i++) {
-			// ...so they are not multiplied by MaskResolution factor when converted to room coords
-			ml->xpermove[i] = ml->xpermove[i] / _GP(game).GetDataUpscaleMult();
-			ml->ypermove[i] = ml->ypermove[i] / _GP(game).GetDataUpscaleMult();
+		for (int i = from_step; i <= to_step; i++) { // ...we still need to convert from game to data coords
+			ml->xpermove[i] = game_to_data_coord(ml->xpermove[i]);
+			ml->ypermove[i] = game_to_data_coord(ml->ypermove[i]);
 		}
 	}
 
+	// Skip the conversion if these are equal, as they are multiplier and divisor
 	if (_GP(thisroom).MaskResolution == _GP(game).GetDataUpscaleMult())
 		return;
 
-	ml->fromx = mask_to_room_coord(ml->fromx);
-	ml->fromy = mask_to_room_coord(ml->fromy);
-	ml->lastx = mask_to_room_coord(ml->lastx);
-	ml->lasty = mask_to_room_coord(ml->lasty);
-
-	for (int i = 0; i < ml->numstage; i++) {
-		uint16_t lowPart = mask_to_room_coord(ml->pos[i] & 0x0000ffff);
-		uint16_t highPart = mask_to_room_coord((ml->pos[i] >> 16) & 0x0000ffff);
-		ml->pos[i] = ((int)highPart << 16) | (lowPart & 0x0000ffff);
+	if (from_step == 0) {
+		ml->from = {mask_to_room_coord(ml->from.X), mask_to_room_coord(ml->from.Y)};
 	}
 
+	for (int i = from_step; i <= to_step; i++) {
+		ml->pos[i] = {mask_to_room_coord(ml->pos[i].X), mask_to_room_coord(ml->pos[i].Y)};
+	}
+
+	// If speed is scaling with MaskResolution...
 	if (_GP(game).options[OPT_WALKSPEEDABSOLUTE] == 0) {
-		// Speeds are scaling with MaskResolution
-		for (int i = 0; i < ml->numstage; i++) {
+		for (int i = from_step; i <= to_step; i++) {
 			ml->xpermove[i] = mask_to_room_coord(ml->xpermove[i]);
 			ml->ypermove[i] = mask_to_room_coord(ml->ypermove[i]);
 		}
@@ -1088,7 +1071,7 @@ RuntimeScriptValue Sc_Room_GetProperty(const RuntimeScriptValue *params, int32_t
 
 // const char* (const char *property)
 RuntimeScriptValue Sc_Room_GetTextProperty(const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_SCALL_OBJ_POBJ(const char, _GP(myScriptStringImpl), Room_GetTextProperty, const char);
+	API_SCALL_OBJ_POBJ(const char, _GP(myScriptStringImpl), Room_GetTextProperty, const char);
 }
 
 RuntimeScriptValue Sc_Room_SetProperty(const RuntimeScriptValue *params, int32_t param_count) {
@@ -1122,7 +1105,7 @@ RuntimeScriptValue Sc_Room_GetLeftEdge(const RuntimeScriptValue *params, int32_t
 
 // const char* (int index)
 RuntimeScriptValue Sc_Room_GetMessages(const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_SCALL_OBJ_PINT(const char, _GP(myScriptStringImpl), Room_GetMessages);
+	API_SCALL_OBJ_PINT(const char, _GP(myScriptStringImpl), Room_GetMessages);
 }
 
 // int ()
@@ -1161,24 +1144,28 @@ RuntimeScriptValue Sc_Room_Exists(const RuntimeScriptValue *params, int32_t para
 
 
 void RegisterRoomAPI() {
-	ccAddExternalStaticFunction("Room::GetDrawingSurfaceForBackground^1",   Sc_Room_GetDrawingSurfaceForBackground);
-	ccAddExternalStaticFunction("Room::GetProperty^1",      Sc_Room_GetProperty);
-	ccAddExternalStaticFunction("Room::GetTextProperty^1",  Sc_Room_GetTextProperty);
-	ccAddExternalStaticFunction("Room::SetProperty^2",      Sc_Room_SetProperty);
-	ccAddExternalStaticFunction("Room::SetTextProperty^2",  Sc_Room_SetTextProperty);
-	ccAddExternalStaticFunction("Room::ProcessClick^3",     Sc_RoomProcessClick);
-	ccAddExternalStaticFunction("ProcessClick",             Sc_RoomProcessClick);
-	ccAddExternalStaticFunction("Room::get_BottomEdge",     Sc_Room_GetBottomEdge);
-	ccAddExternalStaticFunction("Room::get_ColorDepth",     Sc_Room_GetColorDepth);
-	ccAddExternalStaticFunction("Room::get_Height",         Sc_Room_GetHeight);
-	ccAddExternalStaticFunction("Room::get_LeftEdge",       Sc_Room_GetLeftEdge);
-	ccAddExternalStaticFunction("Room::geti_Messages",      Sc_Room_GetMessages);
-	ccAddExternalStaticFunction("Room::get_MusicOnLoad",    Sc_Room_GetMusicOnLoad);
-	ccAddExternalStaticFunction("Room::get_ObjectCount",    Sc_Room_GetObjectCount);
-	ccAddExternalStaticFunction("Room::get_RightEdge",      Sc_Room_GetRightEdge);
-	ccAddExternalStaticFunction("Room::get_TopEdge",        Sc_Room_GetTopEdge);
-	ccAddExternalStaticFunction("Room::get_Width",          Sc_Room_GetWidth);
-	ccAddExternalStaticFunction("Room::Exists",             Sc_Room_Exists);
+	ScFnRegister room_api[] = {
+		{"Room::GetDrawingSurfaceForBackground^1", API_FN_PAIR(Room_GetDrawingSurfaceForBackground)},
+		{"Room::GetProperty^1", API_FN_PAIR(Room_GetProperty)},
+		{"Room::GetTextProperty^1", API_FN_PAIR(Room_GetTextProperty)},
+		{"Room::SetProperty^2", API_FN_PAIR(Room_SetProperty)},
+		{"Room::SetTextProperty^2", API_FN_PAIR(Room_SetTextProperty)},
+		{"Room::ProcessClick^3", API_FN_PAIR(RoomProcessClick)},
+		{"ProcessClick", API_FN_PAIR(RoomProcessClick)},
+		{"Room::get_BottomEdge", API_FN_PAIR(Room_GetBottomEdge)},
+		{"Room::get_ColorDepth", API_FN_PAIR(Room_GetColorDepth)},
+		{"Room::get_Height", API_FN_PAIR(Room_GetHeight)},
+		{"Room::get_LeftEdge", API_FN_PAIR(Room_GetLeftEdge)},
+		{"Room::geti_Messages", API_FN_PAIR(Room_GetMessages)},
+		{"Room::get_MusicOnLoad", API_FN_PAIR(Room_GetMusicOnLoad)},
+		{"Room::get_ObjectCount", API_FN_PAIR(Room_GetObjectCount)},
+		{"Room::get_RightEdge", API_FN_PAIR(Room_GetRightEdge)},
+		{"Room::get_TopEdge", API_FN_PAIR(Room_GetTopEdge)},
+		{"Room::get_Width", API_FN_PAIR(Room_GetWidth)},
+		{"Room::Exists", API_FN_PAIR(Room_Exists)},
+	};
+
+	ccAddExternalFunctions361(room_api);
 }
 
 } // namespace AGS3

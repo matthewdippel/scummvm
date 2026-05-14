@@ -56,45 +56,18 @@ void OpenGlTexture::bind() const {
 }
 
 void OpenGlTexture::updateLevel(uint32 level, const Graphics::Surface *surface, const byte *palette) {
-	if (level == 0) {
-		_width = surface->w;
-		_height = surface->h;
-	}
-
-	if (surface->format.bytesPerPixel != 4) {
+	const Graphics::Surface *rgbaSurface = surface;
+	if (surface->format != Driver::getRGBAPixelFormat()) {
 		// Convert the surface to texture format
-		Graphics::Surface *convertedSurface = surface->convertTo(Driver::getRGBAPixelFormat(), palette);
-
-		glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA, convertedSurface->w, convertedSurface->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, convertedSurface->getPixels());
-
-		convertedSurface->free();
-		delete convertedSurface;
-	} else {
-		assert(surface->format == Driver::getRGBAPixelFormat());
-
-		glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA, surface->w, surface->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, surface->getPixels());
+		rgbaSurface = surface->convertTo(Driver::getRGBAPixelFormat(), palette);
 	}
-}
 
-void OpenGlTexture::update(const Graphics::Surface *surface, const byte *palette) {
-	bind();
-	updateLevel(0, surface, palette);
-}
+	// Stark textures (not bitmaps!) are always POT
+	glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA, rgbaSurface->w, rgbaSurface->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaSurface->getPixels());
 
-void OpenGlTexture::setSamplingFilter(Texture::SamplingFilter filter) {
-	assert(_levelCount == 0);
-
-	switch (filter) {
-	case kNearest:
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		break;
-	case kLinear:
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		break;
-	default:
-		warning("Unhandled sampling filter %d", filter);
+	if (rgbaSurface != surface) {
+		const_cast<Graphics::Surface *>(rgbaSurface)->free();
+		delete rgbaSurface;
 	}
 }
 
@@ -102,27 +75,28 @@ void OpenGlTexture::setLevelCount(uint32 count) {
 	_levelCount = count;
 
 	if (count >= 1) {
-#if !USE_FORCED_GLES2
-		// GLES2 does not allow setting the max provided mipmap level.
+		// GLES1 and GLES2 do not allow setting the max provided mipmap level.
 		// It expects all the levels to be provided, which is not the case in TLJ.
-		// FIXME: Enable mipmapping on GLES2
-		if (OpenGLContext.type != OpenGL::kContextGLES2) {
+		// FIXME: Enable mipmapping on GLES without this extension
+		if (OpenGLContext.textureMaxLevelSupported) {
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, count - 1);
 
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		}
-#endif
 
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+		// TODO: Provide a fallback if this isn't available.
+		if (OpenGLContext.textureMirrorRepeatSupported) {
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+		}
 	}
 }
 
 void OpenGlTexture::addLevel(uint32 level, const Graphics::Surface *surface, const byte *palette) {
 	assert(level < _levelCount);
 
-	if (level == 0 || OpenGLContext.type != OpenGL::kContextGLES2) {
+	if (level == 0 || OpenGLContext.textureMaxLevelSupported) {
 		updateLevel(level, surface, palette);
 	}
 }

@@ -115,17 +115,17 @@ static const ADGameDescription tuckerDemoGameDescription = {
 	GUIO1(GUIO_NOMIDI)
 };
 
-class TuckerMetaEngineDetection : public AdvancedMetaEngineDetection {
+class TuckerMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	TuckerMetaEngineDetection() : AdvancedMetaEngineDetection(tuckerGameDescriptions, sizeof(ADGameDescription), tuckerGames) {
+	TuckerMetaEngineDetection() : AdvancedMetaEngineDetection(tuckerGameDescriptions, tuckerGames) {
 		_md5Bytes = 512;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "tucker";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Bud Tucker in Double Trouble";
 	}
 

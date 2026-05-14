@@ -98,7 +98,7 @@ public:
 	uint16 _window_Row_Max;
 	int16 _reset_Column;
 
-	void configureScreen(uint16 row_Min);
+	void configureScreen(uint16 gameRow);
 	uint16 getWindowRowMin();
 
 	void dialogueOpen();
@@ -120,6 +120,7 @@ public:
 	byte calculateTextBackground(byte background);
 
 	void display(int16 textNr, int16 textRow, int16 textColumn);
+	void displayAdjustRTL(int16 textRow, int16 textColumn, char *text, int16 calculatedWidth);
 	void displayText(const char *textPtr, bool disabledLook = false);
 	void displayCharacter(byte character, bool disabledLook = false);
 
@@ -138,7 +139,7 @@ public:
 	void drawMessageBox(const char *textPtr, int16 forcedHeight = 0, int16 wantedWidth = 0, bool forcedWidth = false);
 	void getMessageBoxInnerDisplayDimensions(int16 &x, int16 &y, int16 &width, int16 &height);
 	bool isMouseWithinMessageBox();
-	void closeWindow();
+	void closeWindow(bool ttsStopSpeech = true);
 
 	void statusRow_Set(int16 row);
 	int16 statusRow_Get();
@@ -147,7 +148,7 @@ public:
 	void statusDisable();
 	bool statusEnabled();
 
-	void statusDraw();
+	void statusDraw(bool ttsVoiceScore = false, bool ttsVoiceSound = false);
 	void statusClear();
 
 	bool _statusEnabled;

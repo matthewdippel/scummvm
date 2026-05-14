@@ -1,23 +1,44 @@
+/* ScummVM - Graphic Adventure Engine
+ *
+ * ScummVM is the legal property of its developers, whose names
+ * are too numerous to list here. Please refer to the COPYRIGHT
+ * file distributed with this source distribution.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
+
 package org.scummvm.scummvm;
 
 import android.content.Context;
+import android.os.Build;
 import android.os.Environment;
-import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Scanner;
-
 import android.text.TextUtils;
+import android.util.Log;
+
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Scanner;
 import java.util.regex.Pattern;
-import android.util.Log;
-import android.os.Build;
 
 
 /**
@@ -26,10 +47,24 @@ import android.os.Build;
 public class ExternalStorage {
 	public static final String SD_CARD = "sdCard";
 	public static final String EXTERNAL_SD_CARD = "externalSdCard";
-	public static final String DATA_DIRECTORY = "ScummVM data";
-	public static final String DATA_DIRECTORY_INT = "ScummVM data (Int)";
-	public static final String DATA_DIRECTORY_EXT = "ScummVM data (Ext)";
 
+	// User data is an system wide folder (typically, but maybe not always, "/data/") where apps can store data in their own subfolder.
+	// While this folder does exists in newer Android OS versions it is most likely not *directly* usable.
+	public static final String DATA_DIRECTORY = "User data (System Wide)";
+
+	// Internal App Data folder is a folder that is guaranteed to always be available for access.
+	// Only the app (here ScummVM) can write and read under this folder.
+	// It is used to store configuration file(s), log file(s), the default saved games folder, the default icons folder, and distribution data files.
+	// The folder's contents are kept kept upon upgrading to a compatible newer version of the app.
+	// It is wiped when downgrading, uninstalling or explicitly cleaning the application's data from the Android System Apps menu options.
+	// The storage for this folder is assigned from internal device storage (ie. not external physical SD Card).
+	public static final String DATA_DIRECTORY_INT = "ScummVM data (Internal)";
+
+	// External App Data folder is a folder that is NOT guaranteed to always be available for access.
+	// Only the app (here ScummVM) can write under this folder, but other apps have read access to the folder's contents.
+	// The folder's contents are kept upon upgrading to a compatible newer version of the app.
+	// It is wiped when downgrading, uninstalling or explicitly cleaning the application's data from the Android System Apps menu options.
+	public static final String DATA_DIRECTORY_EXT = "ScummVM data (External)";
 
 	// Find candidate removable sd card paths
 	// Code reference: https://stackoverflow.com/a/54411385
@@ -161,7 +196,7 @@ public class ExternalStorage {
 		// Get listing of mounted devices with their properties.
 		ArrayList<File> mountedPaths = new ArrayList<>();
 		try {
-			// Note: Despite restricting some access to /proc (http://stackoverflow.com/a/38728738/423105),
+			// Note: Despite restricting some access to /proc (https://stackoverflow.com/a/38728738/423105),
 			// Android 7.0 does *not* block access to /proc/mounts, according to our test on George's Alcatel A30 GSM.
 			bufferedReader = new BufferedReader(new FileReader("/proc/mounts"));
 
@@ -188,7 +223,7 @@ public class ExternalStorage {
 				}
 
 				// TODO maybe: check options to make sure it's mounted RW?
-				// The answer at http://stackoverflow.com/a/13648873/423105 does.
+				// The answer at https://stackoverflow.com/a/13648873/423105 does.
 				// But it hasn't seemed to be necessary so far in my testing.
 
 				// This line met the criteria so far, so add it to candidate list.
@@ -463,10 +498,12 @@ public class ExternalStorage {
 				map.add(Environment.getDataDirectory().getAbsolutePath());
 			}
 		}
+
 		map.add(DATA_DIRECTORY_INT);
 		map.add(ctx.getFilesDir().getPath());
-		map.add(DATA_DIRECTORY_EXT);
+
 		if (ctx.getExternalFilesDir(null) != null) {
+			map.add(DATA_DIRECTORY_EXT);
 			map.add(ctx.getExternalFilesDir(null).getPath());
 		}
 

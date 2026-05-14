@@ -101,16 +101,15 @@ bool Console::Cmd_ValidCommands(int argc, const char **argv) {
 		return true;
 	}
 
-	WordMap::const_iterator verb, noun;
 	bool is_any;
 
-	for (verb = _engine->_verbs.begin(); verb != _engine->_verbs.end(); ++verb) {
-		for (noun = _engine->_nouns.begin(); noun != _engine->_nouns.end(); ++noun) {
-			if (_engine->isInputValid(verb->_value, noun->_value, is_any) && !is_any)
-				debugPrintf("%s %s\n", toAscii(verb->_key).c_str(), toAscii(noun->_key).c_str());
+	for (const auto &verb : _engine->_verbs) {
+		for (const auto &noun : _engine->_nouns) {
+			if (_engine->isInputValid(verb._value, noun._value, is_any) && !is_any)
+				debugPrintf("%s %s\n", toAscii(verb._key).c_str(), toAscii(noun._key).c_str());
 		}
-		if (_engine->isInputValid(verb->_value, IDI_ANY, is_any))
-			debugPrintf("%s *\n", toAscii(verb->_key).c_str());
+		if (_engine->isInputValid(verb._value, IDI_ANY, is_any))
+			debugPrintf("%s *\n", toAscii(verb._key).c_str());
 	}
 	if (_engine->isInputValid(IDI_ANY, IDI_ANY, is_any))
 		debugPrintf("* *\n");
@@ -118,22 +117,22 @@ bool Console::Cmd_ValidCommands(int argc, const char **argv) {
 	return true;
 }
 
-void Console::dumpScripts(const Common::String &prefix) {
+void Console::dumpScripts(const Common::Path &prefix) {
 	for (byte roomNr = 1; roomNr <= _engine->_state.rooms.size(); ++roomNr) {
 		_engine->loadRoom(roomNr);
 		if (_engine->_roomData.commands.size() != 0) {
-			_engine->_dumpFile->open(prefix + Common::String::format("%03d.ADL", roomNr).c_str());
+			_engine->_dumpFile->open(prefix.append(Common::String::format("%03d.ADL", roomNr)));
 			_engine->doAllCommands(_engine->_roomData.commands, IDI_ANY, IDI_ANY);
 			_engine->_dumpFile->close();
 		}
 	}
 	_engine->loadRoom(_engine->_state.room);
 
-	_engine->_dumpFile->open(prefix + "GLOBAL.ADL");
+	_engine->_dumpFile->open(prefix.append("GLOBAL.ADL"));
 	_engine->doAllCommands(_engine->_globalCommands, IDI_ANY, IDI_ANY);
 	_engine->_dumpFile->close();
 
-	_engine->_dumpFile->open(prefix + "RESPONSE.ADL");
+	_engine->_dumpFile->open(prefix.append("RESPONSE.ADL"));
 	_engine->doAllCommands(_engine->_roomCommands, IDI_ANY, IDI_ANY);
 	_engine->_dumpFile->close();
 }
@@ -159,7 +158,7 @@ bool Console::Cmd_DumpScripts(int argc, const char **argv) {
 
 		for (byte regionNr = 1; regionNr <= _engine->_state.regions.size(); ++regionNr) {
 			_engine->switchRegion(regionNr);
-			dumpScripts(Common::String::format("%03d-", regionNr));
+			dumpScripts(Common::Path(Common::String::format("%03d-", regionNr)));
 		}
 
 		_engine->switchRegion(oldRegion);
@@ -247,10 +246,8 @@ bool Console::Cmd_Items(int argc, const char **argv) {
 		return true;
 	}
 
-	Common::List<Item>::const_iterator item;
-
-	for (item = _engine->_state.items.begin(); item != _engine->_state.items.end(); ++item)
-		printItem(*item);
+	for (const auto &item : _engine->_state.items)
+		printItem(item);
 
 	return true;
 }
@@ -260,8 +257,6 @@ bool Console::Cmd_GiveItem(int argc, const char **argv) {
 		debugPrintf("Usage: %s <ID | name>\n", argv[0]);
 		return true;
 	}
-
-	Common::List<Item>::iterator item;
 
 	char *end;
 	uint id = strtoul(argv[1], &end, 0);
@@ -278,9 +273,9 @@ bool Console::Cmd_GiveItem(int argc, const char **argv) {
 
 		byte noun = _engine->_nouns[name];
 
-		for (item = _engine->_state.items.begin(); item != _engine->_state.items.end(); ++item) {
-			if (item->noun == noun)
-				matches.push_back(&*item);
+		for (auto &item : _engine->_state.items) {
+			if (item.noun == noun)
+				matches.push_back(&item);
 		}
 
 		if (matches.size() == 0) {
@@ -300,9 +295,9 @@ bool Console::Cmd_GiveItem(int argc, const char **argv) {
 		return true;
 	}
 
-	for (item = _engine->_state.items.begin(); item != _engine->_state.items.end(); ++item)
-		if (item->id == id) {
-			item->room = IDI_ANY;
+	for (auto &item : _engine->_state.items)
+		if (item.id == id) {
+			item.room = IDI_ANY;
 			debugPrintf("OK\n");
 			return true;
 		}
@@ -381,10 +376,9 @@ void Console::printItem(const Item &item) {
 
 void Console::printWordMap(const WordMap &wordMap) {
 	Common::StringArray words;
-	WordMap::const_iterator verb;
 
-	for (verb = wordMap.begin(); verb != wordMap.end(); ++verb)
-		words.push_back(Common::String::format("%s: %3d", toAscii(verb->_key).c_str(), wordMap[verb->_key]));
+	for (const auto &verb : wordMap)
+		words.push_back(Common::String::format("%s: %3d", toAscii(verb._key).c_str(), wordMap[verb._key]));
 
 	Common::sort(words.begin(), words.end());
 
@@ -397,7 +391,7 @@ bool Console::Cmd_ConvertDisk(int argc, const char **argv) {
 		return true;
 	}
 
-	DiskImage inDisk;
+	Common::DiskImage inDisk;
 	if (!inDisk.open(argv[1])) {
 		debugPrintf("Failed to open '%s' for reading\n", argv[1]);
 		return true;
@@ -414,7 +408,7 @@ bool Console::Cmd_ConvertDisk(int argc, const char **argv) {
 
 	byte *const buf = new byte[size];
 
-	StreamPtr stream(inDisk.createReadStream(0, 0, 0, sectors - 1));
+	Common::StreamPtr stream(inDisk.createReadStream(0, 0, 0, sectors - 1));
 	if (stream->read(buf, size) < size) {
 		debugPrintf("Failed to read from stream");
 		delete[] buf;

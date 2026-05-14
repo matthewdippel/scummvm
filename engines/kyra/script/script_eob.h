@@ -45,7 +45,7 @@ public:
 	bool checkFlags(uint32 flags) const;
 	bool preventRest() const;
 
-	void loadState(Common::SeekableSubReadStreamEndian &in, bool origFile = false);
+	void loadState(Common::SeekableReadStreamEndian &in, bool origFile = false);
 	void saveState(Common::OutSaveFile *out, bool origFile = false);
 	void reset();
 
@@ -120,7 +120,6 @@ private:
 
 	int8 _activeCharacter;
 
-	static const uint8 _amigaColorMap[16];
 	static const uint8 _segaCDColorMap[16];
 
 	const int _commandMin;

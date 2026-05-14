@@ -38,23 +38,20 @@ class ScrollViewGump : public DraggableView {
 	ScrollWidgetGump *scroll_widget;
 
 public:
-	ScrollViewGump(Configuration *cfg);
+	ScrollViewGump(const Configuration *cfg);
 	~ScrollViewGump() override;
 
-	bool init(Screen *tmp_screen, void *view_manager, Font *f, Party *p, TileManager *tm, ObjManager *om, Std::string text_string);
+	bool init(Screen *tmp_screen, void *view_manager, Font *f, Party *p, TileManager *tm, ObjManager *om, Common::String text_string);
 
 	void Display(bool full_redraw) override;
 
 	GUI_status callback(uint16 msg, GUI_CallBack *caller, void *data) override;
 
-	GUI_status MouseDown(int x, int y, Shared::MouseButton button) override;
-	GUI_status MouseUp(int x, int y, Shared::MouseButton button) override {
+	GUI_status MouseDown(int x, int y, Events::MouseButton button) override;
+	GUI_status MouseUp(int x, int y, Events::MouseButton button) override {
 		return GUI_YUM;
 	}
 	GUI_status KeyDown(const Common::KeyState &key) override;
-
-protected:
-
 };
 
 } // End of namespace Nuvie

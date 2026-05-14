@@ -17,6 +17,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, MojoTouch has
+ * exclusively licensed this code on March 23th, 2024, to be used in
+ * closed-source products.
+ * Therefore, any contributions (commits) to it will also be dual-licensed.
+ *
  */
 
 #include "common/debug.h"
@@ -28,11 +35,12 @@ namespace Toon {
 PathFindingHeap::PathFindingHeap() {
 	_count = 0;
 	_size = 0;
-	_data = NULL;
+	_data = nullptr;
 }
 
 PathFindingHeap::~PathFindingHeap() {
 	free(_data);
+	_data = nullptr;
 }
 
 void PathFindingHeap::init(int32 size) {
@@ -41,7 +49,11 @@ void PathFindingHeap::init(int32 size) {
 
 	free(_data);
 	_data = (HeapDataGrid *)malloc(sizeof(HeapDataGrid) * _size);
-	memset(_data, 0, sizeof(HeapDataGrid) * _size);
+	if (_data != nullptr) {
+		memset(_data, 0, sizeof(HeapDataGrid) * _size);
+	} else {
+		error("Could not allocate PathFindingHeap size: %d", _size);
+	}
 	_count = 0;
 }
 
@@ -49,7 +61,7 @@ void PathFindingHeap::unload() {
 	_count = 0;
 	_size = 0;
 	free(_data);
-	_data = NULL;
+	_data = nullptr;
 }
 
 void PathFindingHeap::clear() {
@@ -68,7 +80,7 @@ void PathFindingHeap::push(int16 x, int16 y, uint16 weight) {
 		HeapDataGrid *newData;
 
 		newData = (HeapDataGrid *)realloc(_data, sizeof(HeapDataGrid) * newSize);
-		if (newData == NULL) {
+		if (newData == nullptr) {
 			warning("Aborting attempt to push onto PathFindingHeap at maximum size: %d", _count);
 			return;
 		}
@@ -145,11 +157,11 @@ void PathFindingHeap::pop(int16 *x, int16 *y, uint16 *weight) {
 	}
 }
 
-PathFinding::PathFinding() {
+PathFinding::PathFinding() : _blockingRects{{0}} {
 	_width = 0;
 	_height = 0;
 	_heap = new PathFindingHeap();
-	_sq = NULL;
+	_sq = nullptr;
 	_numBlockingRects = 0;
 
 	_currentMask = nullptr;

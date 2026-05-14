@@ -59,7 +59,7 @@ DownloadDialog::DownloadDialog(uint32 storageId, LauncherDialog *launcher) :
 	_percentLabel = new StaticTextWidget(this, "GlobalOptions_Cloud_DownloadDialog.PercentText", Common::String::format("%u %%", progress));
 	_downloadSizeLabel = new StaticTextWidget(this, "GlobalOptions_Cloud_DownloadDialog.DownloadSize", Common::U32String());
 	_downloadSpeedLabel = new StaticTextWidget(this, "GlobalOptions_Cloud_DownloadDialog.DownloadSpeed", Common::U32String());
-	if (g_system->getOverlayWidth() > 320)
+	if (!g_gui.useLowResGUI())
 		_cancelButton = new ButtonWidget(this, "GlobalOptions_Cloud_DownloadDialog.MainButton", _("Cancel download"), Common::U32String(), kDownloadDialogButtonCmd);
 	else
 		_cancelButton = new ButtonWidget(this, "GlobalOptions_Cloud_DownloadDialog.MainButton", _c("Cancel download", "lowres"), Common::U32String(), kDownloadDialogButtonCmd);
@@ -120,13 +120,13 @@ bool DownloadDialog::selectDirectories() {
 			return false;
 	}
 
-	//first user should select remote directory to download
+	// First, the user should select the remote directory to download
 	if (_remoteBrowser->runModal() <= 0)
 		return false;
 
 	Cloud::StorageFile remoteDirectory = _remoteBrowser->getResult();
 
-	//now user should select local directory to download into
+	// Now, the user should select the local directory to download into
 	if (_browser->runModal() <= 0)
 		return false;
 
@@ -138,12 +138,12 @@ bool DownloadDialog::selectDirectories() {
 		return false;
 	}
 
-	//check that there is no file with the remote directory's name in the local one
-	for (Common::FSList::iterator i = files.begin(); i != files.end(); ++i) {
-		if (i->getName().equalsIgnoreCase(remoteDirectory.name())) {
-			//if there is, ask user whether it's OK
-			if (!i->isDirectory()) {
-				GUI::MessageDialog alert(_("Cannot create a directory to download - the specified directory has a file with the same name."), _("OK"));
+	// Check that there is no file with the remote directory's name in the local one
+	for (auto &file : files) {
+		if (file.getName().equalsIgnoreCase(remoteDirectory.name())) {
+			// If there is, ask user whether it's OK
+			if (!file.isDirectory()) {
+				GUI::MessageDialog alert(_("Cannot create a directory to download - the specified directory has a file with the same name."));
 				alert.runModal();
 				return false;
 			}
@@ -158,25 +158,9 @@ bool DownloadDialog::selectDirectories() {
 		}
 	}
 
-	//make a local path
-	Common::String localPath = dir.getPath();
-
-	//simple heuristic to determine which path separator to use
-	if (localPath.size() && localPath.lastChar() != '/' && localPath.lastChar() != '\\') {
-		int backslashes = 0;
-		for (uint32 i = 0; i < localPath.size(); ++i)
-			if (localPath[i] == '/')
-				--backslashes;
-			else if (localPath[i] == '\\')
-				++backslashes;
-
-		if (backslashes > 0)
-			localPath += '\\' + remoteDirectory.name();
-		else
-			localPath += '/' + remoteDirectory.name();
-	} else {
-		localPath += remoteDirectory.name();
-	}
+	// Make a local path
+	Common::Path localPath = dir.getPath();
+	localPath = localPath.appendComponent(remoteDirectory.name());
 
 	CloudMan.startDownload(remoteDirectory.path(), localPath);
 	CloudMan.setDownloadTarget(this);
@@ -208,23 +192,22 @@ void DownloadDialog::reflowLayout() {
 }
 
 Common::U32String DownloadDialog::getSizeLabelText() {
-	Common::String downloaded, downloadedUnits, total, totalUnits;
-	downloaded = getHumanReadableBytes(CloudMan.getDownloadBytesNumber(), downloadedUnits);
-	total = getHumanReadableBytes(CloudMan.getDownloadTotalBytesNumber(), totalUnits);
+	const char *downloadedUnits, *totalUnits;
+	Common::String downloaded = Common::getHumanReadableBytes(CloudMan.getDownloadBytesNumber(), downloadedUnits);
+	Common::String total = Common::getHumanReadableBytes(CloudMan.getDownloadTotalBytesNumber(), totalUnits);
 	return Common::U32String::format(_("Downloaded %s %S / %s %S"), downloaded.c_str(), _(downloadedUnits).c_str(), total.c_str(), _(totalUnits).c_str());
 }
 
 Common::U32String DownloadDialog::getSpeedLabelText() {
-	Common::String speed, speedUnits;
-	speed = getHumanReadableBytes(CloudMan.getDownloadSpeed(), speedUnits);
-	speedUnits += "/s";
-	return Common::U32String::format(_("Download speed: %s %S"), speed.c_str(), _(speedUnits).c_str());
+	const char *speedUnits;
+	Common::String speed = Common::getHumanReadableBytes(CloudMan.getDownloadSpeed(), speedUnits);
+	return Common::U32String::format(_("Download speed: %s %S/s"), speed.c_str(), _(speedUnits).c_str());
 }
 
 void DownloadDialog::refreshWidgets() {
 	_localDirectory = CloudMan.getDownloadLocalDirectory();
 	_remoteDirectoryLabel->setLabel(_("From: ") + Common::U32String(CloudMan.getDownloadRemoteDirectory()));
-	_localDirectoryLabel->setLabel(_("To: ") + Common::U32String(_localDirectory));
+	_localDirectoryLabel->setLabel(_("To: ") + Common::U32String(_localDirectory.toString(Common::Path::kNativeSeparator)));
 	uint32 progress = (uint32)(100 * CloudMan.getDownloadingProgress());
 	_percentLabel->setLabel(Common::String::format("%u %%", progress));
 	_downloadSizeLabel->setLabel(getSizeLabelText());

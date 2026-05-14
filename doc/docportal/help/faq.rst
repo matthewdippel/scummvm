@@ -30,6 +30,16 @@ A few engines supported by ScummVM have publicly available authoring tools. See 
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 See the `Compiling ScummVM wiki page <https://wiki.scummvm.org/index.php?title=Compiling_ScummVM>`_.
 
+1.1.5 Can I run my pirated/abandonware/warez/unauthorized copies of a game?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Our project has a strict no-piracy policy. Hence, we do not provide any support when it becomes evident that you did not obtain your game copy legally.
+
+We outlined a more detailed response on `our Wiki <https://wiki.scummvm.org/index.php?title=Copyright_FAQ>`_.
+
+And no, "abandonware" is not a proper legal concept in any country. Just like how it's not legal to copy a book under copyright because it is out-of-print, it is not legal to copy a game under copyright because the company is no longer selling it.
+
+In addition, some versions of games downloaded from random websites may have been modified to include malware that could compromise your computer.
+
 1.2 Using ScummVM
 **********************
 
@@ -101,6 +111,11 @@ Games must be added to and started from :doc:`the ScummVM Launcher <../use_scumm
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 A list of default shortcuts can be found on the :doc:`../use_scummvm/keyboard_shortcuts` page. From version 2.2.0 you can also create custom shortcuts on the :doc:`../settings/keymaps` tab.
 
+1.3.11. What is the ScummVM policy on fanmade mods (unofficial subtitles & translations, upscaled graphics & audio, etc.)?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Some engines support fan mods, but ScummVM does not endorse any mods that infringe the copyright of the original rights holders. This includes graphic and audio "upscales" that redistribute modified game assets without permission.
+
+Several mods that exist with the permission of the original rights holders can be found `on our website <https://www.scummvm.org/links/>`_.
 
 2. Troubleshooting
 ===================
@@ -221,3 +236,16 @@ That depends on a few factors. Firstly, it has to fit within the scope of ScummV
 ScummVM developers are all volunteers who work on ScummVM in their spare time, solely for fun, and not for profit. Reverse engineering a completely new game without the source code is a long and difficult process. Even with source it can be tedious and time consuming.
 
 Unless you work for a company interested in providing us with source code for one of their classic titles, or want to do the work yourself, please do not ask us to add support for a new game.
+
+3.1.3. Will ScummVM be officially released for consoles? (eg PlayStation, Xbox, Switch, ...)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Unfortunately no, because of licensing issues. There are two important facts at play here:
+
+1. Each console has an associated developer kit (including platform documentation and an SDK) that developers must use to implement games.
+   That developer kit is provided to developers under strict non-disclosure agreements.
+2. By contrast, the ScummVM source code is licensed under the GPL v3 (see section 1.1.2 of this FAQ).
+   The GPL requires that any code integrated with a release of ScummVM (the aforementioned SDK) be made available upon request.
+
+From these facts it follows that anyone releasing a port of ScummVM to a console must either release parts of the SDK upon request (and breach the developer kit NDA) or refuse to release the modified source code and NDA'd parts of the developer kit (and breach the GPL).
+
+Note that "homebrew" SDKs are not affected by this problem as they themselves are released under a free license.

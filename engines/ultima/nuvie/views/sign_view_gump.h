@@ -40,7 +40,7 @@ class SignViewGump : public DraggableView {
 	char *sign_text;
 
 public:
-	SignViewGump(Configuration *cfg);
+	SignViewGump(const Configuration *cfg);
 	~SignViewGump() override;
 
 	bool init(Screen *tmp_screen, void *view_manager, Font *f, Party *p, TileManager *tm, ObjManager *om, const char *text_string, uint16 length);
@@ -49,11 +49,8 @@ public:
 
 	GUI_status callback(uint16 msg, GUI_CallBack *caller, void *data) override;
 
-	GUI_status MouseDown(int x, int y, Shared::MouseButton button) override;
+	GUI_status MouseDown(int x, int y, Events::MouseButton button) override;
 	GUI_status KeyDown(const Common::KeyState &key) override;
-
-protected:
-
 };
 
 } // End of namespace Nuvie

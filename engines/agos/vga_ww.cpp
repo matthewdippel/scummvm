@@ -29,7 +29,7 @@
 #include "common/system.h"
 
 #include "graphics/surface.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 
 namespace AGOS {
 
@@ -230,7 +230,9 @@ void AGOSEngine::vc62_fastFadeOut() {
 			_system->getPaletteManager()->setPalette(_currentPalette, 0, _fastFadeCount);
 			delay(5);
 		}
+	}
 
+	if (!_fastFadeOutFlag) {
 		if (getGameType() == GType_WW || getGameType() == GType_FF || getGameType() == GType_PP) {
 			clearSurfaces();
 		} else {

@@ -23,9 +23,10 @@
 #include "ultima/ultima8/gumps/widgets/text_widget.h"
 #include "ultima/ultima8/gumps/widgets/button_widget.h"
 #include "ultima/ultima8/gumps/gump_notify_process.h"
-#include "ultima/ultima8/graphics/fonts/font_manager.h"
+#include "ultima/ultima8/gfx/fonts/font_manager.h"
 #include "ultima/ultima8/kernel/mouse.h"
-#include "ultima/ultima8/graphics/render_surface.h"
+#include "ultima/ultima8/gfx/render_surface.h"
+#include "ultima/ultima8/gfx/texture.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -33,18 +34,18 @@ namespace Ultima8 {
 DEFINE_RUNTIME_CLASSTYPE_CODE(MessageBoxGump)
 
 MessageBoxGump::MessageBoxGump()
-	: ModalGump(), _titleColour(0) {
+	: ModalGump(), _titleColour(TEX32_PACK_RGB(0, 0, 0)) {
 
 }
 
-MessageBoxGump::MessageBoxGump(const Std::string &title, const Std::string &message, uint32 titleColour,
-							   Std::vector<Std::string> *buttons) :
+MessageBoxGump::MessageBoxGump(const Common::String &title, const Common::String &message, uint32 titleColour,
+							   Common::Array<Common::String> *buttons) :
 		ModalGump(0, 0, 100, 100), _title(title), _message(message), _titleColour(titleColour) {
 	if (buttons)
 		buttons->swap(_buttons);
 
 	if (_buttons.empty())
-		_buttons.push_back(Std::string("Ok"));
+		_buttons.push_back(Common::String("Ok"));
 }
 
 MessageBoxGump::~MessageBoxGump(void) {
@@ -93,7 +94,7 @@ void MessageBoxGump::InitGump(Gump *newparent, bool take_focus) {
 	// Buttons (right aligned)
 	int off = _dims.width() - buttons_w;
 	for (size_t i = 0; i < _buttons.size(); i++) {
-		w = new ButtonWidget(off, _dims.height() - 23, _buttons[i], false, 1, 0x80D000D0);
+		w = new ButtonWidget(off, _dims.height() - 23, _buttons[i], false, 1, TEX32_PACK_RGBA(0xD0, 0x00, 0xD0, 0x80));
 		w->SetIndex(static_cast<int32>(i));
 		w->InitGump(this, false);
 		width = height = 0;
@@ -102,8 +103,7 @@ void MessageBoxGump::InitGump(Gump *newparent, bool take_focus) {
 	}
 
 	Mouse *mouse = Mouse::get_instance();
-	mouse->pushMouseCursor();
-	mouse->setMouseCursor(Mouse::MOUSE_POINTER);
+	mouse->pushMouseCursor(Mouse::MOUSE_HAND);
 }
 
 void MessageBoxGump::Close(bool no_del) {
@@ -115,37 +115,38 @@ void MessageBoxGump::Close(bool no_del) {
 
 void MessageBoxGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool /*scaled*/) {
 	// Background is partially transparent
-	surf->FillBlended(0x80000000, 0, 0, _dims.width(), _dims.height());
+	surf->fillBlended(TEX32_PACK_RGBA(0, 0, 0, 0x80), _dims);
 
-	uint32 line_colour = 0xFFFFFFFF;
-	if (!IsFocus()) line_colour = 0xFF7F7F7F;
+	uint32 color = TEX32_PACK_RGB(0xFF, 0xFF, 0xFF);
+	if (!IsFocus())
+		color = TEX32_PACK_RGB(0x7F, 0x7F, 0x7F);
 
 	// outer border
-	surf->Fill32(line_colour, 0, 0, _dims.width(), 1);
-	surf->Fill32(line_colour, 0, 0, 1, _dims.height());
-	surf->Fill32(line_colour, 0, _dims.height() - 1, _dims.width(), 1);
-	surf->Fill32(line_colour, _dims.width() - 1, 0, 1, _dims.height());
+	surf->fill32(color, 0, 0, _dims.width(), 1);
+	surf->fill32(color, 0, 0, 1, _dims.height());
+	surf->fill32(color, 0, _dims.height() - 1, _dims.width(), 1);
+	surf->fill32(color, _dims.width() - 1, 0, 1, _dims.height());
 
 	// line above _buttons
-	surf->Fill32(line_colour, 0, _dims.height() - 28, _dims.width(), 1);
+	surf->fill32(color, 0, _dims.height() - 28, _dims.width(), 1);
 
 	// line below _title
-	surf->Fill32(line_colour, 0, 23, _dims.width(), 1);
+	surf->fill32(color, 0, 23, _dims.width(), 1);
 
-	// Highlight behind _message..
-	if (IsFocus()) surf->Fill32(_titleColour, 1, 1, _dims.width() - 2, 22);
-	else surf->Fill32(0xFF000000, 1, 1, _dims.width() - 2, 22);
+	// Highlight behind _message
+	color = IsFocus() ? _titleColour : TEX32_PACK_RGB(0, 0, 0);
+	surf->fill32(color, 1, 1, _dims.width() - 2, 22);
 }
 
 void MessageBoxGump::ChildNotify(Gump *child, uint32 msg) {
 	ButtonWidget *buttonWidget = dynamic_cast<ButtonWidget *>(child);
-	if (buttonWidget && msg == ButtonWidget::BUTTON_CLICK) {
+	if (buttonWidget && (msg == ButtonWidget::BUTTON_CLICK || msg == ButtonWidget::BUTTON_DOUBLE)) {
 		_processResult = child->GetIndex();
 		Close();
 	}
 }
 
-ProcId MessageBoxGump::Show(Std::string _title, Std::string _message, uint32 titleColour, Std::vector<Std::string> *_buttons) {
+ProcId MessageBoxGump::Show(Common::String _title, Common::String _message, uint32 titleColour, Common::Array<Common::String> *_buttons) {
 	Gump *gump = new MessageBoxGump(_title, _message, titleColour, _buttons);
 	gump->InitGump(0);
 	gump->setRelativePosition(CENTER);
@@ -154,11 +155,11 @@ ProcId MessageBoxGump::Show(Std::string _title, Std::string _message, uint32 tit
 }
 
 void MessageBoxGump::saveData(Common::WriteStream *ws) {
-	CANT_HAPPEN_MSG("Trying to load ModalGump");
+	warning("Trying to save ModalGump");
 }
 
 bool MessageBoxGump::loadData(Common::ReadStream *rs, uint32 version) {
-	CANT_HAPPEN_MSG("Trying to load ModalGump");
+	warning("Trying to load ModalGump");
 
 	return false;
 }

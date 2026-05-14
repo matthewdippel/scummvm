@@ -22,7 +22,6 @@
 #ifndef DIRECTOR_LINGO_OBJECT_H
 #define DIRECTOR_LINGO_OBJECT_H
 
-#include "director/director.h"
 #include "director/lingo/lingo.h"
 
 namespace Director {
@@ -35,6 +34,11 @@ struct MethodProto {
 	int version;
 };
 
+struct XlibFileDesc {
+	const char *name;		// Base file name for the Xlib file in the original
+	const char *gameId;		// GameId or nullptr if applicable to all
+};
+
 class AbstractObject {
 public:
 	virtual ~AbstractObject() {};
@@ -43,6 +47,8 @@ public:
 	virtual ObjectType getObjType() const = 0;
 	virtual bool isDisposed() const = 0;
 	virtual int *getRefCount() const = 0;
+	virtual void incRefCount() = 0;
+	virtual void decRefCount() = 0;
 	virtual int getInheritanceLevel() const = 0;
 
 	virtual void setName(const Common::String &name) = 0;
@@ -53,10 +59,12 @@ public:
 	virtual Symbol getMethod(const Common::String &methodName) = 0;
 	virtual bool hasProp(const Common::String &propName) = 0;
 	virtual Datum getProp(const Common::String &propName) = 0;
-	virtual bool setProp(const Common::String &propName, const Datum &value) = 0;
+	virtual Common::String getPropAt(uint32 index) = 0;
+	virtual uint32 getPropCount() = 0;
+	virtual void setProp(const Common::String &propName, const Datum &value, bool force = false) = 0;
 	virtual bool hasField(int field) = 0;
 	virtual Datum getField(int field) = 0;
-	virtual bool setField(int field, const Datum &value) = 0;
+	virtual void setField(int field, const Datum &value) = 0;
 };
 
 template <typename Derived>
@@ -84,14 +92,14 @@ protected:
 	};
 
 public:
-	static void initMethods(MethodProto protos[]) {
+	static void initMethods(const MethodProto protos[]) {
 		if (_methods) {
 			warning("Object::initMethods: Methods already initialized");
 			return;
 		}
 
 		_methods = new SymbolHash;
-		for (MethodProto *mtd = protos; mtd->name; mtd++) {
+		for (const MethodProto *mtd = protos; mtd->name; mtd++) {
 			if (mtd->version > g_lingo->_vm->getVersion())
 				continue;
 
@@ -118,6 +126,12 @@ public:
 	ObjectType getObjType() const override { return _objType; };
 	bool isDisposed() const override { return _disposed; };
 	int *getRefCount() const override { return _refCount; };
+	void incRefCount() override { *_refCount += 1; };
+	virtual void decRefCount() override {
+		*_refCount -= 1;
+		if (*_refCount <= 0)
+			delete this;
+	};
 	int getInheritanceLevel() const override { return _inheritanceLevel; };
 
 	void setName(const Common::String &name) override { _name = name; };
@@ -132,8 +146,11 @@ public:
 	};
 
 	Symbol getMethod(const Common::String &methodName) override {
+		Symbol sym;
+
 		if (_disposed) {
-			error("Method '%s' called on disposed object <%s>", methodName.c_str(), asString().c_str());
+			warning("Method '%s' called on disposed object <%s>, returning VOID", methodName.c_str(), asString().c_str());
+			return sym;
 		}
 
 		Common::String methodId;
@@ -143,8 +160,6 @@ public:
 			methodId = methodName;
 		}
 
-
-		Symbol sym;
 		if (_methods && _methods->contains(methodId)) {
 			sym = (*_methods)[methodId];
 			sym.target = this;
@@ -165,8 +180,14 @@ public:
 	Datum getProp(const Common::String &propName) override {
 		return Datum();
 	};
-	bool setProp(const Common::String &propName, const Datum &value) override {
-		return false;
+	Common::String getPropAt(uint32 index) override {
+		return Common::String();
+	};
+	uint32 getPropCount() override {
+		return 0;
+	};
+	void setProp(const Common::String &propName, const Datum &value, bool force = false) override {
+		return;
 	};
 	bool hasField(int field) override {
 		return false;
@@ -174,8 +195,8 @@ public:
 	Datum getField(int field) override {
 		return Datum();
 	};
-	bool setField(int field, const Datum &value) override {
-		return false;
+	void setField(int field, const Datum &value) override {
+		return;
 	};
 
 protected:
@@ -193,28 +214,45 @@ class ScriptContext : public Object<ScriptContext> {
 public:
 	ScriptType _scriptType;
 	int _id;
+	int _scriptId;
+	uint16 _parentNumber;
+	uint16 _castLibHint;
 	Common::Array<Common::String> _functionNames; // used by cb_localcall
+	Common::HashMap<Common::String, Common::Array<uint32>> _functionByteOffsets;
 	SymbolHash _functionHandlers;
 	Common::HashMap<uint32, Symbol> _eventHandlers;
 	Common::Array<Datum> _constants;
-	DatumHash _properties;
 	Common::HashMap<uint32, Datum> _objArray;
+	MethodHash _methodNames;
+	Common::SharedPtr<Node> _assemblyAST;	// Optionally contains AST when we compile Lingo
+
+private:
+	DatumHash _properties;
+	Common::Array<Common::String> _propertyNames;
+	bool _onlyInLctxContexts = false;
 
 public:
-	ScriptContext(Common::String name, ScriptType type = kNoneScript, int id = 0);
+	ScriptContext(Common::String name, ScriptType type = kNoneScript, int id = 0, uint16 castLibHint = 0, uint16 parentNumber = 0, int scriptId = 0);
 	ScriptContext(const ScriptContext &sc);
 	~ScriptContext() override;
 
 	bool isFactory() const { return _objType == kFactoryObj; };
 	void setFactory(bool flag) { _objType = flag ? kFactoryObj : kScriptObj; }
 
+	void setOnlyInLctxContexts() { _onlyInLctxContexts = true; }
+	bool getOnlyInLctxContexts() { return _onlyInLctxContexts; }
+
 	Common::String asString() override;
 	Symbol getMethod(const Common::String &methodName) override;
 	bool hasProp(const Common::String &propName) override;
 	Datum getProp(const Common::String &propName) override;
-	bool setProp(const Common::String &propName, const Datum &value) override;
+	Common::String getPropAt(uint32 index) override;
+	uint32 getPropCount() override;
+	void setProp(const Common::String &propName, const Datum &value, bool force = false) override;
 
 	Symbol define(const Common::String &name, ScriptData *code, Common::Array<Common::String> *argNames, Common::Array<Common::String> *varNames);
+
+	Common::String formatFunctionList(const char *prefix);
 };
 
 namespace LM {

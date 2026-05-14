@@ -43,6 +43,7 @@
 
 #if defined(USE_OPENGL_SHADERS)
 
+#include "graphics/cursorman.h"
 #include "graphics/surface.h"
 #include "graphics/opengl/context.h"
 
@@ -79,14 +80,6 @@ static float textured_quad[] = {
 	1.0f, 0.0f, 1.0f, 0.0f,
 	1.0f, 1.0f, 1.0f, 1.0f,
 	0.0f, 1.0f, 0.0f, 1.0f,
-};
-
-static float textured_quad_centered[] = {
-//	 X   ,  Y   , Z   , S   , T
-	-0.5f, -0.5f, 0.0f, 0.0f, 1.0f,
-	-0.5f, +0.5f, 0.0f, 0.0f, 0.0f,
-	+0.5f, +0.5f, 0.0f, 1.0f, 0.0f,
-	+0.5f, -0.5f, 0.0f, 1.0f, 1.0f,
 };
 
 static float zero_texVerts[] = { 0.0, 0.0 };
@@ -205,6 +198,7 @@ GfxBase *CreateGfxOpenGLShader() {
 }
 
 GfxOpenGLS::GfxOpenGLS() {
+	type = Graphics::RendererType::kRendererTypeOpenGLShaders;
 	_smushTexId = 0;
 	_matrixStack.push(Math::Matrix4());
 	_fov = -1.0;
@@ -260,7 +254,7 @@ GfxOpenGLS::~GfxOpenGLS() {
 
 void GfxOpenGLS::setupZBuffer() {
 	GLint format = GL_LUMINANCE_ALPHA;
-	GLenum type = GL_UNSIGNED_BYTE;
+	GLenum ztype = GL_UNSIGNED_BYTE;
 	float width = _gameWidth;
 	float height = _gameHeight;
 
@@ -271,7 +265,7 @@ void GfxOpenGLS::setupZBuffer() {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, format, nextHigher2((int)width), nextHigher2((int)height), 0, format, type, nullptr);
+	glTexImage2D(GL_TEXTURE_2D, 0, format, nextHigher2((int)width), nextHigher2((int)height), 0, format, ztype, nullptr);
 	glActiveTexture(GL_TEXTURE0);
 
 	_zBufTexCrop = Math::Vector2d(width / nextHigher2((int)width), height / nextHigher2((int)height));
@@ -309,7 +303,7 @@ void GfxOpenGLS::setupTexturedQuad() {
 }
 
 void GfxOpenGLS::setupTexturedCenteredQuad() {
-	_spriteVBO = OpenGL::Shader::createBuffer(GL_ARRAY_BUFFER, sizeof(textured_quad_centered), textured_quad_centered, GL_STATIC_DRAW);
+	_spriteVBO = OpenGL::Shader::createBuffer(GL_ARRAY_BUFFER, 0, nullptr, GL_STATIC_DRAW);
 	_spriteProgram->enableVertexAttribute("position", _spriteVBO, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), 0);
 	_spriteProgram->enableVertexAttribute("texcoord", _spriteVBO, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), 3 * sizeof(float));
 	_spriteProgram->disableVertexAttribute("color", Math::Vector4d(1.0f, 1.0f, 1.0f, 1.0f));
@@ -410,7 +404,7 @@ void GfxOpenGLS::setupScreen(int screenW, int screenH) {
 	_scaleW = _screenWidth / (float)_gameWidth;
 	_scaleH = _screenHeight / (float)_gameHeight;
 
-	g_system->showMouse(false);
+	CursorMan.showMouse(false);
 
 	setupZBuffer();
 	setupShaders();
@@ -513,7 +507,18 @@ void GfxOpenGLS::clearDepthBuffer() {
 	glClear(GL_DEPTH_BUFFER_BIT);
 }
 
-void GfxOpenGLS::flipBuffer() {
+void GfxOpenGLS::flipBuffer(bool opportunistic) {
+	if (opportunistic) {
+		GLint fbo = 0;
+		glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
+		if (fbo == 0) {
+			// Don't flip if we are not rendering on FBO
+			// Flipping without any draw is undefined
+			// When using an FBO, the older texture will be used
+			return;
+		}
+	}
+
 	g_system->updateScreen();
 }
 
@@ -986,10 +991,6 @@ void GfxOpenGLS::clearShadowMode() {
 	glDepthMask(GL_TRUE);
 }
 
-bool GfxOpenGLS::isShadowModeActive() {
-	return false;
-}
-
 void GfxOpenGLS::setShadowColor(byte r, byte g, byte b) {
 	_shadowColorR = r;
 	_shadowColorG = g;
@@ -1054,7 +1055,7 @@ void GfxOpenGLS::drawEMIModelFace(const EMIModel* model, const EMIMeshFace* face
 		glEnable(GL_BLEND);
 	const EMIModelUserData *mud = (const EMIModelUserData *)model->_userData;
 	OpenGL::Shader *actorShader;
-	if ((face->_flags & EMIMeshFace::kNoLighting) ? false : _lightsEnabled)
+	if ((face->_flags & EMIMeshFace::kNoLighting || isShadowModeActive()) ? false : _lightsEnabled)
 		actorShader = mud->_shaderLights;
 	else
 		actorShader = mud->_shader;
@@ -1141,8 +1142,6 @@ void GfxOpenGLS::drawSprite(const Sprite *sprite) {
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	}
 
-	// FIXME: depth test does not work yet because final z coordinates
-	//        for Sprites and actor textures are inconsistently calculated
 	if (sprite->_flags2 & Sprite::DepthTest || _currentActor->isInOverworld()) {
 		glEnable(GL_DEPTH_TEST);
 	} else {
@@ -1174,8 +1173,24 @@ void GfxOpenGLS::drawSprite(const Sprite *sprite) {
 	// FIXME: Currently vertex-specific colors are not supported for sprites.
 	// It is unknown at this time if this is really needed anywhere.
 	Math::Vector4d color(sprite->_red[0] / 255.0f, sprite->_green[0] / 255.0f, sprite->_blue[0] / 255.0f, sprite->_alpha[0] / 255.0f);
-	_spriteProgram->setUniform("uniformColor", color);
+	if (g_grim->getGameType() == GType_MONKEY4) {
+		// Don't overwrite the actor's alpha value  which is set via uniformColor in startActorDraw()
+		_spriteProgram->setUniform("spriteColor", color);
+	} else {
+		// No need to set spriteColor for GRIM, it is specific to the EMI sprite shader program
+		_spriteProgram->setUniform("uniformColor", color);
+	}
 
+	float sprite_textured_quad[] = {
+	//	 X   ,  Y   , Z   , S   , T
+		-0.5f, +0.5f, 0.0f, sprite->_texCoordX[0], sprite->_texCoordY[0],
+		+0.5f, +0.5f, 0.0f, sprite->_texCoordX[1], sprite->_texCoordY[1],
+		+0.5f, -0.5f, 0.0f, sprite->_texCoordX[2], sprite->_texCoordY[2],
+		-0.5f, -0.5f, 0.0f, sprite->_texCoordX[3], sprite->_texCoordY[3],
+	};
+
+	glBindBuffer(GL_ARRAY_BUFFER, _spriteVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(sprite_textured_quad), sprite_textured_quad, GL_STATIC_DRAW);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _quadEBO);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, nullptr);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -1248,11 +1263,28 @@ void GfxOpenGLS::turnOffLight(int lightId) {
 void GfxOpenGLS::createTexture(Texture *texture, const uint8 *data, const CMap *cmap, bool clamp) {
 	texture->_texture = new GLuint[1];
 	glGenTextures(1, (GLuint *)texture->_texture);
-	char *texdata = new char[texture->_width * texture->_height * 4];
-	char *texdatapos = texdata;
+
+	GLuint *textures = (GLuint *)texture->_texture;
+	glBindTexture(GL_TEXTURE_2D, textures[0]);
+
+	// Remove darkened lines in EMI intro
+	if (g_grim->getGameType() == GType_MONKEY4 && clamp) {
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	} else {
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	}
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
 	if (cmap != nullptr) { // EMI doesn't have colour-maps
 		int bytes = 4;
+
+		char *texdata = new char[texture->_width * texture->_height * bytes];
+		char *texdatapos = texdata;
+
 		for (int y = 0; y < texture->_height; y++) {
 			for (int x = 0; x < texture->_width; x++) {
 				uint8 col = *(const uint8 *)(data);
@@ -1269,26 +1301,13 @@ void GfxOpenGLS::createTexture(Texture *texture, const uint8 *data, const CMap *
 				data++;
 			}
 		}
+
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->_width, texture->_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, texdata);
+		delete[] texdata;
 	} else {
-		memcpy(texdata, data, texture->_width * texture->_height * texture->_bpp);
+		GLint format = (texture->_bpp == 4) ? GL_RGBA : GL_RGB;
+		glTexImage2D(GL_TEXTURE_2D, 0, format, texture->_width, texture->_height, 0, format, GL_UNSIGNED_BYTE, data);
 	}
-
-	GLuint *textures = (GLuint *)texture->_texture;
-	glBindTexture(GL_TEXTURE_2D, textures[0]);
-
-	// Remove darkened lines in EMI intro
-	if (g_grim->getGameType() == GType_MONKEY4 && clamp) {
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	} else {
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	}
-
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->_width, texture->_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, texdata);
-	delete[] texdata;
 }
 
 void GfxOpenGLS::selectTexture(const Texture *texture) {
@@ -1315,7 +1334,7 @@ void GfxOpenGLS::createBitmap(BitmapData *bitmap) {
 		for (int pic = 0; pic < bitmap->_numImages; pic++) {
 			uint16 *zbufPtr = reinterpret_cast<uint16 *>(const_cast<void *>(bitmap->getImageData(pic).getPixels()));
 			for (int i = 0; i < (bitmap->_width * bitmap->_height); i++) {
-				uint16 val = READ_LE_UINT16(zbufPtr + i);
+				uint16 val = zbufPtr[i];
 				// fix the value if it is incorrectly set to the bitmap transparency color
 				if (val == 0xf81f) {
 					val = 0;
@@ -1338,18 +1357,22 @@ void GfxOpenGLS::createBitmap(BitmapData *bitmap) {
 		const byte *texOut = nullptr;
 
 		GLint format = GL_RGBA;
-		GLint type = GL_UNSIGNED_BYTE;
+		GLint btype = GL_UNSIGNED_BYTE;
 		int bytes = 4;
 
 		glPixelStorei(GL_UNPACK_ALIGNMENT, bytes);
 
+		const Graphics::PixelFormat format_16bpp(2, 5, 6, 5, 0, 11, 5, 0, 0);
+		const Graphics::PixelFormat format_32bpp = Graphics::PixelFormat::createFormatRGBA32();
+
 		for (int pic = 0; pic < bitmap->_numImages; pic++) {
-			if (bitmap->_format == 1 && bitmap->_bpp == 16 && bitmap->_colorFormat != BM_RGB1555) {
+			const Graphics::Surface &imageData = bitmap->getImageData(pic);
+			if (bitmap->_format == 1 && imageData.format == format_16bpp) {
 				if (texData == nullptr)
 					texData = new byte[bytes * bitmap->_width * bitmap->_height];
 				// Convert data to 32-bit RGBA format
 				byte *texDataPtr = texData;
-				const uint16 *bitmapData = reinterpret_cast<const uint16 *>(bitmap->getImageData(pic).getPixels());
+				const uint16 *bitmapData = reinterpret_cast<const uint16 *>(imageData.getPixels());
 				for (int i = 0; i < bitmap->_width * bitmap->_height; i++, texDataPtr += bytes, bitmapData++) {
 					uint16 pixel = *bitmapData;
 					int r = pixel >> 11;
@@ -1366,11 +1389,11 @@ void GfxOpenGLS::createBitmap(BitmapData *bitmap) {
 					}
 				}
 				texOut = texData;
-			} else if (bitmap->_format == 1 && bitmap->_colorFormat == BM_RGB1555) {
-				bitmap->convertToColorFormat(pic, Graphics::PixelFormat(4, 8, 8, 8, 8, 0, 8, 16, 24));
-				texOut = (const byte *)bitmap->getImageData(pic).getPixels();
+			} else if (bitmap->_format == 1 && imageData.format != format_32bpp) {
+				bitmap->convertToColorFormat(pic, format_32bpp);
+				texOut = (const byte *)imageData.getPixels();
 			} else {
-				texOut = (const byte *)bitmap->getImageData(pic).getPixels();
+				texOut = (const byte *)imageData.getPixels();
 			}
 
 			int actualWidth = nextHigher2(bitmap->_width);
@@ -1381,9 +1404,9 @@ void GfxOpenGLS::createBitmap(BitmapData *bitmap) {
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-			glTexImage2D(GL_TEXTURE_2D, 0, format, actualWidth, actualHeight, 0, format, type, nullptr);
+			glTexImage2D(GL_TEXTURE_2D, 0, format, actualWidth, actualHeight, 0, format, btype, nullptr);
 
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, bitmap->_width, bitmap->_height, format, type, texOut);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, bitmap->_width, bitmap->_height, format, btype, texOut);
 		}
 
 		if (texData)
@@ -1519,7 +1542,10 @@ void GfxOpenGLS::destroyBitmap(BitmapData *bitmap) {
 	}
 }
 
-void GfxOpenGLS::createFont(Font *font) {
+void GfxOpenGLS::createFont(Font *f) {
+	if (!f->is8Bit())
+		error("non-8bit fonts are not supported in GL shaders renderer");
+	BitmapFont *font = static_cast<BitmapFont *>(f);
 	const byte *bitmapData = font->getFontData();
 	uint dataSize = font->getDataSize();
 
@@ -1604,16 +1630,21 @@ void GfxOpenGLS::createFont(Font *font) {
 }
 
 void GfxOpenGLS::destroyFont(Font *font) {
-	const FontUserData *data = (const FontUserData *)font->getUserData();
-	if (data) {
-		glDeleteTextures(1, &(data->texture));
-		delete data;
+	if (font->is8Bit()) {
+		const FontUserData *data = static_cast<const FontUserData *>(static_cast<const BitmapFont *>(font)->getUserData());
+		if (data) {
+			glDeleteTextures(1, &(data->texture));
+			delete data;
+		}
 	}
 }
 
 void GfxOpenGLS::createTextObject(TextObject *text) {
 	const Color &color = text->getFGColor();
-	const Font *font = text->getFont();
+	const Font *f = text->getFont();
+	if (!f->is8Bit())
+		error("non-8bit fonts are not supported in GL shaders renderer");
+	const BitmapFont *font = static_cast<const BitmapFont *>(f);
 
 	const FontUserData *userData = (const FontUserData *)font->getUserData();
 	if (!userData)
@@ -1758,6 +1789,7 @@ void GfxOpenGLS::dimRegion(int xin, int yReal, int w, int h, float level) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
+	g_system->presentBuffer();
 	glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, xin, yin, w, h, 0);
 
 	glBindBuffer(GL_ARRAY_BUFFER, _dimRegionVBO);
@@ -1860,7 +1892,7 @@ void GfxOpenGLS::loadEmergFont() {
 		int blockcol = c & 0xf;
 		for (int row = 0; row < 13; ++row) {
 			int base = 128 * (16 * blockrow + row) + 8 * blockcol;
-			uint8 val = Font::emerFont[c - 32][row];
+			uint8 val = BitmapFont::emerFont[c - 32][row];
 			atlas[base + 0] = (val & 0x80) ? 255 : 0;
 			atlas[base + 1] = (val & 0x40) ? 255 : 0;
 			atlas[base + 2] = (val & 0x20) ? 255 : 0;
@@ -1967,6 +1999,10 @@ void GfxOpenGLS::drawPolygon(const PrimitiveObject *primitive) {
 	drawGenericPrimitive(data, 8, primitive);
 }
 
+const Graphics::PixelFormat GfxOpenGLS::getMovieFormat() const {
+	return Graphics::PixelFormat::createFormatRGBA32();
+}
+
 void GfxOpenGLS::prepareMovieFrame(Graphics::Surface* frame) {
 	int width = frame->w;
 	int height = frame->h;
@@ -1974,40 +2010,14 @@ void GfxOpenGLS::prepareMovieFrame(Graphics::Surface* frame) {
 
 	GLenum frameType, frameFormat;
 
-	// GLES2 support is needed here, so:
-	// - frameFormat GL_BGRA is not supported, so use GL_RGBA
-	// - no format conversion, so same format is used for internal storage, so swizzle in shader
-	// - GL_UNSIGNED_INT_8_8_8_8[_REV] do not exist, so use _BYTE and fix
-	//   endianness in shader.
-	if (frame->format == Graphics::PixelFormat(4, 8, 8, 8, 0, 8, 16, 24, 0) || frame->format == Graphics::PixelFormat(4, 8, 8, 8, 8, 8, 16, 24, 0)) {
-		// frame->format: GBRA
-		// read in little endian: {A, R, G, B}, swap: {B, G, R, A}, swizzle: {R, G, B, A}
-		// read in big endian: {B, G, R, A}, swizzle: {R, G, B, A}
+	// Used by Bink, QuickTime, MPEG, Theora and paletted SMUSH
+	if (frame->format == getMovieFormat()) {
 		frameType = GL_UNSIGNED_BYTE;
 		frameFormat = GL_RGBA;
-		_smushSwizzle = true;
-#ifdef SCUMM_LITTLE_ENDIAN
-		_smushSwap = true;
-#else
-		_smushSwap = false;
-#endif
-	} else if (frame->format == Graphics::PixelFormat(4, 8, 8, 8, 0, 16, 8, 0, 0) || frame->format == Graphics::PixelFormat(4, 8, 8, 8, 8, 16, 8, 0, 24)) {
-		// frame->format: ARGB
-		// read in little endian: {B, G, R, A}, swizzle: {R, G, B, A}
-		// read in big endian: {A, R, G, B}, swap: {B, G, R, A}, swizzle: {R, G, B, A}
-		frameType = GL_UNSIGNED_BYTE;
-		frameFormat = GL_RGBA;
-		_smushSwizzle = true;
-#ifdef SCUMM_LITTLE_ENDIAN
-		_smushSwap = false;
-#else
-		_smushSwap = true;
-#endif
+	// Used by 16-bit SMUSH
 	} else if (frame->format == Graphics::PixelFormat(2, 5, 6, 5, 0, 11, 5, 0, 0)) {
 		frameType = GL_UNSIGNED_SHORT_5_6_5;
 		frameFormat = GL_RGB;
-		_smushSwizzle = false;
-		_smushSwap = false;
 	} else {
 		error("Unknown pixelformat: Bpp: %d RBits: %d GBits: %d BBits: %d ABits: %d RShift: %d GShift: %d BShift: %d AShift: %d",
 			frame->format.bytesPerPixel,
@@ -2048,8 +2058,6 @@ void GfxOpenGLS::drawMovieFrame(int offsetX, int offsetY) {
 	_smushProgram->setUniform("texcrop", Math::Vector2d(float(_smushWidth) / nextHigher2(_smushWidth), float(_smushHeight) / nextHigher2(_smushHeight)));
 	_smushProgram->setUniform("scale", Math::Vector2d(float(_smushWidth)/ float(_gameWidth), float(_smushHeight) / float(_gameHeight)));
 	_smushProgram->setUniform("offset", Math::Vector2d(float(offsetX) / float(_gameWidth), float(offsetY) / float(_gameHeight)));
-	_smushProgram->setUniform("swap", _smushSwap);
-	_smushProgram->setUniform("swizzle", _smushSwizzle);
 	glBindTexture(GL_TEXTURE_2D, _smushTexId);
 
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, nullptr);
@@ -2211,7 +2219,7 @@ static void readPixels(int x, int y, int width, int height, byte *buffer) {
 
 Bitmap *GfxOpenGLS::getScreenshot(int w, int h, bool useStored) {
 	Graphics::Surface src;
-	src.create(_screenWidth, _screenHeight, Graphics::PixelFormat(4, 8, 8, 8, 8, 0, 8, 16, 24));
+	src.create(_screenWidth, _screenHeight, Graphics::PixelFormat::createFormatRGBA32());
 	Bitmap *bmp;
 
 	if (useStored) {
@@ -2239,6 +2247,7 @@ Bitmap *GfxOpenGLS::getScreenshot(int w, int h, bool useStored) {
 #endif
 		}
 	} else {
+		g_system->presentBuffer();
 		readPixels(0, 0, _screenWidth, _screenHeight, (uint8 *)src.getPixels());
 	}
 	bmp = createScreenshotBitmap(&src, w, h, true);
@@ -2247,6 +2256,7 @@ Bitmap *GfxOpenGLS::getScreenshot(int w, int h, bool useStored) {
 }
 
 void GfxOpenGLS::createSpecialtyTextureFromScreen(uint id, uint8 *data, int x, int y, int width, int height) {
+	g_system->presentBuffer();
 	readPixels(x, y, width, height, data);
 	createSpecialtyTexture(id, data, width, height);
 }

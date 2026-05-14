@@ -19,7 +19,7 @@
  *
  */
 
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 #include "ultima/nuvie/core/nuvie_defs.h"
 #include "ultima/nuvie/conf/configuration.h"
 #include "ultima/nuvie/misc/u6_misc.h"
@@ -40,7 +40,7 @@ namespace Nuvie {
 
 // MsgScrollNewUI Class
 
-MsgScrollNewUI::MsgScrollNewUI(Configuration *cfg, Screen *s) {
+MsgScrollNewUI::MsgScrollNewUI(const Configuration *cfg, Screen *s) {
 	drop_target = false; //we don't participate in drag and drop.
 
 	font_normal = Game::get_game()->get_font_manager()->get_conv_font();
@@ -48,7 +48,7 @@ MsgScrollNewUI::MsgScrollNewUI(Configuration *cfg, Screen *s) {
 
 	init(cfg, font_normal);
 
-	Std::string new_scroll_cfg = config_get_game_key(config) + "/newscroll";
+	Common::String new_scroll_cfg = config_get_game_key(config) + "/newscroll";
 
 	cfg->value(new_scroll_cfg + "/solid_bg", solid_bg, false);
 
@@ -78,11 +78,11 @@ MsgScrollNewUI::MsgScrollNewUI(Configuration *cfg, Screen *s) {
 	uint16 x_off = Game::get_game()->get_game_x_offset();
 	uint16 y_off = Game::get_game()->get_game_y_offset();
 // need to accept clicks on whole game area
-	GUI_Widget::Init(NULL, x_off, y_off, Game::get_game()->get_game_width(), Game::get_game()->get_game_height());
+	GUI_Widget::Init(nullptr, x_off, y_off, Game::get_game()->get_game_width(), Game::get_game()->get_game_height());
 
 	cursor_wait = 0;
 
-	timer = NULL;
+	timer = nullptr;
 
 	position = 0;
 }
@@ -99,24 +99,23 @@ bool MsgScrollNewUI::can_fit_token_on_msgline(MsgLine *msg_line, MsgText *token)
 	return true;
 }
 
-void MsgScrollNewUI::display_string(Std::string s, Font *f, bool include_on_map_window) {
-	if (s.empty())
+void MsgScrollNewUI::display_string(const Common::String &str, Font *f, bool include_on_map_window) {
+	if (str.empty())
 		return;
 	bool has_trailing_whitespace = (!trailing_whitespace.empty());
-	s = trailing_whitespace + s;
+	Common::String s = trailing_whitespace + str;
 	trailing_whitespace.clear();
 
-	Std::string::reverse_iterator iter;
-	uint16 i;
-	for (i = 0, iter = s.rbegin(); iter != s.rend(); iter++, i++) {
-		char c = *iter;
+	uint16 i, pos;
+	for (i = 0, pos = s.size(); pos >= 0; pos--, i++) {
+		char c = s[pos];
 		if (c != '\t' && c != '\n')
 			break;
 	}
 
 	if (i > 0) {
-		trailing_whitespace = s.substr(s.length() - i, i);
-		s = s.substr(0, s.length() - i);
+		trailing_whitespace = s.substr(s.size() - i, i);
+		s = s.substr(0, s.size() - i);
 	}
 
 	if (!s.empty()) {
@@ -127,17 +126,15 @@ void MsgScrollNewUI::display_string(Std::string s, Font *f, bool include_on_map_
 				position += count_empty_lines(s) - 1;
 			}
 		}
-		timer = new TimedCallback(this, NULL, 2000);
+		timer = new TimedCallback(this, nullptr, 2000);
 
 		MsgScroll::display_string(s, f, include_on_map_window);
 	}
 }
 
-uint16 MsgScrollNewUI::count_empty_lines(Std::string s) {
-	Std::string::iterator iter;
+uint16 MsgScrollNewUI::count_empty_lines(const Common::String &s) {
 	uint16 count = 0;
-	for (iter = s.begin(); iter != s.end(); iter++) {
-		char c = *iter;
+	for (char c : s) {
 		if (c != ' ' && c != '\t' && c != '\n')
 			break;
 
@@ -163,17 +160,17 @@ bool MsgScrollNewUI::is_garg_font() {
 }
 
 uint16 MsgScrollNewUI::callback(uint16 msg, CallBack *caller, void *data) {
-	if (msg == CB_TIMED && (timer == NULL || timer == caller)) {
-		timer = NULL;
+	if (msg == CB_TIMED && (timer == nullptr || timer == caller)) {
+		timer = nullptr;
 		if (input_mode) {
-			new TimedCallback(this, NULL, 100);
+			new TimedCallback(this, nullptr, 100);
 		} else {
 			//roll up the message scroll so it's out of the way.
 			if (position < msg_buf.size()) {
 				if ((uint16)(position + 1) < msg_buf.size()
 				        || msg_buf.back()->total_length > 0) { //don't advance if on second last line and the last line is empty.
 					position++;
-					new TimedCallback(this, NULL, 50);
+					new TimedCallback(this, nullptr, 50);
 				}
 			}
 
@@ -188,7 +185,7 @@ void MsgScrollNewUI::Display(bool full_redraw) {
 
 	uint16 y = area.top + 4;
 	uint16 total_length = 0;
-	Std::list<MsgLine *>::iterator iter;
+	Common::List<MsgLine *>::iterator iter;
 
 	iter = msg_buf.begin();
 	for (uint16 i = 0; i < position && iter != msg_buf.end(); i++)
@@ -196,7 +193,7 @@ void MsgScrollNewUI::Display(bool full_redraw) {
 
 	for (uint16 i = 0; i < scroll_height && iter != msg_buf.end(); i++, iter++) {
 		MsgLine *msg_line = *iter;
-		Std::list<MsgText *>::iterator iter1;
+		Common::List<MsgText *>::iterator iter1;
 
 		iter1 = msg_line->text.begin();
 
@@ -254,7 +251,7 @@ GUI_status MsgScrollNewUI::KeyDown(const Common::KeyState &key) {
 	return MsgScroll::KeyDown(key);
 }
 
-GUI_status MsgScrollNewUI::MouseDown(int x, int y, Shared::MouseButton button) {
+GUI_status MsgScrollNewUI::MouseDown(int x, int y, Events::MouseButton button) {
 	MsgScrollEventType event = SCROLL_ESCAPE;
 
 	return scroll_movement_event(event);
@@ -264,21 +261,21 @@ GUI_status MsgScrollNewUI::scroll_movement_event(MsgScrollEventType event) {
 	switch (event) {
 	case SCROLL_UP :
 		if (position > 0) {
-			timer = new TimedCallback(this, NULL, 2000);
+			timer = new TimedCallback(this, nullptr, 2000);
 			position--;
 			grab_focus();
 		}
 		return GUI_YUM;
 
 	case SCROLL_DOWN :
-		timer = new TimedCallback(this, NULL, 2000);
+		timer = new TimedCallback(this, nullptr, 2000);
 		if (position < msg_buf.size())
 			position++;
-		return (GUI_YUM);
+		return GUI_YUM;
 
 	default :
 		release_focus();
-		new TimedCallback(this, NULL, 50);
+		new TimedCallback(this, nullptr, 50);
 		break;
 	}
 

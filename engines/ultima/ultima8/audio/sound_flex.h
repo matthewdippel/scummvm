@@ -22,6 +22,8 @@
 #ifndef ULTIMA8_AUDIO_SOUNDFLEX_H
 #define ULTIMA8_AUDIO_SOUNDFLEX_H
 
+#include "common/array.h"
+#include "common/str.h"
 #include "ultima/ultima8/filesys/archive.h"
 
 namespace Ultima {
@@ -34,7 +36,7 @@ public:
 	SoundFlexEntry(const char *name, uint32 data) : _name(name), _data(data) {}
 	SoundFlexEntry(const char *name) : _name(name), _data(0) {}
 
-	Std::string _name;
+	Common::String _name;
 	uint32 _data;
 };
 
@@ -52,7 +54,7 @@ public:
 
 private:
 	AudioSample **_samples;
-	Std::vector<SoundFlexEntry> _index;
+	Common::Array<SoundFlexEntry> _index;
 };
 
 } // End of namespace Ultima8

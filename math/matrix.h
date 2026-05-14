@@ -142,19 +142,24 @@ public:
 	Matrix<rows, cols> &operator/=(float factor);
 	Matrix<rows, cols> &operator/=(const Matrix<rows, cols> &m);
 
+#if defined(_MSC_VER) && _MSC_VER < 1910 // HACK: C2248 bug in MSVC 2015
+public:
+#else
 protected:
-	MatrixBase();
+#endif
+	constexpr MatrixBase() = default;
 	MatrixBase(const float *data);
 	MatrixBase(const MatrixBase<rows, cols> &m);
 	MatrixBase &operator=(const MatrixBase<rows, cols> &m);
 
+protected:
 	inline const Matrix<rows, cols> &getThis() const {
 		return *static_cast<const Matrix<rows, cols> *>(this); }
 	inline Matrix<rows, cols> &getThis() {
 		return *static_cast<Matrix<rows, cols> *>(this); }
 
 private:
-	float _values[rows * cols];
+	float _values[rows * cols] = { 0.0f };
 };
 
 /**
@@ -163,8 +168,12 @@ private:
  */
 template<int r, int c>
 class MatrixType : public MatrixBase<r, c> {
+#if defined(_MSC_VER) && _MSC_VER < 1910 // HACK: C2248 bug in MSVC 2015
+public:
+#else
 protected:
-	MatrixType() : MatrixBase<r, c>() { }
+#endif
+	constexpr MatrixType() : MatrixBase<r, c>() { }
 	MatrixType(const float *data) : MatrixBase<r, c>(data) { }
 	MatrixType(const MatrixBase<r, c> &m) : MatrixBase<r, c>(m) { }
 };
@@ -179,7 +188,7 @@ protected:
 template<int r, int c>
 class Matrix : public MatrixType<r, c> {
 public:
-	Matrix() : MatrixType<r, c>() { }
+	constexpr Matrix() : MatrixType<r, c>() { }
 	Matrix(const float *data) : MatrixType<r, c>(data) { }
 	Matrix(const MatrixBase<r, c> &m) : MatrixType<r, c>(m) { }
 };
@@ -214,13 +223,6 @@ bool operator!=(const Matrix<r, c> &m1, const Matrix<r, c> &m2);
 
 
 // Constructors
-template<int rows, int cols>
-MatrixBase<rows, cols>::MatrixBase() {
-	for (int i = 0; i < rows * cols; ++i) {
-		_values[i] = 0.f;
-	}
-}
-
 template<int rows, int cols>
 MatrixBase<rows, cols>::MatrixBase(const float *data) {
 	setData(data);
@@ -495,7 +497,7 @@ bool operator!=(const Matrix<r, c> &m1, const Matrix<r, c> &m2) {
 }
 
 template<int r, int c>
-Common::StreamDebug &operator<<(Common::StreamDebug dbg, const Math::Matrix<r, c> &m) {
+Common::StreamDebug &operator<<(Common::StreamDebug &dbg, const Math::Matrix<r, c> &m) {
 	dbg.nospace() << "Matrix<" << r << ", " << c << ">(";
 	for (int col = 0; col < c; ++col) {
 		dbg << m(0, col) << ", ";

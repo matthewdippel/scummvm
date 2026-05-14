@@ -22,7 +22,9 @@
  */
 #include "hadesch/hadesch.h"
 #include "hadesch/video.h"
-#include "common/translation.h"
+
+#include "gui/message.h"
+
 
 namespace Hadesch {
 
@@ -285,6 +287,7 @@ static const struct {
 	{ "V9250tD0", { "V9250aD0", _hs("Charon must sit next to smoking beings") } },
 	{ "V9260tA0", { "V9260nA0", _hs("Charon can't have any monsters at the head of the boat") } },
 	{ "V9260tB0", { "V9260nB0", _hs("No animals at the head of the boat") } }, // 5
+	// FIXME: Spelling incorrect. wont should be won't. Fixing changes game data and thus may cause issues
 	{ "V9260tC0", { "V9260nC0", _hs("Charon wont sit next to two-headed beings") } },
 	{ "V9260tD0", { "V9260nD0", _hs("Charon won't sit next to flat beings") } },
 	{ "V9260tE0", { "V9260nE0", _hs("Charon won't sit next to horned beings") } },
@@ -449,7 +452,7 @@ public:
 */
 	}
 
-	void handleUnclick(const Common::String &name, const Common::Point pnt) override {
+	void handleUnclick(const Common::String &name, const Common::Point &pnt) override {
 		Common::SharedPtr<VideoRoom> room = g_vm->getVideoRoom();
 		if (_clickTimer >= 0) {
 			g_vm->cancelTimer(24012);
@@ -481,6 +484,15 @@ public:
 		if (name.matchString("f##") && _dragged != -1) {
 			room->stopAnim("v9010bc0");
 		}
+	}
+
+	void charonIdle() {
+		if (_charonIsBusy)
+			return;
+		hideCharon();
+		int vid = g_vm->getRnd().getRandomNumberRng(0, ARRAYSIZE(charonIdleVideos) - 1);
+		g_vm->getVideoRoom()->playVideo(charonIdleVideos[vid].name,
+						kCharonZ, 24811, charonIdleVideos[vid].getOffset());
 	}
 
 	void handleEvent(int eventId) override {
@@ -597,12 +609,7 @@ public:
 			break;
 		case 24813: {
 			g_vm->addTimer(24813, g_vm->getRnd().getRandomNumberRng(12000, 18000));
-			if (_charonIsBusy)
-				break;
-			hideCharon();
-			int vid = g_vm->getRnd().getRandomNumberRng(0, ARRAYSIZE(charonIdleVideos) - 1);
-			room->playVideo(charonIdleVideos[vid].name,
-					kCharonZ, 24811, charonIdleVideos[vid].getOffset());
+			charonIdle();
 			break;
 		}
 		case k24801_arg1:
@@ -680,6 +687,31 @@ public:
 	bool handleCheat(const Common::String &cheat) override {
 		if (cheat == "done") {
 			win();
+			return true;
+		}
+
+		if (cheat == "identify") {
+			GUI::MessageDialog dialog(Common::String::format("l%ds%02d", _levelL, _levelS));
+			dialog.runModal();
+			return true;
+		}
+
+		if (cheat.matchString("l#s##")) {
+			int l = atoi(cheat.substr(1, 1).c_str());
+			int s = atoi(cheat.substr(3, 2).c_str());
+			if (l < 1 || l > 3 || s < 0 || s > 15)
+				return false;
+			levelClear();
+			_levelL = l;
+			_levelS = s;
+			loadLevel();
+			levelRender();
+			showCharon();
+			return true;
+		}
+
+		if (cheat == "idle") {
+			charonIdle();
 			return true;
 		}
 

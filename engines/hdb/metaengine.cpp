@@ -37,6 +37,22 @@
 
 namespace HDB {
 
+static const ADExtraGuiOptionsMap optionsList[] = {
+		{
+				GAMEOPTION_CHEATMODE,
+				{
+						_s("Enable cheat mode"),
+						_s("Debug info and level selection becomes available"),
+						"hypercheat",
+						false,
+						0,
+						0
+				}
+		},
+
+		AD_EXTRA_GUI_OPTIONS_TERMINATOR
+};
+
 const char *HDBGame::getGameId() const { return _gameDescription->gameId; }
 Common::Platform HDBGame::getPlatform() const { return _gameDescription->platform; }
 
@@ -62,16 +78,20 @@ bool HDBGame::isHandango() const {
 
 } // End of namespace HDB
 
-class HDBMetaEngine : public AdvancedMetaEngine {
+class HDBMetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 public:
 	const char *getName() const override {
 		return "hdb";
 	}
 
+	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override {
+		return HDB::optionsList;
+	}
+
 	bool hasFeature(MetaEngineFeature f) const override;
 	int getMaximumSaveSlot() const override;
 
-	void removeSaveState(const char *target, int slot) const override;
+	bool removeSaveState(const char *target, int slot) const override;
 	SaveStateList listSaves(const char *target) const override;
 	SaveStateDescriptor querySaveMetaInfos(const char *target, int slot) const override;
 	Common::KeymapArray initKeymaps(const char *target) const override;
@@ -95,9 +115,9 @@ bool HDB::HDBGame::hasFeature(Engine::EngineFeature f) const {
 		   (f == kSupportsSavingDuringRuntime);
 }
 
-void HDBMetaEngine::removeSaveState(const char *target, int slot) const {
+bool HDBMetaEngine::removeSaveState(const char *target, int slot) const {
 	Common::String fileName = Common::String::format("%s.%03d", target, slot);
-	g_system->getSavefileManager()->removeSavefile(fileName);
+	return g_system->getSavefileManager()->removeSavefile(fileName);
 }
 
 int HDBMetaEngine::getMaximumSaveSlot() const { return 99; }
@@ -184,7 +204,7 @@ Common::KeymapArray HDBMetaEngine::initKeymaps(const char *target) const {
 
 	Action *act;
 
-	act = new Action(kStandardActionLeftClick, _("Left Click"));
+	act = new Action(kStandardActionLeftClick, _("Left click"));
 	act->setLeftClickEvent();
 	act->addDefaultInputMapping("MOUSE_LEFT");
 	act->addDefaultInputMapping("JOY_A");

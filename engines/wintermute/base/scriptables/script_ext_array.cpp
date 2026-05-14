@@ -30,6 +30,7 @@
 #include "engines/wintermute/base/scriptables/script_stack.h"
 #include "engines/wintermute/system/sys_instance.h"
 #include "engines/wintermute/base/scriptables/script_ext_array.h"
+#include "engines/wintermute/dcgf.h"
 
 namespace Wintermute {
 
@@ -42,7 +43,7 @@ BaseScriptable *makeSXArray(BaseGame *inGame, ScStack *stack) {
 //////////////////////////////////////////////////////////////////////////
 SXArray::SXArray(BaseGame *inGame, ScStack *stack) : BaseScriptable(inGame) {
 	_length = 0;
-	_values = new ScValue(_gameRef);
+	_values = new ScValue(_game);
 
 	int numParams = stack->pop()->getInt(0);
 
@@ -52,7 +53,7 @@ SXArray::SXArray(BaseGame *inGame, ScStack *stack) : BaseScriptable(inGame) {
 		_length = numParams;
 		char paramName[20];
 		for (int i = 0; i < numParams; i++) {
-			sprintf(paramName, "%d", i);
+			Common::sprintf_s(paramName, "%d", i);
 			_values->setProp(paramName, stack->pop());
 		}
 	}
@@ -61,37 +62,35 @@ SXArray::SXArray(BaseGame *inGame, ScStack *stack) : BaseScriptable(inGame) {
 //////////////////////////////////////////////////////////////////////////
 SXArray::SXArray(BaseGame *inGame) : BaseScriptable(inGame) {
 	_length = 0;
-	_values = new ScValue(_gameRef);
+	_values = new ScValue(_game);
 }
 
 
 //////////////////////////////////////////////////////////////////////////
 SXArray::~SXArray() {
-	delete _values;
-	_values = nullptr;
+	SAFE_DELETE(_values);
 }
 
 
 //////////////////////////////////////////////////////////////////////////
 const char *SXArray::scToString() {
-	char dummy[32768];
-	strcpy(dummy, "");
+	static char dummy[32768];
+	dummy[0] = '\0';
 	char propName[20];
 	for (int i = 0; i < _length; i++) {
-		sprintf(propName, "%d", i);
+		Common::sprintf_s(propName, "%d", i);
 		ScValue *val = _values->getProp(propName);
 		if (val) {
 			if (strlen(dummy) + strlen(val->getString()) < 32768) {
-				strcat(dummy, val->getString());
+				Common::strcat_s(dummy, val->getString());
 			}
 		}
 
 		if (i < _length - 1 && strlen(dummy) + 1 < 32768) {
-			strcat(dummy, ",");
+			Common::strcat_s(dummy, ",");
 		}
 	}
-	_strRep = dummy;
-	return _strRep.c_str();
+	return dummy;
 }
 
 
@@ -106,7 +105,7 @@ bool SXArray::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack,
 
 		for (int i = 0; i < numParams; i++) {
 			_length++;
-			sprintf(paramName, "%d", _length - 1);
+			Common::sprintf_s(paramName, "%d", _length - 1);
 			_values->setProp(paramName, stack->pop(), true);
 		}
 		stack->pushInt(_length);
@@ -122,7 +121,7 @@ bool SXArray::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack,
 
 		if (_length > 0) {
 			char paramName[20];
-			sprintf(paramName, "%d", _length - 1);
+			Common::sprintf_s(paramName, "%d", _length - 1);
 			stack->push(_values->getProp(paramName));
 			_values->deleteProp(paramName);
 			_length--;
@@ -148,8 +147,8 @@ bool SXArray::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack,
 		char paramNameTo[20];
 
 		for (int i = shiftPoint; i < _length - 1 ; i++) {
-			sprintf(paramNameFrom, "%d", i + 1);
-			sprintf(paramNameTo, "%d", i);
+			Common::sprintf_s(paramNameFrom, "%d", i + 1);
+			Common::sprintf_s(paramNameTo, "%d", i);
 			_values->setProp(paramNameTo, _values->getProp(paramNameFrom), false);
 		}
 		_values->deleteProp(paramNameFrom);
@@ -167,13 +166,13 @@ bool SXArray::scCallMethod(ScScript *script, ScStack *stack, ScStack *thisStack,
 
 
 //////////////////////////////////////////////////////////////////////////
-ScValue *SXArray::scGetProperty(const Common::String &name) {
+ScValue *SXArray::scGetProperty(const char *name) {
 	_scValue->setNULL();
 
 	//////////////////////////////////////////////////////////////////////////
 	// Type
 	//////////////////////////////////////////////////////////////////////////
-	if (name == "Type") {
+	if (strcmp(name, "Type") == 0) {
 		_scValue->setString("array");
 		return _scValue;
 	}
@@ -181,7 +180,7 @@ ScValue *SXArray::scGetProperty(const Common::String &name) {
 	//////////////////////////////////////////////////////////////////////////
 	// Length
 	//////////////////////////////////////////////////////////////////////////
-	else if (name == "Length") {
+	else if (strcmp(name, "Length") == 0) {
 		_scValue->setInt(_length);
 		return _scValue;
 	}
@@ -191,7 +190,7 @@ ScValue *SXArray::scGetProperty(const Common::String &name) {
 	//////////////////////////////////////////////////////////////////////////
 	else {
 		char paramName[20];
-		if (validNumber(name.c_str(), paramName)) { // TODO: Change to Common::String
+		if (validNumber(name, paramName)) {
 			return _values->getProp(paramName);
 		} else {
 			return _scValue;
@@ -212,7 +211,7 @@ bool SXArray::scSetProperty(const char *name, ScValue *value) {
 		char propName[20];
 		if (_length < origLength) {
 			for (int i = _length; i < origLength; i++) {
-				sprintf(propName, "%d", i);
+				Common::sprintf_s(propName, "%d", i);
 				_values->deleteProp(propName);
 			}
 		}
@@ -260,7 +259,7 @@ bool SXArray::validNumber(const char *origStr, char *outStr) {
 
 	if (isNumber) {
 		int index = atoi(origStr);
-		sprintf(outStr, "%d", index);
+		Common::sprintf_s(outStr, 20, "%d", index);
 		return true;
 	} else {
 		return false;
@@ -271,7 +270,7 @@ bool SXArray::validNumber(const char *origStr, char *outStr) {
 bool SXArray::push(ScValue *val) {
 	char paramName[20];
 	_length++;
-	sprintf(paramName, "%d", _length - 1);
+	Common::sprintf_s(paramName, "%d", _length - 1);
 	_values->setProp(paramName, val, true);
 	return STATUS_OK;
 }

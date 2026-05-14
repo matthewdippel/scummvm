@@ -33,7 +33,6 @@ class IDataSource;
 class RawArchive : public Archive {
 public:
 	RawArchive() : Archive() { }
-	explicit RawArchive(ArchiveFile *af) : Archive(af) { }
 	explicit RawArchive(Common::SeekableReadStream *rs) : Archive(rs) { }
 
 	~RawArchive() override;
@@ -56,7 +55,7 @@ public:
 	virtual Common::SeekableReadStream *get_datasource(uint32 index);
 
 protected:
-	Std::vector<uint8 *> _objects;
+	Common::Array<uint8 *> _objects;
 };
 
 } // End of namespace Ultima8

@@ -51,7 +51,7 @@ struct BgFileHeader {
 	int _scrollSize;
 	int _bytesWritten;				// Size of the main body of the RRM
 	int _fadeStyle;					// Fade style
-	byte _palette[PALETTE_SIZE];	// Palette
+	byte _palette[Graphics::PALETTE_SIZE];	// Palette
 
 
 	BgFileHeader();
@@ -175,7 +175,7 @@ private:
 	void saveSceneStatus();
 protected:
 	SherlockEngine *_vm;
-	Common::String _roomFilename;
+	Common::Path _roomFilename;
 
 	/**
 	 * Loads the data associated for a given scene. The room resource file's format is:
@@ -186,7 +186,7 @@ protected:
 	 * The _misc field of the structures contains the number of the graphic image
 	 * that it should point to after loading; _misc is then set to 0.
 	 */
-	virtual bool loadScene(const Common::String &filename);
+	virtual bool loadScene(const Common::Path &filename);
 
 	/**
 	 * Checks all the background shapes. If a background shape is animating,
@@ -268,7 +268,7 @@ public:
 	int checkForZones(const Common::Point &pt, int zoneType);
 
 	/**
-	 * Check which zone the the given position is located in.
+	 * Check which zone the given position is located in.
 	 */
 	int whichZone(const Common::Point &pt);
 

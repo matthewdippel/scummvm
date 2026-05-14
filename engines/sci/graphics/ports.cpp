@@ -19,6 +19,7 @@
  *
  */
 
+#include "common/system.h"
 #include "common/util.h"
 
 #include "sci/console.h"
@@ -80,7 +81,7 @@ void GfxPorts::init(bool usesOldGfxFunctions, GfxPaint16 *paint16, GfxText16 *te
 
 	// Jones, Slater, Hoyle 3&4 and Crazy Nicks Laura Bow/Kings Quest were
 	// called with parameter -Nw 0 0 200 320.
-	// Mother Goose (SCI1) uses -Nw 0 0 159 262. The game will later use
+	// Mother Goose (SCI1, SCI11) uses -Nw 0 0 159 262. The game will later use
 	// SetPort so we don't need to set the other fields.
 	// This actually meant not skipping the first 10 pixellines in windowMgrPort
 	int16 offTop = 10;
@@ -92,10 +93,7 @@ void GfxPorts::init(bool usesOldGfxFunctions, GfxPaint16 *paint16, GfxText16 *te
 	case GID_HOYLE4:
 	case GID_CNICK_LAURABOW:
 	case GID_CNICK_KQ:
-		offTop = 0;
-		break;
 	case GID_MOTHERGOOSE256:
-		// only the SCI1 and SCI1.1 (VGA) versions need this
 		offTop = 0;
 		break;
 	case GID_FAIRYTALES:
@@ -129,7 +127,7 @@ void GfxPorts::init(bool usesOldGfxFunctions, GfxPaint16 *paint16, GfxText16 *te
 	openPort(_wmgrPort);
 	setPort(_wmgrPort);
 	// SCI0 games till kq4 (.502 - not including) did not adjust against _wmgrPort in kNewWindow
-	//  We leave _wmgrPort top at 0, so the adjustment wont get done
+	//  We leave _wmgrPort top at 0, so the adjustment won't get done
 	if (!_usesOldGfxFunctions) {
 		setOrigin(0, offTop);
 		_wmgrPort->rect.bottom = _screen->getHeight() - offTop;
@@ -252,6 +250,11 @@ void GfxPorts::kernelDisposeWindow(uint16 windowId, bool reanimate) {
 	} else {
 		error("kDisposeWindow: used unknown window id %d", windowId);
 	}
+
+	if (windowId == _portIdWithEditText) {
+		g_system->setFeatureState(OSystem::kFeatureVirtualKeyboard, false);
+		_portIdWithEditText = -1;
+	}
 }
 
 int16 GfxPorts::isFrontWindow(Window *pWnd) {
@@ -341,7 +344,7 @@ Window *GfxPorts::addWindow(const Common::Rect &dims, const Common::Rect *restor
 
 	if (r.width() > _screen->getScriptWidth()) {
 		// We get invalid dimensions at least at the end of sq3 (script bug!).
-		// Same happens very often in lsl5, sierra sci didnt fix it but it looked awful.
+		// Same happens very often in lsl5, sierra sci didn't fix it but it looked awful.
 		// Also happens frequently in the demo of GK1.
 		warning("Fixing too large window, left: %d, right: %d", dims.left, dims.right);
 		r.left = 0;
@@ -682,7 +685,7 @@ void GfxPorts::priorityBandsInit(int16 bandCount, int16 top, int16 bottom) {
 		while (_priorityBands[--y] == _priorityBandCount)
 			_priorityBands[y]--;
 	}
-	// We fill space that is left over with the highest band (hardcoded 200 limit, because this algo isnt meant to be used on hires)
+	// We fill space that is left over with the highest band (hardcoded 200 limit, because this algo isn't meant to be used on hires)
 	for (y = _priorityBottom; y < 200; y++)
 		_priorityBands[y] = _priorityBandCount;
 
@@ -694,10 +697,9 @@ void GfxPorts::priorityBandsInit(int16 bandCount, int16 top, int16 bottom) {
 
 void GfxPorts::priorityBandsInit(const SciSpan<const byte> &data) {
 	int i = 0, inx;
-	byte priority = 0;
 
 	for (inx = 0; inx < 14; inx++) {
-		priority = data[inx];
+		byte priority = data[inx];
 		while (i < priority && i < 200)
 			_priorityBands[i++] = inx;
 	}
@@ -745,9 +747,8 @@ byte GfxPorts::kernelCoordinateToPriority(int16 y) {
 }
 
 int16 GfxPorts::kernelPriorityToCoordinate(byte priority) {
-	int16 y;
 	if (priority <= _priorityBandCount) {
-		for (y = 0; y <= _priorityBottom; y++)
+		for (int16 y = 0; y <= _priorityBottom; y++)
 			if (_priorityBands[y] == priority)
 				return y;
 	}

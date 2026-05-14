@@ -78,7 +78,7 @@ public:
 	bool drawsTile() const override;
 
 	int x, y;
-	Std::vector<RGBA *> _colors;
+	Common::Array<RGBA *> _colors;
 };
 
 /**
@@ -134,7 +134,7 @@ public:
  */
 class TileAnimContext {
 public:
-	typedef Std::vector<TileAnimTransform *> TileAnimTransformList;
+	typedef Common::Array<TileAnimTransform *> TileAnimTransformList;
 	typedef enum {
 		FRAME,
 		DIR
@@ -200,10 +200,10 @@ public:
 	~TileAnim();
 
 	Common::String _name;
-	Std::vector<TileAnimTransform *> _transforms;
-	Std::vector<TileAnimContext *> _contexts;
+	Common::Array<TileAnimTransform *> _transforms;
+	Common::Array<TileAnimContext *> _contexts;
 
-	/* returns the frame to set the mapTile to (only relevent if persistent) */
+	/* returns the frame to set the mapTile to (only relevant if persistent) */
 	void draw(Image *dest, Tile *tile, MapTile &mapTile, Direction dir);
 
 	int _random;   /* true if the tile animation occurs randomely */
@@ -214,7 +214,7 @@ public:
  * specific image set which shares the same name.
  */
 class TileAnimSet {
-	typedef Std::map<Common::String, TileAnim *> TileAnimMap;
+	typedef Common::HashMap<Common::String, TileAnim *> TileAnimMap;
 
 public:
 	TileAnimSet(const ConfigElement &conf);

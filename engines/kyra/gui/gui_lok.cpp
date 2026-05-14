@@ -179,7 +179,6 @@ int KyraEngine_LoK::buttonAmuletCallback(Button *caller) {
 #pragma mark -
 
 GUI_LoK::GUI_LoK(KyraEngine_LoK *vm, Screen_LoK *screen) : GUI_v1(vm), _vm(vm), _screen(screen) {
-	_lastScreenUpdate = 0;
 	_menu = nullptr;
 	_pressFlag = false;
 	initStaticResource();
@@ -359,33 +358,26 @@ void GUI_LoK::setGUILabels() {
 	int offsetOn = 0;
 	int offsetPC98 = 0;
 
-	int walkspeedGarbageOffset = 36;
-	int menuLabelGarbageOffset = 0;
-
 	if (_vm->gameFlags().isTalkie) {
-		if (_vm->gameFlags().lang == Common::EN_ANY || _vm->gameFlags().lang == Common::HE_ISR)
+		if (_vm->gameFlags().lang == Common::EN_ANY || _vm->gameFlags().lang == Common::HE_ISR || _vm->gameFlags().lang == Common::CS_CZE)
 			offset = 52;
 		else if (_vm->gameFlags().lang == Common::DE_DEU)
 			offset = 30;
 		else if (_vm->gameFlags().lang == Common::FR_FRA || _vm->gameFlags().lang == Common::IT_ITA || _vm->gameFlags().lang == Common::ES_ESP)
 			offset = 6;
 		offsetOn = offsetMainMenu = offsetOptions = offset;
-		walkspeedGarbageOffset = 48;
 	} else if (_vm->gameFlags().platform == Common::kPlatformAmiga) {
 		if (_vm->gameFlags().lang == Common::EN_ANY) {
 			offset = offsetOn = 23;
 			offsetOptions = 32;
-			walkspeedGarbageOffset = 2;
 			offsetMainMenu = 23;
 		} else if (_vm->gameFlags().lang == Common::DE_DEU) {
 			offset = offsetOn = 12;
 			offsetOptions = 21;
-			walkspeedGarbageOffset = 3;
 			offsetMainMenu = 12;
 		}
 	} else if (_vm->gameFlags().lang == Common::ES_ESP) {
 		offsetOn = offsetMainMenu = offsetOptions = offset = -4;
-		menuLabelGarbageOffset = 72;
 	} else if (_vm->gameFlags().lang == Common::IT_ITA) {
 		offsetOn = offsetMainMenu = offsetOptions = offset = 32;
 	} else if (_vm->gameFlags().lang == Common::DE_DEU) {
@@ -394,7 +386,6 @@ void GUI_LoK::setGUILabels() {
 		offset = 1;
 		offsetOptions = 10;
 		offsetOn = 0;
-		walkspeedGarbageOffset = 0;
 	} else if (_vm->gameFlags().platform == Common::kPlatformPC98) {
 		offsetMainMenu = offsetOptions = offsetOn = offset = 47;
 		offsetPC98 = 1;
@@ -446,11 +437,11 @@ void GUI_LoK::setGUILabels() {
 	// Sounds are
 	_menu[5].item[1].labelString = _vm->_guiStrings[27 + offsetOptions];
 	// Walk speed
-	_menu[5].item[2].labelString = &_vm->_guiStrings[24 + offsetOptions][walkspeedGarbageOffset];
+	_menu[5].item[2].labelString = _vm->_guiStrings[24 + offsetOptions];
 	// Text speed
 	_menu[5].item[4].labelString = _vm->_guiStrings[25 + offsetOptions];
 	// Main Menu
-	_menu[5].item[5].itemString = &_vm->_guiStrings[19 + offsetMainMenu][menuLabelGarbageOffset];
+	_menu[5].item[5].itemString = _vm->_guiStrings[19 + offsetMainMenu];
 
 	if (_vm->gameFlags().isTalkie)
 		// Text & Voice
@@ -760,7 +751,9 @@ void GUI_LoK::updateSavegameString() {
 				Util::mergeUpdateJohabChars(prevTwoByteChar, newTwoByteChar, oneByteInput, _resetHanInput);
 				if (prevTwoByteChar) {
 					WRITE_BE_UINT16(&_savegameName[length - 2], prevTwoByteChar);
-					_savegameName[length] = _savegameName[length + 1] = 0;
+					_savegameName[length] = 0;
+					if (length < ARRAYSIZE(_savegameName) - 1)
+						_savegameName[length + 1] = 0;
 					_backupChars[_inputState++] = prevTwoByteChar;
 				}
 				// A new character will only be added if there is still space left.

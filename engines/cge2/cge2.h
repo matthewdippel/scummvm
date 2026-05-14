@@ -111,6 +111,15 @@ struct SavegameHeader;
 
 #define kColorNum           6
 
+enum CGEAction {
+	kActionNone,
+	kActionInfo,
+	kActionEscape,
+	kActionSave,
+	kActionLoad,
+	kActionQuit
+};
+
 struct SavegameHeader {
 	uint8 version;
 	Common::String saveName;
@@ -126,7 +135,7 @@ enum GamePhase { kPhaseInGame, kPhaseIntro, kPhaseOver };
 
 // our engine debug channels
 enum {
-	kCGE2DebugOpcode = 1 << 0
+	kCGE2DebugOpcode = 1,
 };
 
 enum CallbackType {
@@ -154,8 +163,8 @@ private:
 public:
 	CGE2Engine(OSystem *syst, const ADGameDescription *gameDescription);
 	bool hasFeature(EngineFeature f) const override;
-	bool canSaveGameStateCurrently() override;
-	bool canLoadGameStateCurrently() override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
 	Common::Language getLanguage() const;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 	Common::Error loadGameState(int slot) override;
@@ -231,7 +240,7 @@ public:
 	int number(char *s);
 	char *token(char *s);
 	char *tail(char *s);
-	int takeEnum(const char **tab, const char *text);
+	int takeEnum(const char *const *tab, const char *text);
 	ID ident(const char *s);
 	bool testBool(char *s);
 

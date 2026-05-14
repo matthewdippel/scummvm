@@ -45,21 +45,23 @@ namespace Scumm {
 class IMuseDigiInternalMixer {
 
 private:
-	int32 *_amp8Table;
-	int32 *_amp12Table;
-	int32 *_softLMID;
-	int32 *_softLTable;
+	int32 *_amp8Table = nullptr;
+	int32 *_amp12Table = nullptr;
+	int32 *_softLMID = nullptr;
+	int32 *_softLTable = nullptr;
 
-	uint8 *_mixBuf;
+	uint8 *_mixBuf = nullptr;
 
 	Audio::Mixer *_mixer;
 	Audio::SoundHandle _channelHandle;
-	int _mixBufSize;
-	int _radioChatter;
-	int _outWordSize;
-	int _outChannelCount;
-	int _stereoReverseFlag;
-	bool _isEarlyDiMUSE;
+	int _mixBufSize = 0;
+	int _radioChatter = 0;
+	int _outWordSize = 0;
+	int _outChannelCount = 0;
+	int _sampleRate = 0;
+	int _stereoReverseFlag = 0;
+	bool _isEarlyDiMUSE = false;
+	bool _lowLatencyMode = false;
 
 	void mixBits8Mono(uint8 *srcBuf, int32 inFrameCount, int feedSize, int32 mixBufStartIndex, int32 *ampTable, bool ftIs11025Hz);
 	void mixBits12Mono(uint8 *srcBuf, int32 inFrameCount, int feedSize, int32 mixBufStartIndex, int32 *ampTable);
@@ -78,7 +80,7 @@ private:
 	void mixBits16Stereo(uint8 *srcBuf, int32 inFrameCount, int feedSize, int32 mixBufStartIndex, int32 *ampTable);
 
 public:
-	IMuseDigiInternalMixer(Audio::Mixer *mixer, bool isEarlyDiMUSE);
+	IMuseDigiInternalMixer(Audio::Mixer *mixer, int sampleRate, bool isEarlyDiMUSE, bool lowLatencyMode = false);
 	~IMuseDigiInternalMixer();
 	int  init(int bytesPerSample, int numChannels, uint8 *mixBuf, int mixBufSize, int sizeSampleKB, int mixChannelsNum);
 	void setRadioChatter();
@@ -88,6 +90,14 @@ public:
 	void mix(uint8 *srcBuf, int32 inFrameCount, int wordSize, int channelCount, int feedSize, int32 mixBufStartIndex, int volume, int pan, bool ftIs11025Hz);
 	int  loop(uint8 **destBuffer, int len);
 	Audio::QueuingAudioStream *_stream;
+
+	// For low latency audio
+	void setCurrentMixerBuffer(uint8 *newBuf);
+	void endStream(int idx);
+	Audio::QueuingAudioStream *getStream(int idx);
+
+	Audio::QueuingAudioStream *_separateStreams[DIMUSE_MAX_TRACKS];
+	Audio::SoundHandle _separateChannelHandles[DIMUSE_MAX_TRACKS];
 };
 
 } // End of namespace Scumm

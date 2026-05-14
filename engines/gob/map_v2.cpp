@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/stream.h"
@@ -58,6 +64,10 @@ void Map_v2::loadMapObjects(const char *avjFile) {
 
 	if (((uint16) id) >= 65520) {
 		switch ((uint16) id) {
+			case 65529:
+				warning("STUB: Map_v2::loadMapObjects() ID == 65529 unimplemented"); // TODO: unimplemented case
+				break;
+
 			case 65530:
 				for (int i = 0; i < _mapWidth * _mapHeight; i++)
 					_passMap[i] -= READ_VARO_UINT8(var + i);
@@ -72,19 +82,17 @@ void Map_v2::loadMapObjects(const char *avjFile) {
 				break;
 			case 65533: {
 				int index = READ_VARO_UINT16(var);
-				// _vm->_mult->_objects[index].field_6E = 0;
-				// _vm->_mult->_objects[index].field_6A = variables;
-				warning("Map_v2::loadMapObjects(): ID == 65533 (%d)", index);
+				_vm->_mult->_objects[index].animVariables = new VariableReferenceArray(*_vm->_inter->_variables,
+																					   var,
+																					   Variables::kVariableType16);
 				break;
 			}
 			case 65534:
-				_tilesWidth     = READ_VARO_UINT8(var);
-				_tilesHeight    = READ_VARO_UINT8(var + 1);
-				_mapWidth       = READ_VARO_UINT8(var + 2);
-				_mapHeight      = READ_VARO_UINT8(var + 3);
-				_mapUnknownBool = READ_VARO_UINT8(var + 4) ? true : false;
-				if (_mapUnknownBool)
-					warning("Map_v2::loadMapObjects(): _mapUnknownBool == true");
+				_tilesWidth             = READ_VARO_UINT8(var);
+				_tilesHeight            = READ_VARO_UINT8(var + 1);
+				_mapWidth               = READ_VARO_UINT8(var + 2);
+				_mapHeight              = READ_VARO_UINT8(var + 3);
+				_usesObliqueCoordinates = READ_VARO_UINT8(var + 4) ? true : false;
 				break;
 			case 65535:
 				_passMap = (int8 *)_vm->_inter->_variables->getAddressOff8(var);

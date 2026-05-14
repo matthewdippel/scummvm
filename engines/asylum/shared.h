@@ -879,7 +879,17 @@ enum AsylumAction {
 	kAsylumActionSwitchToSarah,
 	kAsylumActionSwitchToGrimwall,
 	kAsylumActionSwitchToOlmec,
-	kAsylumActionOpenInventory
+	kAsylumActionOpenInventory,
+	kAsylumActionShowMenu,
+	kAsylumActionMoveUp,
+	kAsylumActionMoveDown,
+	kAsylumActionMoveRight,
+	kAsylumActionMoveLeft,
+	kAsylumActionNextResource,
+	kAsylumActionPreviousResource,
+	kAsylumActionNextPalette,
+	kAsylumActionPreviousPalette,
+	kAsylumActionAnimate
 };
 
 //////////////////////////////////////////////////////////////////////////

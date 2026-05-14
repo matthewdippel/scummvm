@@ -384,13 +384,18 @@ SeqPlayer_HOF::SeqPlayer_HOF(KyraEngine_v1 *vm, Screen_v2 *screen, OSystem *syst
 	_target = kHoF;
 	_firstScene = _loopStartScene = 0;
 
-	_defaultFont = (_vm->gameFlags().lang == Common::ZH_TWN) ? Screen::FID_CHINESE_FNT : ((_vm->gameFlags().lang == Common::JA_JPN) ? Screen::FID_SJIS_FNT : Screen::FID_GOLDFONT_FNT);
+	_specialAnimTimeOutTotal = 0;
+	_specialAnimFrameTimeOut = 0;
+
+	memset(_hofDemoItemShapes, 0, sizeof(_hofDemoItemShapes));
+
+	_defaultFont = (_vm->gameFlags().lang == Common::ZH_TWN) ? Screen::FID_CHINESE_FNT : ((_vm->gameFlags().lang == Common::JA_JPN) ? Screen::FID_SJIS_FNT : ((_vm->gameFlags().lang == Common::KO_KOR) ? Screen::FID_KOREAN_FNT : Screen::FID_GOLDFONT_FNT));
 	_creditsFont = (_vm->gameFlags().lang == Common::ZH_TWN) ? Screen::FID_CHINESE_FNT : Screen::FID_8_FNT;
 	_creditsFont2 = (_vm->gameFlags().lang == Common::ZH_TWN) ? Screen::FID_GOLDFONT_FNT : Screen::FID_8_FNT;
 
 	int tempSize = 0;
 	_vm->resource()->unloadAllPakFiles();
-	_vm->resource()->loadPakFile(StaticResource::staticDataFilename());
+	_vm->resource()->loadPakFile(Common::Path(StaticResource::staticDataFilename()));
 	const char *const *files = _vm->staticres()->loadStrings(k2SeqplayPakFiles, tempSize);
 	_vm->resource()->loadFileList(files, tempSize);
 
@@ -415,20 +420,20 @@ SeqPlayer_HOF::SeqPlayer_HOF(KyraEngine_v1 *vm, Screen_v2 *screen, OSystem *syst
 	char **tmpSndLst = new char *[_sequenceSoundListSize];
 
 	for (int i = 0; i < _sequenceSoundListSize; i++) {
-		const int len = strlen(seqSoundList[i]);
+		const int len = Common::strnlen(seqSoundList[i], 8);
 
 		tmpSndLst[i] = new char[len + 1];
 		tmpSndLst[i][0] = 0;
 
 		if (tlkfiles && len > 1) {
 			for (int ii = 0; ii < tempSize; ii++) {
-				if (strlen(tlkfiles[ii]) > 1 && !scumm_stricmp(&seqSoundList[i][1], &tlkfiles[ii][1]))
-					strcpy(tmpSndLst[i], tlkfiles[ii]);
+				if (Common::strnlen(tlkfiles[ii], 8) > 1 && !scumm_stricmp(&seqSoundList[i][1], &tlkfiles[ii][1]))
+					Common::strlcpy(tmpSndLst[i], tlkfiles[ii], len + 1);
 			}
 		}
 
 		if (tmpSndLst[i][0] == 0)
-			strcpy(tmpSndLst[i], seqSoundList[i]);
+			Common::strlcpy(tmpSndLst[i], seqSoundList[i],  len + 1);
 	}
 
 	tlkfiles = seqSoundList = nullptr;
@@ -458,7 +463,9 @@ SeqPlayer_HOF::SeqPlayer_HOF(KyraEngine_v1 *vm, Screen_v2 *screen, OSystem *syst
 		int8 ls = 0;
 		Screen::FontId fid = Screen::FID_8_FNT;
 
-		if (_vm->gameFlags().lang == Common::JA_JPN) {
+		if (_vm->gameFlags().lang == Common::KO_KOR) {
+			fid = Screen::FID_KOREAN_FNT;
+		} else if (_vm->gameFlags().lang == Common::JA_JPN) {
 			fid = Screen::FID_SJIS_FNT;
 			ls = 1;
 		} else if (_vm->gameFlags().lang == Common::ZH_TWN) {
@@ -499,7 +506,7 @@ SeqPlayer_HOF::~SeqPlayer_HOF() {
 	delete _menu;
 
 	if (_vm->game() != GI_LOL)
-		_screen->setFont(_vm->gameFlags().lang == Common::ZH_TWN ? Screen::FID_CHINESE_FNT : (_vm->gameFlags().lang == Common::JA_JPN ? Screen::FID_SJIS_FNT : Screen::FID_8_FNT));
+		_screen->setFont(_vm->gameFlags().lang == Common::ZH_TWN ? Screen::FID_CHINESE_FNT : (_vm->gameFlags().lang == Common::JA_JPN ? Screen::FID_SJIS_FNT : (_vm->gameFlags().lang == Common::KO_KOR ? Screen::FID_KOREAN_FNT : Screen::FID_8_FNT)));
 }
 
 int SeqPlayer_HOF::play(SequenceID firstScene, SequenceID loopStartScene) {
@@ -997,7 +1004,7 @@ void SeqPlayer_HOF::playAnimation(WSAMovie_v2 *wsaObj, int startFrame, int lastF
 			origW = 320 - x;
 
 		if (y + origH > 199)
-			origW = 200 - y;
+			origH = 200 - y;
 	}
 
 	int8 frameStep = (startFrame > lastFrame) ? -1 : 1;
@@ -1691,6 +1698,7 @@ void SeqPlayer_HOF::displayHoFTalkieScrollText(uint8 *data, const ScreenDim *d, 
 			textData[1].text += strlen((char *)textData[1].text);
 			textData[1].text[0] = textData[1].unk1;
 			cnt--;
+			assert(cnt >= 0);
 			memmove(&textData[1], &textData[2], cnt * sizeof(ScrollTextData));
 		}
 

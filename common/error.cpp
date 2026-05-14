@@ -64,6 +64,7 @@ static String errorToString(ErrorCode errorCode) {
 		return _s("Writing data failed");
 
 	case kEnginePluginNotFound:
+	case kMetaEnginePluginNotFound:
 		return _s("Could not find suitable engine plugin");
 	case kEnginePluginNotSupportSaves:
 		return _s("Engine plugin does not support saved games");
@@ -78,11 +79,27 @@ static String errorToString(ErrorCode errorCode) {
 }
 
 Error::Error(ErrorCode code)
-	: _code(code), _desc(errorToString(code)) {
+	: _code(code), _desc() {
 }
 
 Error::Error(ErrorCode code, const String &desc)
-	: _code(code), _desc(errorToString(code) + " (" + desc + ")") {
+	: _code(code), _desc(desc) {
+}
+
+String Error::getDesc() const {
+	if (!_desc.empty()) {
+		return Common::String::format("%s (%s)", errorToString(_code).c_str(), _desc.c_str());
+	} else {
+		return errorToString(_code);
+	}
+}
+
+U32String Error::getTranslatedDesc() const {
+	if (!_desc.empty()) {
+		return Common::U32String::format("%S (%S)", _(errorToString(_code)).c_str(), _(_desc).c_str());
+	} else {
+		return _(errorToString(_code));
+	}
 }
 
 

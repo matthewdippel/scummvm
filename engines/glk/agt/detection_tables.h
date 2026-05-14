@@ -20,13 +20,14 @@
  */
 
 #include "engines/game.h"
-#include "common/gui_options.h"
 #include "common/language.h"
 
 namespace Glk {
 namespace AGT {
 
 const PlainGameDescriptor AGT_GAME_LIST[] = {
+	{ "agt", "AGT IF Game" },
+
 	{ "abloodylife", "A Bloody Life" },
 	{ "alandria", "The Search for Princess Alandria" },
 	{ "alchemistcastle", "Castle of the Alchemists" },
@@ -61,7 +62,7 @@ const PlainGameDescriptor AGT_GAME_LIST[] = {
 	{ "firststupidgame", "My First Stupid Game" },
 	{ "ccfirstadv", "Colossal Cave - The First Adventure" },
 	{ "ggollek", "Ggollek I : The Dissolution" },
-	{ "agtghosttown", "Ghost Town" },
+	{ "ghosttown_rm", "Ghost Town (by Robert Masenten)" },
 	{ "giganticsecrets", "Secrets of the Gigantic" },
 	{ "newenglandgothic", "New England Gothic" },
 	{ "grailmisadventure", "The Misadventure of the Holy Grail" },
@@ -109,6 +110,7 @@ const PlainGameDescriptor AGT_GAME_LIST[] = {
 	{ "pork2", "PORK II, The Gizzard of Showbiz" },
 	{ "starportal", "The Star Portal" },
 	{ "pastoralpitfalls", "Pastoral Pitfalls" },
+	{ "personalizedsample", "Personalized Adventure Game Sample" },
 	{ "lostproperty", "Lost Property" },
 	{ "gameofrecovery", "The Game of Recovery" },
 	{ "rerunsagain", "Reruns Again version" },
@@ -132,6 +134,7 @@ const PlainGameDescriptor AGT_GAME_LIST[] = {
 	{ "therift", "The Rift" },
 	{ "tja", "The Jeweled Arena" },
 	{ "toho", "Toho Academy" },
+	{ "tombpharaohs", "The Tomb of the Ancient Pharaohs" },
 	{ "tossedintospace", "Tossed into Space : Dr.Schmidt Goes Home" },
 	{ "timesquared", "TimeSquared" },
 	{ "folkestone", "Murder at the Folkestone Inn" },
@@ -155,6 +158,7 @@ const PlainGameDescriptor AGT_GAME_LIST[] = {
 
 const GlkDetectionEntry AGT_GAMES[] = {
 	DT_ENTRY0("abloodylife", "c492e0ae0647d3a4835012ca864b99d5", 157221),
+	DT_ENTRY0("alandria", "0dcaff32c55dd2c1898da7893500de34", 53946),
 	DT_ENTRY0("alchemistcastle", "7822dfaf1ae31b3e508e7b0a267d054b", 192051),
 	DT_ENTRY0("advalice", "0aaafb897b46baa28023bbbaf4091fd8", 23004),
 	DT_ENTRY0("apprenticetesting", "4e4244649dc1cd39546f3d10dc85acb5", 131868),
@@ -189,7 +193,7 @@ const GlkDetectionEntry AGT_GAMES[] = {
 	DT_ENTRY0("ccfirstadv", "8a8ff26cd6a396c193d865fa6e37594d", 83754),
 	DT_ENTRY0("firststupidgame", "859933f151a301f64f88a8101853f432", 21222),
 	DT_ENTRY0("ggollek", "e02fa5e1ddff57e89231481574218834", 75573),
-	DT_ENTRY0("agtghosttown", "33aa534de04a978c50f8a038a6bec3e7", 35235),
+	DT_ENTRY0("ghosttown_rm", "33aa534de04a978c50f8a038a6bec3e7", 35235),
 	DT_ENTRY0("giganticsecrets", "66d6b6b5bf43149a8ad5578c45ad4731", 21627),
 	DT_ENTRY0("newenglandgothic", "10898900c3b872282a4298b32e851dfc", 104895),
 	DT_ENTRY0("grailmisadventure", "f7b0447cc01d1f4629e734952deccf98", 107487),
@@ -237,6 +241,7 @@ const GlkDetectionEntry AGT_GAMES[] = {
 	DT_ENTRY0("pork2", "13911c59cbe70ae877c87aa0ded89e47", 28269),
 	DT_ENTRY0("starportal", "0bf0f86fdeea607083c22a5cb41c6885", 172935),
 	DT_ENTRY0("pastoralpitfalls", "c35d440286c6bf67cd6ee1e5947c3483", 206469),
+	DT_ENTRY0("personalizedsample", "c590a3c5116ee2fa786e8f511ef85c8e", 69174),
 	DT_ENTRY0("lostproperty", "8acf3d6994a3b39911827d5040e8873a", 30375),
 	DT_ENTRY0("gameofrecovery", "b497bb0e1e93023a892f0fa54d78a1c0", 108459),
 	DT_ENTRY0("rerunsagain", "d263341c871a2f52e0052c313bf3e525", 81648),
@@ -261,10 +266,11 @@ const GlkDetectionEntry AGT_GAMES[] = {
 	DT_ENTRY0("therift", "1c30da9b9a55d691226c45b8b53c11c3", 41877),
 	DT_ENTRY0("tja", "6699e867df8263dd7858d2f6fb84acde", 517185),
 	DT_ENTRY0("toho", "58a6fdf89b29966774beaca80f505fff", 228744),
+	DT_ENTRY0("tombpharaohs", "2d10501417f28ee1dc5be8479f6e88a3", 46251),
 	DT_ENTRY0("tossedintospace", "515f06782c5b11108a719a20e182166c", 49491),
 	DT_ENTRY0("timesquared", "55e36771d5e1fe184cce8f5be666ff9f", 105300),
 	DT_ENTRY0("folkestone", "7e949a7376b0a64cee0d9412b0203611", 64557),
-	DT_ENTRY0("wanderer1", "0dcaff32c55dd2c1898da7893500de34", 53946),
+	DT_ENTRY0("wanderer1", "e1d707c9deaf02a4b28c9041a4009cb6", 53946),
 	DT_ENTRY0("wanderer2", "89dd16629022c75f3ffc171a6b126da6", 46980),
 	DT_ENTRY0("wanderer3", "839ab34bce5c82ec6194675f0186b15b", 45765),
 	DT_ENTRY0("weekendsurvival", "e770c0e75b7257eae9d4677340beca10", 91044),

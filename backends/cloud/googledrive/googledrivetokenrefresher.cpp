@@ -19,24 +19,21 @@
  *
  */
 
-#define FORBIDDEN_SYMBOL_ALLOW_ALL
-
-#include <curl/curl.h>
 #include "backends/cloud/googledrive/googledrivetokenrefresher.h"
 #include "backends/cloud/googledrive/googledrivestorage.h"
-#include "backends/networking/curl/networkreadstream.h"
+#include "backends/networking/http/networkreadstream.h"
 #include "common/debug.h"
-#include "common/json.h"
+#include "common/formats/json.h"
 
 namespace Cloud {
 namespace GoogleDrive {
 
 GoogleDriveTokenRefresher::GoogleDriveTokenRefresher(GoogleDriveStorage *parent, Networking::JsonCallback callback, Networking::ErrorCallback ecb, const char *url):
-	CurlJsonRequest(callback, ecb, url), _parentStorage(parent) {}
+	HttpJsonRequest(callback, ecb, url), _parentStorage(parent) {}
 
 GoogleDriveTokenRefresher::~GoogleDriveTokenRefresher() {}
 
-void GoogleDriveTokenRefresher::tokenRefreshed(Storage::BoolResponse response) {
+void GoogleDriveTokenRefresher::tokenRefreshed(const Storage::BoolResponse &response) {
 	if (!response.value) {
 		//failed to refresh token, notify user with NULL in original callback
 		warning("GoogleDriveTokenRefresher: failed to refresh token");
@@ -45,21 +42,20 @@ void GoogleDriveTokenRefresher::tokenRefreshed(Storage::BoolResponse response) {
 	}
 
 	//update headers: first change header with token, then pass those to request
-	for (uint32 i = 0; i < _headers.size(); ++i) {
-		if (_headers[i].contains("Authorization")) {
-			_headers[i] = "Authorization: Bearer " + _parentStorage->accessToken();
+	for (uint32 i = 0; i < _headersList.size(); ++i) {
+		if (_headersList[i].contains("Authorization")) {
+			_headersList[i] = "Authorization: Bearer " + _parentStorage->accessToken();
 		}
 	}
-	setHeaders(_headers);
 
 	//successfully received refreshed token, can restart the original request now
 	retry(0);
 }
 
-void GoogleDriveTokenRefresher::finishJson(Common::JSONValue *json) {
+void GoogleDriveTokenRefresher::finishJson(const Common::JSONValue *json) {
 	if (!json) {
 		//that's probably not an error (200 OK)
-		CurlJsonRequest::finishJson(nullptr);
+		HttpJsonRequest::finishJson(nullptr);
 		return;
 	}
 
@@ -99,26 +95,13 @@ void GoogleDriveTokenRefresher::finishJson(Common::JSONValue *json) {
 
 			pause();
 			delete json;
-			_parentStorage->refreshAccessToken(new Common::Callback<GoogleDriveTokenRefresher, Storage::BoolResponse>(this, &GoogleDriveTokenRefresher::tokenRefreshed));
+			_parentStorage->refreshAccessToken(new Common::Callback<GoogleDriveTokenRefresher, const Storage::BoolResponse &>(this, &GoogleDriveTokenRefresher::tokenRefreshed));
 			return;
 		}
 	}
 
 	//notify user of success
-	CurlJsonRequest::finishJson(json);
-}
-
-void GoogleDriveTokenRefresher::setHeaders(Common::Array<Common::String> &headers) {
-	_headers = headers;
-	curl_slist_free_all(_headersList);
-	_headersList = nullptr;
-	for (uint32 i = 0; i < headers.size(); ++i)
-		CurlJsonRequest::addHeader(headers[i]);
-}
-
-void GoogleDriveTokenRefresher::addHeader(Common::String header) {
-	_headers.push_back(header);
-	CurlJsonRequest::addHeader(header);
+	HttpJsonRequest::finishJson(json);
 }
 
 } // End of namespace GoogleDrive

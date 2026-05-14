@@ -63,8 +63,10 @@
 #include "common/debug.h"
 #include "common/file.h"
 #include "common/memstream.h"
+#include "common/system.h"
 
 #include "audio/audiostream.h"
+#include "audio/mixer.h"
 #include "audio/mods/mod_xm_s3m.h"
 #include "audio/mods/module_mod_xm_s3m.h"
 
@@ -116,7 +118,7 @@ private:
 	int calculateMixBufLength() const { return (calculateTickLength() + 65) * 4; }
 
 	int initPlayCount(int8 **playCount);
-	void setSequencePos(int pos);
+	void setSequencePos(uint pos);
 	int tick();
 	void updateRow();
 	int seek(int samplePos);
@@ -166,7 +168,7 @@ public:
 	int getRate() const override { return _sampleRate; }
 	bool endOfData() const override { return _dataLeft <= 0; }
 
-	ModXmS3mStream(Common::SeekableReadStream *stream, int initialPos, int rate, int interpolation);
+	ModXmS3mStream(Common::SeekableReadStream *stream, int initialPos, int interpolation);
 	~ModXmS3mStream();
 };
 
@@ -178,9 +180,10 @@ const short ModXmS3mStream::sinetable[] = {
 		255, 253, 250, 244, 235, 224, 212, 197, 180, 161, 141, 120,  97,  74,  49,  24
 	};
 
-ModXmS3mStream::ModXmS3mStream(Common::SeekableReadStream *stream, int initialPos, int rate, int interpolation) :
+ModXmS3mStream::ModXmS3mStream(Common::SeekableReadStream *stream, int initialPos, int interpolation) :
 	_rampBuf(nullptr), _playCount(nullptr), _channels(nullptr),
-	_mixBuffer(nullptr), _sampleRate(rate), _interpolation(interpolation),
+	_mixBuffer(nullptr), _interpolation(interpolation),
+	_sampleRate(g_system->getMixer()->getOutputRate()),
 	_seqPos(initialPos), _mixBufferSamples(0), _finished(false) {
 	if (!_module.load(*stream)) {
 		warning("It's not a valid Mod/S3m/Xm sound file");
@@ -201,6 +204,7 @@ ModXmS3mStream::~ModXmS3mStream() {
 	}
 
 	if (_playCount) {
+		delete[] _playCount[0];
 		delete[] _playCount;
 		_playCount = nullptr;
 	}
@@ -218,7 +222,7 @@ ModXmS3mStream::~ModXmS3mStream() {
 
 int ModXmS3mStream::initPlayCount(int8 **playCount) {
 	int len = 0;
-	for (int idx = 0; idx < _module.sequenceLen; ++idx) {
+	for (uint idx = 0; idx < _module.sequenceLen; ++idx) {
 		int pat = _module.sequence[idx];
 		int rows = (pat < _module.numPatterns) ? _module.patterns[pat].numRows : 0;
 		if (playCount) {
@@ -988,14 +992,14 @@ void ModXmS3mStream::updateRow() {
 	}
 	if (_breakPos >= 0) {
 		_finished = false;
-		if (_breakPos >= _module.sequenceLen) {
+		if (_breakPos >= (int)_module.sequenceLen) {
 			// Hit the end.
 			_breakPos = _nextRow = 0;
 			_finished = true;
 		}
 		while (_module.sequence[_breakPos] >= _module.numPatterns) {
 			_breakPos++;
-			if (_breakPos >= _module.sequenceLen) {
+			if (_breakPos >= (int)_module.sequenceLen) {
 				// Hit the end.
 				_breakPos = _nextRow = 0;
 				_finished = true;
@@ -1326,7 +1330,7 @@ int ModXmS3mStream::readBuffer(int16 *buffer, const int numSamples) {
 	return samplesRead;
 }
 
-void ModXmS3mStream::setSequencePos(int pos) {
+void ModXmS3mStream::setSequencePos(uint pos) {
 	if (pos >= _module.sequenceLen) {
 		pos = 0;
 	}
@@ -1360,8 +1364,8 @@ void ModXmS3mStream::setSequencePos(int pos) {
 
 namespace Audio {
 
-RewindableAudioStream *makeModXmS3mStream(Common::SeekableReadStream *stream, DisposeAfterUse::Flag disposeAfterUse, int initialPos, int rate, int interpolation) {
-	Modules::ModXmS3mStream *soundStream = new Modules::ModXmS3mStream(stream, initialPos, rate, interpolation);
+RewindableAudioStream *makeModXmS3mStream(Common::SeekableReadStream *stream, DisposeAfterUse::Flag disposeAfterUse, int initialPos, int interpolation) {
+	Modules::ModXmS3mStream *soundStream = new Modules::ModXmS3mStream(stream, initialPos, interpolation);
 
 	if (disposeAfterUse == DisposeAfterUse::YES)
 		delete stream;
@@ -1372,6 +1376,47 @@ RewindableAudioStream *makeModXmS3mStream(Common::SeekableReadStream *stream, Di
 	}
 
 	return soundStream;
+}
+
+bool probeModXmS3m(Common::SeekableReadStream *st) {
+	int32 setPos = st->pos();
+
+	// xm file
+	char sigXm[18] = { 0 };
+	st->read(sigXm, 17);
+	st->seek(setPos);
+	if (!memcmp(sigXm, "Extended Module: ", 17)) {
+		return true;
+	}
+
+	// s3m file
+	char sigS3m[4];
+	st->skip(44);
+	st->read(sigS3m, 4);
+	st->seek(setPos);
+	if (!memcmp(sigS3m, "SCRM", 4)) {
+		st->seek(setPos);
+		return true;
+	}
+
+	// amf file
+	char sigAmf[25] = {};
+	st->read(sigAmf, 24);
+	st->seek(setPos);
+	if (!memcmp(sigAmf, "ASYLUM Music Format V1.0", 24)) {
+		return true;
+	}
+
+	// mod file
+	char sigMod[4];
+	st->skip(1080);
+	st->read(sigMod, 4);
+	st->seek(setPos);
+	if (!memcmp(sigMod, "M.K.", 4) || !memcmp(sigMod, "M!K!", 4)) {
+		return true;
+	}
+
+	return false;
 }
 
 } // End of namespace Audio

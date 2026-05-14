@@ -23,14 +23,20 @@
 #define __N64_PORTDEFS__
 
 #include <n64utils.h>
-
 #include <sys/types.h>
-#include <stdarg.h>
-#include <string.h>
+
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdarg.h>
+#include <stddef.h>
+// No assert.h
 #include <ctype.h>
+#include <inttypes.h>
+#include <limits.h>
 #include <math.h>
 #include <new>
+#include <limits>
 
 #undef assert
 #define assert(x)  ((x) ? 0 : (print_error("ASSERT TRIGGERED:\n\n("#x")\n%s\nline: %d", __FILE__, __LINE__)))

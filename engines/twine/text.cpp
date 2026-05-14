@@ -21,7 +21,7 @@
 
 #include "twine/text.h"
 #include "common/algorithm.h"
-#include "common/endian.h"
+#include "common/config-manager.h"
 #include "common/memstream.h"
 #include "common/scummsys.h"
 #include "common/str.h"
@@ -48,16 +48,20 @@ namespace TwinE {
 #define VOX_EXT ".vox"
 
 static const int32 PADDING = 8;
+static const int kLBASJISCharWidth = 24;
+static const int kLBASJISCharHeight = 24;
 
 Text::Text(TwinEEngine *engine) : _engine(engine) {
 	Common::fill(&_currMenuTextBuffer[0], &_currMenuTextBuffer[256], 0);
+	_isShiftJIS = _engine->getGameLang() == Common::Language::JA_JPN;
+	_isVisualRTL = _engine->getGameLang() == Common::Language::HE_ISR;
 }
 
 Text::~Text() {
 }
 
 void Text::initVoxBank(TextBankId bankIdx) {
-	static const char *LanguageSuffixTypes[] = {
+	static const char *ListFileText[] = {
 	    "sys",
 	    "cre",
 	    "gam", // global game voices (e.g. inventory descriptions)
@@ -66,7 +70,7 @@ void Text::initVoxBank(TextBankId bankIdx) {
 	    "002", // White Leaf Desert voices
 	    "003", // Proxima Island voices
 	    "004", // Rebellion Island voices
-	    "005", // Hamalayi Mountains - sourthern range voices
+	    "005", // Hamalayi Mountains - southern range voices
 	    "006", // Hamalayi Mountains - northern range voices
 	    "007", // Tippett Island voices
 	    "008", // Brundle Island voices
@@ -74,14 +78,23 @@ void Text::initVoxBank(TextBankId bankIdx) {
 	    "010", // Polar Island voices
 	    "011"  //
 	};
-	if ((int)bankIdx < 0 || (int)bankIdx >= ARRAYSIZE(LanguageSuffixTypes)) {
+	if ((int)bankIdx < 0 || (int)bankIdx >= ARRAYSIZE(ListFileText)) {
 		error("bankIdx is out of bounds: %i", (int)bankIdx);
 	}
-	// get the correct vox hqr file
-	_currentVoxBankFile = Common::String::format("%s%s" VOX_EXT, LanguageTypes[_engine->_cfgfile.LanguageId].id, LanguageSuffixTypes[(int)bankIdx]);
-	_currentOggBaseFile = Common::String::format("%s%s_", LanguageTypes[_engine->_cfgfile.LanguageId].id, LanguageSuffixTypes[(int)bankIdx]);
-	// TODO: loop through other languages and take the scummvm settings regarding voices into account...
+	// get the correct vox hqr file - english is the default
+	_currentVoxBankFile = Common::String::format("%s%s" VOX_EXT, ListLanguage[0].id, ListFileText[(int)bankIdx]);
+	_currentOggBaseFile = Common::String::format("%s%s_", ListLanguage[0].id, ListFileText[(int)bankIdx]);
 
+	const int voice = ConfMan.getInt("audio_language");
+	const int32 length = ARRAYSIZE(ListLanguage);
+	for (int32 i = 0; i < length; i++) {
+		if (ListLanguage[i].voice == voice) {
+			_currentVoxBankFile = Common::String::format("%s%s" VOX_EXT, ListLanguage[i].id, ListFileText[(int)bankIdx]);
+			_currentOggBaseFile = Common::String::format("%s%s_", ListLanguage[i].id, ListFileText[(int)bankIdx]);
+			return;
+		}
+	}
+	warning("Could not find voice mapping for %i", voice);
 	// TODO check the rest to reverse
 }
 
@@ -99,7 +112,8 @@ bool Text::initVoxToPlay(const TextEntry *text) {
 		return false;
 	}
 
-	if (!_engine->_cfgfile.Voice) {
+	const int voice = ConfMan.getInt("audio_language");
+	if (voice <= 0) {
 		debug(3, "Voices are disabled");
 		return false;
 	}
@@ -108,7 +122,7 @@ bool Text::initVoxToPlay(const TextEntry *text) {
 }
 
 bool Text::playVox(const TextEntry *text) {
-	if (!_engine->_cfgfile.Voice) {
+	if (ConfMan.getInt("audio_language") <= 0) {
 		return false;
 	}
 	if (text == nullptr) {
@@ -148,30 +162,56 @@ bool Text::stopVox(const TextEntry *text) {
 	return true;
 }
 
-void Text::initTextBank(TextBankId bankIdx) {
-	// don't load if we already have the dialogue text bank loaded
-	if (bankIdx == _currentBankIdx) {
+void Text::initSceneTextBank() {
+	const int textBankId = (int)_engine->_scene->_sceneTextBank;
+	initDial((TextBankId)(textBankId + (int)TextBankId::Citadel_Island));
+}
+
+void Text::drawCharacter(int32 x, int32 y, uint16 character) { // CarFont
+	const uint8 usedColor = _dialTextColor;
+	if (_isShiftJIS && character > 0x100 && _engine->_resources->_sjisFontPtr) {
+		int index = 0;
+		if (character >= 0x8140 && character <= 0x9fff)
+			index = character - 0x8140;
+		else if (character >= 0xe040 && character <= 0xeaff)
+			index = character - 0xe040 + 8320;
+		else {
+			drawCharacter(x, y, '?');
+			return;
+		}
+
+		byte *glyphPtr = _engine->_resources->_sjisFontPtr + index * (kLBASJISCharHeight * kLBASJISCharWidth / 8);
+
+		for (uint8 fontY = 0; fontY < kLBASJISCharHeight; ++fontY) {
+			byte bits = 0;
+			int remBits = 0;
+			for (uint8 fontX = 0; fontX < kLBASJISCharWidth; ++fontX) {
+				if (remBits == 0) {
+					remBits = 8;
+					bits = *glyphPtr++;
+				}
+				int32 tempX = x + fontX;
+				int32 tempY = y + fontY;
+				if ((bits & 0x80) && tempX >= 0 && tempX < (_engine->width() - 1) && tempY >= 0 && tempY < (_engine->height() - 1)) {
+					_engine->_frontVideoBuffer.setPixel(tempX, tempY, usedColor);
+				}
+
+				remBits--;
+				bits <<= 1;
+			}
+		}
 		return;
 	}
 
-	_currentBankIdx = bankIdx;
-	initVoxBank(bankIdx);
-}
-
-void Text::initSceneTextBank() {
-	initTextBank((TextBankId)((int)_engine->_scene->_sceneTextBank + (int)TextBankId::Citadel_Island));
-}
-
-void Text::drawCharacter(int32 x, int32 y, uint8 character) {
+	if (character > 0x100)
+		character = '?';
 	Common::MemoryReadStream stream(_engine->_resources->_fontPtr, _engine->_resources->_fontBufSize);
 	stream.seek(character * 4);
 	stream.seek(stream.readSint16LE());
-	/*uint8 charWidth =*/ stream.readByte();
+	/*uint8 charWidth =*/stream.readByte();
 	const uint8 sizeY = stream.readByte();
 	x += stream.readByte();
 	y += stream.readByte();
-
-	const uint8 usedColor = _dialTextColor;
 
 	int32 tempX = x;
 	int32 tempY = y;
@@ -187,7 +227,7 @@ void Text::drawCharacter(int32 x, int32 y, uint8 character) {
 			}
 			const uint8 number = stream.readByte();
 			tempX += jump;
-			uint8* basePtr = (uint8 *)_engine->_frontVideoBuffer.getBasePtr(tempX, tempY);
+			uint8 *basePtr = (uint8 *)_engine->_frontVideoBuffer.getBasePtr(tempX, tempY);
 			for (uint8 i = 0; i < number; i++) {
 				if (tempX >= 0 && tempX < (_engine->width() - 1) && tempY >= 0 && tempY < (_engine->height() - 1)) {
 					*basePtr = usedColor;
@@ -206,7 +246,119 @@ void Text::drawCharacter(int32 x, int32 y, uint8 character) {
 	}
 }
 
-void Text::drawCharacterShadow(int32 x, int32 y, uint8 character, int32 color, Common::Rect &dirtyRect) {
+uint16 Text::getNextChar(const char *&dialogue) {
+	uint16 currChar = *dialogue++ & 0xff;
+	if (_isShiftJIS && ((currChar >= 0x81 && currChar <= 0x9f) || (currChar >= 0xe0 && currChar <= 0xea)) && ((*dialogue & 0xff) >= 0x40))
+		currChar = (currChar << 8) | (*dialogue++ & 0xff);
+	return currChar;
+}
+
+void Text::drawText(int32 x, int32 y, const char *dialogue, bool shadow) {
+	// if the font is not defined
+	if (_engine->_resources->_fontPtr == nullptr) {
+		return;
+	}
+
+	do {
+		const uint16 currChar = getNextChar(dialogue); // read the next char from the string
+		if (currChar == '\0') {
+			break;
+		}
+
+		if (currChar == ' ') {
+			x += _interSpace;
+		} else {
+			const int32 dialTextSize = getCharWidth(currChar);
+			if (shadow) {
+				Common::Rect dirtyRect;
+				drawCharacterShadow(x, y, currChar, COLOR_WHITE, dirtyRect);
+			} else {
+				drawCharacter(x, y, currChar); // draw the character on screen
+			}
+			// add the length of the space between 2 characters
+			x += _interLeave;
+			// add the length of the current character
+			x += dialTextSize;
+		}
+	} while (1);
+}
+
+int32 Text::sizeFont(const char *dialogue) {
+	int32 dialTextSize = 0;
+
+	do {
+		const uint16 currChar = getNextChar(dialogue);
+		if (currChar == '\0') {
+			break;
+		}
+
+		if (currChar == ' ') {
+			dialTextSize += _interSpace;
+		} else {
+			dialTextSize += _interLeave;
+			dialTextSize += getCharWidth(currChar);
+		}
+	} while (1);
+
+	return dialTextSize;
+}
+
+void Text::initInventoryText(InventoryItems index) { // OpenDialNoWindow
+	// 100 if the offset for the inventory item descriptions
+	commonOpenDial((TextId)(100 + (int)index));
+}
+
+void Text::initItemFoundText(InventoryItems index) { // OpenDialNoWindow
+	commonOpenDial((TextId)index);
+}
+
+void Text::initDial(TextBankId bankIdx) {
+	// don't load if we already have the dialogue text bank loaded
+	if (bankIdx == _currentBankIdx) {
+		return;
+	}
+
+	_currentBankIdx = bankIdx;
+	initVoxBank(bankIdx);
+}
+
+Text::WordSize Text::getNextWord(const char *completeText, char *dst, int32 wordBufSize) {
+	int32 lenword = 0;
+	const char *word = dst;
+
+	while (*completeText != '\0' && *completeText != '\1' && *completeText != ' ') {
+		lenword++;
+		*dst++ = *completeText++;
+		if (lenword >= wordBufSize - 1) {
+			break;
+		}
+	}
+
+	*dst = '\0';
+
+	WordSize size;
+	size.lenWord = lenword;
+	size.sizeWord = sizeFont(word);
+	return size;
+}
+
+void Text::pushChar(int16 x, int16 y, const LineCharacter &chr) {
+	if (_nbChar < TEXT_MAX_FADE_IN_CHR) {
+		_stackChar[_nbChar].chr = chr.chr;
+		_stackChar[_nbChar].x = x;
+		_stackChar[_nbChar].y = y;
+		_nbChar++;
+		return;
+	}
+	for (int32 i = 0; i < TEXT_MAX_FADE_IN_CHR - 1; ++i) {
+		_stackChar[i] = _stackChar[i + 1];
+	}
+	_stackChar[TEXT_MAX_FADE_IN_CHR - 1].chr = chr.chr;
+	_stackChar[TEXT_MAX_FADE_IN_CHR - 1].x = x;
+	_stackChar[TEXT_MAX_FADE_IN_CHR - 1].y = y;
+}
+
+void Text::drawCharacterShadow(int32 x, int32 y, uint16 character, int32 color, Common::Rect &dirtyRect) { // AffOneCar
 	if (character == ' ') {
 		return;
 	}
@@ -227,278 +379,15 @@ void Text::drawCharacterShadow(int32 x, int32 y, uint8 character, int32 color, C
 	}
 }
 
-void Text::drawText(int32 x, int32 y, const char *dialogue, bool shadow) {
-	// if the font is not defined
-	if (_engine->_resources->_fontPtr == nullptr) {
-		return;
-	}
-
-	do {
-		const uint8 currChar = (uint8)*dialogue++; // read the next char from the string
-		if (currChar == '\0') {
-			break;
-		}
-
-		if (currChar == ' ') {
-			x += _dialCharSpace;
-		} else {
-			const int32 dialTextSize = getCharWidth(currChar);
-			if (shadow) {
-				Common::Rect dirtyRect;
-				drawCharacterShadow(x, y, currChar, COLOR_WHITE, dirtyRect);
-			} else {
-				drawCharacter(x, y, currChar); // draw the character on screen
-			}
-			// add the length of the space between 2 characters
-			x += _dialSpaceBetween;
-			// add the length of the current character
-			x += dialTextSize;
-		}
-	} while (1);
-}
-
-int32 Text::getTextSize(const char *dialogue) {
-	int32 dialTextSize = 0;
-
-	do {
-		const uint8 currChar = (uint8) * (dialogue++);
-		if (currChar == '\0') {
-			break;
-		}
-
-		if (currChar == ' ') {
-			dialTextSize += _dialCharSpace;
-		} else {
-			dialTextSize += _dialSpaceBetween;
-			dialTextSize += getCharWidth(currChar);
-		}
-	} while (1);
-
-	return dialTextSize;
-}
-
-void Text::initDialogueBox() {
-	_engine->blitWorkToFront(_dialTextBox);
-
-	if (_drawTextBoxBackground) {
-		_engine->_menu->drawRectBorders(_dialTextBox);
-		Common::Rect rect(_dialTextBox);
-		rect.grow(-1);
-		_engine->_interface->drawTransparentBox(rect, 3);
-	}
-
-	_fadeInCharactersPos = 0;
-	_engine->blitFrontToWork(_dialTextBox);
-}
-
-// TODO: this blits a few pixels too much when switching an item in the inventory menu.
-void Text::initInventoryDialogueBox() {
-	_engine->blitWorkToFront(_dialTextBox);
-	_fadeInCharactersPos = 0;
-}
-
-void Text::initInventoryText(InventoryItems index) {
-	// 100 if the offset for the inventory item descriptions
-	initText((TextId)(100 + (int)index));
-}
-
-void Text::initItemFoundText(InventoryItems index) {
-	initText((TextId)index);
-}
-
-void Text::initText(TextId index) {
-	if (!getText(index)) {
-		_hasValidTextHandle = false;
-		return;
-	}
-
-	_progressiveTextBufferPtr = _progressiveTextBuffer;
-
-	_hasValidTextHandle = true;
-
-	_dialTextBoxCurrentLine = 0;
-	_progressiveTextBuffer[0] = '\0';
-	_fadeInCharactersPos = 0;
-	_dialTextXPos = _dialTextBox.left + PADDING;
-	_dialTextYPos = _dialTextBox.top + PADDING;
-	_currentTextPosition = _currDialTextPtr;
-
-	// lba font is get while engine start
-	setFontParameters(2, 7);
-
-	// fetch the first line
-	processTextLine();
-}
-
-void Text::initProgressiveTextBuffer() {
-	Common::fill(&_progressiveTextBuffer[0], &_progressiveTextBuffer[sizeof(_progressiveTextBuffer)], ' ');
-	// the end of the buffer defines how fast the next page is shown - as the
-	// whitespaces are handled in the fade in process, too. But we need at least 32 chars,
-	// to completly fade in the last characters of a full page (see TEXT_MAX_FADE_IN_CHR)
-	_progressiveTextBuffer[sizeof(_progressiveTextBuffer) - 1] = '\0';
-	_progressiveTextBufferPtr = _progressiveTextBuffer;
-	_dialTextBoxCurrentLine = 0;
-}
-
-void Text::fillFadeInBuffer(int16 x, int16 y, int16 chr) {
-	if (_fadeInCharactersPos < TEXT_MAX_FADE_IN_CHR) {
-		_fadeInCharacters[_fadeInCharactersPos].chr = chr;
-		_fadeInCharacters[_fadeInCharactersPos].x = x;
-		_fadeInCharacters[_fadeInCharactersPos].y = y;
-		_fadeInCharactersPos++;
-		return;
-	}
-	int32 counter2 = 0;
-	while (counter2 < TEXT_MAX_FADE_IN_CHR - 1) {
-		const int32 var1 = (counter2 + 1);
-		const int32 var2 = counter2;
-		_fadeInCharacters[var2] = _fadeInCharacters[var1];
-		counter2++;
-	}
-	_fadeInCharacters[TEXT_MAX_FADE_IN_CHR - 1].chr = chr;
-	_fadeInCharacters[TEXT_MAX_FADE_IN_CHR - 1].x = x;
-	_fadeInCharacters[TEXT_MAX_FADE_IN_CHR - 1].y = y;
-}
-
-Text::WordSize Text::getWordSize(const char *completeText, char *wordBuf, int32 wordBufSize) {
-	int32 temp = 0;
-	const char *arg2Save = wordBuf;
-
-	while (*completeText != '\0' && *completeText != '\1' && *completeText != ' ') {
-		temp++;
-		*wordBuf++ = *completeText++;
-		if (temp >= wordBufSize - 1) {
-			break;
-		}
-	}
-
-	WordSize size;
-	size.inChar = temp;
-	*wordBuf = '\0';
-	size.inPixel = getTextSize(arg2Save);
-	return size;
-}
-
-void Text::processTextLine() {
-	const char *buffer = _currentTextPosition;
-	_dialCharSpace = 7;
-	bool moreWordsFollowing = true;
-
-	int32 lineBreakX = 0;
-	int32 spaceCharCount = 0;
-	_progressiveTextBuffer[0] = '\0';
-
-	for (;;) {
-		if (*buffer == ' ') {
-			buffer++;
-			continue;
-		}
-		if (*buffer == '\0') {
-			break;
-		}
-
-		_currentTextPosition = buffer;
-		char wordBuf[256] = "";
-		WordSize wordSize = getWordSize(buffer, wordBuf, sizeof(wordBuf));
-		if (lineBreakX + _dialCharSpace + wordSize.inPixel >= _dialTextBoxMaxX) {
-			break;
-		}
-
-		if (*wordBuf == '\1') {
-			moreWordsFollowing = false;
-			buffer++;
-			break;
-		}
-
-		// @ is a line break
-		if (*wordBuf == '@') {
-			moreWordsFollowing = false;
-			buffer++;
-			if (lineBreakX == 0) {
-				lineBreakX = 7;
-				*(_progressiveTextBuffer + 0) = ' ';
-				*(_progressiveTextBuffer + 1) = '\0';
-			}
-			// new page?
-			if (wordBuf[1] == 'P') {
-				_dialTextBoxCurrentLine = _dialTextBoxLines;
-				buffer++;
-			}
-			break;
-		}
-
-		buffer += wordSize.inChar;
-		_currentTextPosition = buffer;
-		strncat(_progressiveTextBuffer, wordBuf, sizeof(_progressiveTextBuffer) - strlen(_progressiveTextBuffer) - 1);
-		strncat(_progressiveTextBuffer, " ", sizeof(_progressiveTextBuffer) - strlen(_progressiveTextBuffer) - 1);
-		spaceCharCount++;
-
-		lineBreakX += wordSize.inPixel + _dialCharSpace;
-		if (*_currentTextPosition != '\0') {
-			_currentTextPosition++;
-			continue;
-		}
-		break;
-	}
-
-	if (spaceCharCount > 0) {
-		spaceCharCount--;
-	}
-
-	if (*_currentTextPosition != '\0' && moreWordsFollowing) {
-		if (spaceCharCount <= 0) {
-			spaceCharCount = 1;
-		}
-		// split the remaining space between the words
-		_dialCharSpace += (_dialTextBoxMaxX - lineBreakX) / spaceCharCount;
-	}
-
-	_currentTextPosition = buffer;
-
-	_progressiveTextBufferPtr = _progressiveTextBuffer;
-}
-
-void Text::renderContinueReadingTriangle() {
-	const int32 border = 3;
-	const int32 size = 21;
-	const int16 color = 136;
-	const int32 right = _dialTextBox.right - border;
-	const int32 left = _dialTextBox.right - (size + border);
-	const int32 top = _dialTextBox.bottom - (size + border);
-	const int32 bottom = _dialTextBox.bottom - border;
-
-	Vertex vertices[3];
-
-	vertices[0].colorIndex = color;
-	vertices[0].x = right;
-	vertices[0].y = top;
-
-	vertices[1].colorIndex = color;
-	vertices[1].x = left;
-	vertices[1].y = bottom;
-
-	vertices[2].colorIndex = color;
-	vertices[2].x = right;
-	vertices[2].y = bottom;
-
-	CmdRenderPolygon polygon;
-	polygon.numVertices = ARRAYSIZE(vertices);
-	polygon.colorIndex = _dialTextStopColor;
-	polygon.renderType = POLYGONTYPE_FLAT;
-	_engine->_renderer->renderPolygons(polygon, vertices, top, bottom);
-
-	_engine->copyBlockPhys(left, top, right, bottom);
-}
-
-void Text::fadeInCharacters(int32 counter, int32 fontColor) {
+void Text::fadeInCharacters(int32 counter, int32 fontColor) { // AffAllCar
 	Common::Rect dirtyRect;
 	while (--counter >= 0) {
-		const BlendInCharacter *ptr = &_fadeInCharacters[counter];
+		const BlendInCharacter *ptr = &_stackChar[counter];
 		setFontColor(fontColor);
 		drawCharacterShadow(ptr->x, ptr->y, ptr->chr, fontColor, dirtyRect);
-		fontColor -= _dialTextStepSize;
-		if (fontColor > _dialTextStopColor) {
-			fontColor = _dialTextStopColor;
+		fontColor -= _stepDegrade;
+		if (fontColor > _minDegrade) {
+			fontColor = _minDegrade;
 		}
 	}
 	if (dirtyRect.isEmpty()) {
@@ -507,14 +396,336 @@ void Text::fadeInCharacters(int32 counter, int32 fontColor) {
 	_engine->copyBlockPhys(dirtyRect);
 }
 
-int32 Text::getCharWidth(uint8 chr) const {
+void Text::setTextCrossColor(int32 stopColor, int32 startColor, int32 stepSize) { // CoulDial
+	_maxDegrade = startColor;
+	_minDegrade = stopColor;
+	_stepDegrade = stepSize;
+	_nbDegrade = ((startColor - stopColor) + 1) / stepSize;
+}
+
+void Text::setFontCrossColor(int32 color) { // TestCoulDial
+	_stepDegrade = -1;
+	_nbDegrade = 14;
+	_maxDegrade = color * 16;
+	_minDegrade = _maxDegrade + 12;
+}
+
+bool Text::getText(TextId index) {
+	const TextEntry *textEntry = _engine->_resources->getText(_currentBankIdx, index);
+	if (textEntry == nullptr) {
+		return false;
+	}
+	_ptText = textEntry->string.c_str();
+	_currDialTextSize = textEntry->string.size();
+
+	// RECHECK: this was added for vox playback
+	_currDialTextEntry = textEntry;
+
+	debug(3, "text for bank %i with index %i (currIndex: %i): %s", (int)_currentBankIdx, textEntry->index, (int)textEntry->textIndex, _ptText);
+	return true;
+}
+
+void Text::renderContinueReadingTriangle() { // AffFleche
+	const int32 border = 3;
+	const int32 size = 21;
+	const int16 color = 136;
+	const int32 right = _dialTextBox.right - border;
+	const int32 left = _dialTextBox.right - (size + border);
+	const int32 top = _dialTextBox.bottom - (size + border);
+	const int32 bottom = _dialTextBox.bottom - border;
+
+	ComputedVertex vertices[3];
+
+	vertices[0].intensity = color;
+	vertices[0].x = right;
+	vertices[0].y = top;
+
+	vertices[1].intensity = color;
+	vertices[1].x = left;
+	vertices[1].y = bottom;
+
+	vertices[2].intensity = color;
+	vertices[2].x = right;
+	vertices[2].y = bottom;
+
+	CmdRenderPolygon polygon;
+	polygon.numVertices = ARRAYSIZE(vertices);
+	polygon.colorIndex = _minDegrade;
+	polygon.renderType = POLYGONTYPE_FLAT;
+	_engine->_renderer->renderPolygons(polygon, vertices);
+
+	_engine->copyBlockPhys(left, top, right, bottom);
+}
+
+void Text::initDialWindow() {
+	_engine->blitWorkToFront(_dialTextBox);
+
+	if (_flagMessageShade) {
+		_engine->_menu->drawRectBorders(_dialTextBox);
+		Common::Rect rect(_dialTextBox);
+		rect.grow(-1);
+		_engine->_interface->shadeBox(rect, 3);
+	}
+
+	_nbChar = 0;
+	_engine->copyBlock(_dialTextBox);
+}
+
+void Text::secondInitDialWindow() {
+	_engine->blitWorkToFront(_dialTextBox);
+	_nbChar = 0;
+}
+
+void Text::normalWinDial() {
+	const int32 margin = 16;
+	_maxLineDial = 3; //(int32)(_dialTextBox.height() / lineHeight) - 1;
+	const int32 textHeight = _maxLineDial * lineHeight;
+
+	_dialTextBox.left = margin;
+	_dialTextBox.top = _engine->height() - textHeight - margin - PADDING;
+	_dialTextBox.right = _engine->width() - 1 - margin;
+	_dialTextBox.bottom = _engine->height() - 1 - margin;
+
+	_dialMaxSize = _dialTextBox.width() - (2 * PADDING);
+}
+
+void Text::bigWinDial() {
+	const int32 margin = 8;
+	_dialTextBox.left = margin;
+	_dialTextBox.top = margin;
+	_dialTextBox.right = _engine->width() - 1 - margin;
+	_dialTextBox.bottom = _engine->height() - 1 - margin;
+
+	_maxLineDial = (int32)(_dialTextBox.height() / lineHeight) - 1;
+	_dialMaxSize = _dialTextBox.width() - (2 * PADDING);
+}
+
+void Text::commonOpenDial(TextId index) {
+	closeDial();
+
+	if (!getText(index)) {
+		return;
+	}
+	_xDial = _dialTextBox.left + PADDING;
+	_yDial = _dialTextBox.top + PADDING;
+	_nbLineDial = 0;
+	_ptDial = _ptText;
+	// _word = '\0';
+	// _ptWord = _word;
+	_bufLine[0].chr = '\0';
+	_bufLine[0].width = 0;
+	_ptLine = _bufLine;
+	_nbChar = 0;
+	_flagEndDial = false;
+	_flagEnd3Line = false;
+	_flagRunningDial = true;
+
+	// lba font is loaded during engine start
+	setFont(INTER_LEAVE, INTER_SPACE);
+}
+
+void Text::getNextLine() {
+	_sizeLine = 0;
+	_nbSpace = 0;
+	_sizeSpace = INTER_SPACE;
+	_bufLine[0].chr = '\0';
+	_bufLine[0].width = 0;
+	bool flag = true;
+
+	uint i = 0;
+
+	while (true) {
+		if (*_ptDial == ' ') {
+			_ptDial++;
+			continue;
+		}
+		if (*_ptDial == '\0') {
+			break;
+		}
+
+		char word[256] = "";
+		WordSize sizeWord = getNextWord(_ptDial, word, sizeof(word));
+		if (_sizeLine + _sizeSpace + sizeWord.sizeWord > _dialMaxSize) {
+			break;
+		}
+
+		if (*word == '\1') {
+			_ptDial++;
+			flag = false;
+			break;
+		}
+
+		// @ is a line break
+		if (*word == '@') {
+			flag = false;
+			_ptDial++;
+			if (_sizeLine == 0) {
+				_bufLine[0].chr = '\0';
+				_bufLine[0].width = 0;
+				_sizeLine = INTER_SPACE;
+			}
+			// new page?
+			if (word[1] == 'P') {
+				_nbLineDial = _maxLineDial;
+				_ptDial++;
+			}
+			break;
+		}
+
+		_ptDial += sizeWord.lenWord;
+		appendText(word, i);
+		appendText(" ", i);
+
+		_sizeLine += sizeWord.sizeWord + _sizeSpace;
+		_nbSpace++;
+
+		if (*_ptDial == '\0') {
+			break;
+		}
+		_ptDial++;
+	}
+
+	_bufLine[i].chr = 0;
+	_bufLine[i].width = 0;
+
+	if (_isVisualRTL) {
+		for (uint j = 0; j < i / 2; j++) {
+			LineCharacter t = _bufLine[j];
+			_bufLine[j] = _bufLine[i - j - 1];
+			_bufLine[i - j - 1] = t;
+		}
+	}
+
+	if (_nbSpace) {
+		_nbSpace--;
+	}
+
+	if (*_ptDial != '\0' && flag) {
+		if (_nbSpace == 0) {
+			_nbSpace = 1;
+		}
+		int32 dx = _dialMaxSize - _sizeLine;
+		int32 dd = dx / _nbSpace;
+		_sizeSpace += dd;
+		dd = _nbSpace * dd;
+		_nbBigSpace = dx - dd;
+	}
+
+	_ptLine = _bufLine;
+}
+
+void Text::initEndPage() {
+	for (uint i = 0; i < ARRAYSIZE(_bufLine); i++) {
+		_bufLine[i].chr = ' ';
+		_bufLine[i].width = _sizeSpace;
+	}
+	// the end of the buffer defines how fast the next page is shown - as the
+	// whitespaces are handled in the fade in process, too. But we need at least 32 chars,
+	// to completly fade in the last characters of a full page (see TEXT_MAX_FADE_IN_CHR)
+	_bufLine[ARRAYSIZE(_bufLine) - 1].chr = '\0';
+	_bufLine[ARRAYSIZE(_bufLine) - 1].width = 0;
+	_ptLine = _bufLine;
+	_nbLineDial = 0;
+	_sizeLine = 16; // hack
+}
+
+ProgressiveTextState Text::nextDialChar() { // NextDialCar
+	if (!_flagRunningDial) {
+		return ProgressiveTextState::End;
+	}
+
+	if (_ptLine->chr == '\0') {
+		if (_flagEndDial) {
+			_flagRunningDial = false;
+			return ProgressiveTextState::End;
+		}
+		if (_flagEnd3Line) {
+			secondInitDialWindow();
+			_flagEnd3Line = false;
+			_xDial = _dialTextBox.left + PADDING;
+			_yDial = _dialTextBox.top + PADDING;
+		}
+		if (*_ptDial == '\0') {
+			initEndPage();
+			_flagEndDial = true;
+			return ProgressiveTextState::ContinueRunning;
+		}
+
+		getNextLine();
+	}
+
+	if (_ptLine->chr != '\0') {
+		pushChar(_xDial, _yDial, *_ptLine);
+		fadeInCharacters(_nbChar, _maxDegrade);
+
+		if (_ptLine->chr != ' ')
+			_xDial += _ptLine->width + INTER_LEAVE;
+		else {
+			if (_nbBigSpace) {
+				_nbBigSpace--;
+				_xDial++;
+			}
+			_xDial += _sizeSpace;
+		}
+
+		++_ptLine;
+
+		if (_ptLine->chr == '\0') {
+			_xDial = _dialTextBox.left + PADDING;
+			_yDial += lineHeight;
+
+			if (_flagEnd3Line && !_flagEndDial) {
+				renderContinueReadingTriangle();
+				return ProgressiveTextState::NextPage;
+			}
+
+			_nbLineDial++;
+			if (_nbLineDial >= _maxLineDial) {
+				initEndPage();
+				_flagEnd3Line = true;
+				if (*_ptDial == '\0') {
+					_flagEndDial = true;
+				}
+			}
+		}
+	}
+
+	return ProgressiveTextState::ContinueRunning;
+}
+
+void Text::closeDial() {
+	_flagRunningDial = false;
+}
+
+void Text::appendText(const char *s, uint &i) {
+	while (1) {
+		if (i >= ARRAYSIZE(_bufLine) - 1)
+			return;
+		uint16 chr = getNextChar(s);
+		if (!chr)
+			return;
+		_bufLine[i].chr = chr;
+		_bufLine[i].width = getCharWidth(chr);
+		i++;
+	}
+}
+
+int32 Text::getCharWidth(uint16 chr) const {
+	if (_isShiftJIS && (chr > 0x100))
+		return kLBASJISCharWidth;
+	if (chr > 0x100)
+		chr = '?';
 	Common::MemoryReadStream stream(_engine->_resources->_fontPtr, _engine->_resources->_fontBufSize);
 	stream.seek(chr * 4);
 	stream.seek(stream.readSint16LE());
 	return stream.readByte();
 }
 
-int32 Text::getCharHeight(uint8 chr) const {
+int32 Text::getCharHeight(uint16 chr) const {
+	if (_isShiftJIS && (chr > 0x100))
+		return kLBASJISCharHeight;
+	if (chr > 0x100)
+		chr = '?';
 	Common::MemoryReadStream stream(_engine->_resources->_fontPtr, _engine->_resources->_fontBufSize);
 	stream.seek(chr * 4);
 	stream.seek(stream.readSint16LE() + 1);
@@ -522,70 +733,16 @@ int32 Text::getCharHeight(uint8 chr) const {
 }
 
 void Text::fadeInRemainingChars() {
-	if (_fadeInCharactersPos <= 0) {
+	if (_nbChar <= 0) {
 		return;
 	}
-	fadeInCharacters(_fadeInCharactersPos, _dialTextStopColor);
-	--_fadeInCharactersPos;
-}
-
-ProgressiveTextState Text::updateProgressiveText() {
-	if (!_hasValidTextHandle) {
-		return ProgressiveTextState::End;
-	}
-
-	if (*_progressiveTextBufferPtr == '\0') {
-		initProgressiveTextBuffer();
-		processTextLine();
-		initDialogueBox();
-		_dialTextXPos = _dialTextBox.left + PADDING;
-		_dialTextYPos = _dialTextBox.top + PADDING;
-	}
-	const char currentChar = *_progressiveTextBufferPtr;
-	assert(currentChar != '\0');
-	fillFadeInBuffer(_dialTextXPos, _dialTextYPos, currentChar);
-	fadeInCharacters(_fadeInCharactersPos, _dialTextStartColor);
-	const int8 charWidth = getCharWidth(currentChar);
-
-	if (currentChar == ' ') {
-		_dialTextXPos += _dialCharSpace + 1;
-	} else {
-		_dialTextXPos += charWidth + 2;
-	}
-
-	// next character
-	_progressiveTextBufferPtr++;
-
-	// reaching 0-byte means a new line - as we are fading in per line
-	if (*_progressiveTextBufferPtr != '\0') {
-		return ProgressiveTextState::ContinueRunning;
-	}
-
-	if (*_currentTextPosition == '\0') {
-		_hasValidTextHandle = false;
-		renderContinueReadingTriangle();
-		return ProgressiveTextState::End;
-	}
-
-	// reached a new line that is about get faded in
-	_dialTextBoxCurrentLine++;
-
-	_dialTextYPos += lineHeight;
-	_dialTextXPos = _dialTextBox.left + PADDING;
-
-	if (_dialTextBoxCurrentLine >= _dialTextBoxLines) {
-		renderContinueReadingTriangle();
-		return ProgressiveTextState::NextPage;
-	}
-
-	processTextLine();
-
-	return ProgressiveTextState::ContinueRunning;
+	fadeInCharacters(_nbChar, _minDegrade);
+	--_nbChar;
 }
 
 bool Text::displayText(TextId index, bool showText, bool playVox, bool loop) {
 	debug(3, "displayText(index = %i, showText = %s, playVox = %s)",
-		(int)index, showText ? "true" : "false", playVox ? "true" : "false");
+		  (int)index, showText ? "true" : "false", playVox ? "true" : "false");
 	if (playVox) {
 		const TextEntry *textEntry = _engine->_resources->getText(_currentBankIdx, index);
 		// get right VOX entry index
@@ -596,8 +753,8 @@ bool Text::displayText(TextId index, bool showText, bool playVox, bool loop) {
 
 	// if we don't display text, than still plays vox file
 	if (showText) {
-		initText(index);
-		initDialogueBox();
+		commonOpenDial(index);
+		initDialWindow();
 
 		ScopedKeyMap uiKeyMap(_engine, uiKeyMapId);
 		ProgressiveTextState textState = ProgressiveTextState::ContinueRunning;
@@ -605,7 +762,7 @@ bool Text::displayText(TextId index, bool showText, bool playVox, bool loop) {
 			FrameMarker frame(_engine, 66);
 			_engine->readKeys();
 			if (textState == ProgressiveTextState::ContinueRunning) {
-				textState = updateProgressiveText();
+				textState = nextDialChar();
 			} else {
 				fadeInRemainingChars();
 			}
@@ -640,6 +797,8 @@ bool Text::displayText(TextId index, bool showText, bool playVox, bool loop) {
 			}
 		}
 	}
+
+	// Wait until silence
 	while (playVox && playVoxSimple(_currDialTextEntry)) {
 		FrameMarker frame(_engine);
 		_engine->readKeys();
@@ -651,58 +810,28 @@ bool Text::displayText(TextId index, bool showText, bool playVox, bool loop) {
 	}
 	_voxHiddenIndex = 0;
 	_hasHiddenVox = false;
-	_hasValidTextHandle = false;
+	_flagRunningDial = false;
 	_engine->_input->resetHeroActions();
 
 	return aborted;
 }
 
-bool Text::drawTextProgressive(TextId index, bool playVox, bool loop) {
-	_engine->exitSceneryView();
-	_engine->_interface->saveClip();
-	_engine->_interface->resetClip();
+bool Text::drawTextProgressive(TextId index, bool playVox, bool loop) { // Dial
+	_engine->_interface->memoClip();
+	_engine->_interface->unsetClip();
 	_engine->saveFrontBuffer();
 	const bool aborted = displayText(index, _engine->_cfgfile.FlagDisplayText, playVox, loop);
-	_engine->_interface->loadClip();
+	_engine->_interface->restoreClip();
 	return aborted;
 }
 
-void Text::setFontParameters(int32 spaceBetween, int32 charSpace) {
-	_dialSpaceBetween = spaceBetween;
-	_dialCharSpace = charSpace;
+void Text::setFont(int32 interLeave, int32 interSpace) {
+	_interLeave = interLeave;
+	_interSpace = interSpace;
 }
 
-void Text::setFontCrossColor(int32 color) {
-	_dialTextStepSize = -1;
-	_dialTextBufferSize = 14;
-	_dialTextStartColor = color * 16;
-	_dialTextStopColor = _dialTextStartColor + 12;
-}
-
-void Text::setFontColor(int32 color) {
+void Text::setFontColor(int32 color) { // CoulFont
 	_dialTextColor = color;
-}
-
-void Text::setTextCrossColor(int32 stopColor, int32 startColor, int32 stepSize) {
-	_dialTextStartColor = startColor;
-	_dialTextStopColor = stopColor;
-	_dialTextStepSize = stepSize;
-	_dialTextBufferSize = ((startColor - stopColor) + 1) / stepSize;
-}
-
-bool Text::getText(TextId index) {
-	const TextEntry *textEntry = _engine->_resources->getText(_currentBankIdx, index);
-	if (textEntry == nullptr) {
-		return false;
-	}
-	_currDialTextPtr = textEntry->string.c_str();
-	_currDialTextSize = textEntry->string.size();
-
-	// RECHECK: this was added for vox playback
-	_currDialTextEntry = textEntry;
-
-	debug(3, "text for bank %i with index %i (currIndex: %i): %s", (int)_currentBankIdx, textEntry->index, (int)textEntry->textIndex, _currDialTextPtr);
-	return true;
 }
 
 bool Text::getMenuText(TextId index, char *text, uint32 textSize) {
@@ -722,7 +851,7 @@ bool Text::getMenuText(TextId index, char *text, uint32 textSize) {
 		_currDialTextSize = 0xFF;
 	}
 
-	Common::strlcpy(text, _currDialTextPtr, MIN<int32>(textSize, _currDialTextSize + 1));
+	Common::strlcpy(text, _ptText, MIN<int32>(textSize, _currDialTextSize + 1));
 	_currDialTextSize++;
 	Common::strlcpy(_currMenuTextBuffer, text, MIN<int32>(sizeof(_currMenuTextBuffer), _currDialTextSize));
 
@@ -731,38 +860,14 @@ bool Text::getMenuText(TextId index, char *text, uint32 textSize) {
 	return true;
 }
 
-void Text::textClipFull() {
-	const int32 margin = 8;
-	_dialTextBox.left = margin;
-	_dialTextBox.top = margin;
-	_dialTextBox.right = _engine->width() - margin;
-	_dialTextBox.bottom = _engine->height() - margin;
-
-	_dialTextBoxLines = (int32)(_dialTextBox.height() / lineHeight) - 1;
-	_dialTextBoxMaxX = _engine->width() - 2 * margin - 2 * PADDING;
-}
-
-void Text::textClipSmall() {
-	const int32 margin = 16;
-	_dialTextBoxLines = 3;
-	const int32 textHeight = _dialTextBoxLines * lineHeight;
-
-	_dialTextBox.left = margin;
-	_dialTextBox.top = _engine->height() - textHeight - margin - PADDING;
-	_dialTextBox.right = _engine->width() - margin;
-	_dialTextBox.bottom = _engine->height() - margin;
-
-	_dialTextBoxMaxX = _engine->width() - 2 * margin - 2 * PADDING;
-}
-
 void Text::drawAskQuestion(TextId index) {
 	displayText(index, true, true, true);
 }
 
 void Text::drawHolomapLocation(TextId index) {
-	textClipSmall();
+	normalWinDial();
 	setFontCrossColor(COLOR_WHITE);
-	_engine->_interface->drawFilledRect(_dialTextBox, COLOR_BLACK);
+	_engine->_interface->box(_dialTextBox, COLOR_BLACK);
 	const bool displayText = _engine->_cfgfile.FlagDisplayText;
 	_engine->_cfgfile.FlagDisplayText = true;
 	drawTextProgressive(index, false, false);

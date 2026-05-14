@@ -49,7 +49,7 @@ Common::String CryOmni3DEngine_Versailles::getSaveStateName(int slot) const {
 }
 
 bool CryOmni3DEngine_Versailles::canVisit() const {
-	return Common::File::exists("game0001.sav");
+	return Common::File::exists(getFilePath(kFileTypeSaveGameVisit, "game0001.sav"));
 }
 
 void CryOmni3DEngine_Versailles::getSavesList(bool visit, Common::StringArray &saveNames,
@@ -73,11 +73,9 @@ void CryOmni3DEngine_Versailles::getSavesList(bool visit, Common::StringArray &s
 
 	if (visit) {
 		// Add bootstrap visit
-		if (Common::File::exists("game0001.sav")) {
-			Common::File visitFile;
-			if (!visitFile.open("game0001.sav")) {
-				error("Can't load visit file");
-			}
+		Common::Path visitPath(getFilePath(kFileTypeSaveGameVisit, "game0001.sav"));
+		Common::File visitFile;
+		if (visitFile.open(visitPath)) {
 			visitFile.read(saveName, kSaveDescriptionLen);
 			saveNames.push_back(saveName);
 		} else {
@@ -161,11 +159,13 @@ void CryOmni3DEngine_Versailles::saveGame(bool visit, uint saveNum,
 	syncCountdown();
 
 	// Write save name
-	char saveNameC[kSaveDescriptionLen];
+
+	// Allocate one more byte to silence GCC warning
+	// The save name doesn't have to be null terminated in the save file
+	char saveNameC[kSaveDescriptionLen + 1];
 	memset(saveNameC, 0, sizeof(saveNameC));
-	// Silence -Wstringop-truncation using parentheses, we don't have to have a null-terminated string here
-	(strncpy(saveNameC, saveName.c_str(), sizeof(saveNameC)));
-	out->write(saveNameC, sizeof(saveNameC));
+	strncpy(saveNameC, saveName.c_str(), kSaveDescriptionLen);
+	out->write(saveNameC, kSaveDescriptionLen);
 
 	// dummy values
 	out->writeUint32LE(0);
@@ -231,7 +231,7 @@ bool CryOmni3DEngine_Versailles::loadGame(bool visit, uint saveNum) {
 	if (visit && saveNum == 1) {
 		// Load bootstrap visit
 		Common::File *visitFile = new Common::File();
-		if (!visitFile->open("game0001.sav")) {
+		if (!visitFile->open(getFilePath(kFileTypeSaveGameVisit, "game0001.sav"))) {
 			delete visitFile;
 			error("Can't load visit file");
 		}

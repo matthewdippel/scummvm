@@ -42,17 +42,17 @@ static const PlainGameDescriptor TitanicGames[] = {
 
 #include "titanic/detection_tables.h"
 
-class TitanicMetaEngineDetection : public AdvancedMetaEngineDetection {
+class TitanicMetaEngineDetection : public AdvancedMetaEngineDetection<Titanic::TitanicGameDescription> {
 public:
-	TitanicMetaEngineDetection() : AdvancedMetaEngineDetection(Titanic::gameDescriptions, sizeof(Titanic::TitanicGameDescription), TitanicGames) {
+	TitanicMetaEngineDetection() : AdvancedMetaEngineDetection(Titanic::gameDescriptions, TitanicGames) {
 		_maxScanDepth = 3;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "titanic";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Starship Titanic";
 	}
 

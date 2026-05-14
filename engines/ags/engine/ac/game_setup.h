@@ -23,6 +23,7 @@
 #define AGS_ENGINE_AC_GAME_SETUP_H
 
 #include "ags/engine/main/graphics_mode.h"
+#include "ags/shared/ac/game_version.h"
 #include "ags/shared/util/string.h"
 
 namespace AGS3 {
@@ -58,6 +59,9 @@ using AGS::Shared::String;
  // for options that may be changed at runtime (and later written back
  // to the config file).
 struct GameSetup {
+	static const size_t DefSpriteCacheSize = (128 * 1024); // 128 MB
+	static const size_t DefTexCacheSize = (128 * 1024);    // 128 MB
+
 	bool  audio_enabled;
 	String audio_driver;
 	int   textheight; // text height used on the certain built-in GUI // TODO: move out to game class?
@@ -86,8 +90,8 @@ struct GameSetup {
 	bool  mouse_ctrl_enabled;
 	MouseSpeedDef mouse_speed_def;
 	bool  RenderAtScreenRes; // render sprites at screen resolution, as opposed to native one
-	int   Supersampling;
-	size_t SpriteCacheSize = 0u;
+	size_t SpriteCacheSize = DefSpriteCacheSize;  // in KB
+	size_t TextureCacheSize = DefTexCacheSize;  // in KB
 	bool  clear_cache_on_room_change; // for low-end devices: clear resource caches on room change
 	bool  load_latest_save; // load latest saved game on launch
 	ScreenRotation rotation;
@@ -99,9 +103,12 @@ struct GameSetup {
 
 	// User's overrides and hacks
 	int   override_script_os; // pretend engine is running on this eScriptSystemOSID
-	char  override_multitasking; // -1 for none, 0 or 1 to lock in the on/off mode
+	signed char  override_multitasking; // -1 for none, 0 or 1 to lock in the on/off mode
 	bool  override_upscale; // whether upscale old games that supported that
-
+	// assume game data version when restoring legacy save format
+	GameDataVersion legacysave_assume_dataver = kGameVersion_Undefined;
+	// allow to read mismatching number of guis from legacy save file
+	bool legacysave_let_gui_diff = false;
 	// Optional keys for calling built-in save/restore dialogs;
 	// primarily meant for the test runs of the games where save functionality
 	// is not implemented (or does not work correctly).

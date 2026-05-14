@@ -20,26 +20,22 @@
  */
 
 #include "ultima/ultima8/gumps/cru_menu_gump.h"
-#include "ultima/ultima8/games/game_data.h"
-#include "ultima/ultima8/graphics/gump_shape_archive.h"
-#include "ultima/ultima8/graphics/shape.h"
-#include "ultima/ultima8/graphics/shape_frame.h"
-#include "ultima/ultima8/ultima8.h"
-#include "ultima/ultima8/kernel/mouse.h"
-#include "ultima/ultima8/gumps/widgets/button_widget.h"
-#include "ultima/ultima8/gumps/quit_gump.h"
-#include "ultima/ultima8/gumps/difficulty_gump.h"
-#include "ultima/ultima8/games/cru_game.h"
-#include "ultima/ultima8/games/game.h"
-#include "ultima/ultima8/world/actors/main_actor.h"
-#include "ultima/ultima8/graphics/palette_manager.h"
-#include "ultima/ultima8/audio/music_process.h"
-#include "ultima/ultima8/world/get_object.h"
-#include "ultima/ultima8/meta_engine.h"
 
 #include "engines/dialogs.h"
-#include "common/translation.h"
-#include "gui/saveload.h"
+#include "ultima/ultima8/audio/music_process.h"
+#include "ultima/ultima8/games/cru_game.h"
+#include "ultima/ultima8/games/game.h"
+#include "ultima/ultima8/games/game_data.h"
+#include "ultima/ultima8/gfx/gump_shape_archive.h"
+#include "ultima/ultima8/gfx/palette_manager.h"
+#include "ultima/ultima8/gfx/shape.h"
+#include "ultima/ultima8/gfx/shape_frame.h"
+#include "ultima/ultima8/gumps/quit_gump.h"
+#include "ultima/ultima8/gumps/widgets/button_widget.h"
+#include "ultima/ultima8/kernel/mouse.h"
+#include "ultima/ultima8/ultima8.h"
+#include "ultima/ultima8/world/actors/main_actor.h"
+#include "ultima/ultima8/world/get_object.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -53,8 +49,7 @@ CruMenuGump::CruMenuGump()
 	: ModalGump(0, 0, 640, 480, 0, FLAG_DONT_SAVE) {
 
 	Mouse *mouse = Mouse::get_instance();
-	mouse->pushMouseCursor();
-	mouse->setMouseCursor(Mouse::MOUSE_HAND);
+	mouse->pushMouseCursor(Mouse::MOUSE_HAND);
 
 	// Save old music state
 	MusicProcess *musicprocess = MusicProcess::get_instance();

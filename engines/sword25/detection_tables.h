@@ -19,8 +19,6 @@
  *
  */
 
-#define GAMEOPTION_ENGLISH_SPEECH GUIO_GAMEOPTIONS1
-
 namespace Sword25 {
 
 static const ADGameDescription gameDescriptions[] = {
@@ -105,6 +103,15 @@ static const ADGameDescription gameDescriptions[] = {
 		ADGF_NO_FLAGS,
 		GUIO1(GUIO_NOASPECT)
 	},
+	{
+		"sword25",
+		"",
+		AD_ENTRY1s("lang_he.b25c","993604772b9c7d9d54219d6993ab9c6c", 1214843),
+		Common::HE_ISR,
+		Common::kPlatformUnknown,
+		ADGF_NO_FLAGS,
+		GUIO1(GUIO_NOASPECT)
+	},
 	// Hungarian "psylog" version.
 	// Submitted by goodoldgeorg in bug report #5888.
 	{
@@ -121,9 +128,9 @@ static const ADGameDescription gameDescriptions[] = {
 	{
 		"sword25",
 		"Extracted",
-		{{"_includes.lua", 0, 0, -1},
-		 {"boot.lua", 0, 0, -1},
-		 {"kernel.lua", 0, 0, -1},
+		{{"_includes.lua", 0, 0, AD_NO_SIZE},
+		 {"boot.lua", 0, 0, AD_NO_SIZE},
+		 {"kernel.lua", 0, 0, AD_NO_SIZE},
 		 AD_LISTEND},
 		Common::UNK_LANG,
 		Common::kPlatformUnknown,

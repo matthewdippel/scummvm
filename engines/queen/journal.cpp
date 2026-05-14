@@ -35,6 +35,8 @@
 #include "queen/resource.h"
 #include "queen/sound.h"
 
+#include "backends/keymapper/keymapper.h"
+
 namespace Queen {
 
 Journal::Journal(QueenEngine *vm)
@@ -63,12 +65,19 @@ void Journal::use() {
 	update();
 	_vm->display()->palFadeIn(ROOM_JOURNAL);
 
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->getKeymap("game-shortcuts")->setEnabled(false);
+	keymapper->getKeymap("journal")->setEnabled(true);
+
 	_quitMode = QM_LOOP;
 	while (_quitMode == QM_LOOP) {
 		Common::Event event;
 		Common::EventManager *eventMan = _system->getEventManager();
 		while (eventMan->pollEvent(event)) {
 			switch (event.type) {
+			case Common::EVENT_CUSTOM_ENGINE_ACTION_START:
+				handleAction(event.customType);
+				break;
 			case Common::EVENT_KEYDOWN:
 				handleKeyDown(event.kbd.ascii, event.kbd.keycode);
 				break;
@@ -91,6 +100,9 @@ void Journal::use() {
 		_system->delayMillis(20);
 		_system->updateScreen();
 	}
+
+	keymapper->getKeymap("journal")->setEnabled(false);
+	keymapper->getKeymap("game-shortcuts")->setEnabled(true);
 
 	_vm->writeOptionSettings();
 
@@ -182,7 +194,7 @@ void Journal::drawSaveDescriptions() {
 	for (int i = 0; i < NUM_SAVES_PER_PAGE; ++i) {
 		int n = _currentSavePage * 10 + i;
 		char nb[4];
-		sprintf(nb, "%d", n + 1);
+		Common::sprintf_s(nb, "%d", n + 1);
 		int y = _textField.y + i * _textField.h;
 		_vm->display()->setText(_textField.x, y, _saveDescriptions[n], false);
 		_vm->display()->setText(_textField.x - 27, y + 1, nb, false);
@@ -227,14 +239,28 @@ void Journal::handleKeyDown(uint16 ascii, int keycode) {
 	case PM_INFO_BOX:
 		break;
 	case PM_YES_NO:
-		if (keycode == Common::KEYCODE_ESCAPE) {
-			exitYesNoPanelMode();
-		} else if (_textField.enabled) {
+		if (_textField.enabled) {
 			updateTextField(ascii, keycode);
 		}
 		break;
 	case PM_NORMAL:
-		if (keycode == Common::KEYCODE_ESCAPE) {
+		break;
+	default:
+		break;
+	}
+}
+
+void Journal::handleAction(Common::CustomEventType action) {
+	switch (_panelMode) {
+	case PM_INFO_BOX:
+		break;
+	case PM_YES_NO:
+		if (action == kActionCloseJournal) {
+			exitYesNoPanelMode();
+		}
+		break;
+	case PM_NORMAL:
+		if (action == kActionCloseJournal) {
 			_quitMode = QM_CONTINUE;
 		}
 		break;
@@ -537,7 +563,7 @@ void Journal::drawInfoPanel() {
 		break;
 	}
 	char versionId[13];
-	sprintf(versionId, "Version %c.%c%c", ver[2], ver[3], ver[4]);
+	Common::sprintf_s(versionId, "Version %c.%c%c", ver[2], ver[3], ver[4]);
 	_vm->display()->setTextCentered(156, versionId, false);
 }
 
@@ -547,7 +573,7 @@ void Journal::initTextField(const char *desc) {
 	_textField.posCursor = _vm->display()->textWidth(desc);
 	_textField.textCharsCount = strlen(desc);
 	memset(_textField.text, 0, sizeof(_textField.text));
-	strcpy(_textField.text, desc);
+	Common::strcpy_s(_textField.text, desc);
 }
 
 void Journal::updateTextField(uint16 ascii, int keycode) {

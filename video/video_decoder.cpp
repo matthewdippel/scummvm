@@ -28,8 +28,6 @@
 #include "common/file.h"
 #include "common/system.h"
 
-#include "graphics/palette.h"
-
 namespace Video {
 
 VideoDecoder::VideoDecoder() {
@@ -48,20 +46,16 @@ VideoDecoder::VideoDecoder() {
 	_nextVideoTrack = 0;
 	_mainAudioTrack = 0;
 	_canSetDither = true;
-
-	// Find the best format for output
-	_defaultHighColorFormat = g_system->getScreenFormat();
-
-	if (_defaultHighColorFormat.bytesPerPixel == 1)
-		_defaultHighColorFormat = Graphics::PixelFormat(4, 8, 8, 8, 8, 8, 16, 24, 0);
+	_canSetDefaultFormat = true;
+	_videoCodecAccuracy = Image::CodecAccuracy::Default;
 }
 
 void VideoDecoder::close() {
 	if (isPlaying())
 		stop();
 
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		delete *it;
+	for (auto *track : _tracks)
+		delete track;
 
 	_tracks.clear();
 	_internalTracks.clear();
@@ -79,6 +73,7 @@ void VideoDecoder::close() {
 	_nextVideoTrack = 0;
 	_mainAudioTrack = 0;
 	_canSetDither = true;
+	_canSetDefaultFormat = true;
 }
 
 bool VideoDecoder::loadFile(const Common::Path &filename) {
@@ -89,11 +84,40 @@ bool VideoDecoder::loadFile(const Common::Path &filename) {
 		return false;
 	}
 
-	return loadStream(file);
+	bool result = loadStream(file);
+	if (!result)
+		delete file;
+	return result;
 }
 
 bool VideoDecoder::needsUpdate() const {
-	return hasFramesLeft() && getTimeToNextFrame() == 0;
+	bool hasVideo = false;
+	bool hasAudio = false;
+	for (auto &track : _tracks) {
+		switch (track->getTrackType()) {
+		case Track::kTrackTypeAudio:
+			hasAudio = true;
+			break;
+		case Track::kTrackTypeVideo:
+			hasVideo = true;
+			break;
+		default:
+			break;
+		}
+	}
+	if (hasVideo) {
+		return hasFramesLeft() && getTimeToNextFrame() == 0;
+	} else if (hasAudio) {
+		return !endOfVideo();
+	}
+	return false;
+}
+
+void VideoDecoder::delayMillis(uint msecs) {
+	if (!needsUpdate())
+		g_system->delayMillis(MIN<uint>(msecs, getTimeToNextFrame()));
+	else
+		g_system->delayMillis(1); /* This is needed to keep the mixer and timers active */
 }
 
 void VideoDecoder::pauseVideo(bool pause) {
@@ -112,11 +136,11 @@ void VideoDecoder::pauseVideo(bool pause) {
 	if (_pauseLevel == 1 && pause) {
 		_pauseStartTime = g_system->getMillis(); // Store the starting time from pausing to keep it for later
 
-		for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++)
-			(*it)->pause(true);
+		for (auto &track : _tracks)
+			track->pause(true);
 	} else if (_pauseLevel == 0) {
-		for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++)
-			(*it)->pause(false);
+		for (auto &track : _tracks)
+			track->pause(false);
 
 		_startTime += (g_system->getMillis() - _pauseStartTime);
 	}
@@ -130,17 +154,17 @@ void VideoDecoder::resetPauseStartTime() {
 void VideoDecoder::setVolume(byte volume) {
 	_audioVolume = volume;
 
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeAudio)
-			((AudioTrack *)*it)->setVolume(_audioVolume);
+	for (auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeAudio)
+			((AudioTrack *)track)->setVolume(_audioVolume);
 }
 
 void VideoDecoder::setBalance(int8 balance) {
 	_audioBalance = balance;
 
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeAudio)
-			((AudioTrack *)*it)->setBalance(_audioBalance);
+	for (auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeAudio)
+			((AudioTrack *)track)->setBalance(_audioBalance);
 }
 
 Audio::Mixer::SoundType VideoDecoder::getSoundType() const {
@@ -150,9 +174,9 @@ Audio::Mixer::SoundType VideoDecoder::getSoundType() const {
 void VideoDecoder::setSoundType(Audio::Mixer::SoundType soundType) {
 	_soundType = soundType;
 
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeAudio)
-			((AudioTrack *)*it)->setSoundType(_soundType);
+	for (auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeAudio)
+			((AudioTrack *)track)->setSoundType(_soundType);
 }
 
 bool VideoDecoder::isVideoLoaded() const {
@@ -160,25 +184,25 @@ bool VideoDecoder::isVideoLoaded() const {
 }
 
 uint16 VideoDecoder::getWidth() const {
-	for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeVideo)
-			return ((VideoTrack *)*it)->getWidth();
+	for (const auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeVideo)
+			return ((VideoTrack *)track)->getWidth();
 
 	return 0;
 }
 
 uint16 VideoDecoder::getHeight() const {
-	for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeVideo)
-			return ((VideoTrack *)*it)->getHeight();
+	for (const auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeVideo)
+			return ((VideoTrack *)track)->getHeight();
 
 	return 0;
 }
 
 Graphics::PixelFormat VideoDecoder::getPixelFormat() const {
-	for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeVideo)
-			return ((VideoTrack *)*it)->getPixelFormat();
+	for (const auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeVideo)
+			return ((VideoTrack *)track)->getPixelFormat();
 
 	return Graphics::PixelFormat();
 }
@@ -186,6 +210,7 @@ Graphics::PixelFormat VideoDecoder::getPixelFormat() const {
 const Graphics::Surface *VideoDecoder::decodeNextFrame() {
 	_needsUpdate = false;
 	_canSetDither = false;
+	_canSetDefaultFormat = false;
 
 	readNextPacket();
 
@@ -213,9 +238,9 @@ bool VideoDecoder::setReverse(bool reverse) {
 		return false;
 
 	// Attempt to make sure all the tracks are in the requested direction
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++) {
-		if ((*it)->getTrackType() == Track::kTrackTypeVideo && ((VideoTrack *)*it)->isReversed() != reverse) {
-			if (!((VideoTrack *)*it)->setReverse(reverse))
+	for (auto &track : _tracks) {
+		if (track->getTrackType() == Track::kTrackTypeVideo && ((VideoTrack *)track)->isReversed() != reverse) {
+			if (!((VideoTrack *)track)->setReverse(reverse))
 				return false;
 
 			_needsUpdate = true; // force an update
@@ -234,19 +259,30 @@ const byte *VideoDecoder::getPalette() {
 int VideoDecoder::getCurFrame() const {
 	int32 frame = -1;
 
-	for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeVideo)
-			frame += ((VideoTrack *)*it)->getCurFrame() + 1;
+	for (const auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeVideo)
+			frame += ((VideoTrack *)track)->getCurFrame() + 1;
 
 	return frame;
 }
 
-uint32 VideoDecoder::getFrameCount() const {
-	int count = 0;
+int VideoDecoder::getCurFrameDelay() const {
+	int32 frame = -1;
 
 	for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++)
 		if ((*it)->getTrackType() == Track::kTrackTypeVideo)
-			count += ((VideoTrack *)*it)->getFrameCount();
+			frame += ((VideoTrack *)*it)->getCurFrameDelay() + 1;
+
+	return frame;
+}
+
+
+uint32 VideoDecoder::getFrameCount() const {
+	int count = 0;
+
+	for (const auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeVideo)
+			count += ((VideoTrack *)track)->getFrameCount();
 
 	return count;
 }
@@ -259,9 +295,9 @@ uint32 VideoDecoder::getTime() const {
 		return MAX<int>((_playbackRate * (_pauseStartTime - _startTime)).toInt(), 0);
 
 	if (useAudioSync()) {
-		for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++) {
-			if ((*it)->getTrackType() == Track::kTrackTypeAudio && !(*it)->endOfTrack()) {
-				uint32 time = ((const AudioTrack *)*it)->getRunningTime();
+		for (const auto &track : _tracks) {
+			if (track->getTrackType() == Track::kTrackTypeAudio && !track->endOfTrack()) {
+				uint32 time = (((const AudioTrack *)track)->getRunningTime() * _playbackRate).toInt();
 
 				if (time != 0)
 					return time + _lastTimeChange.msecs();
@@ -295,9 +331,7 @@ uint32 VideoDecoder::getTimeToNextFrame() const {
 }
 
 bool VideoDecoder::endOfVideo() const {
-	for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++) {
-		const Track *track = *it;
-
+	for (const auto &track : _tracks) {
 		bool videoEndTimeReached = _endTimeSet && track->getTrackType() == Track::kTrackTypeVideo && ((const VideoTrack *)track)->getNextFrameStartTime() >= (uint)_endTime.msecs();
 		bool endReached = track->endOfTrack() || (isPlaying() && videoEndTimeReached);
 		if (!endReached)
@@ -311,8 +345,8 @@ bool VideoDecoder::isRewindable() const {
 	if (!isVideoLoaded())
 		return false;
 
-	for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if (!(*it)->isRewindable())
+	for (const auto &track : _tracks)
+		if (!track->isRewindable())
 			return false;
 
 	return true;
@@ -326,8 +360,8 @@ bool VideoDecoder::rewind() {
 	if (isPlaying())
 		stopAudio();
 
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if (!(*it)->rewind())
+	for (auto &track : _tracks)
+		if (!track->rewind())
 			return false;
 
 	// Now that we've rewound, start all tracks again
@@ -345,8 +379,8 @@ bool VideoDecoder::isSeekable() const {
 	if (!isVideoLoaded())
 		return false;
 
-	for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if (!(*it)->isSeekable())
+	for (const auto &track : _tracks)
+		if (!track->isSeekable())
 			return false;
 
 	return true;
@@ -356,7 +390,7 @@ bool VideoDecoder::seek(const Audio::Timestamp &time) {
 	if (!isSeekable())
 		return false;
 
-	// Stop all tracks so they can be seeked
+	// Stop all tracks so they can be seek'ed
 	if (isPlaying())
 		stopAudio();
 
@@ -365,13 +399,13 @@ bool VideoDecoder::seek(const Audio::Timestamp &time) {
 		return false;
 
 	// Seek any external track too
-	for (TrackListIterator it = _externalTracks.begin(); it != _externalTracks.end(); it++)
-		if (!(*it)->seek(time))
+	for (auto &track : _externalTracks)
+		if (!track->seek(time))
 			return false;
 
 	_lastTimeChange = time;
 
-	// Now that we've seeked, start all tracks again
+	// Now that we've seek'ed, start all tracks again
 	// Also reset our start time
 	if (isPlaying()) {
 		startAudio();
@@ -388,24 +422,24 @@ bool VideoDecoder::seekToFrame(uint frame) {
 	if (!isSeekable())
 		return false;
 
-	VideoTrack *track = 0;
+	VideoTrack *videoTrack = 0;
 
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++) {
-		if ((*it)->getTrackType() == Track::kTrackTypeVideo) {
+	for (auto &track : _tracks) {
+		if (track->getTrackType() == Track::kTrackTypeVideo) {
 			// We only allow seeking by frame when one video track
 			// is present
-			if (track)
+			if (videoTrack)
 				return false;
 
-			track = (VideoTrack *)*it;
+			videoTrack = (VideoTrack *)track;
 		}
 	}
 
 	// If we didn't find a video track, we can't seek by frame (of course)
-	if (!track)
+	if (!videoTrack)
 		return false;
 
-	Audio::Timestamp time = track->getFrameTime(frame);
+	Audio::Timestamp time = videoTrack->getFrameTime(frame);
 
 	if (time < 0)
 		return false;
@@ -441,8 +475,8 @@ void VideoDecoder::stop() {
 	_pauseLevel = 0;
 
 	// Reset the pause state of the tracks too
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		(*it)->pause(false);
+	for (auto &track : _tracks)
+		track->pause(false);
 }
 
 void VideoDecoder::setRate(const Common::Rational &rate) {
@@ -452,12 +486,13 @@ void VideoDecoder::setRate(const Common::Rational &rate) {
 	if (rate == 0) {
 		stop();
 		return;
-	} else if (rate != 1 && hasAudio()) {
-		warning("Cannot set custom rate in videos with audio");
-		return;
 	}
 
 	Common::Rational targetRate = rate;
+
+	if (hasAudio()) {
+		setAudioRate(targetRate);
+	}
 
 	// Attempt to set the reverse
 	if (!setReverse(rate < 0)) {
@@ -476,7 +511,7 @@ void VideoDecoder::setRate(const Common::Rational &rate) {
 	_playbackRate = targetRate;
 	_startTime = g_system->getMillis();
 
-	// Adjust start time if we've seeked to something besides zero time
+	// Adjust start time if we've seek'ed to something besides zero time
 	if (_lastTimeChange != 0)
 		_startTime -= (_lastTimeChange.msecs() / _playbackRate).toInt();
 
@@ -490,8 +525,8 @@ bool VideoDecoder::isPlaying() const {
 Audio::Timestamp VideoDecoder::getDuration() const {
 	Audio::Timestamp maxDuration(0, 1000);
 
-	for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++) {
-		Audio::Timestamp duration = (*it)->getDuration();
+	for (const auto &track : _tracks) {
+		Audio::Timestamp duration = track->getDuration();
 
 		if (duration > maxDuration)
 			maxDuration = duration;
@@ -501,8 +536,8 @@ Audio::Timestamp VideoDecoder::getDuration() const {
 }
 
 bool VideoDecoder::seekIntern(const Audio::Timestamp &time) {
-	for (TrackList::iterator it = _internalTracks.begin(); it != _internalTracks.end(); it++)
-		if (!(*it)->seek(time))
+	for (auto &track : _internalTracks)
+		if (!track->seek(time))
 			return false;
 
 	return true;
@@ -515,14 +550,48 @@ bool VideoDecoder::setDitheringPalette(const byte *palette) {
 
 	bool result = false;
 
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++) {
-		if ((*it)->getTrackType() == Track::kTrackTypeVideo && ((VideoTrack *)*it)->canDither()) {
-			((VideoTrack *)*it)->setDither(palette);
+	for (auto &track : _tracks) {
+		if (track->getTrackType() == Track::kTrackTypeVideo && ((VideoTrack *)track)->canDither()) {
+			((VideoTrack *)track)->setDither(palette);
 			result = true;
 		}
 	}
 
 	return result;
+}
+
+bool VideoDecoder::setOutputPixelFormat(const Graphics::PixelFormat &format) {
+	// If a frame was already decoded, we can't set it now.
+	if (!_canSetDefaultFormat)
+		return false;
+
+	bool result = false;
+
+	for (auto &track : _tracks) {
+		if (track->getTrackType() == Track::kTrackTypeVideo) {
+			if (((VideoTrack *)track)->setOutputPixelFormat(format))
+				result = true;
+		}
+	}
+
+	return result;
+}
+
+bool VideoDecoder::setOutputPixelFormats(const Common::List<Graphics::PixelFormat> &formatList) {
+	for (const auto &format : formatList) {
+		if (setOutputPixelFormat(format))
+			return true;
+	}
+	return false;
+}
+
+void VideoDecoder::setVideoCodecAccuracy(Image::CodecAccuracy accuracy) {
+	_videoCodecAccuracy = accuracy;
+
+	for (Track *track : _tracks) {
+		if (track->getTrackType() == Track::kTrackTypeVideo)
+			static_cast<VideoTrack *>(track)->setCodecAccuracy(accuracy);
+	}
 }
 
 VideoDecoder::Track::Track() {
@@ -597,6 +666,7 @@ Audio::Timestamp VideoDecoder::FixedRateVideoTrack::getDuration() const {
 VideoDecoder::AudioTrack::AudioTrack(Audio::Mixer::SoundType soundType) :
 		_volume(Audio::Mixer::kMaxChannelVolume),
 		_soundType(soundType),
+		_rate(0),
 		_balance(0),
 		_muted(false) {
 }
@@ -613,6 +683,23 @@ void VideoDecoder::AudioTrack::setVolume(byte volume) {
 		g_system->getMixer()->setChannelVolume(_handle, _muted ? 0 : _volume);
 }
 
+void VideoDecoder::AudioTrack::setRate(uint32 rate) {
+	_rate = rate;
+
+	if (g_system->getMixer()->isSoundHandleActive(_handle))
+		g_system->getMixer()->setChannelRate(_handle, _rate);
+}
+
+void VideoDecoder::AudioTrack::setRate(Common::Rational rate) {
+	Audio::AudioStream *stream = getAudioStream();
+	assert(stream);
+
+	// Convert rational rate to audio rate
+	uint32 convertedRate = (stream->getRate() * rate).toInt();
+
+	setRate(convertedRate);
+}
+
 void VideoDecoder::AudioTrack::setBalance(int8 balance) {
 	_balance = balance;
 
@@ -627,6 +714,10 @@ void VideoDecoder::AudioTrack::start() {
 	assert(stream);
 
 	g_system->getMixer()->playStream(_soundType, &_handle, stream, -1, _muted ? 0 : getVolume(), getBalance(), DisposeAfterUse::NO);
+
+	// Set rate of audio
+	if (_rate != 0)
+		g_system->getMixer()->setChannelRate(_handle, _rate);
 
 	// Pause the audio again if we're still paused
 	if (isPaused())
@@ -646,6 +737,10 @@ void VideoDecoder::AudioTrack::start(const Audio::Timestamp &limit) {
 	stream = Audio::makeLimitingAudioStream(stream, limit, DisposeAfterUse::NO);
 
 	g_system->getMixer()->playStream(_soundType, &_handle, stream, -1, _muted ? 0 : getVolume(), getBalance(), DisposeAfterUse::YES);
+
+	// Set rate of audio
+	if (_rate != 0)
+		g_system->getMixer()->setChannelRate(_handle, _rate);
 
 	// Pause the audio again if we're still paused
 	if (isPaused())
@@ -705,11 +800,16 @@ VideoDecoder::StreamFileAudioTrack::StreamFileAudioTrack(Audio::Mixer::SoundType
 	_stream = 0;
 }
 
+VideoDecoder::StreamFileAudioTrack::StreamFileAudioTrack(Audio::SeekableAudioStream *stream, Audio::Mixer::SoundType soundType) :
+		SeekableAudioTrack(soundType) {
+	_stream = stream;
+}
+
 VideoDecoder::StreamFileAudioTrack::~StreamFileAudioTrack() {
 	delete _stream;
 }
 
-bool VideoDecoder::StreamFileAudioTrack::loadFromFile(const Common::String &baseName) {
+bool VideoDecoder::StreamFileAudioTrack::loadFromFile(const Common::Path &baseName) {
 	// TODO: Make sure the stream isn't being played
 	delete _stream;
 	_stream = Audio::SeekableAudioStream::openStreamFile(baseName);
@@ -754,7 +854,17 @@ void VideoDecoder::addTrack(Track *track, bool isExternal) {
 		((AudioTrack *)track)->start();
 }
 
-bool VideoDecoder::addStreamFileTrack(const Common::String &baseName) {
+bool VideoDecoder::addStreamTrack(Audio::SeekableAudioStream *stream) {
+	// Only allow adding external tracks if a video is already loaded
+	if (!isVideoLoaded())
+		return false;
+
+	StreamFileAudioTrack *track = new StreamFileAudioTrack(stream, getSoundType());
+	addTrack(track, true);
+	return true;
+}
+
+bool VideoDecoder::addStreamFileTrack(const Common::Path &baseName) {
 	// Only allow adding external tracks if a video is already loaded
 	if (!isVideoLoaded())
 		return false;
@@ -792,8 +902,8 @@ bool VideoDecoder::setAudioTrack(int index) {
 uint VideoDecoder::getAudioTrackCount() const {
 	uint count = 0;
 
-	for (TrackList::const_iterator it = _internalTracks.begin(); it != _internalTracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeAudio)
+	for (const auto &track : _internalTracks)
+		if (track->getTrackType() == Track::kTrackTypeAudio)
 			count++;
 
 	return count;
@@ -823,28 +933,37 @@ void VideoDecoder::setEndTime(const Audio::Timestamp &endTime) {
 }
 
 void VideoDecoder::setEndFrame(uint frame) {
-	VideoTrack *track = 0;
+	VideoTrack *videoTrack = nullptr;
 
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++) {
-		if ((*it)->getTrackType() == Track::kTrackTypeVideo) {
+	for (auto &track : _tracks) {
+		if (track->getTrackType() == Track::kTrackTypeVideo) {
 			// We only allow this when one video track is present
-			if (track)
+			if (videoTrack)
 				return;
 
-			track = (VideoTrack *)*it;
+			videoTrack = (VideoTrack *)track;
 		}
 	}
 
 	// If we didn't find a video track, we can't set the final frame (of course)
-	if (!track)
+	if (!videoTrack)
 		return;
 
-	Audio::Timestamp time = track->getFrameTime(frame + 1);
+	Audio::Timestamp time = videoTrack->getFrameTime(frame + 1);
 
 	if (time < 0)
 		return;
 
 	setEndTime(time);
+}
+
+void VideoDecoder::resetStartTime() {
+	if (_nextVideoTrack) {
+		Audio::Timestamp curTime = _nextVideoTrack->getFrameTime(_nextVideoTrack->getCurFrame());
+		if (isPlaying()) {
+			_startTime = g_system->getMillis() - (curTime.msecs() / _playbackRate).toInt();
+		}
+	}
 }
 
 VideoDecoder::Track *VideoDecoder::getTrack(uint track) {
@@ -862,8 +981,8 @@ const VideoDecoder::Track *VideoDecoder::getTrack(uint track) const {
 }
 
 bool VideoDecoder::endOfVideoTracks() const {
-	for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeVideo && !(*it)->endOfTrack())
+	for (const auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeVideo && !track->endOfTrack())
 			return false;
 
 	return true;
@@ -873,14 +992,14 @@ VideoDecoder::VideoTrack *VideoDecoder::findNextVideoTrack() {
 	_nextVideoTrack = 0;
 	uint32 bestTime = 0xFFFFFFFF;
 
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++) {
-		if ((*it)->getTrackType() == Track::kTrackTypeVideo && !(*it)->endOfTrack()) {
-			VideoTrack *track = (VideoTrack *)*it;
-			uint32 time = track->getNextFrameStartTime();
+	for (auto &track : _tracks) {
+		if (track->getTrackType() == Track::kTrackTypeVideo && !track->endOfTrack()) {
+			VideoTrack *videoTrack = (VideoTrack *)track;
+			uint32 time = videoTrack->getNextFrameStartTime();
 
 			if (time < bestTime) {
 				bestTime = time;
-				_nextVideoTrack = track;
+				_nextVideoTrack = videoTrack;
 			}
 		}
 	}
@@ -896,35 +1015,42 @@ void VideoDecoder::startAudio() {
 		return;
 	}
 
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeAudio)
-			((AudioTrack *)*it)->start();
+	for (auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeAudio)
+			((AudioTrack *)track)->start();
 }
 
 void VideoDecoder::stopAudio() {
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeAudio)
-			((AudioTrack *)*it)->stop();
+	for (auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeAudio)
+			((AudioTrack *)track)->stop();
+}
+
+void VideoDecoder::setAudioRate(Common::Rational rate) {
+	for (auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeAudio) {
+			((AudioTrack *)track)->setRate(rate);
+		}
 }
 
 void VideoDecoder::startAudioLimit(const Audio::Timestamp &limit) {
-	for (TrackList::iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeAudio)
-			((AudioTrack *)*it)->start(limit);
+	for (auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeAudio)
+			((AudioTrack *)track)->start(limit);
 }
 
 bool VideoDecoder::hasFramesLeft() const {
 	// This is similar to endOfVideo(), except it doesn't take Audio into account (and returns true if not the end of the video)
 	// This is only used for needsUpdate() atm so that setEndTime() works properly
 	// And unlike endOfVideoTracks(), this takes into account _endTime
-	for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++) {
-		if ((*it)->getTrackType() != Track::kTrackTypeVideo)
+	for (const auto &track : _tracks) {
+		if (track->getTrackType() != Track::kTrackTypeVideo)
 			continue;
 
-		const VideoTrack *track = (const VideoTrack *)*it;
+		const VideoTrack *videoTrack = (const VideoTrack *)track;
 
-		bool videoEndTimeReached = _endTimeSet && track->getNextFrameStartTime() >= (uint)_endTime.msecs();
-		bool endReached = track->endOfTrack() || (isPlaying() && videoEndTimeReached);
+		bool videoEndTimeReached = _endTimeSet && videoTrack->getNextFrameStartTime() >= (uint)_endTime.msecs();
+		bool endReached = videoTrack->endOfTrack() || (isPlaying() && videoEndTimeReached);
 		if (!endReached)
 			return true;
 	}
@@ -933,8 +1059,8 @@ bool VideoDecoder::hasFramesLeft() const {
 }
 
 bool VideoDecoder::hasAudio() const {
-	for (TrackList::const_iterator it = _tracks.begin(); it != _tracks.end(); it++)
-		if ((*it)->getTrackType() == Track::kTrackTypeAudio)
+	for (const auto &track : _tracks)
+		if (track->getTrackType() == Track::kTrackTypeAudio)
 			return true;
 
 	return false;

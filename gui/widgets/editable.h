@@ -52,6 +52,12 @@ protected:
 
 	int			_editScrollOffset;
 
+	int			_selCaretPos;
+	int			_selOffset;
+	bool		_shiftPressed;
+	bool		_isDragging;
+	bool		_disableSelection;
+
 	Graphics::TextAlign _align;
 	Graphics::TextAlign _drawAlign;
 
@@ -60,6 +66,7 @@ protected:
 	ThemeEngine::TextInversionState  _inversion;
 
 public:
+	EditableWidget(GuiObject *boss, int x, int y, int w, int h, bool scale, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0);
 	EditableWidget(GuiObject *boss, int x, int y, int w, int h, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0);
 	EditableWidget(GuiObject *boss, const Common::String &name, const Common::U32String &tooltip = Common::U32String(), uint32 cmd = 0);
 	~EditableWidget() override;
@@ -70,12 +77,22 @@ public:
 	virtual const Common::U32String &getEditString() const	{ return _editString; }
 
 	void handleTickle() override;
+	void handleMouseDown(int x, int y, int button, int clickCount) override;
+	void handleMouseUp(int x, int y, int button, int clickCount) override;
+	void handleMouseMoved(int x, int y, int button) override;
 	bool handleKeyDown(Common::KeyState state) override;
+	bool handleKeyUp(Common::KeyState state) override;
+	void handleOtherEvent(const Common::Event& evt) override;
 	void reflowLayout() override;
 
+	void moveCaretToStart(bool shiftPressed);
+	void moveCaretToEnd(bool shiftPressed);
 	bool setCaretPos(int newPos);
+	void setSelectionOffset(int newOffset);
 
 protected:
+	void drawWidget() override;
+
 	virtual void startEditMode() = 0;
 	virtual void endEditMode() = 0;
 	virtual void abortEditMode() = 0;
@@ -86,7 +103,8 @@ protected:
 	 */
 	virtual Common::Rect getEditRect() const = 0;
 	virtual int getCaretOffset() const;
-	void drawCaret(bool erase);
+	virtual int getSelectionCarretOffset() const;
+	void drawCaret(bool erase, bool useRelativeCoordinates = false);
 	bool adjustOffset();
 	void makeCaretVisible();
 
@@ -94,7 +112,13 @@ protected:
 
 	void setFontStyle(ThemeEngine::FontStyle font) { _font = font; }
 
-	virtual bool tryInsertChar(byte c, int pos);
+	virtual bool isCharAllowed(Common::u32char_type_t c) const;
+	bool tryInsertChar(Common::u32char_type_t c, int pos);
+
+	int caretVisualPos(int logicalPos) const;
+	int caretLogicalPos() const;
+
+	void clearSelection();
 };
 
 } // End of namespace GUI

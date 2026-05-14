@@ -52,8 +52,8 @@ const reg_t TRUE_REG = {0, 1};
 static reg_t &validate_property(EngineState *s, Object *obj, int index) {
 	// A static dummy reg_t, which we return if obj or index turn out to be
 	// invalid. Note that we cannot just return NULL_REG, because client code
-	// may modify the value of the returned reg_t.
-	static reg_t dummyReg = NULL_REG;
+	// may modify the reference. Instead, we reset it to NULL_REG each time.
+	static reg_t dummyReg;
 
 	// If this occurs, it means there's probably something wrong with the garbage
 	// collector, so don't hide it with fake return values
@@ -65,11 +65,15 @@ static reg_t &validate_property(EngineState *s, Object *obj, int index) {
 	else
 		index >>= 1;
 
+	// Validate the property index. SSCI does no validation; it just adds the offset
+	// to the object's address. If a script contains an invalid offset, usually due
+	// to the script compiler accepting an invalid property symbol, then OOB memory
+	// is used. Several games have an Actor:canBeHere method in script 998 with this
+	// bug, so it occurs immediately in their speed tests. (iceman, lsl3, qfg1, kq1)
 	if (index < 0 || (uint)index >= obj->getVarCount()) {
-		// This is same way sierra does it and there are some games, that contain such scripts like
-		//  iceman script 998 (fred::canBeHere, executed right at the start)
 		debugC(kDebugLevelVM, "[VM] Invalid property #%d (out of [0..%d]) requested from object %04x:%04x (%s)",
 			index, obj->getVarCount(), PRINT_REG(obj->getPos()), s->_segMan->getObjectName(obj->getPos()));
+		dummyReg = NULL_REG;
 		return dummyReg;
 	}
 
@@ -131,7 +135,7 @@ static reg_t read_var(EngineState *s, int type, int index) {
 					s->variables[type][index] = NULL_REG;
 					break;
 #else
-					error("Uninitialized read for temp %d from %s", index, originReply.toString().c_str());
+					error("Uninitialized read for temp %d", index);
 #endif
 				}
 				assert(solution.type == WORKAROUND_FAKE);
@@ -161,35 +165,6 @@ static reg_t read_var(EngineState *s, int type, int index) {
 
 static void write_var(EngineState *s, int type, int index, reg_t value) {
 	if (validate_variable(s->variables[type], s->stack_base, type, s->variablesMax[type], index)) {
-
-		// WORKAROUND: This code is needed to work around a probable script bug, or a
-		// limitation of the original SCI engine, which can be observed in LSL5.
-		//
-		// In some games, ego walks via the "Grooper" object, in particular its "stopGroop"
-		// child. In LSL5, during the game, ego is swapped from Larry to Patti. When this
-		// happens in the original interpreter, the new actor is loaded in the same memory
-		// location as the old one, therefore the client variable in the stopGroop object
-		// points to the new actor. This is probably why the reference of the stopGroop
-		// object is never updated (which is why I mentioned that this is either a script
-		// bug or some kind of limitation).
-		//
-		// In our implementation, each new object is loaded in a different memory location,
-		// and we can't overwrite the old one. This means that in our implementation,
-		// whenever ego is changed, we need to update the "client" variable of the
-		// stopGroop object, which points to ego, to the new ego object. If this is not
-		// done, ego's movement will not be updated properly, so the result is
-		// unpredictable (for example in LSL5, Patti spins around instead of walking).
-		if (index == kGlobalVarEgo && type == VAR_GLOBAL && getSciVersion() > SCI_VERSION_0_EARLY) {
-			reg_t stopGroopPos = s->_segMan->findObjectByName("stopGroop");
-			if (!stopGroopPos.isNull()) {	// does the game have a stopGroop object?
-				// Find the "client" member variable of the stopGroop object, and update it
-				ObjVarRef varp;
-				if (lookupSelector(s->_segMan, stopGroopPos, SELECTOR(client), &varp, nullptr) == kSelectorVariable) {
-					reg_t *clientVar = varp.getPointer(s->_segMan);
-					*clientVar = value;
-				}
-			}
-		}
 
 		// If we are writing an uninitialized value into a temp, we remove the uninitialized segment
 		//  this happens at least in sq1/room 44 (slot-machine), because a send is missing parameters, then
@@ -280,7 +255,7 @@ ExecStack *send_selector(EngineState *s, reg_t send_obj, reg_t work_obj, StackPt
 		argp++;
 		argc = argp->requireUint16();
 
-		if (argc > 0x800)	// More arguments than the stack could possibly accomodate for
+		if (argc > 0x800)	// More arguments than the stack could possibly accommodate for
 			error("send_selector(): More than 0x800 arguments to function call");
 
 #ifdef ENABLE_SCI32
@@ -359,7 +334,7 @@ static void callKernelFunc(EngineState *s, int kernelCallNr, int argc) {
 		case WORKAROUND_NONE: {
 			Common::String signatureDetailsStr;
 			kernel->signatureDebug(signatureDetailsStr, kernelCall.signature, argc, argv);
-			error("\n%s[VM] k%s[%x]: signature mismatch in %s", signatureDetailsStr.c_str(), kernelCall.name, kernelCallNr, originReply.toString().c_str());
+			error("\n%s[VM] k%s[%x]: signature mismatch", signatureDetailsStr.c_str(), kernelCall.name, kernelCallNr);
 			break;
 			}
 		case WORKAROUND_IGNORE: // don't do kernel call, leave acc alone
@@ -422,13 +397,11 @@ static void callKernelFunc(EngineState *s, int kernelCallNr, int argc) {
 				int callNameLen = strlen(kernelCall.name);
 				if (strncmp(kernelCall.name, kernelSubCall.name, callNameLen) == 0) {
 					const char *subCallName = kernelSubCall.name + callNameLen;
-					error("\n%s[VM] k%s(%s): signature mismatch in %s",
-						signatureDetailsStr.c_str(), kernelCall.name, subCallName,
-						originReply.toString().c_str());
+					error("\n%s[VM] k%s(%s): signature mismatch",
+						signatureDetailsStr.c_str(), kernelCall.name, subCallName);
 				}
-				error("\n%s[VM] k%s: signature mismatch in %s",
-					signatureDetailsStr.c_str(), kernelSubCall.name,
-					originReply.toString().c_str());
+				error("\n%s[VM] k%s: signature mismatch",
+					signatureDetailsStr.c_str(), kernelSubCall.name);
 				break;
 			}
 			case WORKAROUND_IGNORE: // don't do kernel call, leave acc alone
@@ -625,15 +598,12 @@ void run_vm(EngineState *s) {
 				s->variablesSegment[VAR_LOCAL] = local_script->getLocalsSegment();
 				s->variablesBase[VAR_LOCAL] = s->variables[VAR_LOCAL] = local_script->getLocalsBegin();
 				s->variablesMax[VAR_LOCAL] = local_script->getLocalsCount();
-				s->variablesMax[VAR_TEMP] = s->xs->sp - s->xs->fp;
+				s->variablesMax[VAR_TEMP] = s->xs->tempCount;
 				s->variablesMax[VAR_PARAM] = s->xs->argc + 1;
 			}
 			s->variables[VAR_TEMP] = s->xs->fp;
 			s->variables[VAR_PARAM] = s->xs->variables_argp;
 		}
-
-		if (s->abortScriptProcessing != kAbortNone)
-			return; // Stop processing
 
 		g_sci->checkAddressBreakpoint(s->xs->addr.pc);
 
@@ -649,8 +619,6 @@ void run_vm(EngineState *s) {
 		if (s->xs->sp < s->xs->fp)
 			error("run_vm(): stack underflow, sp: %04x:%04x, fp: %04x:%04x",
 			PRINT_REG(*s->xs->sp), PRINT_REG(*s->xs->fp));
-
-		s->variablesMax[VAR_TEMP] = s->xs->sp - s->xs->fp;
 
 		if (s->xs->addr.pc.getOffset() >= scr->getBufSize())
 			error("run_vm(): program counter gone astray, addr: %d, code buffer size: %d",
@@ -846,6 +814,8 @@ void run_vm(EngineState *s) {
 			break;
 
 		case op_link: // 0x1f (31)
+			s->variablesMax[VAR_TEMP] = s->xs->tempCount = opparams[0];
+
 			// We shouldn't initialize temp variables at all
 			//  We put special segment 0xFFFF in there, so that uninitialized reads can get detected
 			for (int i = 0; i < opparams[0]; i++)
@@ -948,8 +918,7 @@ void run_vm(EngineState *s) {
 		case op_ret: // 0x24 (36)
 			// Return from an execution loop started by call, calle, callb, send, self or super
 			do {
-				StackPtr old_sp2 = s->xs->sp;
-				StackPtr old_fp = s->xs->fp;
+				StackPtr old_sp = s->xs->sp;
 				ExecStack *old_xs = &(s->_executionStack.back());
 
 				if ((int)s->_executionStack.size() - 1 == s->executionStackBase) { // Have we reached the base?
@@ -981,8 +950,8 @@ void run_vm(EngineState *s) {
 
 				if (s->xs->sp == CALL_SP_CARRY // Used in sends to 'carry' the stack pointer
 				        || s->xs->type != EXEC_STACK_TYPE_CALL) {
-					s->xs->sp = old_sp2;
-					s->xs->fp = old_fp;
+					s->xs->sp = old_sp;
+					s->xs->fp = old_sp;
 				}
 
 			} while (s->xs->type == EXEC_STACK_TYPE_VARSELECTOR);

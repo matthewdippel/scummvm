@@ -393,7 +393,7 @@ void AmazonScripts::executeCommand(int commandIndex) {
 }
 
 void AmazonScripts::cmdHelp_v2() {
-	Common::String helpMessage = readString();
+	Common::String helpMessage = _data->readString();
 
 	if (_game->_helpLevel == 0) {
 		_game->_timers.saveTimers();
@@ -414,14 +414,15 @@ void AmazonScripts::cmdHelp_v2() {
 
 	_game->drawHelp(helpMessage);
 
+	const Common::Rect butn1 = Common::Rect(HELP1COORDS[0][0], HELP1COORDS[0][2], HELP1COORDS[0][1], HELP1COORDS[0][3]);
+	const Common::Rect butn2 = Common::Rect(HELP1COORDS[1][0], HELP1COORDS[1][2], HELP1COORDS[1][1], HELP1COORDS[1][3]);
+
 	while (!_vm->shouldQuit()) {
 		while (!_vm->shouldQuit() && !_vm->_events->_leftButton)
 			_vm->_events->pollEventsAndWait();
 
 		_vm->_events->debounceLeft();
 
-		static const Common::Rect butn1 = Common::Rect(HELP1COORDS[0][0], HELP1COORDS[0][2], HELP1COORDS[0][1], HELP1COORDS[0][3]);
-		static const Common::Rect butn2 = Common::Rect(HELP1COORDS[1][0], HELP1COORDS[1][2], HELP1COORDS[1][1], HELP1COORDS[1][3]);
 		const Common::Point pt = _vm->_events->_mousePos;
 
 		int choice = -1;
@@ -458,7 +459,7 @@ void AmazonScripts::cmdHelp_v2() {
 			break;
 		} else {
 			// More button selected
-			if ((_game->_moreHelp == 0) || (choice != 0))
+			if (_game->_moreHelp == 0)
 				continue;
 			++_game->_helpLevel;
 			_game->_useItem = 1;

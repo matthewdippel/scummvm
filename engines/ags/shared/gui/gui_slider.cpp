@@ -19,7 +19,7 @@
  *
  */
 
-#include "ags/lib/std/algorithm.h"
+#include "common/std/algorithm.h"
 #include "ags/shared/ac/sprite_cache.h"
 #include "ags/shared/gui/gui_main.h"
 #include "ags/shared/gui/gui_slider.h"
@@ -46,7 +46,7 @@ GUISlider::GUISlider() {
 }
 
 bool GUISlider::IsHorizontal() const {
-	return Width > Height;
+	return _width > _height;
 }
 
 bool GUISlider::HasAlphaChannel() const {
@@ -58,14 +58,14 @@ bool GUISlider::IsOverControl(int x, int y, int leeway) const {
 	if (GUIObject::IsOverControl(x, y, leeway))
 		return true;
 	// now check the handle too
-	return _cachedHandle.IsInside(Point(x, y));
+	return _cachedHandle.IsInside(Point(x - X, y - Y));
 }
 
 Rect GUISlider::CalcGraphicRect(bool /*clipped*/) {
 	// Sliders are never clipped as of 3.6.0
 	// TODO: precalculate everything on width/height/graphic change!!
 	UpdateMetrics();
-	Rect logical = RectWH(0, 0, Width, Height);
+	Rect logical = RectWH(0, 0, _width, _height);
 	Rect bar = _cachedBar;
 	Rect handle = _cachedHandle;
 	return Rect(
@@ -82,13 +82,11 @@ void GUISlider::UpdateMetrics() {
 	if (MinValue >= MaxValue)
 		MaxValue = MinValue + 1;
 	Value = Math::Clamp(Value, MinValue, MaxValue);
-	// Test if sprite is available
-	// TODO: react to sprites initialization/deletion instead!
-	if (_GP(spriteset)[HandleImage] == nullptr)
-		HandleImage = 0;
+	// Test if sprite is available; // TODO: return a placeholder from spriteset instead!
+	const int handle_im = ((HandleImage > 0) && _GP(spriteset).DoesSpriteExist(HandleImage)) ? HandleImage : 0;
 
 	// Depending on slider's orientation, thickness is either Height or Width
-	const int thickness = IsHorizontal() ? Height : Width;
+	const int thickness = IsHorizontal() ? _height : _width;
 	// "thick_f" is the factor for calculating relative element positions
 	const int thick_f = thickness / 3; // one third of the control's thickness
 	// Bar thickness
@@ -96,10 +94,10 @@ void GUISlider::UpdateMetrics() {
 
 	// Calculate handle size
 	Size handle_sz;
-	if (HandleImage > 0) // handle is a sprite
+	if (handle_im > 0) // handle is a sprite
 	{
-		handle_sz = Size(get_adjusted_spritewidth(HandleImage),
-			get_adjusted_spriteheight(HandleImage));
+		handle_sz = Size(get_adjusted_spritewidth(handle_im),
+			get_adjusted_spriteheight(handle_im));
 	} else // handle is a drawn rectangle
 	{
 		if (IsHorizontal())
@@ -115,8 +113,8 @@ void GUISlider::UpdateMetrics() {
 	if (IsHorizontal()) // horizontal slider
 	{
 		// Value pos is a coordinate corresponding to current slider's value
-		bar = RectWH(1, Height / 2 - thick_f, Width - 1, bar_thick);
-		handle_range = Width - 4;
+		bar = RectWH(1, _height / 2 - thick_f, _width - 1, bar_thick);
+		handle_range = _width - 4;
 		int value_pos = (int)(((float)(Value - MinValue) * (float)handle_range) / (float)(MaxValue - MinValue));
 		handle = RectWH((bar.Left + get_fixed_pixel_size(2)) - (handle_sz.Width / 2) + 1 + value_pos - 2,
 			bar.Top + (bar.GetHeight() - handle_sz.Height) / 2,
@@ -125,8 +123,8 @@ void GUISlider::UpdateMetrics() {
 	}
 	// vertical slider
 	else {
-		bar = RectWH(Width / 2 - thick_f, 1, bar_thick, Height - 1);
-		handle_range = Height - 4;
+		bar = RectWH(_width / 2 - thick_f, 1, bar_thick, _height - 1);
+		handle_range = _height - 4;
 		int value_pos = (int)(((float)(MaxValue - Value) * (float)handle_range) / (float)(MaxValue - MinValue));
 		handle = RectWH(bar.Left + (bar.GetWidth() - handle_sz.Width) / 2,
 			(bar.Top + get_fixed_pixel_size(2)) - (handle_sz.Height / 2) + 1 + value_pos - 2,
@@ -153,11 +151,11 @@ void GUISlider::Draw(Bitmap *ds, int x, int y) {
 		if (IsHorizontal()) {
 			x_inc = get_adjusted_spritewidth(BgImage);
 			// centre the image vertically
-			bar.Top = y + (Height / 2) - get_adjusted_spriteheight(BgImage) / 2;
+			bar.Top = y + (_height / 2) - get_adjusted_spriteheight(BgImage) / 2;
 		} else {
 			y_inc = get_adjusted_spriteheight(BgImage);
 			// centre the image horizontally
-			bar.Left = x + (Width / 2) - get_adjusted_spritewidth(BgImage) / 2;
+			bar.Left = x + (_width / 2) - get_adjusted_spritewidth(BgImage) / 2;
 		}
 		int cx = bar.Left;
 		int cy = bar.Top;
@@ -180,9 +178,11 @@ void GUISlider::Draw(Bitmap *ds, int x, int y) {
 		ds->DrawLine(Line(bar.Left, bar.Bottom, bar.Right, bar.Bottom), draw_color);
 	}
 
-	if (HandleImage > 0) // handle is a sprite
+	// Test if sprite is available; // TODO: return a placeholder from spriteset instead!
+	const int handle_im = ((HandleImage > 0) && _GP(spriteset).DoesSpriteExist(HandleImage)) ? HandleImage : 0;
+	if (handle_im > 0) // handle is a sprite
 	{
-		draw_gui_sprite(ds, HandleImage, handle.Left, handle.Top, true);
+		draw_gui_sprite(ds, handle_im, handle.Left, handle.Top, true);
 	} else // handle is a drawn rectangle
 	{
 		// normal grey tracker handle
@@ -212,7 +212,7 @@ void GUISlider::OnMouseMove(int x, int y) {
 	if (IsHorizontal())
 		value = (int)(((float)((x - X) - 2) * (float)(MaxValue - MinValue)) / (float)_handleRange) + MinValue;
 	else
-		value = (int)(((float)(((Y + Height) - y) - 2) * (float)(MaxValue - MinValue)) / (float)_handleRange) + MinValue;
+		value = (int)(((float)(((Y + _height) - y) - 2) * (float)(MaxValue - MinValue)) / (float)_handleRange) + MinValue;
 
 	value = Math::Clamp(value, MinValue, MaxValue);
 	if (value != Value) {
@@ -243,6 +243,8 @@ void GUISlider::ReadFromFile(Stream *in, GuiVersion gui_version) {
 		HandleOffset = 0;
 		BgImage = 0;
 	}
+
+	UpdateMetrics();
 }
 
 void GUISlider::WriteToFile(Stream *out) const {
@@ -263,6 +265,8 @@ void GUISlider::ReadFromSavegame(Stream *in, GuiSvgVersion svg_ver) {
 	MinValue = in->ReadInt32();
 	MaxValue = in->ReadInt32();
 	Value = in->ReadInt32();
+
+	UpdateMetrics();
 }
 
 void GUISlider::WriteToSavegame(Stream *out) const {

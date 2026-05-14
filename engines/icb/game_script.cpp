@@ -57,8 +57,8 @@ bool8 _game_script::Init_game_script() {
 
 	// build name
 
-	sprintf(fname, GAMESCRIPT_PATH);
-	sprintf(cluster, GLOBAL_CLUSTER_PATH);
+	Common::sprintf_s(fname, GAMESCRIPT_PATH);
+	Common::sprintf_s(cluster, GLOBAL_CLUSTER_PATH);
 	fn_hash = HashString(fname);
 	cluster_hash = HashString(cluster);
 
@@ -190,7 +190,7 @@ void _game_script::Process_game_script() {
 		}
 		break;
 
-	case 'L': // load a mission, but dont play it
+	case 'L': // load a mission, but don't play it
 		pc += 2;
 
 		Fetch_next_param(p1);

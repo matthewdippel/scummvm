@@ -20,6 +20,7 @@
  */
 
 #include "common/system.h"
+#include "graphics/cursorman.h"
 #include "ags/engine/platform/base/sys_main.h"
 #include "ags/shared/util/geometry.h"
 #include "ags/shared/util/string.h"
@@ -48,9 +49,20 @@ void sys_set_background_mode(bool /*on*/) {
 // ----------------------------------------------------------------------------
 // DISPLAY UTILS
 // ----------------------------------------------------------------------------
-#ifdef TODO
-const int DEFAULT_DISPLAY_INDEX = 0; // TODO: is this always right?
+
+const int DEFAULT_DISPLAY_INDEX = 0;
+
+int sys_get_window_display_index() {
+#if (AGS_PLATFORM_DESKTOP && !AGS_PLATFORM_SCUMMVM)
+	int index = -1;
+	SDL_Window *window = sys_get_window();
+	if (window)
+		index = SDL_GetWindowDisplayIndex(window);
+	return index >= 0 ? index : DEFAULT_DISPLAY_INDEX;
+#else
+	return DEFAULT_DISPLAY_INDEX;
 #endif
+}
 
 int sys_get_desktop_resolution(int &width, int &height) {
 	// TODO: ScummVM has a hardcoded dummy desktop resolution. See if there's any
@@ -61,10 +73,10 @@ int sys_get_desktop_resolution(int &width, int &height) {
 	return 0;
 }
 
-void sys_get_desktop_modes(std::vector<AGS::Engine::DisplayMode> &dms) {
+void sys_get_desktop_modes(std::vector<AGS::Engine::DisplayMode> &dms, int color_depth) {
 #ifdef TODO
 	SDL_DisplayMode mode;
-	const int display_id = DEFAULT_DISPLAY_INDEX;
+	const int display_id = sys_get_window_display_index();
 	const int count = SDL_GetNumDisplayModes(display_id);
 	dms.clear();
 	for (int i = 0; i < count; ++i) {
@@ -72,10 +84,14 @@ void sys_get_desktop_modes(std::vector<AGS::Engine::DisplayMode> &dms) {
 			SDL_Log("SDL_GetDisplayMode failed: %s", SDL_GetError());
 			continue;
 		}
+		const int bitsdepth = SDL_BITSPERPIXEL(mode.format);
+		if ((color_depth == 0) || (bitsdepth != color_depth)) {
+			continue;
+		}
 		AGS::Engine::DisplayMode dm;
 		dm.Width = mode.w;
 		dm.Height = mode.h;
-		dm.ColorDepth = SDL_BITSPERPIXEL(mode.format);
+		dm.ColorDepth = bitsdepth;
 		dm.RefreshRate = mode.refresh_rate;
 		dms.push_back(dm);
 	}
@@ -96,20 +112,30 @@ bool sys_audio_init(const AGS::Shared::String &driver_name) {
 #ifdef AGS_PLATFORM_SCUMMVM
 	return true;
 #else
+	// IMPORTANT: we must use a combination of SDL_setenv and SDL_InitSubSystem
+	// here, and NOT use SDL_AudioInit, because SDL_AudioInit does not increment
+	// subsystem's reference count. Which in turn may cause problems down the
+	// way when initializing any additional SDL-based audio lib or plugin;
+	// at the very least - the mojoAl (OpenAL's implementation we're using).
 	bool res = false;
-	if (!driver_name.IsEmpty()) {
-		res = SDL_AudioInit(driver_name.GetCStr()) == 0;
-		if (!res)
-			Debug::Printf(kDbgMsg_Error, "Failed to initialize audio driver %s; error: %s",
-				driver_name.GetCStr(), SDL_GetError());
-	}
-	if (!res) {
+	// If user config contained a driver request, then apply one for a try
+	if (!driver_name.IsEmpty())
+		SDL_setenv("SDL_AUDIODRIVER", driver_name.GetCStr(), 1);
+	const char *env_drv = SDL_getenv("SDL_AUDIODRIVER");
+	Debug::Printf("Requested audio driver: %s", env_drv ? env_drv : "default");
+	res = SDL_InitSubSystem(SDL_INIT_AUDIO) == 0;
+	// If there have been an explicit request that failed, then try to force
+	// SDL to go through a list of supported drivers and see if that succeeds.
+	if (!res && env_drv) {
+		Debug::Printf(kDbgMsg_Error, "Failed to initialize requested audio driver '%s'; error: %s", env_drv, SDL_GetError());
+		Debug::Printf("Attempt to initialize any audio driver from the known list");
+		SDL_setenv("SDL_AUDIODRIVER", "", 1);
 		res = SDL_InitSubSystem(SDL_INIT_AUDIO) == 0;
-		if (!res)
-			Debug::Printf(kDbgMsg_Error, "Failed to initialize audio backend: %s", SDL_GetError());
 	}
 	if (res)
 		Debug::Printf(kDbgMsg_Info, "Audio driver: %s", SDL_GetCurrentAudioDriver());
+	else
+		Debug::Printf(kDbgMsg_Error, "Failed to initialize any audio driver; error: %s", SDL_GetError());
 	return res;
 #endif
 }
@@ -140,6 +166,10 @@ SDL_Window *sys_window_create(const char *window_title, int w, int h, WindowMode
 	case kWnd_FullDesktop: flags |= SDL_WINDOW_FULLSCREEN_DESKTOP; break;
 	}
 	flags |= ex_flags;
+#if (AGS_PLATFORM_MOBILE)
+	// Resizable flag is necessary for fullscreen app rotation
+	flags |= SDL_WINDOW_RESIZABLE;
+#endif
 	window = SDL_CreateWindow(
 		window_title,
 		SDL_WINDOWPOS_CENTERED_DISPLAY(DEFAULT_DISPLAY_INDEX),
@@ -148,6 +178,15 @@ SDL_Window *sys_window_create(const char *window_title, int w, int h, WindowMode
 		h,
 		flags
 	);
+#if (AGS_PLATFORM_DESKTOP)
+	// CHECKME: this is done because SDL2 has some bug(s) during
+	// centering. See: https://github.com/libsdl-org/SDL/issues/6875
+	// TODO: SDL2 docs mentioned that on some systems the window border size
+	// may be known only after the window is displayed, which means that
+	// this may have to be called with a short delay (but how to know when?)
+	if (mode == kWnd_Windowed)
+		sys_window_center();
+#endif
 	return window;
 }
 #else
@@ -175,7 +214,7 @@ void sys_window_set_style(WindowMode mode, int /*ex_flags*/) {
 }
 
 void sys_window_show_cursor(bool on) {
-	g_system->showMouse(on);
+	CursorMan.showMouse(on);
 }
 
 bool sys_window_lock_mouse(bool on) {
@@ -211,6 +250,14 @@ void sys_window_set_icon() {
 bool sys_window_set_size(int w, int h, bool center) {
 	error("TODO: sys_window_set_size");
 	return false;
+}
+
+void sys_window_center(int display_index) {
+	// No implementation in ScummVM
+}
+
+void sys_window_fit_in_display(int display_index) {
+	// No implementation in ScummVM
 }
 
 #if AGS_PLATFORM_OS_WINDOWS

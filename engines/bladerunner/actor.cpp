@@ -202,6 +202,16 @@ void Actor::changeAnimationMode(int animationMode, bool force) {
 	}
 }
 
+// New for debugging purposes
+void Actor::changeAnimationState(int animationState, int animationFrame, int animationStateNext, int animationNext) {
+	_vm->_aiScripts->setAnimationState(_id, animationState, animationFrame, animationStateNext, animationNext);
+}
+
+// New for debugging purposes
+void Actor::queryAnimationState(int *animationState, int *animationFrame, int *animationStateNext, int *animationNext) {
+	_vm->_aiScripts->queryAnimationState(_id, animationState, animationFrame, animationStateNext, animationNext);
+}
+
 int Actor::getFPS() const {
 	return _fps;
 }
@@ -1518,7 +1528,7 @@ bool Actor::hasClue(int clueId) const {
 // or retrieve from Mainframe (eg. Klein)
 // see: ScriptBase::Actor_Clues_Transfer_New_From_Mainframe()
 //      ScriptBase::Actor_Clues_Transfer_New_To_Mainframe()
-// In Restored Content it will skip transfering clues that are Intangible (default clue type)
+// In Restored Content it will skip transferring clues that are Intangible (default clue type)
 // since those clues do not actually show up in McCoy's KIA
 bool Actor::copyClues(int actorId) {
 	bool newCluesAcquired = false;
@@ -1537,7 +1547,7 @@ bool Actor::copyClues(int actorId) {
 			if (_vm->_cutContent
 			    && ((_id == BladeRunnerEngine::kActorVoiceOver && actorId == kActorMcCoy)
 			        || (_id == kActorMcCoy && actorId == BladeRunnerEngine::kActorVoiceOver) )) {
-				// when transfering a clue successfully between McCoy (playerActor) and Mainframe,
+				// when transferring a clue successfully between McCoy (playerActor) and Mainframe,
 				// we mark it as such, since if McCoy later marks it as hidden (with Bob's KIA hack)
 				// the player will have some indication that this clue is already on the mainframe.
 				// Hence manually hiding it would be pointless.
@@ -1581,6 +1591,7 @@ int Actor::soundVolume() const {
 }
 
 // overrideRange argument was added to allow for more accurate sound balance on occasion (if required)
+// overrideRange value should be in [35, 100]
 int Actor::soundPan(uint8 overrideRange) const {
 	Vector3 screenPosition = _vm->_view->calculateScreenPosition(_position);
 	// By default map [0..640] to [-overrideRange..overrideRange] (default range [-35..35])

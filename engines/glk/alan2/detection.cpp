@@ -35,6 +35,10 @@ void Alan2MetaEngine::getSupportedGames(PlainGameList &games) {
 	}
 }
 
+const GlkDetectionEntry* Alan2MetaEngine::getDetectionEntries() {
+	return ALAN2_GAMES;
+}
+
 GameDescriptor Alan2MetaEngine::findGame(const char *gameId) {
 	for (const PlainGameDescriptor *pd = ALAN2_GAME_LIST; pd->gameId; ++pd) {
 		if (!strcmp(gameId, pd->gameId))
@@ -51,13 +55,16 @@ bool Alan2MetaEngine::detectGames(const Common::FSList &fslist, DetectedGames &g
 		if (file->isDirectory())
 			continue;
 		Common::String filename = file->getName();
-		bool hasExt = filename.hasSuffix(".acd");
+		bool hasExt = filename.hasSuffixIgnoreCase(".acd");
 		if (!hasExt)
 			continue;
 
 		// Open up the file and calculate the md5
 		Common::File gameFile;
-		if (!gameFile.open(*file) || gameFile.readUint32BE() != MKTAG(2, 8, 1, 0))
+		if (!gameFile.open(*file))
+			continue;
+		uint32 version = gameFile.readUint32BE();
+		if (version != MKTAG(2, 8, 1, 0) && version != MKTAG(2, 6, 0, 0))
 			continue;
 
 		gameFile.seek(0);
@@ -75,7 +82,7 @@ bool Alan2MetaEngine::detectGames(const Common::FSList &fslist, DetectedGames &g
 			gameList.push_back(GlkDetectedGame(desc.gameId, desc.description, filename, md5, filesize));
 		} else {
 			PlainGameDescriptor gameDesc = findGame(p->_gameId);
-			gameList.push_back(GlkDetectedGame(p->_gameId, gameDesc.description, filename));
+			gameList.push_back(GlkDetectedGame(p->_gameId, gameDesc.description, p->_extra, filename, p->_language));
 		}
 	}
 

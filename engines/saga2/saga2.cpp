@@ -38,7 +38,8 @@
 #include "saga2/audio.h"
 #include "saga2/band.h"
 #include "saga2/beegee.h"
-#include "saga2/calender.h"
+#include "saga2/calendar.h"
+#include "saga2/console.h"
 #include "saga2/contain.h"
 #include "saga2/detection.h"
 #include "saga2/dispnode.h"
@@ -60,7 +61,7 @@ Saga2Engine *g_vm;
 
 Saga2Engine::Saga2Engine(OSystem *syst, const SAGA2GameDescription *desc)
 	: Engine(syst), _gameDescription(desc) {
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 
 	// Don't forget to register your random source
 	_rnd = new Common::RandomSource("saga2");
@@ -72,7 +73,7 @@ Saga2Engine::Saga2Engine(OSystem *syst, const SAGA2GameDescription *desc)
 	_audio = nullptr;
 	_pal = nullptr;
 	_act = nullptr;
-	_calender = nullptr;
+	_calendar = nullptr;
 	_tmm = nullptr;
 	_cnm = nullptr;
 
@@ -139,7 +140,7 @@ Saga2Engine::~Saga2Engine() {
 	delete _renderer;
 	delete _pal;
 	delete _act;
-	delete _calender;
+	delete _calendar;
 	delete _tmm;
 	delete _cnm;
 
@@ -167,7 +168,7 @@ Common::Error Saga2Engine::run() {
 
 	_pal = new PaletteManager;
 	_act = new ActorManager;
-	_calender = new CalenderTime;
+	_calendar = new CalendarTime;
 	_tmm = new TileModeManager;
 	_cnm = new ContainerManager;
 

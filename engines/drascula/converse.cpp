@@ -23,6 +23,8 @@
 
 #include "drascula/drascula.h"
 
+#include "common/text-to-speech.h"
+
 namespace Drascula {
 
 void DrasculaEngine::playTalkSequence(int sequence) {
@@ -132,7 +134,7 @@ void DrasculaEngine::converse(int index) {
 	debug(4, "converse(%d)", index);
 
 	char fileName[20];
-	sprintf(fileName, "op_%d.cal", index);
+	Common::sprintf_s(fileName, "op_%d.cal", index);
 	Common::SeekableReadStream *stream = _archives.open(fileName);
 	if (!stream)
 		error("missing data file %s", fileName);
@@ -168,19 +170,19 @@ void DrasculaEngine::converse(int index) {
 
 	if (currentChapter == 2 && !strcmp(fileName, "op_5.cal") && flags[38] == 1 && flags[33] == 1) {
 		Common::strlcpy(phrase3, _text[405], 128);
-		strcpy(sound3, "405.als");
+		Common::strcpy_s(sound3, "405.als");
 		answer3 = 31;
 	}
 
 	if (currentChapter == 6 && !strcmp(fileName, "op_12.cal") && flags[7] == 1) {
 		Common::strlcpy(phrase3, _text[273], 128);
-		strcpy(sound3, "273.als");
+		Common::strcpy_s(sound3, "273.als");
 		answer3 = 14;
 	}
 
 	if (currentChapter == 6 && !strcmp(fileName, "op_12.cal") && flags[10] == 1) {
 		Common::strlcpy(phrase3, _text[274], 128);
-		strcpy(sound3, "274.als");
+		Common::strcpy_s(sound3, "274.als");
 		answer3 = 15;
 	}
 
@@ -194,6 +196,23 @@ void DrasculaEngine::converse(int index) {
 	// but we can't implement this as there is lack in backend functionality
 	// from 1(top) to 31
 	color_abc(kColorLightGreen);
+
+	Common::String ttsPhrase1 = phrase1;
+	Common::String ttsPhrase2 = phrase2;
+	Common::String ttsPhrase3 = phrase3;
+	Common::String ttsPhrase4 = phrase4;
+
+	if (_lang == kRussian) {
+		ttsPhrase1.replace('%', ' ');
+		ttsPhrase2.replace('%', ' ');
+		ttsPhrase3.replace('%', ' ');
+		ttsPhrase4.replace('%', ' ');
+	}
+
+	sayText(ttsPhrase1, Common::TextToSpeechManager::QUEUE);
+	sayText(ttsPhrase2, Common::TextToSpeechManager::QUEUE);
+	sayText(ttsPhrase3, Common::TextToSpeechManager::QUEUE);
+	sayText(ttsPhrase4, Common::TextToSpeechManager::QUEUE);
 
 	while (breakOut == 0 && !shouldQuit()) {
 		updateRoom();
@@ -209,6 +228,7 @@ void DrasculaEngine::converse(int index) {
 
 		updateEvents();
 		flushKeyBuffer();
+		flushActionBuffer();
 
 		phrase1_bottom = 8 * print_abc_opc(phrase1, 2, game1);
 		phrase2_bottom = phrase1_bottom + 8 * print_abc_opc(phrase2, phrase1_bottom + 2, game2);
@@ -222,6 +242,8 @@ void DrasculaEngine::converse(int index) {
 				color_abc(kColorLightGreen);
 
 			print_abc_opc(phrase1, 2, kDialogOptionSelected);
+
+			sayText(ttsPhrase1, Common::TextToSpeechManager::INTERRUPT);
 
 			if (_leftMouseButton == 1) {
 				delay(100);
@@ -237,6 +259,8 @@ void DrasculaEngine::converse(int index) {
 
 			print_abc_opc(phrase2, phrase1_bottom + 2, kDialogOptionSelected);
 
+			sayText(ttsPhrase2, Common::TextToSpeechManager::INTERRUPT);
+
 			if (_leftMouseButton == 1) {
 				delay(100);
 				game2 = kDialogOptionClicked;
@@ -251,6 +275,8 @@ void DrasculaEngine::converse(int index) {
 
 			print_abc_opc(phrase3, phrase2_bottom + 2, kDialogOptionSelected);
 
+			sayText(ttsPhrase3, Common::TextToSpeechManager::INTERRUPT);
+
 			if (_leftMouseButton == 1) {
 				delay(100);
 				game3 = kDialogOptionClicked;
@@ -260,6 +286,8 @@ void DrasculaEngine::converse(int index) {
 		} else if (_mouseY > phrase3_bottom && _mouseY < phrase4_bottom) {
 			print_abc_opc(phrase4, phrase3_bottom + 2, kDialogOptionSelected);
 
+			sayText(ttsPhrase4, Common::TextToSpeechManager::INTERRUPT);
+
 			if (_leftMouseButton == 1) {
 				delay(100);
 				talk(phrase4, sound4);
@@ -267,6 +295,8 @@ void DrasculaEngine::converse(int index) {
 			}
 		} else if (_color != kColorLightGreen)
 			color_abc(kColorLightGreen);
+		else
+			_previousSaid.clear();
 
 		_system->delayMillis(10);
 		updateScreen();

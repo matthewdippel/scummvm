@@ -41,7 +41,6 @@ struct LoadedSpriteBank;
 struct OnScreenPerson;
 struct SpriteBank;
 struct Sprite;
-struct SpriteLayers;
 struct VariableStack;
 struct ZBufferData;
 
@@ -149,11 +148,6 @@ public:
 	bool reserveSpritePal(SpritePalette &sP, int n);
 	void burnSpriteToBackDrop(int x1, int y1, Sprite &single, const SpritePalette &fontPal);
 
-	void resetSpriteLayers(ZBufferData *ptrZBuffer, int x, int y, bool upsidedown);
-	void addSpriteDepth(Graphics::Surface *ptr, int depth, int x, int y, Graphics::FLIP_FLAGS flip, int width = -1, int height = -1, bool disposeAfterUse = false, byte trans = 255);
-	void displaySpriteLayers();
-	void killSpriteLayers();
-
 	// Sprite Bank
 	LoadedSpriteBank *loadBankForAnim(int ID);
 
@@ -164,10 +158,13 @@ public:
 	void saveZBuffer(Common::WriteStream *stream);
 	bool loadZBuffer(Common::SeekableReadStream *stream);
 
+	void drawSpriteToZBuffer(int x, int y, uint8 depth, const Graphics::Surface &surface);
+	void fillZBuffer(uint8 d);
+
 	// Colors
 	void setBlankColor(int r, int g, int b) { _currentBlankColour = _renderSurface.format.RGBToColor(r & 255, g & 255, b & 255);};
 	void setBurnColor(int r, int g, int b) {
-		_currentBurnG = r;
+		_currentBurnR = r;
 		_currentBurnG = g;
 		_currentBurnB = b;
 	}
@@ -200,6 +197,9 @@ public:
 	void blur_loadSettings(Common::SeekableReadStream *stream);
 	bool blur_createSettings(int numParams, VariableStack *&stack);
 
+	uint getWinWidth() { return _winWidth; }
+	uint getWinHeight() { return _winHeight; }
+
 private:
 	SludgeEngine *_vm;
 
@@ -207,6 +207,9 @@ private:
 
 	// renderSurface
 	Graphics::Surface _renderSurface;
+
+	// Z Buffer Surface
+	uint8 *_zBufferSurface = nullptr;
 
 	// Snapshot
 	Graphics::Surface _snapshotSurface;
@@ -231,7 +234,6 @@ private:
 	bool reserveBackdrop();
 
 	// Sprites
-	SpriteLayers *_spriteLayers;
 	void fontSprite(bool flip, int x, int y, Sprite &single, const SpritePalette &fontPal);
 	Graphics::Surface *duplicateSurface(Graphics::Surface *surface);
 	void blendColor(Graphics::Surface * surface, uint32 color, Graphics::TSpriteBlendMode mode);
@@ -260,7 +262,7 @@ private:
 
 	uint32 _randbuffer[RANDKK][2];
 	int _randp1, _randp2;
-	Graphics::TransparentSurface *_transitionTexture;
+	Graphics::ManagedSurface *_transitionTexture;
 
 	// Parallax
 	ParallaxLayers *_parallaxLayers;

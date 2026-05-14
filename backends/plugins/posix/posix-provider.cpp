@@ -21,7 +21,7 @@
 
 #include "common/scummsys.h"
 
-#if defined(DYNAMIC_MODULES) && defined(POSIX) && !defined(__3DS__)
+#if defined(DYNAMIC_MODULES) && defined(POSIX) && !defined(__3DS__) && !defined(__MINT__)
 
 #include "backends/plugins/posix/posix-provider.h"
 #include "backends/plugins/dynamic-plugin.h"
@@ -37,12 +37,12 @@ protected:
 	virtual VoidFunc findSymbol(const char *symbol) {
 		void *func = dlsym(_dlHandle, symbol);
 		if (!func)
-			warning("Failed loading symbol '%s' from plugin '%s' (%s)", symbol, _filename.c_str(), dlerror());
+			warning("Failed loading symbol '%s' from plugin '%s' (%s)", symbol, _filename.toString(Common::Path::kNativeSeparator).c_str(), dlerror());
 
 		// FIXME HACK: This is a HACK to circumvent a clash between the ISO C++
 		// standard and POSIX: ISO C++ disallows casting between function pointers
 		// and data pointers, but dlsym always returns a void pointer. For details,
-		// see e.g. <http://www.trilithium.com/johan/2004/12/problem-with-dlsym/>.
+		// see e.g. <https://web.archive.org/web/20061205092618/http://www.trilithium.com/johan/2004/12/problem-with-dlsym/>.
 		assert(sizeof(VoidFunc) == sizeof(func));
 		VoidFunc tmp;
 		memcpy(&tmp, &func, sizeof(VoidFunc));
@@ -50,15 +50,15 @@ protected:
 	}
 
 public:
-	POSIXPlugin(const Common::String &filename)
+	POSIXPlugin(const Common::Path &filename)
 		: DynamicPlugin(filename), _dlHandle(0) {}
 
 	bool loadPlugin() {
 		assert(!_dlHandle);
-		_dlHandle = dlopen(_filename.c_str(), RTLD_LAZY);
+		_dlHandle = dlopen(_filename.toString(Common::Path::kNativeSeparator).c_str(), RTLD_LAZY);
 
 		if (!_dlHandle) {
-			warning("Failed loading plugin '%s' (%s)", _filename.c_str(), dlerror());
+			warning("Failed loading plugin '%s' (%s)", _filename.toString(Common::Path::kNativeSeparator).c_str(), dlerror());
 			return false;
 		}
 
@@ -69,7 +69,7 @@ public:
 		DynamicPlugin::unloadPlugin();
 		if (_dlHandle) {
 			if (dlclose(_dlHandle) != 0)
-				warning("Failed unloading plugin '%s' (%s)", _filename.c_str(), dlerror());
+				warning("Failed unloading plugin '%s' (%s)", _filename.toString(Common::Path::kNativeSeparator).c_str(), dlerror());
 			_dlHandle = 0;
 		}
 	}
@@ -81,4 +81,4 @@ Plugin *POSIXPluginProvider::createPlugin(const Common::FSNode &node) const {
 }
 
 
-#endif // defined(DYNAMIC_MODULES) && defined(POSIX)
+#endif // defined(DYNAMIC_MODULES) && defined(POSIX) && !defined(__3DS__) && !defined(__MINT__)

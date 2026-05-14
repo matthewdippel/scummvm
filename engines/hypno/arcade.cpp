@@ -22,9 +22,12 @@
 #include "common/tokenizer.h"
 #include "common/events.h"
 #include "graphics/cursorman.h"
+#include "graphics/framelimiter.h"
 
 #include "hypno/grammar.h"
 #include "hypno/hypno.h"
+
+#include "backends/keymapper/keymapper.h"
 
 namespace Hypno {
 
@@ -230,7 +233,14 @@ void HypnoEngine::runArcade(ArcadeShooting *arc) {
 		error("Invalid or missing mouse box");
 
 	Common::Point offset;
-	_background = new MVideo(arc->backgroundVideo, offset, false, false, false);
+	Common::Point anchor = arc->anchor;
+	anchor.x = 0;	// This is almost always zero, except when the screen starts at the middle
+					// We don't really need it
+	anchor.y = MAX(0, anchor.y - arc->mouseBox.bottom);
+
+	// Correct mouseBox
+	arc->mouseBox.moveTo(anchor.x, anchor.y);
+	_background = new MVideo(arc->backgroundVideo, anchor, false, false, false);
 
 	drawCursorArcade(mousePos);
 	playVideo(*_background);
@@ -271,7 +281,15 @@ void HypnoEngine::runArcade(ArcadeShooting *arc) {
 	_objMissesAllowed[0] = arc->objMissesAllowed[0];
 	_objMissesAllowed[1] = arc->objMissesAllowed[1];
 
+	bool vsync = g_system->getFeatureState(OSystem::kFeatureVSync);
+	// Disable vsync for arcade sequences, since these require a fixed frame rate
+	g_system->beginGFXTransaction();
+	g_system->setFeatureState(OSystem::kFeatureVSync, false);
+	g_system->endGFXTransaction();
+
 	debugC(1, kHypnoDebugArcade, "Using frame delay: %d", arc->frameDelay);
+	Graphics::FrameLimiter limiter(g_system, 1000.0 / arc->frameDelay);
+	limiter.startFrame();
 
 	Common::Event event;
 	while (!shouldQuit()) {
@@ -293,12 +311,15 @@ void HypnoEngine::runArcade(ArcadeShooting *arc) {
 			case Common::EVENT_QUIT:
 			case Common::EVENT_RETURN_TO_LAUNCHER:
 				break;
+			case Common::EVENT_CUSTOM_ENGINE_ACTION_START:
+				pressedKey(event.customType);
+				if (event.customType == kActionPrimaryShoot)
+					if (clickedPrimaryShoot(mousePos))
+						shootingPrimary = true;
+				break;
 
 			case Common::EVENT_KEYDOWN:
 				pressedKey(event.kbd.keycode);
-				if (event.kbd.keycode == Common::KEYCODE_LCTRL)
-					if (clickedPrimaryShoot(mousePos))
-						shootingPrimary = true;
 				break;
 
 			case Common::EVENT_LBUTTONDOWN:
@@ -319,6 +340,8 @@ void HypnoEngine::runArcade(ArcadeShooting *arc) {
 				drawCursorArcade(mousePos);
 				if (mousePos.x >= arc->mouseBox.right-1) {
 					g_system->warpMouse(arc->mouseBox.right-1, mousePos.y);
+				} else if (mousePos.y < arc->mouseBox.top) { // Usually top is zero
+					g_system->warpMouse(mousePos.x, arc->mouseBox.top + 1);
 				} else if (mousePos.y >= arc->mouseBox.bottom-1) {
 					g_system->warpMouse(mousePos.x, arc->mouseBox.bottom-1);
 				} else if (mousePos.x <= 40 && offset.x < 0) {
@@ -336,7 +359,7 @@ void HypnoEngine::runArcade(ArcadeShooting *arc) {
 					offset.x = offset.x - 1;
 					needsUpdate = true;
 				}
-				_background->position = offset;
+				_background->position.x = offset.x;
 				break;
 
 			default:
@@ -502,7 +525,7 @@ void HypnoEngine::runArcade(ArcadeShooting *arc) {
 				} else if (frame > 0 && frame >= (int)(it->lastFrame)) {
 					skipVideo(*it->video);
 					shootsToRemove.push_back(i);
-				} else if (it->video->decoder->needsUpdate() && needsUpdate) {
+				} else if (it->video->decoder->needsUpdate() || needsUpdate) {
 					updateScreen(*it->video);
 				}
 			} else if (!it->video && it->bodyFrames.size() > 0) {
@@ -527,11 +550,8 @@ void HypnoEngine::runArcade(ArcadeShooting *arc) {
 			}
 		}
 
-		if (_music.empty() && !arc->music.empty()) {
-			_music = _soundPath + arc->music;
-			_musicRate = arc->musicRate;
-			_musicStereo = arc->musicStereo;
-			playSound(_music, 0, _musicRate, _musicStereo); // music loop forever
+		if (!isMusicActive() && !arc->music.empty()) {
+			playMusic(_soundPath + arc->music, arc->musicRate, arc->musicStereo);
 		}
 
 		if (needsUpdate) {
@@ -546,8 +566,15 @@ void HypnoEngine::runArcade(ArcadeShooting *arc) {
 			drawAmmo();
 		}
 
-		g_system->delayMillis(arc->frameDelay);
+		limiter.delayBeforeSwap();
+		drawScreen();
+		limiter.startFrame();
 	}
+
+	g_system->beginGFXTransaction();
+	// Restore vsync state
+	g_system->setFeatureState(OSystem::kFeatureVSync, vsync);
+	g_system->endGFXTransaction();
 
 	// Deallocate shoots
 	for (Shoots::iterator it = _shoots.begin(); it != _shoots.end(); ++it) {
@@ -579,7 +606,7 @@ void HypnoEngine::runArcade(ArcadeShooting *arc) {
 	_timerStarted = false;
 	removeTimers();
 	stopSound();
-	_music.clear();
+	stopMusic();
 }
 
 Common::Point HypnoEngine::computeTargetPosition(const Common::Point &mousePos) {
@@ -622,7 +649,6 @@ void HypnoEngine::drawCursorArcade(const Common::Point &mousePos) {
 	else
 		changeCursor("arcade");
 
-	g_system->copyRectToScreen(_compositeSurface->getPixels(), _compositeSurface->pitch, 0, 0, _screenW, _screenH);
 }
 
 bool HypnoEngine::clickedPrimaryShoot(const Common::Point &mousePos) { return true; }
@@ -691,8 +717,6 @@ bool HypnoEngine::shoot(const Common::Point &mousePos, ArcadeShooting *arc, bool
 				_background->decoder->pauseVideo(false);
 				updateScreen(*_background);
 				drawScreen();
-				if (!_music.empty())
-					playSound(_music, 0, _musicRate, _musicStereo); // restore music
 			} else if (_objIdx == 1 && !arc->hitBoss2Video.empty()) {
 				_background->decoder->pauseVideo(true);
 				MVideo video(arc->hitBoss2Video, Common::Point(0, 0), false, true, false);
@@ -703,8 +727,6 @@ bool HypnoEngine::shoot(const Common::Point &mousePos, ArcadeShooting *arc, bool
 				updateScreen(*_background);
 				drawScreen();
 				drawCursorArcade(mousePos);
-				if (!_music.empty())
-					playSound(_music, 0, _musicRate, _musicStereo); // restore music
 			}
 			byte p[3] = {0x00, 0x00, 0x00}; // Always black?
 			assert(_shoots[i].paletteSize == 1 || _shoots[i].paletteSize == 0);
@@ -718,6 +740,12 @@ bool HypnoEngine::shoot(const Common::Point &mousePos, ArcadeShooting *arc, bool
 	if (secondary) {
 		if (_background->decoder->getCurFrame() % 2 == 0)
 			drawShoot(mousePos);
+
+		if (checkRButtonUp()) {
+			setRButtonUp(false);
+			return false;
+		}
+
 		return clickedSecondaryShoot(mousePos);
 	} else {
 		drawShoot(mousePos);
@@ -784,6 +812,24 @@ void HypnoEngine::resetStatistics() {
 
 bool HypnoEngine::clickedSecondaryShoot(const Common::Point &mousePos) {
 	return false;
+}
+
+bool HypnoEngine::checkRButtonUp() {
+	return false;
+}
+
+void HypnoEngine::setRButtonUp(const bool val) {
+	return;
+}
+
+void HypnoEngine::disableGameKeymaps() {
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->getKeymap("game-shortcuts")->setEnabled(false);
+}
+
+void HypnoEngine::enableGameKeymaps() {
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->getKeymap("game-shortcuts")->setEnabled(true);
 }
 
 } // End of namespace Hypno

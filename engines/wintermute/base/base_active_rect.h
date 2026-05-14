@@ -28,7 +28,7 @@
 #ifndef WINTERMUTE_BASE_ACTIVE_RECT_H
 #define WINTERMUTE_BASE_ACTIVE_RECT_H
 
-#include "engines/wintermute/math/rect32.h"
+#include "common/rect.h"
 #include "engines/wintermute/base/base.h"
 
 namespace Wintermute {
@@ -36,31 +36,30 @@ class BaseRegion;
 class BaseSubFrame;
 class BaseObject;
 #ifdef ENABLE_WME3D
-class ModelX;
+class XModel;
 #endif
-class BaseActiveRect: BaseClass {
+class BaseActiveRect : BaseClass {
 public:
 	void clipRect();
-	bool _precise;
+	bool _precise{};
 	float _zoomX;
 	float _zoomY;
 	BaseSubFrame *_frame;
 #ifdef ENABLE_WME3D
-	ModelX *_modelX;
+	XModel *_xmodel;
 #endif
 	BaseObject *_owner;
 	BaseRegion *_region;
 	int32 _offsetX;
 	int32 _offsetY;
-	Rect32 _rect;
+	Common::Rect32 _rect;
 	BaseActiveRect(BaseGame *inGameOwner = nullptr);
 	BaseActiveRect(BaseGame *inGameOwner, BaseObject *owner, BaseSubFrame *frame, int x, int y, int width, int height, float zoomX = 100, float zoomY = 100, bool precise = true);
 	BaseActiveRect(BaseGame *inGame, BaseObject *owner, BaseRegion *region, int offsetX, int offsetY);
 #ifdef ENABLE_WME3D
-	BaseActiveRect(BaseGame *inGame, BaseObject *owner, ModelX *model, int x, int y, int width, int height, bool precise = true);
+	BaseActiveRect(BaseGame *inGame, BaseObject *owner, XModel *model, int x, int y, int width, int height, bool precise = true);
 #endif
 	~BaseActiveRect() override;
-
 };
 
 } // End of namespace Wintermute

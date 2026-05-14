@@ -24,9 +24,9 @@ MODULE_OBJS = \
 	lib/allegro/math.o \
 	lib/allegro/rotate.o \
 	lib/allegro/surface.o \
+	lib/allegro/surface_generic.o \
 	lib/allegro/system.o \
 	lib/allegro/unicode.o \
-	lib/std/std.o \
 	lib/system/datetime.o \
 	shared/ac/dynobj/script_audio_clip.o \
 	shared/ac/audio_clip_type.o \
@@ -70,7 +70,6 @@ MODULE_OBJS = \
 	shared/gui/gui_textbox.o \
 	shared/script/cc_common.o \
 	shared/script/cc_script.o \
-	shared/util/aligned_stream.o \
 	shared/util/buffered_stream.o \
 	shared/util/compress.o \
 	shared/util/data_ext.o \
@@ -85,7 +84,6 @@ MODULE_OBJS = \
 	shared/util/memory_stream.o \
 	shared/util/multi_file_lib.o \
 	shared/util/path.o \
-	shared/util/proxy_stream.o \
 	shared/util/stdio_compat.o \
 	shared/util/stream.o \
 	shared/util/string.o \
@@ -183,7 +181,6 @@ MODULE_OBJS = \
 	engine/ac/slider.o \
 	engine/ac/speech.o \
 	engine/ac/sprite.o \
-	engine/ac/sprite_cache_engine.o \
 	engine/ac/string.o \
 	engine/ac/system.o \
 	engine/ac/sys_events.o \
@@ -200,7 +197,6 @@ MODULE_OBJS = \
 	engine/ac/dynobj/cc_character.o \
 	engine/ac/dynobj/cc_dialog.o \
 	engine/ac/dynobj/cc_dynamic_array.o \
-	engine/ac/dynobj/cc_dynamic_object.o \
 	engine/ac/dynobj/cc_gui.o \
 	engine/ac/dynobj/cc_gui_object.o \
 	engine/ac/dynobj/cc_hotspot.o \
@@ -208,6 +204,8 @@ MODULE_OBJS = \
 	engine/ac/dynobj/cc_object.o \
 	engine/ac/dynobj/cc_region.o \
 	engine/ac/dynobj/cc_serializer.o \
+	engine/ac/dynobj/cc_static_array.o \
+	engine/ac/dynobj/dynobj_manager.o \
 	engine/ac/dynobj/managed_object_pool.o \
 	engine/ac/dynobj/script_camera.o \
 	engine/ac/dynobj/script_date_time.o \
@@ -216,21 +214,20 @@ MODULE_OBJS = \
 	engine/ac/dynobj/script_drawing_surface.o \
 	engine/ac/dynobj/script_dynamic_sprite.o \
 	engine/ac/dynobj/script_file.o \
+	engine/ac/dynobj/script_game.o \
+	engine/ac/dynobj/script_mouse.o \
 	engine/ac/dynobj/script_overlay.o \
 	engine/ac/dynobj/script_set.o \
 	engine/ac/dynobj/script_string.o \
+	engine/ac/dynobj/script_system.o \
 	engine/ac/dynobj/script_user_object.o \
 	engine/ac/dynobj/script_viewport.o \
 	engine/ac/dynobj/script_view_frame.o \
-	engine/ac/statobj/ags_static_object.o \
-	engine/ac/statobj/static_array.o \
-	engine/debugging/console_output_target.o \
 	engine/debugging/debug.o \
 	engine/debugging/file_based_ags_debugger.o \
 	engine/debugging/log_file.o \
 	engine/debugging/message_buffer.o \
 	engine/device/mouse_w32.o \
-	engine/font/fonts_engine.o \
 	engine/game/game_init.o \
 	engine/game/savegame.o \
 	engine/game/savegame_components.o \
@@ -283,7 +280,6 @@ MODULE_OBJS = \
 	engine/script/system_imports.o \
 	plugins/ags_plugin.o \
 	plugins/plugin_base.o \
-	plugins/plugin_object_reader.o \
 	plugins/core/core.o \
 	plugins/core/audio_channel.o \
 	plugins/core/audio_clip.o \
@@ -317,19 +313,26 @@ MODULE_OBJS = \
 	plugins/core/textbox.o \
 	plugins/core/view_frame.o \
 	plugins/ags_agi/ags_agi.o \
+	plugins/ags_app_open_url/ags_app_open_url.o \
 	plugins/ags_blend/ags_blend.o \
+	plugins/ags_bm_font_renderer/ags_bm_font_renderer.o \
 	plugins/ags_clipboard/ags_clipboard.o \
+	plugins/ags_collision_detector/ags_collision_detector.o \
+	plugins/ags_consoles/ags_consoles.o \
 	plugins/ags_controller/ags_controller.o \
+	plugins/ags_controller/ags_controller_arcnor.o \
 	plugins/ags_creditz/ags_creditz.o \
 	plugins/ags_creditz/ags_creditz1.o \
 	plugins/ags_creditz/ags_creditz2.o \
 	plugins/ags_creditz/drawing.o \
+	plugins/ags_filedel/ags_filedel.o \
 	plugins/ags_fire/ags_fire.o \
 	plugins/ags_flashlight/ags_flashlight.o \
 	plugins/ags_flashlight/gfx.o \
 	plugins/ags_galaxy_steam/ags_wadjeteye_steam.o \
 	plugins/ags_galaxy_steam/ags_galaxy_steam.o \
 	plugins/ags_joy/ags_joy.o \
+	plugins/ags_maya/ags_maya.o \
 	plugins/ags_nickenstien_gfx/ags_nickenstien_gfx.o \
 	plugins/ags_pal_render/ags_pal_render.o \
 	plugins/ags_pal_render/raycast.o \
@@ -347,9 +350,12 @@ MODULE_OBJS = \
 	plugins/ags_sprite_font/variable_width_font.o \
 	plugins/ags_sprite_font/variable_width_sprite_font.o \
 	plugins/ags_sprite_font/variable_width_sprite_font_clifftop.o \
+	plugins/ags_sprite_video/ags_sprite_video.o \
 	plugins/ags_shell/ags_shell.o \
 	plugins/ags_tcp_ip/ags_tcp_ip.o \
 	plugins/ags_touch/ags_touch.o \
+	plugins/ags_trans/ags_trans.o \
+	plugins/ags_utils/ags_utils.o \
 	plugins/ags_wadjet_util/ags_wadjet_util.o \
 	plugins/ags_waves/ags_waves.o \
 	plugins/ags_waves/data.o \
@@ -357,6 +363,16 @@ MODULE_OBJS = \
 	plugins/ags_waves/sound.o \
 	plugins/ags_waves/warper.o \
 	plugins/ags_waves/weather.o
+
+ifdef USE_FREETYPE2
+MODULE_OBJS += \
+	lib/freetype-2.1.3/autohint/ahangles.o \
+	lib/freetype-2.1.3/autohint/ahglobal.o \
+	lib/freetype-2.1.3/autohint/ahglyph.o \
+	lib/freetype-2.1.3/autohint/ahhint.o \
+	lib/freetype-2.1.3/ftgloadr.o \
+	lib/freetype-2.1.3/ftutil.o
+endif
 
 ifdef ENABLE_AGS_TESTS
 MODULE_OBJS += \
@@ -369,6 +385,19 @@ MODULE_OBJS += \
 	tests/test_sprintf.o \
 	tests/test_string.o \
 	tests/test_version.o
+endif
+
+ifdef SCUMMVM_NEON
+MODULE_OBJS += \
+	lib/allegro/surface_neon.o
+endif
+ifdef SCUMMVM_SSE2
+MODULE_OBJS += \
+	lib/allegro/surface_sse2.o
+endif
+ifdef SCUMMVM_AVX2
+MODULE_OBJS += \
+	lib/allegro/surface_avx2.o
 endif
 
 # This module can be built as a plugin

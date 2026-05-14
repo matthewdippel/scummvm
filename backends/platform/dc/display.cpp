@@ -22,7 +22,7 @@
 #define RONIN_TIMER_ACCESS
 
 #include "common/scummsys.h"
-#include "graphics/conversion.h"
+#include "graphics/blit.h"
 #include "graphics/surface.h"
 #include "dc.h"
 
@@ -295,8 +295,10 @@ void OSystem_Dreamcast::warpMouse(int x, int y)
 
 void OSystem_Dreamcast::setMouseCursor(const void *buf, uint w, uint h,
 				       int hotspot_x, int hotspot_y,
-				       uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format)
-{
+				       uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format, const byte *mask) {
+	if (mask)
+		warning("OSystem_Dreamcast::setMouseCursor: Masks are not supported");
+
   _ms_cur_w = w;
   _ms_cur_h = h;
 
@@ -634,14 +636,16 @@ void OSystem_Dreamcast::mouseToSoftKbd(int x, int y, int &rx, int &ry) const
 }
 
 
-void OSystem_Dreamcast::showOverlay()
+void OSystem_Dreamcast::showOverlay(bool inGUI)
 {
+  _overlay_in_gui = inGUI;
   _overlay_visible = true;
   clearOverlay();
 }
 
 void OSystem_Dreamcast::hideOverlay()
 {
+  _overlay_in_gui = false;
   _overlay_visible = false;
 }
 
@@ -698,12 +702,12 @@ void OSystem_Dreamcast::unlockScreen()
   _screen_dirty = true;
 }
 
-int16 OSystem_Dreamcast::getOverlayHeight()
+int16 OSystem_Dreamcast::getOverlayHeight() const
 {
   return OVL_H;
 }
 
-int16 OSystem_Dreamcast::getOverlayWidth()
+int16 OSystem_Dreamcast::getOverlayWidth() const
 {
   return OVL_W;
 }

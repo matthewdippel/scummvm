@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_DECFILE_H
@@ -26,7 +32,7 @@
 
 namespace Common {
 	class String;
-	class SeekableSubReadStreamEndian;
+	class SeekableReadStreamEndian;
 }
 
 namespace Gob {
@@ -85,14 +91,14 @@ private:
 	PartArray  _parts;
 
 
-	void load(Common::SeekableSubReadStreamEndian &dec, const Common::String &fileName);
+	void load(Common::SeekableReadStreamEndian &dec, const Common::String &fileName);
 
-	void loadBackdrop(Common::SeekableSubReadStreamEndian &dec);
+	void loadBackdrop(Common::SeekableReadStreamEndian &dec);
 
-	CMPFile *loadLayer(Common::SeekableSubReadStreamEndian &dec);
+	CMPFile *loadLayer(Common::SeekableReadStreamEndian &dec);
 
-	void loadParts(Common::SeekableSubReadStreamEndian &dec);
-	void loadPart(Part &part, Common::SeekableSubReadStreamEndian &dec);
+	void loadParts(Common::SeekableReadStreamEndian &dec);
+	void loadPart(Part &part, Common::SeekableReadStreamEndian &dec);
 };
 
 } // End of namespace Gob

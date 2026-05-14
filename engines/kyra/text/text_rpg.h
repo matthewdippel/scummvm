@@ -54,7 +54,16 @@ public:
 	void allowPageBreak(bool mode) { _allowPageBreak = mode; }
 	void setWaitButtonMode(int mode) { _waitButtonMode = mode; }
 	int lineCount() const { return _lineCount; }
-	const uint8 *colorMap() const { return _colorMap; }
+	//const uint8 *colorMap() const { return _colorMap; }
+
+	// These methods are ScummVM specific. They are supposed to make necessary modifications
+	// to the text displayer for the various Japanese and Chinese versions without too much
+	// hackery...
+	void setColorMapping(int sd, uint8 from, uint8 to);
+	void setShadowColor(int sd, int col) { applySetting(sd, kShadowColor, col); }
+	void setLineSpacing(int sd, int spacing) { applySetting(sd, kLineSpacing, spacing); }
+	void setVisualLineSpacingAdjust(int sd, int adj) { applySetting(sd, kVisualLineSpacingAdjust, adj); }
+	void setCharSpacing(int sd, int spacing) { applySetting(sd, kCharSpacing, spacing); }
 
 protected:
 	virtual KyraRpgEngine *vm() { return _vm; }
@@ -71,8 +80,8 @@ protected:
 
 	char *_dialogueBuffer;
 
-	char *_tempString1;
-	char *_tempString2;
+	const char *_tempString1;
+	const char *_tempString2;
 	char *_currentLine;
 	char _ctrl[3];
 
@@ -82,11 +91,11 @@ protected:
 	uint32 _numCharsPrinted;
 
 	bool _printFlag;
-	bool _sjisTextModeLineBreak;
+	bool _twoByteLineBreakFlag;
 	const bool _pc98TextMode;
 
-	char _pageBreakString[20];
-	char _scriptParaString[11];
+	Common::String _pageBreakString;
+	Common::String _scriptParaString;
 	int _lineCount;
 
 	bool _allowPageBreak;
@@ -100,20 +109,44 @@ protected:
 		uint8 color2;
 		uint16 column;
 		uint8 line;
+		// These properties don't appear in the original code. The various Japanese and Chinese versions
+		// just had their modifications hacked in in whatever way the devs felt like. These properties
+		// help making the necessary adjustments without too much hackery...
+		int lineSpacing;
+		int visualLineSpacingAdjust; // LOL PC-98 has the worst hack here. The visual line spacing is different than the one that is used to measure the text field space.
+		int charSpacing;
+		int shadowColor;
+		int noHalfWidthLineEnd;
+		uint8 *colorMap;
 	};
 
 	TextDimData *_textDimData;
+	const int _dimCount;
 	KyraRpgEngine *_vm;
 
 private:
-	Screen *_screen;
+	bool isTwoByteChar(uint8 c) const;
+	void applySetting(int sd, int ix, int val);
+	uint8 remapColor(int sd, uint8 color) const;
 
+	enum TextFieldVar {
+		kLineSpacing = 0,
+		kVisualLineSpacingAdjust,
+		kCharSpacing,
+		kShadowColor,
+		kNoHalfWidthLineEnd,
+		kOutOfRange
+	};
+
+	Screen *_screen;
 	char *_table1;
 	char *_table2;
 
 	Screen::FontId _waitButtonFont;
 
 	uint8 _colorMap[256];
+
+	bool _isChinese;
 };
 
 } // End of namespace Kyra

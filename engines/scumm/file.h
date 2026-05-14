@@ -29,20 +29,31 @@
 
 namespace Scumm {
 
-class BaseScummFile : public Common::File {
+#ifdef ENABLE_SCUMM
+class ScummEngine;
+#endif
+
+class BaseScummFile : public Common::SeekableReadStream {
 protected:
 	byte _encbyte;
+	Common::ScopedPtr<Common::SeekableReadStream> _baseStream;
+	Common::String _debugName;
 
 public:
 	BaseScummFile() : _encbyte(0) {}
 	void setEnc(byte value) { _encbyte = value; }
 
-	bool open(const Common::Path &filename) override = 0;
-	virtual bool openSubFile(const Common::String &filename) = 0;
+	virtual bool open(const Common::Path &filename) = 0;
+	virtual bool openSubFile(const Common::Path &filename) = 0;
+	virtual void close();
 
 	int64 pos() const override = 0;
 	int64 size() const override = 0;
 	bool seek(int64 offs, int whence = SEEK_SET) override = 0;
+
+	Common::String getDebugName() const { return _debugName; }
+
+	bool isOpen() const { return !!_baseStream; }
 
 // Unused
 #if 0
@@ -51,20 +62,23 @@ public:
 #endif
 };
 
+#ifdef ENABLE_SCUMM
+
 class ScummFile : public BaseScummFile {
 protected:
-	int32	_subFileStart;
+	int64	_subFileStart;
 	int32	_subFileLen;
 	bool	_myEos; // Have we read past the end of the subfile?
+	bool    _isMac;
 
-	void setSubfileRange(int32 start, int32 len);
+	void setSubfileRange(int64 start, int32 len);
 	void resetSubfile();
 
 public:
-	ScummFile();
+	explicit ScummFile(const ScummEngine *vm);
 
 	bool open(const Common::Path &filename) override;
-	bool openSubFile(const Common::String &filename) override;
+	bool openSubFile(const Common::Path &filename) override;
 
 	void clearErr() override { _myEos = false; BaseScummFile::clearErr(); }
 
@@ -75,23 +89,25 @@ public:
 	uint32 read(void *dataPtr, uint32 dataSize) override;
 };
 
+#endif
+
 class ScummDiskImage : public BaseScummFile {
 private:
 	Common::SeekableReadStream *_stream;
-	byte _roomDisks[59], _roomTracks[59], _roomSectors[59];
+	byte _roomDisks[59] = {}, _roomTracks[59] = {}, _roomSectors[59] = {};
 
-	byte *_buf;
+	byte *_buf = nullptr;
 
 	const GameSettings _game;
 
 	const Common::String _disk1, _disk2;
-	int _openedDisk;
+	int _openedDisk = 0;
 
-	int _numGlobalObjects;
-	int _numRooms;
-	int _numCostumes;
-	int _numScripts;
-	int _numSounds;
+	int _numGlobalObjects = 0;
+	int _numRooms = 0;
+	int _numCostumes = 0;
+	int _numScripts = 0;
+	int _numSounds = 0;
 	const int *_resourcesPerFile;
 
 	bool openDisk(char num);
@@ -109,7 +125,7 @@ public:
 	ScummDiskImage(const char *disk1, const char *disk2, GameSettings game);
 
 	bool open(const Common::Path &filename) override;
-	bool openSubFile(const Common::String &filename) override;
+	bool openSubFile(const Common::Path &filename) override;
 
 	void close() override;
 	bool eos() const override { return _stream->eos(); }
@@ -129,16 +145,42 @@ struct SteamIndexFile {
 	int32 len;
 };
 
+#ifdef ENABLE_SCUMM
+
 class ScummSteamFile : public ScummFile {
 private:
 	const SteamIndexFile &_indexFile;
 
-	bool openWithSubRange(const Common::String &filename, int32 subFileStart, int32 subFileLen);
+	bool openWithSubRange(const Common::Path &filename, int32 subFileStart, int32 subFileLen);
 public:
-	ScummSteamFile(const SteamIndexFile &indexFile) : ScummFile(), _indexFile(indexFile) {}
+	ScummSteamFile(const ScummEngine *vm, const SteamIndexFile &indexFile) : ScummFile(vm), _indexFile(indexFile) {}
 
 	bool open(const Common::Path &filename) override;
 };
+
+struct PAKFile {
+	uint64 start;
+	uint32 len;
+};
+
+typedef Common::HashMap<Common::String, PAKFile> PAKFileHashMap;
+
+class ScummPAKFile : public ScummFile {
+private:
+	PAKFileHashMap _pakIndex;
+
+	void readIndex(const Common::Path &containerFile, bool isFT);
+
+public:
+	ScummPAKFile(const ScummEngine *vm, bool indexFiles = true);
+	~ScummPAKFile() override { _pakIndex.clear(); }
+
+	bool openSubFile(const Common::Path &filePath) override;
+	PAKFile *getPAKFileIndex(Common::String fileName);
+	void setPAKFileIndex(Common::String fileName, const PAKFile &pakFile);
+};
+
+#endif
 
 } // End of namespace Scumm
 

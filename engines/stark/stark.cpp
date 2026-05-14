@@ -75,7 +75,6 @@ StarkEngine::~StarkEngine() {
 	delete StarkServices::instance().dialogPlayer;
 	delete StarkServices::instance().randomSource;
 	delete StarkServices::instance().scene;
-	delete StarkServices::instance().gfx;
 	delete StarkServices::instance().staticProvider;
 	delete StarkServices::instance().resourceProvider;
 	delete StarkServices::instance().global;
@@ -86,6 +85,7 @@ StarkEngine::~StarkEngine() {
 	delete StarkServices::instance().settings;
 	delete StarkServices::instance().gameChapter;
 	delete StarkServices::instance().gameMessage;
+	delete StarkServices::instance().gfx;
 
 	StarkServices::destroy();
 
@@ -185,24 +185,25 @@ void StarkEngine::processEvents() {
 
 		if (isPaused()) {
 			// Only pressing key P to resume the game is allowed when the game is paused
-			if (e.type == Common::EVENT_KEYDOWN && e.kbd.keycode == Common::KEYCODE_p) {
+			if (e.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && e.customType == kActionPause) {
 				_gamePauseToken.clear();
 			}
 			continue;
 		}
 
-		if (e.type == Common::EVENT_KEYDOWN) {
+		if (e.type == Common::EVENT_KEYDOWN || e.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START) {
 			if (e.kbdRepeat) {
 				continue;
 			}
 
-			if (e.kbd.keycode == Common::KEYCODE_p) {
+			if (e.customType == kActionPause) {
 				if (StarkUserInterface->isInGameScreen()) {
 					_gamePauseToken = pauseEngine();
 					debug("The game is paused");
 				}
 			} else {
 				StarkUserInterface->handleKeyPress(e.kbd);
+				StarkUserInterface->handleActions(e.customType);
 			}
 
 		} else if (e.type == Common::EVENT_LBUTTONUP) {
@@ -266,7 +267,7 @@ static bool modsCompare(const Common::FSNode &a, const Common::FSNode &b) {
 }
 
 void StarkEngine::addModsToSearchPath() const {
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 	const Common::FSNode modsDir = gameDataDir.getChild("mods");
 	if (modsDir.exists()) {
 		Common::FSList list;
@@ -290,7 +291,7 @@ void StarkEngine::checkRecommendedDatafiles() {
 
 	Common::String message = _("You are missing recommended data files:");
 
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 	Common::FSNode fontsDir = gameDataDir.getChild("fonts");
 	if (!fontsDir.isDirectory()) {
 		fontsDir = gameDataDir.getChild("Fonts"); // FSNode is case sensitive
@@ -357,7 +358,7 @@ bool StarkEngine::hasFeature(EngineFeature f) const {
 		(f == kSupportsReturnToLauncher);
 }
 
-bool StarkEngine::canLoadGameStateCurrently() {
+bool StarkEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	return !StarkUserInterface->isInSaveLoadMenuScreen();
 }
 
@@ -424,7 +425,7 @@ Common::Error StarkEngine::loadGameState(int slot) {
 	return Common::kNoError;
 }
 
-bool StarkEngine::canSaveGameStateCurrently() {
+bool StarkEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	// Disallow saving when there is no level loaded or when a script is running
 	// or when the save & load menu is currently displayed
 	return StarkGlobal->getLevel() && StarkGlobal->getCurrent() && StarkUserInterface->isInteractive() && !StarkUserInterface->isInSaveLoadMenuScreen();

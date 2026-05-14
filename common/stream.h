@@ -23,8 +23,10 @@
 #define COMMON_STREAM_H
 
 #include "common/endian.h"
+#include "common/ptr.h"
 #include "common/scummsys.h"
 #include "common/str.h"
+#include "common/data-io.h"
 
 namespace Common {
 
@@ -275,6 +277,52 @@ public:
 	}
 
 	/**
+	 * Write multiple values to the stream using a specified data format,
+	 * return true on success and false on failure.
+	 */
+	template<class TDataFormat, class... T>
+	bool writeMultiple(const TDataFormat &dataFormat, const T &...values) {
+		const TDataFormat dataFormatCopy = dataFormat; // Copy to help compiler alias analysis, parameter is const ref to ensure TDataFormat is a concrete type
+
+		byte buffer[DataMultipleIO<TDataFormat, T...>::kMaxSize];
+		const uint actualSize = DataMultipleIO<TDataFormat, T...>::computeSize(dataFormatCopy);
+
+		DataMultipleIO<TDataFormat, T...>::encode(dataFormatCopy, buffer, values...);
+
+		if (this->write(buffer, actualSize) != actualSize)
+			return false;
+
+		return true;
+	}
+
+	/**
+	 * Write multiple values to the stream using a specified endianness,
+	 * return true on success and false on failure.
+	 */
+	template<class... T>
+	inline bool writeMultipleEndian(bool isLittle, const T &...values) {
+		return this->writeMultiple<EndianStorageFormat, T...>(isLittle ? EndianStorageFormat::Little : EndianStorageFormat::Big, values...);
+	}
+
+	/**
+	 * Write multiple values to the stream in little endian format,
+	 * return true on success and false on failure.
+	 */
+	template<class... T>
+	inline bool writeMultipleLE(const T &...values) {
+		return this->writeMultiple<EndianStorageFormat, T...>(EndianStorageFormat::Little, values...);
+	}
+
+	/**
+	 * Write multiple values to the stream in big endian format,
+	 * return true on success and false on failure.
+	 */
+	template<class... T>
+	inline bool writeMultipleBE(const T &...values) {
+		return this->writeMultiple<EndianStorageFormat, T...>(EndianStorageFormat::Big, values...);
+	}
+
+	/**
 	 * Write at most @p dataSize of data from another stream into this one,
 	 * starting from the current stream position.
 	 *
@@ -287,7 +335,7 @@ public:
 	 *
 	 * @return The number of bytes written into the stream.
 	 */
-	uint32 writeStream(SeekableReadStream *stream);
+	uint32 writeStream(ReadStream *stream);
 
 	/**
 	 * Write the given string to the stream.
@@ -614,6 +662,51 @@ public:
 	}
 
 	/**
+	 * Read multiple values from the stream using a specified data format,
+	 * return true on success and false on failure.
+	 */
+	template<class TDataFormat, class... T>
+	bool readMultiple(const TDataFormat &dataFormat, T &...values) {
+		const TDataFormat dataFormatCopy = dataFormat;	// Copy to help compiler alias analysis, parameter is const ref to ensure TDataFormat is a concrete type
+
+		byte buffer[DataMultipleIO<TDataFormat, T...>::kMaxSize];
+		const uint actualSize = DataMultipleIO<TDataFormat, T...>::computeSize(dataFormatCopy);
+
+		if (read(buffer, actualSize) != actualSize)
+			return false;
+
+		DataMultipleIO<TDataFormat, T...>::decode(dataFormatCopy, buffer, values...);
+		return true;
+	}
+
+	/**
+	 * Read multiple values from the stream using a specified endianness,
+	 * return true on success and false on failure.
+	 */
+	template<class... T>
+	inline bool readMultipleEndian(bool isLittle, T &...values) {
+		return this->readMultiple<EndianStorageFormat, T...>(isLittle ? EndianStorageFormat::Little : EndianStorageFormat::Big, values...);
+	}
+
+	/**
+	 * Read multiple values from the stream in little endian format,
+	 * return true on success and false on failure.
+	 */
+	template<class... T>
+	inline bool readMultipleLE(T &...values) {
+		return this->readMultiple<EndianStorageFormat, T...>(EndianStorageFormat::Little, values...);
+	}
+
+	/**
+	 * Read multiple values from the stream in big endian format,
+	 * return true on success and false on failure.
+	 */
+	template<class... T>
+	inline bool readMultipleBE(T &...values) {
+		return this->readMultiple<EndianStorageFormat, T...>(EndianStorageFormat::Big, values...);
+	}
+
+	/**
 	 * Read the specified amount of data into a malloc'ed buffer
 	 * which is then wrapped into a MemoryReadStream.
 	 *
@@ -857,6 +950,38 @@ public:
 	 *                  If false, create a little endian stream.
 	 */
 	SeekableReadStreamEndian(bool bigEndian) : ReadStreamEndian(bigEndian) {}
+};
+
+/**
+ * SeekableReadStreamEndian subclass that wraps around an existing stream.
+ *
+ * Altering the position of the substream will affect the position of
+ * the parent stream, and vice versa.
+ */
+class SeekableReadStreamEndianWrapper final : virtual public SeekableReadStreamEndian {
+protected:
+	DisposablePtr<SeekableReadStream> _parentStream;
+
+public:
+	SeekableReadStreamEndianWrapper(SeekableReadStream *parentStream, bool bigEndian, DisposeAfterUse::Flag disposeParentStream = DisposeAfterUse::NO)
+		: SeekableReadStreamEndian(bigEndian),
+		  ReadStreamEndian(bigEndian),
+		  _parentStream(parentStream, disposeParentStream) {
+		assert(parentStream);
+	}
+
+	/* Stream APIs */
+	bool err() const override { return _parentStream->err(); }
+	void clearErr() override { _parentStream->clearErr(); }
+
+	/* ReadStream APIs */
+	bool eos() const override { return _parentStream->eos(); }
+	uint32 read(void *dataPtr, uint32 dataSize) override { return _parentStream->read(dataPtr, dataSize); }
+
+	/* SeekableReadStream APIs */
+	int64 pos() const override { return _parentStream->pos(); }
+	int64 size() const override { return _parentStream->size(); }
+	bool seek(int64 offset, int whence = SEEK_SET) override { return _parentStream->seek(offset, whence); }
 };
 
 /** @} */

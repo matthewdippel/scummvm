@@ -45,7 +45,7 @@ static const PrinceGameDescription gameDescriptions[] = {
 			Common::DE_DEU,
 			Common::kPlatformWindows,
 			ADGF_USEEXTRAASTITLE | ADGF_DROPPLATFORM,
-			GUIO1(GUIO_NONE)
+			GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_MISSING_VOICE)
 		},
 		kPrinceDataDE
 	},
@@ -57,7 +57,7 @@ static const PrinceGameDescription gameDescriptions[] = {
 			Common::PL_POL,
 			Common::kPlatformWindows,
 			ADGF_USEEXTRAASTITLE | ADGF_DROPPLATFORM,
-			GUIO1(GUIO_NONE)
+			GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_MISSING_VOICE)
 		},
 		kPrinceDataPL
 	},
@@ -69,7 +69,7 @@ static const PrinceGameDescription gameDescriptions[] = {
 			Common::RU_RUS,
 			Common::kPlatformWindows,
 			GF_EXTRACTED | ADGF_DROPPLATFORM,
-			GUIO1(GUIO_NONE)
+			GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_MISSING_VOICE)
 		},
 		kPrinceDataDE
 	},
@@ -81,7 +81,7 @@ static const PrinceGameDescription gameDescriptions[] = {
 			Common::RU_RUS,
 			Common::kPlatformWindows,
 			GF_NOVOICES | ADGF_DROPPLATFORM,
-			GUIO1(GUIO_NONE)
+			GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_SPEECH)
 		},
 		kPrinceDataDE
 	},
@@ -93,7 +93,7 @@ static const PrinceGameDescription gameDescriptions[] = {
 			Common::RU_RUS,
 			Common::kPlatformWindows,
 			GF_RUSPROJEDITION | ADGF_USEEXTRAASTITLE | ADGF_DROPPLATFORM,
-			GUIO1(GUIO_NONE)
+			GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_MISSING_VOICE)
 		},
 		kPrinceDataDE
 	},
@@ -102,11 +102,11 @@ static const PrinceGameDescription gameDescriptions[] = {
 			"prince",
 			"w/translation",
 			AD_ENTRY2s("databank.ptc", "5fa03833177331214ec1354761b1d2ee", 3565031,
-					   "prince_translation.dat", nullptr, -1),
+					   "prince_translation.dat", nullptr, AD_NO_SIZE),
 			Common::EN_ANY,
 			Common::kPlatformWindows,
 			GF_TRANSLATED | ADGF_DROPPLATFORM,
-			GUIO1(GUIO_NONE)
+			GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_SPEECH)
 		},
 		kPrinceDataDE
 	},
@@ -115,11 +115,11 @@ static const PrinceGameDescription gameDescriptions[] = {
 			"prince",
 			"w/translation",
 			AD_ENTRY2s("databank.ptc", "48ec9806bda9d152acbea8ce31c93c49", 3435298,
-					   "prince_translation.dat", nullptr, -1),
+					   "prince_translation.dat", nullptr, AD_NO_SIZE),
 			Common::EN_ANY,
 			Common::kPlatformWindows,
 			GF_TRANSLATED | ADGF_DROPPLATFORM,
-			GUIO1(GUIO_NONE)
+			GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_SPEECH)
 		},
 		kPrinceDataPL
 	},
@@ -129,11 +129,11 @@ static const PrinceGameDescription gameDescriptions[] = {
 			"w/translation",
 			AD_ENTRY3s("databank.ptc", "5fa03833177331214ec1354761b1d2ee", 3565031,
 					   "FONT1.RAW", "e80c50c8167d4d51c60d93e29bedb779", 27118,
-					   "prince_translation.dat", nullptr, -1),
+					   "prince_translation.dat", nullptr, AD_NO_SIZE),
 			Common::ES_ESP,
 			Common::kPlatformWindows,
 			GF_TRANSLATED | ADGF_DROPPLATFORM,
-			GUIO1(GUIO_NONE)
+			GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_SPEECH)
 		},
 		kPrinceDataDE
 	},
@@ -143,11 +143,11 @@ static const PrinceGameDescription gameDescriptions[] = {
 			"w/translation",
 			AD_ENTRY3s("databank.ptc", "48ec9806bda9d152acbea8ce31c93c49", 3435298,
 					   "FONT1.RAW", "e80c50c8167d4d51c60d93e29bedb779", 27118,
-					   "prince_translation.dat", nullptr, -1),
+					   "prince_translation.dat", nullptr, AD_NO_SIZE),
 			Common::ES_ESP,
 			Common::kPlatformWindows,
 			GF_TRANSLATED | ADGF_DROPPLATFORM,
-			GUIO1(GUIO_NONE)
+			GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_SPEECH)
 		},
 		kPrinceDataPL
 	},
@@ -156,23 +156,23 @@ static const PrinceGameDescription gameDescriptions[] = {
 
 } // End of namespace Prince
 
-const static char *directoryGlobs[] = {
+const static char *const directoryGlobs[] = {
 	"all",
 	nullptr
 };
 
-class PrinceMetaEngineDetection : public AdvancedMetaEngineDetection {
+class PrinceMetaEngineDetection : public AdvancedMetaEngineDetection<Prince::PrinceGameDescription> {
 public:
-	PrinceMetaEngineDetection() : AdvancedMetaEngineDetection(Prince::gameDescriptions, sizeof(Prince::PrinceGameDescription), princeGames) {
+	PrinceMetaEngineDetection() : AdvancedMetaEngineDetection(Prince::gameDescriptions, princeGames) {
 		_maxScanDepth = 2;
 		_directoryGlobs = directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "prince";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "The Prince and the Coward";
 	}
 

@@ -18,14 +18,18 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "graphics/macgui/macwindowmanager.h"
 #include "image/image_decoder.h"
 
 #include "graphics/wincursor.h"
 
 #include "director/director.h"
+#include "director/cast.h"
 #include "director/cursor.h"
 #include "director/movie.h"
-#include "director/castmember.h"
+#include "director/castmember/bitmap.h"
+#include "director/picture.h"
+#include "director/lingo/lingo-code.h"
 
 namespace Director {
 
@@ -47,43 +51,58 @@ CursorRef Cursor::getRef() {
 
 bool Cursor::operator==(const Cursor &c) {
 	return _cursorType == c._cursorType &&
-		c._cursorResId == _cursorResId;
+		(LC::eqData(c._cursorResId, _cursorResId).asInt());
 }
 
 bool Cursor::operator==(const CursorRef &c) {
 	return _cursorType == c._cursorType &&
-			c._cursorResId == _cursorResId;
+			(LC::eqData(c._cursorResId, _cursorResId).asInt());
 }
 
 void Cursor::readFromCast(Datum cursorCasts) {
-	if (cursorCasts.type != ARRAY || cursorCasts.u.farr->arr.size() != 2 ) {
-		warning("Cursor::readFromCast: Needs array of 2");
+	if (cursorCasts.type != ARRAY || cursorCasts.u.farr->arr.size() < 1) {
+		warning("Cursor::readFromCast: Needs array of at least 1");
 		return;
 	}
-	if (_cursorResId == cursorCasts)
+	if (_cursorResId.type == ARRAY && LC::eqData(_cursorResId, cursorCasts).asInt())
 		return;
 
 	CastMemberID cursorId = cursorCasts.u.farr->arr[0].asMemberID();
-	CastMemberID maskId = cursorCasts.u.farr->arr[1].asMemberID();
-
 	CastMember *cursorCast = g_director->getCurrentMovie()->getCastMember(cursorId);
-	CastMember *maskCast = g_director->getCurrentMovie()->getCastMember(maskId);
-
 	if (!cursorCast || cursorCast->_type != kCastBitmap) {
 		warning("Cursor::readFromCast: No bitmap cast for cursor");
 		return;
-	} else if (!maskCast || maskCast->_type != kCastBitmap) {
-		warning("Cursor::readFromCast: No bitmap mask for cursor");
-		return;
 	}
+
+	CastMember *maskCast = nullptr;
+	CastMemberID maskId;
+	if (cursorCasts.u.farr->arr.size() > 1) {
+		maskId = cursorCasts.u.farr->arr[1].asMemberID();
+		maskCast = g_director->getCurrentMovie()->getCastMember(maskId);
+		if (!maskCast || maskCast->_type != kCastBitmap) {
+			warning("Cursor::readFromCast: Invalid bitmap mask for cursor, ignoring");
+			maskCast = nullptr;
+		}
+	}
+
+	debugC(2, kDebugImages, "Cursor::readFromCast: setting cursor: %s, mask: %s", cursorId.asString().c_str(), maskId.asString().c_str());
 
 	_usePalette = false;
 	_keyColor = 3;
 
-	resetCursor(Graphics::kMacCursorCustom, true, cursorCasts);
+	Datum cursorRes;
+	if (g_director->getVersion() < 500) {
+		cursorRes = Datum(cursorId.member);
+	} else {
+		cursorRes = Datum((cursorId.castLib << 16) + cursorId.member);
+	}
+	resetCursor(Graphics::kMacCursorCustom, true, cursorRes);
 
-	BitmapCastMember *cursorBitmap = (BitmapCastMember *)cursorCast;
-	BitmapCastMember *maskBitmap = (BitmapCastMember *)maskCast;
+	Graphics::Surface *cursorSurface = &((BitmapCastMember *)cursorCast)->_picture->_surface;
+	Graphics::Surface *maskSurface = nullptr;
+	if (maskCast) {
+		maskSurface = &((BitmapCastMember *)maskCast)->_picture->_surface;
+	}
 
 	_surface = new byte[getWidth() * getHeight()];
 	byte *dst = _surface;
@@ -91,36 +110,55 @@ void Cursor::readFromCast(Datum cursorCasts) {
 	for (int y = 0; y < 16; y++) {
 		const byte *cursor = nullptr, *mask = nullptr;
 
-		if (y < cursorBitmap->_img->getSurface()->h &&
-				y < maskBitmap->_img->getSurface()->h) {
-			cursor = (const byte *)cursorBitmap->_img->getSurface()->getBasePtr(0, y);
-			mask = (const byte *)maskBitmap->_img->getSurface()->getBasePtr(0, y);
+		if (y < cursorSurface->h &&
+				(!maskSurface || y < maskSurface->h)) {
+			cursor = (const byte *)cursorSurface->getBasePtr(0, y);
+			if (maskSurface)
+				mask = (const byte *)maskSurface->getBasePtr(0, y);
 		}
 
 		for (int x = 0; x < 16; x++) {
-			if (x >= cursorBitmap->_img->getSurface()->w ||
-					x >= maskBitmap->_img->getSurface()->w) {
+			if (x >= cursorSurface->w ||
+					(!maskSurface || x >= maskSurface->w)) {
 				cursor = mask = nullptr;
 			}
 
 			if (!cursor) {
 				*dst = 3;
 			} else {
-				*dst = *mask ? 3 : (*cursor ? 1 : 0);
+				*dst = (!mask || *mask) ? (*cursor ? 0 : 1) : 3;
 				cursor++;
-				mask++;
+				if (mask)
+					mask++;
 			}
 			dst++;
 		}
 	}
 
 	BitmapCastMember *bc = (BitmapCastMember *)(cursorCast);
-	_hotspotX = bc->_regX - bc->_initialRect.left;
-	_hotspotY = bc->_regY - bc->_initialRect.top;
+	int offX = bc->_regX - bc->_initialRect.left;
+	int offY = bc->_regY - bc->_initialRect.top;
+	if ((offX < 0) || (offX >= 16) || (offY < 0) || (offY >= 16) ||
+		(g_director->getVersion() < 500 && g_director->getPlatform() == Common::kPlatformWindows)) {
+		// Hotspots that are outside the 16x16 crop will be recentered in the middle.
+		// Pre-5 versions of Windows Director do not respect hotspots at all?
+		offX = 8;
+		offY = 8;
+	}
+	_cursorType = Graphics::kMacCursorCustom;
+	_hotspotX = (uint16)offX;
+	_hotspotY = (uint16)offY;
+	// Returned value will be a list of two multiplexed cast member IDs
+	_cursorResId = Datum();
+	_cursorResId.type = ARRAY;
+	_cursorResId.u.farr = new FArray();
+	_cursorResId.u.farr->arr.push_back(Datum(cursorId.toMultiplex()));
+	_cursorResId.u.farr->arr.push_back(Datum(maskId.toMultiplex()));
+
 }
 
 void Cursor::readBuiltinType(Datum resourceId) {
-	if (resourceId.equalTo(_cursorResId))
+	if (resourceId.type == _cursorResId.type && resourceId.equalTo(_cursorResId))
 		return;
 
 	if (resourceId.type != INT) {
@@ -155,7 +193,7 @@ void Cursor::readBuiltinType(Datum resourceId) {
 }
 
 void Cursor::readFromResource(Datum resourceId) {
-	if (resourceId == _cursorResId)
+	if (resourceId.type == _cursorResId.type && resourceId.equalTo(_cursorResId))
 		return;
 
 	if (resourceId.type != INT) {
@@ -175,24 +213,23 @@ void Cursor::readFromResource(Datum resourceId) {
 	default:
 		bool readSuccessful = false;
 
-		for (Common::HashMap<Common::String, Archive *, Common::IgnoreCase_Hash, Common::IgnoreCase_EqualTo>::iterator it = g_director->_openResFiles.begin(); it != g_director->_openResFiles.end(); ++it) {
-			Common::SeekableReadStreamEndian *cursorStream = nullptr;
-			MacArchive *arch = (MacArchive *)it->_value;
-
-			if (arch->hasResource(MKTAG('C', 'U', 'R', 'S'), resourceId.asInt()))
-				cursorStream = arch->getResource(MKTAG('C', 'U', 'R', 'S'), resourceId.asInt());
-
-			if (!cursorStream && arch->hasResource(MKTAG('C', 'R', 'S', 'R'), resourceId.asInt()))
-				cursorStream = arch->getResource(MKTAG('C', 'R', 'S', 'R'), resourceId.asInt());
-
-			if (cursorStream && readFromStream(*((Common::SeekableReadStream *)cursorStream), false, 0)) {
-				_usePalette = true;
-				_keyColor = 0xff;
-				readSuccessful = true;
-
-				resetCursor(Graphics::kMacCursorCustom, false, resourceId);
+		Cast *cast = g_director->getCurrentMovie()->getCast();
+		if (cast && cast->getArchive()) {
+			readSuccessful = readFromArchive(cast->getArchive(), resourceId.asInt());
+			if (readSuccessful)
 				break;
-			}
+		}
+
+		for (auto &it : g_director->_allOpenResFiles) {
+			readSuccessful = readFromArchive(g_director->_allSeenResFiles[it], resourceId.asInt());
+			if (readSuccessful)
+				break;
+		}
+
+		// Cursors can be located in the main archive, which may not
+		// be in _allOpenResFiles
+		if (!readSuccessful && g_director->getPlatform() == Common::kPlatformMacintosh) {
+			readSuccessful = readFromArchive(g_director->getMainArchive(), resourceId.asInt());
 		}
 
 		// TODO: figure out where to read custom cursor in windows platform
@@ -222,6 +259,26 @@ void Cursor::readFromResource(Datum resourceId) {
 	}
 }
 
+bool Cursor::readFromArchive(Archive *archive, uint16 resourceId) {
+	bool readSuccessful = false;
+	Common::SeekableReadStreamEndian *cursorStream = nullptr;
+	if (archive->hasResource(MKTAG('C', 'U', 'R', 'S'), resourceId))
+		cursorStream = archive->getResource(MKTAG('C', 'U', 'R', 'S'), resourceId);
+
+	if (!cursorStream && archive->hasResource(MKTAG('C', 'R', 'S', 'R'), resourceId))
+		cursorStream = archive->getResource(MKTAG('C', 'R', 'S', 'R'), resourceId);
+
+	if (cursorStream && readFromStream(*((Common::SeekableReadStream *)cursorStream), false, 0)) {
+		_usePalette = true;
+		_keyColor = 0xff;
+		_cursorType = Graphics::kMacCursorCustom;
+		_cursorResId = resourceId;
+		readSuccessful = true;
+	}
+	delete cursorStream;
+	return readSuccessful;
+}
+
 void Cursor::resetCursor(Graphics::MacCursorType type, bool shouldClear, Datum resId) {
 	if (shouldClear)
 		clear();
@@ -243,12 +300,12 @@ CursorRef::CursorRef() {
 
 bool CursorRef::operator==(const Cursor &c) {
 	return _cursorType == c._cursorType &&
-		c._cursorResId == _cursorResId;
+		(LC::eqData(c._cursorResId, _cursorResId).asInt());
 }
 
 bool CursorRef::operator==(const CursorRef &c) {
 	return _cursorType == c._cursorType &&
-		c._cursorResId == _cursorResId;
+		(LC::eqData(c._cursorResId, _cursorResId).asInt());
 }
 
 } // End of namespace Director

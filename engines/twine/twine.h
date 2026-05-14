@@ -22,7 +22,6 @@
 #ifndef TWINE_TWINE_H
 #define TWINE_TWINE_H
 
-#include "backends/keymapper/keymap.h"
 #include "common/platform.h"
 #include "common/random.h"
 #include "common/rect.h"
@@ -32,11 +31,13 @@
 #include "engines/metaengine.h"
 #include "graphics/managed_surface.h"
 #include "graphics/screen.h"
-#include "graphics/pixelformat.h"
 #include "graphics/surface.h"
 #include "twine/detection.h"
 #include "twine/input.h"
 #include "twine/scene/actor.h"
+#include "twine/script/script_life.h"
+#include "twine/script/script_move.h"
+#include "twine/shared.h"
 
 namespace TwinE {
 
@@ -50,7 +51,6 @@ namespace TwinE {
 /** Default frames per second */
 #define DEFAULT_FRAMES_PER_SECOND 20
 #define DEFAULT_HZ (1000 / DEFAULT_FRAMES_PER_SECOND)
-#define TO_SECONDS(x) (DEFAULT_HZ * (x))
 
 #define ORIGINAL_WIDTH 640
 #define ORIGINAL_HEIGHT 480
@@ -58,13 +58,14 @@ namespace TwinE {
 static const struct TwinELanguage {
 	const char *name;
 	const char *id;
-} LanguageTypes[] = {
-	{"English", "EN_"},
-	{"French", "FR_"},
-	{"German", "DE_"},
-	{"Spanish", "SP_"},
-	{"Italian", "IT_"},
-	{"Portuguese", ""}};
+	const int voice;
+} ListLanguage[] = { // TabLanguage
+	{"English", "EN_", 1},
+	{"French", "FR_", 2},
+	{"German", "DE_", 3},
+	{"Spanish", "SP_", 1},
+	{"Italian", "IT_", 1},
+	{"Portuguese", "", 1}};
 
 enum MidiFileType {
 	MIDIFILE_NONE,
@@ -86,18 +87,13 @@ enum MovieType {
 	All the settings with (*) means they are new and only exist in this engine. */
 struct ConfigFile {
 	/** Index into the LanguageTypes array. */
-	int32 LanguageId = 0;
-	bool Voice = true;
+	int32 _languageId = 0;
 	/** Enable/Disable game dialogues */
 	bool FlagDisplayText = false;
-	/** Flag to display game debug */
-	bool Debug = false;
 	/** Type of music file to be used */
 	MidiFileType MidiType = MIDIFILE_NONE;
 	/** Game version */
 	int32 Version = EUROPE_VERSION;
-	/** If you want to use the LBA CD or not */
-	int32 UseCD = 0;
 	/** Allow various sound types */
 	int32 Sound = 0;
 	/** Allow various movie types */
@@ -110,7 +106,7 @@ struct ConfigFile {
 	bool WallCollision = false;
 	/** Use original autosaving system or save when you want */
 	bool UseAutoSaving = false;
-	bool Mouse = false;
+	bool Mouse = true;
 
 	// these settings can be changed in-game - and must be persisted
 	/** Shadow mode type, value: all, character only, none */
@@ -137,15 +133,21 @@ class Renderer;
 class Resources;
 class Scene;
 class Screens;
-class ScriptLife;
-class ScriptMove;
+class ScriptLifeV1;
+class ScriptMoveV1;
 class Holomap;
 class Sound;
 class Text;
 class DebugGrid;
 struct Keyboard;
 class Debug;
-class DebugScene;
+class DebugState;
+
+// lba2
+class Buggy;
+class Dart;
+class Rain;
+class Wagon;
 
 enum class EngineState {
 	Menu,
@@ -158,12 +160,6 @@ enum class SceneLoopState {
 	Continue = -1,
 	ReturnToMenu = 0,
 	Finished = 1
-};
-
-struct ScopedEngineFreeze {
-	TwinEEngine *_engine;
-	ScopedEngineFreeze(TwinEEngine *engine);
-	~ScopedEngineFreeze();
 };
 
 struct ScopedCursor {
@@ -194,19 +190,30 @@ public:
 	void update() override;
 };
 
+
+int32 boundRuleThree(int32 val1, int32 val2, int32 nbstep, int32 step);
+
+/**
+ * Linear interpolation of the given value between start and end
+ * @param value color component
+ * @param start lower range
+ * @param end upper range
+ * @param t the location in given range
+ * @return the lerped value
+ * @note Doesn't clamp
+ */
+int32 ruleThree32(int32 value, int32 start, int32 end, int32 t);
+
 class TwinEEngine : public Engine {
 private:
 	int32 _isTimeFreezed = 0;
 	int32 _saveFreezedTime = 0;
 	int32 _mouseCursorState = 0;
-	ActorMoveStruct _loopMovePtr; // mainLoopVar1
+	RealValue _realFalling; // mainLoopVar1
 	PauseToken _pauseToken;
 	TwineGameType _gameType;
 	EngineState _state = EngineState::Menu;
 	Common::String _queuedFlaMovie;
-
-	ScriptLife *_scriptLife;
-	ScriptMove *_scriptMove;
 
 	Common::RandomSource _rnd;
 	Common::Language _gameLang;
@@ -219,7 +226,7 @@ private:
 	void initConfigurations();
 	/** Initialize all needed stuffs at first time running engine */
 	void initAll();
-	void playIntro();
+	void introduction();
 	void processActorSamplePosition(int32 actorIdx);
 	/** Allocate video memory, both front and back buffers */
 	void allocVideoMemory(int32 w, int32 h);
@@ -236,12 +243,13 @@ public:
 	Common::Error run() override;
 	bool hasFeature(EngineFeature f) const override;
 
-	bool canLoadGameStateCurrently() override { return true; }
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override { return true; }
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 
 	Common::Error loadGameStream(Common::SeekableReadStream *stream) override;
 	Common::Error saveGameStream(Common::WriteStream *stream, bool isAutosave = false) override;
 
+	int32 toSeconds(int x) const;
 	void wipeSaveSlot(int slot);
 	SaveStateList getSaveSlots() const;
 	void autoSave();
@@ -249,9 +257,11 @@ public:
 	void pushMouseCursorVisible();
 	void popMouseCursorVisible();
 
+	bool isCDROM() const { return true; /* TODO */}
 	bool isLBA1() const { return _gameType == TwineGameType::GType_LBA; }
 	bool isLBA2() const { return _gameType == TwineGameType::GType_LBA2; }
 	bool isLBASlideShow() const { return _gameType == TwineGameType::GType_LBASHOW; }
+	bool isPreview() const { return (_gameFlags & TwinE::TF_PREVIEW) != 0; }
 	bool isMod() const { return (_gameFlags & TwinE::TF_MOD) != 0; }
 	bool isDotEmuEnhanced() const { return (_gameFlags & TwinE::TF_DOTEMU_ENHANCED) != 0; }
 	bool isLba1Classic() const { return (_gameFlags & TwinE::TF_LBA1_CLASSIC) != 0; }
@@ -259,6 +269,15 @@ public:
 	bool isAndroid() const { return _platform == Common::Platform::kPlatformAndroid; };
 	const char *getGameId() const;
 	Common::Language getGameLang() const;
+
+	inline int numHoloPos() const {
+		const int maxLocations = isLBA1() ? MAX_HOLO_POS : MAX_HOLO_POS_2;
+		return maxLocations;
+	}
+
+	inline int getMaxLife() const {
+		return isLBA1() ? 50 : 255;
+	}
 
 	bool unlockAchievement(const Common::String &id);
 
@@ -282,26 +301,32 @@ public:
 	Holomap *_holomap;
 	Sound *_sound;
 	Text *_text;
-	DebugGrid *_debugGrid;
 	Input *_input;
-	Debug *_debug;
-	DebugScene *_debugScene;
+	Buggy *_buggy; // lba2
+	Dart *_dart; // lba2
+	Rain *_rain; // lba2
+	Wagon *_wagon; // lba2
+	DebugState *_debugState;
+
+	ScriptLife *_scriptLife;
+	ScriptMove *_scriptMove;
 
 	/** Configuration file structure
-	 * Contains all the data used in the engine to configurated the game in particulary ways. */
+	 * Contains all the data used in the engine to configurate the game in particularly ways. */
 	ConfigFile _cfgfile;
 
 	int32 _frameCounter = 0;
-	SceneLoopState _sceneLoopState = SceneLoopState::ReturnToMenu;
-	int32 _lbaTime = 0;
+	SceneLoopState _sceneLoopState = SceneLoopState::ReturnToMenu; // FlagTheEnd
+	int32 timerRef = 0;
 
 	int32 _loopInventoryItem = 0;
-	int32 _loopActorStep = 0;
-	uint32 _gameFlags;
+	int32 _stepFalling = 0;
+	uint32 _gameFlags = 0u;
 	Common::Platform _platform;
+	bool _flagRain = false;
 
 	/** Disable screen recenter */
-	bool _disableScreenRecenter = false;
+	bool _cameraZone = false;
 
 	Graphics::ManagedSurface _imageBuffer;
 	/** Work video buffer */
@@ -320,10 +345,14 @@ public:
 	Common::Rect centerOnScreen(int32 w, int32 h) const;
 	Common::Rect centerOnScreenX(int32 w, int32 y, int32 h) const;
 
-	void initSceneryView();
-	void exitSceneryView();
+	void extInitMcga();
+	void extInitSvga();
+	void testRestoreModeSVGA(bool redraw);
 
 	void queueMovie(const char *filename);
+
+	void clearScreenMinMax(Common::Rect &rect);
+	void adjustScreenMax(Common::Rect &rect, int16 x, int16 y);
 
 	/**
 	 * @return A random value between [0-max)
@@ -331,18 +360,18 @@ public:
 	int getRandomNumber(uint max = 0x7FFF);
 
 	void blitWorkToFront(const Common::Rect &rect);
-	void blitFrontToWork(const Common::Rect &rect);
+	void copyBlock(const Common::Rect &rect);
 	void restoreFrontBuffer();
 	void saveFrontBuffer();
 
-	void freezeTime();
-	void unfreezeTime();
+	void saveTimer(bool pause);
+	void restoreTimer();
 
 	/**
 	 * Game engine main loop
 	 * @return true if we want to show credit sequence
 	 */
-	bool gameEngineLoop();
+	bool mainLoop();
 
 	/**
 	 * Deplay certain seconds till proceed - Can also Skip this delay
@@ -355,7 +384,8 @@ public:
 	 * Set a new palette in the SDL screen buffer
 	 * @param palette palette to set in RGBA
 	 */
-	void setPalette(const uint32 *palette);
+	void setPalette(const Graphics::Palette &palette, uint startColor = 0u);
+
 	/**
 	 * @brief Set the Palette object
 	 *

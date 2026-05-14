@@ -34,11 +34,19 @@ class AccessEngine;
 class Debugger : public GUI::Debugger {
 protected:
 	AccessEngine *_vm;
-	Common::String _playMovieFile;
+	Common::Path _playMovieFile;
 
 	bool Cmd_LoadScene(int argc, const char **argv);
 	bool Cmd_Cheat(int argc, const char **argv);
 	bool Cmd_PlayMovie(int argc, const char **argv);
+	bool Cmd_DumpScript(int argc, const char **argv);
+	bool Cmd_Timers(int argc, const char **argv);
+	bool Cmd_Flag(int argc, const char **argv);
+	bool Cmd_Travel(int argc, const char **argv);
+	bool Cmd_Ask(int argc, const char **argv);
+	bool Cmd_Inventory(int argc, const char **argv);
+	bool Cmd_Everything(int argc, const char **argv);
+
 public:
 	static Debugger *init(AccessEngine *vm);
 	void postEnter() override;

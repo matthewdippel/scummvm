@@ -22,7 +22,18 @@
 #ifndef AGS_ENGINE_AC_SCREEN_H
 #define AGS_ENGINE_AC_SCREEN_H
 
+#include "ags/engine/ac/dynobj/script_user_object.h"
+
 namespace AGS3 {
+
+int  Screen_GetScreenWidth();
+int  Screen_GetScreenHeight();
+bool Screen_GetAutoSizeViewport();
+void Screen_SetAutoSizeViewport(bool on);
+int  Screen_GetViewportCount();
+ScriptViewport *Screen_GetViewport();
+ScriptViewport *Screen_GetAnyViewport(int index);
+ScriptUserObject *Screen_RoomToScreenPoint(int roomx, int roomy);
 
 namespace AGS {
 namespace Shared {
@@ -35,9 +46,10 @@ class IDriverDependantBitmap;
 } // namespace Engine
 } // namespace AGS
 
-void my_fade_in(PALETTE p, int speed);
+void fadein_impl(PALETTE p, int speed);
+void fadeout_impl(int spdd);
 void current_fade_out_effect();
-AGS::Engine::IDriverDependantBitmap *prepare_screen_for_transition_in();
+AGS::Engine::IDriverDependantBitmap *prepare_screen_for_transition_in(bool opaque);
 
 } // namespace AGS3
 

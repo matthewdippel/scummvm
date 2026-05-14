@@ -218,9 +218,13 @@ Subroutine *AGOSEngine::getSubroutineByID(uint subroutineId) {
 }
 
 void AGOSEngine::alignTableMem() {
-	while (!IS_ALIGNED(_tablesHeapPtr, sizeof(byte *))) {
-		_tablesHeapPtr++;
-		_tablesHeapCurPos++;
+	uintptr uptrVal = (uintptr)_tablesHeapPtr;
+	size_t delta;
+
+	if (!IS_ALIGNED(uptrVal, sizeof(byte *))) {
+		delta = (~uptrVal + 1) & (sizeof(byte *) - 1);
+		_tablesHeapPtr += delta;
+		_tablesHeapCurPos += delta;
 	}
 }
 
@@ -354,10 +358,6 @@ bool AGOSEngine_Waxworks::loadTablesIntoMem(uint16 subrId) {
 			filename += *p++;
 		p++;
 
-		if (getPlatform() == Common::kPlatformAcorn) {
-			filename += ".DAT";
-		}
-
 		for (;;) {
 			min_num = READ_BE_UINT16(p); p += 2;
 			if (min_num == 0)
@@ -385,7 +385,7 @@ bool AGOSEngine_Waxworks::loadTablesIntoMem(uint16 subrId) {
 					filename.setChar('X', 4);
 					filename.setChar('X', 5);
 					if (atoi(filename.c_str() + 6) != 1 && atoi(filename.c_str() + 6) != 30)
-						_sound->readSfxFile(filename);
+						_sound->readSfxFile(Common::Path(filename));
 				}
 
 				alignTableMem();

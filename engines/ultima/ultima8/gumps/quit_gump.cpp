@@ -22,9 +22,9 @@
 #include "ultima/ultima8/audio/audio_process.h"
 #include "ultima/ultima8/gumps/quit_gump.h"
 #include "ultima/ultima8/games/game_data.h"
-#include "ultima/ultima8/graphics/gump_shape_archive.h"
-#include "ultima/ultima8/graphics/shape.h"
-#include "ultima/ultima8/graphics/shape_frame.h"
+#include "ultima/ultima8/gfx/gump_shape_archive.h"
+#include "ultima/ultima8/gfx/shape.h"
+#include "ultima/ultima8/gfx/shape_frame.h"
 #include "ultima/ultima8/ultima8.h"
 #include "ultima/ultima8/kernel/mouse.h"
 #include "ultima/ultima8/gumps/widgets/button_widget.h"
@@ -54,8 +54,7 @@ static const int regQuitSound = 0;  // TODO: Work out what sound id
 
 QuitGump::QuitGump(): ModalGump(0, 0, 5, 5), _yesWidget(0), _noWidget(0) {
 	Mouse *mouse = Mouse::get_instance();
-	mouse->pushMouseCursor();
-	mouse->setMouseCursor(Mouse::MOUSE_HAND);
+	mouse->pushMouseCursor(Mouse::MOUSE_HAND);
 	if (GAME_IS_U8) {
 		_gumpShape = u8GumpShape;
 		_askShape = u8AskShapeId;
@@ -103,7 +102,7 @@ void QuitGump::InitGump(Gump *newparent, bool take_focus) {
 		if (askshape._shapeNum == 0) {
 			// In JP U8, the ask gump is replaced with text
 			// confirming quit
-			Std::string askstr = _TL_("Quit the game?");
+			Common::String askstr = _TL_("Quit the game?");
 			Gump *widget = new TextWidget(0, 0, askstr, true, 6); // CONSTANT!
 			widget->InitGump(this, false);
 			widget->setRelativePosition(TOP_CENTER, 0, 13);
@@ -166,7 +165,7 @@ bool QuitGump::OnKeyDown(int key, int mod) {
 
 void QuitGump::ChildNotify(Gump *child, uint32 message) {
 	ObjId cid = child->getObjId();
-	if (message == ButtonWidget::BUTTON_CLICK) {
+	if (message == ButtonWidget::BUTTON_CLICK || message == ButtonWidget::BUTTON_DOUBLE) {
 		if (cid == _yesWidget) {
 			Ultima8Engine::get_instance()->quitGame();
 		} else if (cid == _noWidget) {
@@ -178,9 +177,9 @@ void QuitGump::ChildNotify(Gump *child, uint32 message) {
 bool QuitGump::OnTextInput(int unicode) {
 	if (!(unicode & 0xFF80)) {
 		char c = unicode & 0x7F;
-		if (_TL_("Yy").find(c) != Std::string::npos) {
+		if (_TL_("Yy").find(c) != Common::String::npos) {
 			Ultima8Engine::get_instance()->quitGame();
-		} else if (_TL_("Nn").find(c) != Std::string::npos) {
+		} else if (_TL_("Nn").find(c) != Common::String::npos) {
 			Close();
 		}
 	}
@@ -195,12 +194,12 @@ void QuitGump::verifyQuit() {
 }
 
 bool QuitGump::loadData(Common::ReadStream *rs) {
-	CANT_HAPPEN_MSG("Trying to load ModalGump");
+	warning("Trying to load ModalGump");
 	return true;
 }
 
 void QuitGump::saveData(Common::WriteStream *ws) {
-	CANT_HAPPEN_MSG("Trying to save ModalGump");
+	warning("Trying to save ModalGump");
 }
 
 } // End of namespace Ultima8

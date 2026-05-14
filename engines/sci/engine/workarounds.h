@@ -63,6 +63,7 @@ extern const SciWorkaroundEntry arithmeticWorkarounds[];
 extern const SciWorkaroundEntry uninitializedReadWorkarounds[];
 extern const SciWorkaroundEntry uninitializedReadForParamWorkarounds[];
 extern const SciWorkaroundEntry kAbs_workarounds[];
+extern const SciWorkaroundEntry kAnimate_workarounds[];
 extern const SciWorkaroundEntry kCelHigh_workarounds[];
 extern const SciWorkaroundEntry kCelWide_workarounds[];
 extern const SciWorkaroundEntry kDeviceInfo_workarounds[];
@@ -80,6 +81,7 @@ extern const SciWorkaroundEntry kFrameOut_workarounds[];
 extern const SciWorkaroundEntry kDeleteKey_workarounds[];
 extern const SciWorkaroundEntry kGetAngle_workarounds[];
 extern const SciWorkaroundEntry kGetCWD_workarounds[];
+extern const SciWorkaroundEntry kGetSaveFiles_workarounds[];
 extern const SciWorkaroundEntry kGraphDrawLine_workarounds[];
 extern const SciWorkaroundEntry kGraphSaveBox_workarounds[];
 extern const SciWorkaroundEntry kGraphRestoreBox_workarounds[];
@@ -109,6 +111,7 @@ extern const SciWorkaroundEntry kStrAt_workarounds[];
 extern const SciWorkaroundEntry kStrCpy_workarounds[];
 extern const SciWorkaroundEntry kStrLen_workarounds[];
 extern const SciWorkaroundEntry kUnLoad_workarounds[];
+extern const SciWorkaroundEntry kWait_workarounds[];
 extern const SciWorkaroundEntry kStringNew_workarounds[];
 extern const SciWorkaroundEntry kScrollWindowAdd_workarounds[];
 
@@ -121,10 +124,11 @@ enum SciMessageWorkaroundType {
 	MSG_WORKAROUND_EXTRACT      // use text from a different record, optionally a substring
 };
 
-enum SciMedia {
+enum SciMedia : uint {
 	SCI_MEDIA_ALL,
 	SCI_MEDIA_FLOPPY,
-	SCI_MEDIA_CD
+	SCI_MEDIA_CD,
+	SCI_MEDIA_MAC, // mac floppy
 };
 
 struct SciMessageWorkaroundSolution {

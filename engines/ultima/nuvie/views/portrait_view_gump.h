@@ -51,7 +51,7 @@ class PortraitViewGump : public DraggableView {
 	uint8 cursor_xoff, cursor_yoff;
 
 public:
-	PortraitViewGump(Configuration *cfg);
+	PortraitViewGump(const Configuration *cfg);
 	~PortraitViewGump() override;
 
 	bool init(Screen *tmp_screen, void *view_manager, uint16 x, uint16 y, Font *f, Party *p, TileManager *tm, ObjManager *om, Portrait *por, Actor *a);
@@ -60,7 +60,7 @@ public:
 
 	GUI_status callback(uint16 msg, GUI_CallBack *caller, void *data) override;
 
-	GUI_status MouseDown(int x, int y, Shared::MouseButton button) override;
+	GUI_status MouseDown(int x, int y, Events::MouseButton button) override;
 	GUI_status MouseWheel(sint32 x, sint32 y) override;
 
 protected:

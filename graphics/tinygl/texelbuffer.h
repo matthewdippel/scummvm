@@ -22,14 +22,16 @@
 #ifndef GRAPHICS_TEXELBUFFER_H
 #define GRAPHICS_TEXELBUFFER_H
 
-#include "graphics/tinygl/pixelbuffer.h"
+#include "graphics/pixelformat.h"
 
 namespace TinyGL {
 
 class TexelBuffer {
 public:
-	TexelBuffer(uint width, uint height, uint textureSize);
+	TexelBuffer(uint width, uint height, uint textureSize, int internalformat);
 	virtual ~TexelBuffer() {};
+
+	inline int internalformat() const { return _internalformat; }
 
 	void getARGBAt(
 		uint wrap_s, uint wrap_t,
@@ -45,39 +47,11 @@ protected:
 	) const = 0;
 	uint _width, _height, _fracTextureUnit, _fracTextureMask;
 	float _widthRatio, _heightRatio;
+	int _internalformat;
 };
 
-class NearestTexelBuffer : public TexelBuffer {
-public:
-	NearestTexelBuffer(const Graphics::PixelBuffer &buf, uint width, uint height, uint textureSize);
-	~NearestTexelBuffer();
-
-protected:
-	void getARGBAt(
-		uint pixel,
-		uint, uint,
-		uint8 &a, uint8 &r, uint8 &g, uint8 &b
-	) const override;
-
-private:
-	Graphics::PixelBuffer _buf;
-};
-
-class BilinearTexelBuffer : public TexelBuffer {
-public:
-	BilinearTexelBuffer(const Graphics::PixelBuffer &buf, uint width, uint height, uint textureSize);
-	~BilinearTexelBuffer();
-
-protected:
-	void getARGBAt(
-		uint pixel,
-		uint ds, uint dt,
-		uint8 &a, uint8 &r, uint8 &g, uint8 &b
-	) const override;
-
-private:
-	uint32 *_texels;
-};
+TexelBuffer *createNearestTexelBuffer(const byte *buf, const Graphics::PixelFormat &pf, uint format, uint type, uint width, uint height, uint textureSize, int internalformat);
+TexelBuffer *createBilinearTexelBuffer(byte *buf, const Graphics::PixelFormat &pf, uint format, uint type, uint width, uint height, uint textureSize, int internalformat);
 
 } // end of namespace TinyGL
 

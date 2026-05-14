@@ -23,27 +23,23 @@
 #define BACKENDS_CLOUD_DROPBOX_DROPBOXTOKENREFRESHER_H
 
 #include "backends/cloud/storage.h"
-#include "backends/networking/curl/curljsonrequest.h"
+#include "backends/networking/http/httpjsonrequest.h"
 
 namespace Cloud {
 namespace Dropbox {
 
 class DropboxStorage;
 
-class DropboxTokenRefresher: public Networking::CurlJsonRequest {
+class DropboxTokenRefresher: public Networking::HttpJsonRequest {
 	DropboxStorage *_parentStorage;
-	Common::Array<Common::String> _headers;
 
-	void tokenRefreshed(Storage::BoolResponse response);
+	void tokenRefreshed(const Storage::BoolResponse &response);
 
-	virtual void finishJson(Common::JSONValue *json);
-	virtual void finishError(Networking::ErrorResponse error, Networking::RequestState state = Networking::FINISHED);
+	void finishJson(const Common::JSONValue *json) override;
+	void finishError(const Networking::ErrorResponse &error, Networking::RequestState state = Networking::FINISHED) override;
 public:
 	DropboxTokenRefresher(DropboxStorage *parent, Networking::JsonCallback callback, Networking::ErrorCallback ecb, const char *url);
-	virtual ~DropboxTokenRefresher();
-
-	virtual void setHeaders(Common::Array<Common::String> &headers);
-	virtual void addHeader(Common::String header);
+	~DropboxTokenRefresher() override;
 };
 
 } // End of namespace Dropbox

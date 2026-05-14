@@ -38,7 +38,7 @@ Archive::~Archive() {
 	close();
 }
 
-bool Archive::openFile(const Common::String &fileName) {
+bool Archive::openFile(const Common::Path &fileName) {
 	Common::File *file = new Common::File();
 
 	if (!file->open(fileName)) {
@@ -47,6 +47,7 @@ bool Archive::openFile(const Common::String &fileName) {
 	}
 
 	if (!openStream(file)) {
+		delete file;
 		close();
 		return false;
 	}
@@ -237,7 +238,7 @@ bool MohawkArchive::openStream(Common::SeekableReadStream *stream) {
 		debug(4, "File[%02x]: Offset = %08x  Size = %07x  Flags = %02x  Unknown = %04x", i, fileTable[i].offset, fileTable[i].size, fileTable[i].flags, fileTable[i].unknown);
 	}
 
-	// Now go in an read in each of the types
+	// Now go in and read in each of the types
 	stream->seek(absOffset);
 	uint16 stringTableOffset = stream->readUint16BE();
 	uint16 typeCount = stream->readUint16BE();
@@ -441,7 +442,7 @@ bool LivingBooksArchive_v1::openStream(Common::SeekableReadStream *stream) {
 
 // DOS Archive (v2) code
 // Partially based on the Prince of Persia Format Specifications
-// See http://sdfg.com.ar/git/?p=fp-git.git;a=blob;f=FP/doc/FormatSpecifications
+// See https://sdfg.com.ar/git/r/fp-git.git/b/master/t/FP/doc/f=FormatSpecifications.html
 // However, I'm keeping with the terminology we've been using with the
 // later archive formats.
 

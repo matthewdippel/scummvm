@@ -79,15 +79,6 @@ struct ADGameDescription;
 
 namespace HDB {
 
-enum GameFeatures {
-	ADGF_TALKIE = 1 << 0
-};
-
-enum HDBDebugChannels {
-	kDebugExample1 = 1 << 0,
-	kDebugExample2 = 1 << 1
-};
-
 enum GameState {
 	GAME_TITLE,
 	GAME_MENU,
@@ -209,8 +200,8 @@ public:
 
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 	Common::Error loadGameState(int slot) override;
-	bool canLoadGameStateCurrently() override;
-	bool canSaveGameStateCurrently() override;
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override;
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override;
 	void saveGame(Common::OutSaveFile *out);
 	void loadGame(Common::InSaveFile *in);
 
@@ -329,7 +320,8 @@ public:
 
 	Save _saveHeader;
 	bool _gameShutdown;
-	Graphics::PixelFormat _format;
+	Graphics::PixelFormat _dataFormat;
+	Graphics::PixelFormat _screenFormat;
 
 	Picture *_progressGfx, *_progressMarkGfx;
 	Picture *_loadingScreenGfx, *_logoGfx;

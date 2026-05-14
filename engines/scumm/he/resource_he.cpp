@@ -25,6 +25,7 @@
 #include "scumm/resource.h"
 #include "scumm/he/resource_he.h"
 #include "scumm/he/sound_he.h"
+#include "scumm/util.h"
 
 #include "audio/decoders/wave.h"
 #include "graphics/cursorman.h"
@@ -32,9 +33,10 @@
 #include "graphics/wincursor.h"
 
 #include "common/archive.h"
+#include "common/endian.h"
 #include "common/memstream.h"
 #include "common/system.h"
-#include "common/winexe_pe.h"
+#include "common/formats/winexe_pe.h"
 
 namespace Scumm {
 
@@ -48,8 +50,8 @@ ResExtractor::~ResExtractor() {
 	for (int i = 0; i < MAX_CACHED_CURSORS; ++i) {
 		CachedCursor *cc = &_cursorCache[i];
 		if (cc->valid) {
-			free(cc->bitmap);
-			free(cc->palette);
+			delete[] cc->bitmap;
+			delete[] cc->palette;
 		}
 	}
 
@@ -126,7 +128,7 @@ bool Win32ResExtractor::extractResource(int id, CachedCursor *cc) {
 		_fileName = _vm->generateFilename(-3);
 
 		if (!_exe->loadFromEXE(_fileName))
-			error("Cannot open file %s", _fileName.c_str());
+			error("Cannot open file %s", _fileName.toString(Common::Path::kNativeSeparator).c_str());
 	}
 
 	Graphics::WinCursorGroup *group = Graphics::WinCursorGroup::createCursorGroup(_exe, id);
@@ -144,9 +146,12 @@ bool Win32ResExtractor::extractResource(int id, CachedCursor *cc) {
 
 	// Convert from the paletted format to the SCUMM palette
 	const byte *srcBitmap = cursor->getSurface();
+	const byte *srcMask = cursor->getMask();
 
 	for (int i = 0; i < cursor->getWidth() * cursor->getHeight(); i++) {
-		if (srcBitmap[i] == cursor->getKeyColor()) // Transparent
+		const bool isTransparent = (srcMask ? (srcMask[i] != kCursorMaskOpaque) : (srcBitmap[i] == cursor->getKeyColor()));
+
+		if (isTransparent)
 			cc->bitmap[i] = 255;
 		else if (srcBitmap[i] == 0)                // Black
 			cc->bitmap[i] = 253;
@@ -166,11 +171,12 @@ bool MacResExtractor::extractResource(int id, CachedCursor *cc) {
 	// Create the MacResManager if not created already
 	if (_resMgr == nullptr) {
 		_resMgr = new Common::MacResManager();
-		if (!_resMgr->open(_vm->generateFilename(-3)))
-			error("Cannot open file %s", _fileName.c_str());
+		_fileName = _vm->generateFilename(-3);
+		if (!_resMgr->open(_fileName))
+			error("Cannot open file %s", _fileName.toString(Common::Path::kNativeSeparator).c_str());
 	}
 
-	Common::SeekableReadStream *dataStream = _resMgr->getResource('crsr', id + 1000);
+	Common::SeekableReadStream *dataStream = _resMgr->getResource(MKTAG('c','r','s','r'), id + 1000);
 
 	if (!dataStream)
 		return false;
@@ -278,11 +284,11 @@ void ScummEngine_v99he::readMAXS(int blockSize) {
 		_numLocalScripts = _fileHandle->readUint16LE();
 		_HEHeapSize = _fileHandle->readUint16LE();
 		_numPalettes = _fileHandle->readUint16LE();
-		_numUnk = _fileHandle->readUint16LE();
+		_numWindows = _fileHandle->readUint16LE();
 		_numTalkies = _fileHandle->readUint16LE();
 		_numNewNames = 10;
 
-		_objectRoomTable = (byte *)calloc(_numGlobalObjects, 1);
+		_objectRoomTable = (byte *)reallocateArray(_objectRoomTable, _numGlobalObjects, 1);
 		_numGlobalScripts = 2048;
 	} else
 		ScummEngine_v90he::readMAXS(blockSize);
@@ -309,9 +315,14 @@ void ScummEngine_v90he::readMAXS(int blockSize) {
 		_numSprites = _fileHandle->readUint16LE();
 		_numLocalScripts = _fileHandle->readUint16LE();
 		_HEHeapSize = _fileHandle->readUint16LE();
+
+		// In the original, this is hardcoded as well...
+		if (_game.heversion > 90)
+			_numPalettes = 16;
+
 		_numNewNames = 10;
 
-		_objectRoomTable = (byte *)calloc(_numGlobalObjects, 1);
+		_objectRoomTable = (byte *)reallocateArray(_objectRoomTable, _numGlobalObjects, 1);
 		if (_game.features & GF_HE_985)
 			_numGlobalScripts = 2048;
 		else
@@ -340,7 +351,7 @@ void ScummEngine_v72he::readMAXS(int blockSize) {
 		_numImages = _fileHandle->readUint16LE();
 		_numNewNames = 10;
 
-		_objectRoomTable = (byte *)calloc(_numGlobalObjects, 1);
+		_objectRoomTable = (byte *)reallocateArray(_objectRoomTable, _numGlobalObjects, 1);
 		_numGlobalScripts = 200;
 	} else
 		ScummEngine_v6::readMAXS(blockSize);
@@ -355,9 +366,10 @@ byte *ScummEngine_v72he::getStringAddress(ResId idx) {
 
 int ScummEngine_v72he::getSoundResourceSize(ResId id) {
 	const byte *ptr;
-	int offs, size;
+	int offs;
+	int size = 0;
 
-	if (id > _numSounds) {
+	if (id >= _numSounds) {
 		if (!((SoundHE *)_sound)->getHEMusicDetails(id, offs, size)) {
 			debug(0, "getSoundResourceSize: musicID %d not found", id);
 			return 0;
@@ -367,24 +379,31 @@ int ScummEngine_v72he::getSoundResourceSize(ResId id) {
 		if (!ptr)
 			return 0;
 
-		if (READ_BE_UINT32(ptr) == MKTAG('R','I','F','F')) {
-			byte flags;
-			int rate;
+		if (_game.heversion < 95) {
+			if (_game.version >= 80) {
+				ptr = findResourceData(MKTAG('S', 'D', 'A', 'T'), ptr);
+				if (!ptr) {
+					return 0;
+				}
 
-			size = READ_BE_UINT32(ptr + 4);
-			Common::MemoryReadStream stream(ptr, size);
-
-			if (!Audio::loadWAVFromStream(stream, size, rate, flags)) {
-				error("getSoundResourceSize: Not a valid WAV file");
+				return READ_BE_UINT32(ptr + 4) - 8;
+			} else {
+				return READ_BE_UINT32(ptr + HSND_RES_OFFSET_LEN3) - 8;
 			}
 		} else {
-			ptr += 8 + READ_BE_UINT32(ptr + 12);
-			if (READ_BE_UINT32(ptr) == MKTAG('S','B','N','G')) {
-				ptr += READ_BE_UINT32(ptr + 4);
-			}
+			if (READ_BE_UINT32(ptr) == MKTAG('W', 'S', 'O', 'U')) {
+				// Wrapped .wav file
+				const byte *data = ((SoundHE *)_sound)->findWavBlock(MKTAG('d', 'a', 't', 'a'), ptr);
+				if (data)
+					return READ_LE_UINT32(data + 4);
+			} else {
+				ptr = findResourceData(MKTAG('S', 'D', 'A', 'T'), ptr);
+				if (!ptr) {
+					return 0;
+				}
 
-			assert(READ_BE_UINT32(ptr) == MKTAG('S','D','A','T'));
-			size = READ_BE_UINT32(ptr + 4) - 8;
+				return READ_BE_UINT32(ptr + 4) - 8;
+			}
 		}
 	}
 

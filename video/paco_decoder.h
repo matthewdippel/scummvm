@@ -25,10 +25,12 @@
 #include "audio/audiostream.h"
 #include "common/list.h"
 #include "common/rect.h"
+#include "graphics/palette.h"
 #include "video/video_decoder.h"
 
 namespace Common {
 class SeekableReadStream;
+class SafeSeekableSubReadStream;
 }
 
 namespace Graphics {
@@ -48,6 +50,7 @@ class PacoDecoder : public VideoDecoder {
 public:
 	PacoDecoder();
 	virtual ~PacoDecoder();
+	void close() override;
 
 	virtual bool loadStream(Common::SeekableReadStream *stream) override;
 
@@ -75,6 +78,7 @@ protected:
 		int getFrameCount() const override { return _frameCount; }
 		virtual const Graphics::Surface *decodeNextFrame() override;
 		virtual void handleFrame(Common::SeekableReadStream *fileStream, uint32 chunkSize, int curFrame);
+		virtual void handleEOC() { _curFrame += 1; };
 		void handlePalette(Common::SeekableReadStream *fileStream);
 		const byte *getPalette() const override;
 		bool hasDirtyPalette() const override { return _dirtyPalette; }
@@ -86,14 +90,12 @@ protected:
 
 	protected:
 		Graphics::Surface *_surface;
-
-		byte *_palette;
+		Graphics::Palette _palette;
 
 		mutable bool _dirtyPalette;
 
 		int _curFrame;
 		uint32 _frameCount;
-		uint32 _frameDelay;
 		uint16 _frameRate;
 
 		Common::List<Common::Rect> _dirtyRects;
@@ -102,13 +104,15 @@ protected:
 	class PacoAudioTrack : public AudioTrack {
 	public:
 		PacoAudioTrack(int samplingRate);
+		~PacoAudioTrack();
 		void queueSound(Common::SeekableReadStream *fileStream, uint32 chunkSize);
+		bool needsAudio() const;
 
 	protected:
 		Audio::AudioStream *getAudioStream() const { return _packetStream; }
 
 	private:
-		Audio::PacketizedAudioStream *_packetStream;
+		Audio::StatelessPacketizedAudioStream *_packetStream;
 		int _samplingRate;
 	};
 
@@ -116,6 +120,8 @@ private:
 	PacoVideoTrack *_videoTrack;
 	PacoAudioTrack *_audioTrack;
 	Common::SeekableReadStream *_fileStream;
+	Common::SafeSeekableSubReadStream *_videoStream;
+	Common::SafeSeekableSubReadStream *_audioStream;
 	int _curFrame = 0;
 	int _frameSizes[65536]; // can be done differently?
 	int getAudioSamplingRate();

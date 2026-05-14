@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_INIT_H
@@ -69,6 +75,7 @@ public:
 	~Init_v2() override;
 
 	void initVideo() override;
+	void initGame() override;
 };
 
 class Init_v3 : public Init_v2 {

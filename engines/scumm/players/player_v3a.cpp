@@ -27,7 +27,7 @@
 namespace Scumm {
 
 Player_V3A::Player_V3A(ScummEngine *scumm, Audio::Mixer *mixer)
-	: Paula(true, mixer->getOutputRate(), mixer->getOutputRate() / 60),
+	: Paula(true, mixer->getOutputRate(), mixer->getOutputRate() / (scumm->getAmigaMusicTimerFrequency() / 4)),
 	  _vm(scumm),
 	  _mixer(mixer),
 	  _soundHandle(),
@@ -53,7 +53,7 @@ Player_V3A::Player_V3A(ScummEngine *scumm, Audio::Mixer *mixer)
 
 bool Player_V3A::init() {
 	byte *ptr;
-	int numInstruments = 0;
+	int numInstruments;
 
 	// Determine which sound resource contains the wavetable data and how large it is
 	// This is hardcoded into each game's executable
@@ -143,7 +143,7 @@ Player_V3A::~Player_V3A() {
 }
 
 void Player_V3A::setMusicVolume (int vol) {
-	_mixer->setChannelVolume(_soundHandle, vol);
+	_mixer->setChannelVolume(_soundHandle, CLIP<int>(vol, 0, 255));
 }
 
 void Player_V3A::stopAllSounds() {

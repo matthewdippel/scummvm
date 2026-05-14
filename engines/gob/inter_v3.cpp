@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/endian.h"
@@ -76,7 +82,7 @@ void Inter_v3::o3_speakerOn(OpFuncParams &params) {
 	// our PC speaker emulator sometimes "swallows" very short beeper
 	// bursts issued in this way, this is in general quite wonky and
 	// prone to fail, as can be seen in bug report #5808. Therefore,
-	// we explicitely set a length in this case and ignore the next
+	// we explicitly set a length in this case and ignore the next
 	// speaker off command.
 	if (frequency == 50) {
 		length = 5;
@@ -99,7 +105,7 @@ void Inter_v3::o3_copySprite(OpFuncParams &params) {
 
 	// For the close-up "fading" in the CD version
 	if (_vm->_draw->_destSurface == Draw::kFrontSurface)
-		_vm->_video->sparseRetrace(Draw::kFrontSurface);
+		_vm->_video->sparseRetrace(20);
 }
 
 void Inter_v3::o3_wobble(OpGobParams &params) {

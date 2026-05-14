@@ -22,52 +22,81 @@
 #ifndef NANCY_ACTION_SECONDARYMOVIE_H
 #define NANCY_ACTION_SECONDARYMOVIE_H
 
-#include "engines/nancy/video.h"
-#include "engines/nancy/commontypes.h"
-#include "engines/nancy/renderobject.h"
+#include "common/ptr.h"
 
 #include "engines/nancy/action/actionrecord.h"
+
+namespace Video {
+class VideoDecoder;
+}
 
 namespace Nancy {
 namespace Action {
 
-class PlaySecondaryMovie : public ActionRecord, public RenderObject {
+class InteractiveVideo;
+
+// Plays an AVF or Bink video. Optionally supports:
+// - playing a sound;
+// - reverse playback;
+// - moving with the scene's background frame;
+// - hiding of player cursor (and thus, disabling input);
+// - setting event flags on a specific frame, as well as at the end of the video;
+// - changing the scene after playback ends
+// Mostly used for cinematics, with some occasional uses for background animations
+class PlaySecondaryMovie : public RenderActionRecord {
 public:
+	static const byte kMovieSceneChange			= 5;
+	static const byte kMovieNoSceneChange		= 6;
+
+	static const byte kPlayerCursorAllowed		= 1;
+	static const byte kNoPlayerCursorAllowed	= 2;
+
+	static const byte kPlayMovieForward			= 1;
+	static const byte kPlayMovieReverse			= 2;
+
 	struct FlagAtFrame {
 		int16 frameID;
-		EventFlagDescription flagDesc;
+		FlagDescription flagDesc;
 	};
 
-	PlaySecondaryMovie(RenderObject &redrawFrom) : RenderObject(redrawFrom, 8) {}
+	PlaySecondaryMovie() : RenderActionRecord(8) {}
 	virtual ~PlaySecondaryMovie();
 
 	void init() override;
-	void updateGraphics() override;
 	void onPause(bool pause) override;
 
 	void readData(Common::SeekableReadStream &stream) override;
 	void execute() override;
 
-	Common::String _videoName; // 0x00
+	bool getIsFinished() const { return _isFinished; }
 
-	uint16 _unknown = 0; // 0x1C
-	NancyFlag _hideMouse = NancyFlag::kFalse; // 0x1E
-	NancyFlag _isReverse = NancyFlag::kFalse; // 0x20
-	uint16 _firstFrame = 0; // 0x22
-	uint16 _lastFrame = 0; // 0x24
-	FlagAtFrame _frameFlags[15]; // 0x26
-	MultiEventFlagDescription _triggerFlags; // 0x80
+	Common::Path _videoName;
+	Common::Path _paletteName;
+	Common::Path _bitmapOverlayName;
 
-	SoundDescription _sound; // 0xA8
+	uint16 _videoType = kVideoPlaytypeAVF;
+	uint16 _videoFormat = kLargeVideoFormat;
+	uint16 _videoSceneChange = kMovieNoSceneChange;
+	byte _playerCursorAllowed = kPlayerCursorAllowed;
+	byte _playDirection = kPlayMovieForward;
+	uint16 _firstFrame = 0;
+	uint16 _lastFrame = 0;
+	Common::Array<FlagAtFrame> _frameFlags;
+	MultiEventFlagDescription _triggerFlags;
 
-	SceneChangeDescription _sceneChange; // 0xCA
-	Common::Array<SecondaryVideoDescription> _videoDescs; // 0xD4
+	SoundDescription _sound;
+
+	SceneChangeDescription _sceneChange;
+	Common::Array<SecondaryVideoDescription> _videoDescs;
+
+	Common::ScopedPtr<Video::VideoDecoder> _decoder;
+
+	bool isViewportRelative() const override { return true; }
 
 protected:
 	Common::String getRecordTypeName() const override { return "PlaySecondaryMovie"; }
-	bool isViewportRelative() const override { return true; }
 
-	AVFDecoder _decoder;
+	Graphics::ManagedSurface _fullFrame;
 	int _curViewportFrame = -1;
 	bool _isFinished = false;
 };

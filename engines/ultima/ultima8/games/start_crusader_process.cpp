@@ -31,7 +31,8 @@
 #include "ultima/ultima8/world/get_object.h"
 #include "ultima/ultima8/world/item_factory.h"
 #include "ultima/ultima8/world/actors/teleport_to_egg_process.h"
-#include "ultima/ultima8/graphics/palette_fader_process.h"
+#include "ultima/ultima8/gfx/palette_fader_process.h"
+#include "ultima/ultima8/gfx/texture.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -40,6 +41,7 @@ DEFINE_RUNTIME_CLASSTYPE_CODE(StartCrusaderProcess)
 
 StartCrusaderProcess::StartCrusaderProcess(int saveSlot) : Process(),
 _initStage(PlayFirstMovie), _saveSlot(saveSlot) {
+	_flags |= PROC_PREVENT_SAVE;
 }
 
 
@@ -64,8 +66,16 @@ void StartCrusaderProcess::run() {
 		return;
 	}
 
-	// Try to load the save game, if succeeded this pointer will no longer be valid
-	if (_saveSlot >= 0 && Ultima8Engine::get_instance()->loadGameState(_saveSlot).getCode() == Common::kNoError) {
+	// Try to load the save game, if succeeded this process will terminate
+	if (_saveSlot >= 0) {
+		Common::Error loadError = Ultima8Engine::get_instance()->loadGameState(_saveSlot);
+		if (loadError.getCode() != Common::kNoError) {
+			Ultima8Engine::get_instance()->setError(loadError);
+			fail();
+			return;
+		}
+
+		terminate();
 		return;
 	}
 
@@ -128,7 +138,7 @@ void StartCrusaderProcess::run() {
 		avatar->setActorFlag(Actor::ACT_WEAPONREADY);
 	}
 
-	Process *fader = new PaletteFaderProcess(0x00FFFFFF, true, 0x7FFF, 60, false);
+	Process *fader = new PaletteFaderProcess(TEX32_PACK_RGBA(0xFF, 0xFF, 0xFF, 0x00), true, 0x7FFF, 60, false);
 	Kernel::get_instance()->addProcess(fader);
 
 	Ultima8Engine::get_instance()->setAvatarInStasis(false);
@@ -137,7 +147,7 @@ void StartCrusaderProcess::run() {
 }
 
 void StartCrusaderProcess::saveData(Common::WriteStream *ws) {
-	CANT_HAPPEN();
+	warning("Attempted save of process with prevent save flag");
 
 	Process::saveData(ws);
 }

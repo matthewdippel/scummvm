@@ -22,7 +22,7 @@
 #include "ultima/ultima8/gumps/readable_gump.h"
 #include "ultima/ultima8/gumps/widgets/text_widget.h"
 #include "ultima/ultima8/games/game_data.h"
-#include "ultima/ultima8/graphics/gump_shape_archive.h"
+#include "ultima/ultima8/gfx/gump_shape_archive.h"
 #include "ultima/ultima8/usecode/uc_machine.h"
 #include "ultima/ultima8/gumps/gump_notify_process.h"
 #include "ultima/ultima8/world/item.h"
@@ -41,7 +41,7 @@ ReadableGump::ReadableGump()
 
 }
 
-ReadableGump::ReadableGump(ObjId owner, uint16 shape, int font, const Std::string &msg) :
+ReadableGump::ReadableGump(ObjId owner, uint16 shape, int font, const Common::String &msg) :
 	ModalGump(0, 0, 100, 100, owner), _shapeNum(shape), _fontNum(font), _text(msg) {
 }
 
@@ -60,10 +60,10 @@ void ReadableGump::InitGump(Gump *newparent, bool take_focus) {
 	if (Ultima8Engine::get_instance()->getGameInfo()->_language ==
 	        GameInfo::GAMELANG_JAPANESE) {
 		// Japanese subtitles
-		Std::string::size_type pos;
+		Common::String::size_type pos;
 		pos = _text.find('%');
-		if (pos != Std::string::npos) {
-			Std::string jpsub = _text.substr(pos + 1);
+		if (pos != Common::String::npos) {
+			Common::String jpsub = _text.substr(pos + 1);
 			_text = _text.substr(0, pos);
 
 			Gump *subwidget = new TextWidget(0, 0, jpsub, true, jpsub_font, 0, 0, Font::TEXT_CENTER);
@@ -115,11 +115,11 @@ uint32 ReadableGump::I_readPlaque(const uint8 *args, unsigned int /*argsize*/) {
 }
 
 void ReadableGump::saveData(Common::WriteStream *ws) {
-	CANT_HAPPEN_MSG("Trying to load ModalGump");
+	warning("Trying to load ModalGump");
 }
 
 bool ReadableGump::loadData(Common::ReadStream *rs, uint32 version) {
-	CANT_HAPPEN_MSG("Trying to load ModalGump");
+	warning("Trying to load ModalGump");
 
 	return false;
 }

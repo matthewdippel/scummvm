@@ -22,16 +22,14 @@
 #ifndef CREATE_TOON_H
 #define CREATE_TOON_H
 
-#define ARRAYSIZE(x) ((int)(sizeof(x) / sizeof(x[0])))
-
 #define DATAALIGNMENT 4
 
 #define TOON_DAT_VER_MAJ 0  // 1 byte
-#define TOON_DAT_VER_MIN 3  // 1 byte
+#define TOON_DAT_VER_MIN 4  // 1 byte
 
 // Number of variants of the game. For the moment, it's the same
 // as the number of languages
-#define NUM_VARIANTS   5
+#define NUM_VARIANTS   6
 
 typedef unsigned char  uint8;
 typedef unsigned char  byte;

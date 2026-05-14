@@ -33,16 +33,10 @@ namespace Stark {
 namespace Gfx {
 
 class OpenGLDriver;
-class Texture;
-
-struct _SurfaceVertex {
-	float x;
-	float y;
-};
-typedef _SurfaceVertex SurfaceVertex;
+class Bitmap;
 
 /**
- * An programmable pipeline OpenGL surface renderer
+ * A programmable pipeline OpenGL surface renderer
  */
 class OpenGLSurfaceRenderer : public SurfaceRenderer {
 public:
@@ -50,12 +44,19 @@ public:
 	virtual ~OpenGLSurfaceRenderer();
 
 	// SurfaceRenderer API
-	void render(const Texture *texture, const Common::Point &dest) override;
-	void render(const Texture *texture, const Common::Point &dest, uint width, uint height) override;
+	void render(const Bitmap *bitmap, const Common::Point &dest) override;
+	void render(const Bitmap *bitmap, const Common::Point &dest, uint width, uint height) override;
+	void fill(const Color &color, const Common::Point &dest, uint width, uint height) override;
 
 private:
+	struct SurfaceVertex {
+		float x;
+		float y;
+	};
+
 	Math::Vector2d normalizeOriginalCoordinates(int x, int y) const;
 	Math::Vector2d normalizeCurrentCoordinates(int x, int y) const;
+	void convertToVertices(SurfaceVertex *vertices, const Common::Point &dest, uint width, uint height) const;
 
 	OpenGLDriver *_gfx;
 };

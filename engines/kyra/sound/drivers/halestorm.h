@@ -28,14 +28,24 @@ namespace Audio {
 	class Mixer;
 }
 
+namespace Common {
+	class SeekableReadStream;
+}
+
 namespace Kyra {
 
 class HSSoundSystem;
-class SoundMacRes;
+
+class HalestormLoader {
+public:
+	virtual ~HalestormLoader() {}
+
+	virtual Common::SeekableReadStream *getResource(uint16 id, uint32 type) = 0;
+};
 
 class HalestormDriver {
 public:
-	HalestormDriver(SoundMacRes *res, Audio::Mixer *mixer);
+	HalestormDriver(HalestormLoader *res, Audio::Mixer *mixer);
 	~HalestormDriver();
 
 	enum InterpolationMode {
@@ -51,7 +61,7 @@ public:
 	// higher (up to 12 bits, depending on the channel use). I have
 	// added an "output16bit" option which will output the unmodified
 	// intermediate data (but converting it from unsigned to signed).
-	bool init(bool hiQuality, InterpolationMode imode, bool output16bit);
+	bool init(bool hiQuality, InterpolationMode imode, int numChanSfx, bool output16bit);
 
 	void registerSamples(const uint16 *resList, bool registerOnly);
 	void releaseSamples();

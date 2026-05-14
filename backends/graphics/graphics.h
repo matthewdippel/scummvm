@@ -25,9 +25,11 @@
 #include "common/system.h"
 #include "common/noncopyable.h"
 #include "common/keyboard.h"
+#include "common/rect.h"
+#include "common/rotationmode.h"
 
 #include "graphics/mode.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 
 /**
  * Abstract class for graphics manager. Subclasses
@@ -48,13 +50,12 @@ public:
 	virtual int getDefaultGraphicsMode() const { return 0; }
 	virtual bool setGraphicsMode(int mode, uint flags = OSystem::kGfxModeNoFlags) { return (mode == 0); }
 	virtual int getGraphicsMode() const { return 0; }
-	virtual const OSystem::GraphicsMode *getSupportedShaders() const {
-		static const OSystem::GraphicsMode no_shader[2] = {{"NONE", "Normal (no shader)", 0}, {0, 0, 0}};
-		return no_shader;
-	}
-	virtual int getDefaultShader() const { return 0; }
-	virtual bool setShader(int id) { return false; }
-	virtual int getShader() const { return 0; }
+#if defined(USE_IMGUI)
+	virtual void setImGuiCallbacks(const ImGuiCallbacks &callbacks) { }
+	virtual void *getImGuiTexture(const Graphics::Surface &image, const byte *palette, int palCount) { return nullptr; }
+	virtual void freeImGuiTexture(void *texture) { }
+#endif
+	virtual bool setShader(const Common::Path &fileName) { return false; }
 	virtual const OSystem::GraphicsMode *getSupportedStretchModes() const {
 		static const OSystem::GraphicsMode noStretchModes[] = {{"NONE", "Normal", 0}, {nullptr, nullptr, 0 }};
 		return noStretchModes;
@@ -62,6 +63,7 @@ public:
 	virtual int getDefaultStretchMode() const { return 0; }
 	virtual bool setStretchMode(int mode) { return false; }
 	virtual int getStretchMode() const { return 0; }
+	virtual bool setRotationMode(Common::RotationMode rotation) { return false; }
 	virtual uint getDefaultScaler() const { return 0; }
 	virtual uint getDefaultScaleFactor() const { return 1; }
 	virtual bool setScaler(uint mode, int factor) { return false; }
@@ -87,12 +89,14 @@ public:
 	virtual Graphics::Surface *lockScreen() = 0;
 	virtual void unlockScreen() = 0;
 	virtual void fillScreen(uint32 col) = 0;
+	virtual void fillScreen(const Common::Rect &r, uint32 col) = 0;
 	virtual void updateScreen() = 0;
+	virtual void presentBuffer() {}
 	virtual void setShakePos(int shakeXOffset, int shakeYOffset) = 0;
 	virtual void setFocusRectangle(const Common::Rect& rect) = 0;
 	virtual void clearFocusRectangle() = 0;
 
-	virtual void showOverlay() = 0;
+	virtual void showOverlay(bool inGUI) = 0;
 	virtual void hideOverlay() = 0;
 	virtual bool isOverlayVisible() const = 0;
 	virtual Graphics::PixelFormat getOverlayFormat() const = 0;
@@ -101,11 +105,18 @@ public:
 	virtual void copyRectToOverlay(const void *buf, int pitch, int x, int y, int w, int h) = 0;
 	virtual int16 getOverlayHeight() const = 0;
 	virtual int16 getOverlayWidth() const = 0;
+	virtual Common::Rect getSafeOverlayArea(int16 *width, int16 *height) const {
+		int16 w = getOverlayWidth(),
+			  h = getOverlayHeight();
+		if (width) *width = w;
+		if (height) *height = h;
+		return Common::Rect(w, h);
+	}
 	virtual float getHiDPIScreenFactor() const { return 1.0f; }
 
 	virtual bool showMouse(bool visible) = 0;
 	virtual void warpMouse(int x, int y) = 0;
-	virtual void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale = false, const Graphics::PixelFormat *format = NULL) = 0;
+	virtual void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale = false, const Graphics::PixelFormat *format = nullptr, const byte *mask = nullptr) = 0;
 	virtual void setCursorPalette(const byte *colors, uint start, uint num) = 0;
 
 	virtual void displayMessageOnOSD(const Common::U32String &msg) {}

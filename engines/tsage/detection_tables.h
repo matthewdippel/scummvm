@@ -53,6 +53,20 @@ static const tSageGameDescription gameDescriptions[] = {
 		GType_Ringworld,
 		GF_FLOPPY | GF_ALT_REGIONS
 	},
+	// Ringworld Russian CD fan translation V1.0
+	{
+		{
+			"ringworld",
+			"CD",
+			AD_ENTRY1s("ring.rlb", "f36a3ecd7ec297d00c739e3004100c1b", 38761907),
+			Common::RU_RUS,
+			Common::kPlatformDOS,
+			ADGF_CD,
+			GUIO2(GUIO_NOSPEECH, GUIO_NOSFX)
+		},
+		GType_Ringworld,
+		GF_CD | GF_ALT_REGIONS
+	},
 	// Ringworld English Floppy version
 	{
 		{
@@ -172,6 +186,21 @@ static const tSageGameDescription gameDescriptions[] = {
 		GF_FLOPPY | GF_ALT_REGIONS
 	},
 
+	// Blue Force CD Russian Fan translation by old-games.ru
+	{
+		{
+			"blueforce",
+			"CD",
+			AD_ENTRY1s("blue.rlb", "d7dcc78c36ae7a3e129d5e8a2535c2b6", 64029619),
+			Common::RU_RUS,
+			Common::kPlatformDOS,
+			ADGF_CD,
+			GUIO2(GUIO_NOSPEECH, GUIO_NOSFX)
+		},
+		GType_BlueForce,
+		GF_CD | GF_ALT_REGIONS
+	},
+
 	// Found on Wacky Funsters!
 	{
 		{
@@ -254,7 +283,7 @@ static const tSageGameDescription gameDescriptions[] = {
 			AD_ENTRY1s("demops.rlb", "8a2aa522b4473bcc32e06371568c0d9a", 1019247),
 			Common::EN_ANY,
 			Common::kPlatformDOS,
-			ADGF_DEMO,
+			ADGF_DEMO | ADGF_UNSTABLE,
 			GUIO2(GUIO_NOSPEECH, GUIO_NOSFX)
 		},
 		GType_Ringworld,
@@ -269,7 +298,7 @@ static const tSageGameDescription gameDescriptions[] = {
 			AD_ENTRY1s("demops.rlb", "efe17413126b13228564f687d185a7ad", 511111),
 			Common::EN_ANY,
 			Common::kPlatformDOS,
-			ADGF_DEMO,
+			ADGF_DEMO | ADGF_UNSTABLE,
 			GUIO2(GUIO_NOSPEECH, GUIO_NOSFX)
 		},
 		GType_Ringworld,

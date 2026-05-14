@@ -49,12 +49,13 @@ public:
 	Common::String getSystemLanguage() const override;
 
 	// Default paths
-	Common::String getDefaultIconsPath() override;
-	Common::String getScreenshotsPath() override;
+	Common::Path getDefaultIconsPath() override;
+	Common::Path getDefaultDLCsPath() override;
+	Common::Path getScreenshotsPath() override;
 
 protected:
-	Common::String getDefaultConfigFileName() override;
-	Common::String getDefaultLogFileName() override;
+	Common::Path getDefaultConfigFileName() override;
+	Common::Path getDefaultLogFileName() override;
 
 	// Override createAudioCDManager() to get our Windows-specific
 	// version.
@@ -62,9 +63,15 @@ protected:
 
 	HWND getHwnd() { return ((SdlWindow_Win32*)_window)->getHwnd(); }
 
+	uint32 getOSDoubleClickTime() const override;
+
 private:
 	bool _isPortable;
 	bool detectPortableConfigFile();
+
+#if defined(USE_JPEG)
+	void initializeJpegLibraryForWin95();
+#endif
 };
 
 #endif

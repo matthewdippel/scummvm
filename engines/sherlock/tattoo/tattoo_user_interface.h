@@ -64,8 +64,8 @@ private:
 	WidgetQuit _quitWidget;
 	WidgetList _fixedWidgets;
 	WidgetList _widgets;
-	byte _lookupTable[PALETTE_COUNT];
-	byte _lookupTable1[PALETTE_COUNT];
+	byte _lookupTable[Graphics::PALETTE_COUNT];
+	byte _lookupTable1[Graphics::PALETTE_COUNT];
 private:
 	/**
 	 * Handle any input when we're in standard mode (with no windows open)
@@ -100,6 +100,7 @@ public:
 	bool _personFound;
 	int _activeObj;
 	Common::KeyState _keyState;
+	Common::CustomEventType _action;
 	Common::Point _lookPos;
 	ScrollHighlight _scrollHighlight;
 	Common::SeekableReadStream *_mask, *_mask1;
@@ -139,7 +140,7 @@ public:
 
 	/**
 	 * Display the passed long description for an object. If the flag firstTime is set,
-	 * the window will be opened to accomodate the text. Otherwise, the remaining text
+	 * the window will be opened to accommodate the text. Otherwise, the remaining text
 	 * will be printed in an already open window
 	 */
 	void printObjectDesc(const Common::String &str, bool firstTime);
@@ -172,12 +173,12 @@ public:
 	/**
 	 * This will display a text message in a dialog at the bottom of the screen
 	 */
-	void putMessage(const char *formatStr, ...) GCC_PRINTF(2, 3);
+	void putMessage(MSVC_PRINTF const char *formatStr, ...) GCC_PRINTF(2, 3);
 
 	/**
 	 * Makes a greyscale translation table for each palette entry in the table
 	 */
-	void setupBGArea(const byte cMap[PALETTE_SIZE]);
+	void setupBGArea(const byte cMap[Graphics::PALETTE_SIZE]);
 
 	/**
 	 * Erase any background as needed before drawing frame

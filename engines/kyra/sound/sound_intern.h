@@ -37,7 +37,7 @@ class EuphonyPlayer;
 class TownsPC98_AudioDriver;
 
 namespace Audio {
-class PCSpeaker;
+class PCSpeakerStream;
 class MaxTrax;
 } // End of namespace Audio
 
@@ -70,8 +70,8 @@ public:
 	void selectAudioResourceSet(int set) override;
 	bool hasSoundFile(uint file) const override;
 	void loadSoundFile(uint file) override;
-	void loadSoundFile(Common::String file) override;
-	void loadSfxFile(Common::String file) override;
+	void loadSoundFile(const Common::Path &file) override;
+	void loadSfxFile(const Common::Path &file) override;
 
 	void playTrack(uint8 track) override;
 	void haltTrack() override;
@@ -93,7 +93,7 @@ private:
 	bool _fadeMusicOut;
 
 	// Midi file related
-	Common::String _mFileName, _sFileName;
+	Common::Path _mFileName, _sFileName;
 	byte *_musicFile, *_sfxFile;
 
 	MidiParser *_music;
@@ -105,7 +105,7 @@ private:
 
 	// misc
 	kType _type;
-	Common::String getFileName(const Common::String &str);
+	Common::Path getFileName(const Common::Path &str);
 
 	bool _nativeMT32;
 	MidiDriver *_driver;
@@ -128,7 +128,7 @@ public:
 	void selectAudioResourceSet(int set) override;
 	bool hasSoundFile(uint file) const override;
 	void loadSoundFile(uint file) override;
-	void loadSoundFile(Common::String) override {}
+	void loadSoundFile(const Common::Path &) override {}
 
 	void playTrack(uint8 track) override;
 	void haltTrack() override;
@@ -182,7 +182,7 @@ public:
 	void selectAudioResourceSet(int set) override;
 	bool hasSoundFile(uint file) const override;
 	void loadSoundFile(uint file) override;
-	void loadSoundFile(Common::String file) override;
+	void loadSoundFile(const Common::Path &file) override;
 
 	void playTrack(uint8 track) override;
 	void haltTrack() override;
@@ -218,7 +218,7 @@ public:
 	void selectAudioResourceSet(int set) override;
 	bool hasSoundFile(uint file) const override;
 	void loadSoundFile(uint file) override {}
-	void loadSoundFile(Common::String file) override;
+	void loadSoundFile(const Common::Path &file) override;
 
 	void playTrack(uint8 track) override;
 	void haltTrack() override;
@@ -238,7 +238,7 @@ private:
 	uint8 *_sfxTrackData;
 	TownsPC98_AudioDriver *_driver;
 
-	const SoundResourceInfo_TownsPC98V2 *res() const {return _resInfo[_currentResourceSet]; }
+	const SoundResourceInfo_TownsPC98V2 *res() const { return _resInfo[_currentResourceSet]; }
 	SoundResourceInfo_TownsPC98V2 *_resInfo[3];
 	int _currentResourceSet;
 };
@@ -265,7 +265,7 @@ public:
 	int getRate() const override { return _rate; }
 private:
 	Common::Mutex _mutex;
-	Audio::PCSpeaker *_speaker;
+	Audio::PCSpeakerStream *_speaker;
 	int _rate;
 
 	struct Channel {
@@ -333,7 +333,7 @@ public:
 	void selectAudioResourceSet(int set) override;
 	bool hasSoundFile(uint file) const override;
 	void loadSoundFile(uint file) override;
-	void loadSoundFile(Common::String) override {}
+	void loadSoundFile(const Common::Path &) override {}
 
 	void playTrack(uint8 track) override;
 	void haltTrack() override;
@@ -369,7 +369,7 @@ public:
 	void selectAudioResourceSet(int set) override;
 	bool hasSoundFile(uint) const override { return true; }
 	void loadSoundFile(uint) override {}
-	void loadSoundFile(Common::String) override {}
+	void loadSoundFile(const Common::Path &) override {}
 	void playTrack(uint8 track) override;
 	void haltTrack() override;
 	void playSoundEffect(uint16 track, uint8) override;
@@ -383,6 +383,7 @@ private:
 
 	SoundMacRes *_res;
 	HalestormDriver *_driver;
+	const int _talkieFlag;
 	bool _ready;
 
 	const uint16 *_resIDMusic;
@@ -391,8 +392,8 @@ private:
 	static const uint16 _resIDMusicIntro[4];
 	static const uint16 _resIDMusicIngame[35];
 	static const uint8 _musicLoopTable[35];
-	static const uint16 _resIDSfxIntro[39];
-	static const uint16 _resIDSfxIngame[39];
+	static const uint16 _resIDSfxIntro[2][39];
+	static const uint16 _resIDSfxIngame[2][39];
 
 	struct SoundEffectDef {
 		uint8 note;
@@ -422,7 +423,7 @@ public:
 	void selectAudioResourceSet(int set) override;
 	bool hasSoundFile(uint file) const override;
 	void loadSoundFile(uint file) override;
-	void loadSoundFile(Common::String name) override;
+	void loadSoundFile(const Common::Path &name) override;
 
 	void playTrack(uint8 track) override;
 	void haltTrack() override;
@@ -476,8 +477,8 @@ public:
 	void selectAudioResourceSet(int set) override;
 	bool hasSoundFile(uint file) const override { return false; }
 	void loadSoundFile(uint) override {}
-	void loadSoundFile(Common::String file) override;
-	void unloadSoundFile(Common::String file) override;
+	void loadSoundFile(const Common::Path &file) override;
+	void unloadSoundFile(const Common::String &file) override;
 	void playTrack(uint8 track) override;
 	void haltTrack() override;
 	void playSoundEffect(uint16 track, uint8 volume = 0xFF) override;
@@ -512,8 +513,8 @@ public:
 	void selectAudioResourceSet(int set) override;
 	bool hasSoundFile(uint file) const override { return false; }
 	void loadSoundFile(uint file) override;
-	void loadSoundFile(Common::String file) override {}
-	void loadSfxFile(Common::String file) override;
+	void loadSoundFile(const Common::Path &file) override {}
+	void loadSfxFile(const Common::Path &file) override;
 	void playTrack(uint8 track) override;
 	void haltTrack() override;
 	void playSoundEffect(uint16 track, uint8) override;
@@ -532,6 +533,60 @@ private:
 	bool _ready;
 };
 
+class CapcomPC98AudioDriver;
+class SoundPC98_Darkmoon : public Sound {
+public:
+	SoundPC98_Darkmoon(KyraEngine_v1 *vm, MidiDriver::DeviceHandle dev, Audio::Mixer *mixer);
+	~SoundPC98_Darkmoon() override;
+
+	kType getMusicType() const override;
+	kType getSfxType() const override;
+
+	bool init() override;
+
+	void initAudioResourceInfo(int set, void *info) override;
+	void selectAudioResourceSet(int set) override;
+	bool hasSoundFile(uint file) const override { return true; }
+	void loadSoundFile(uint file) override;
+	void loadSoundFile(const Common::Path &name) override;
+
+	void playTrack(uint8 track) override;
+	void haltTrack() override;
+	bool isPlaying() const override;
+
+	void playSoundEffect(uint16 track, uint8 volume = 0xFF) override;
+	void stopAllSoundEffects() override;
+
+	void beginFadeOut() override;
+
+	void pause(bool paused) override;
+
+	void updateVolumeSettings() override;
+
+	int checkTrigger() override;
+	void resetTrigger() override {} // This sound class is for EOB II only, this method is not needed there.
+
+private:
+	void restartBackgroundMusic();
+	const uint8 *getData(uint16 track) const;
+
+	KyraEngine_v1 *_vm;
+	CapcomPC98AudioDriver *_driver;
+	uint8 *_soundData, *_fileBuffer;
+
+	int _lastTrack;
+
+	const SoundResourceInfo_PC *res() const {return _resInfo[_currentResourceSet]; }
+	SoundResourceInfo_PC *_resInfo[3];
+	int _currentResourceSet;
+
+	Common::Path _soundFileLoaded;
+
+	MidiDriver::DeviceHandle _dev;
+	kType _drvType;
+	bool _ready;
+};
+
 class SegaAudioDriver;
 class SoundSegaCD_EoB : public Sound {
 public:
@@ -545,7 +600,7 @@ public:
 	void selectAudioResourceSet(int) override {}
 	bool hasSoundFile(uint file) const override { return false; }
 	void loadSoundFile(uint file) override {}
-	void loadSoundFile(Common::String file) override {}
+	void loadSoundFile(const Common::Path &file) override {}
 	void playTrack(uint8 track) override;
 	void haltTrack() override;
 	void playSoundEffect(uint16 track, uint8 volume) override;

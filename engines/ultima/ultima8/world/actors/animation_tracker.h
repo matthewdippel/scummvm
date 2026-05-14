@@ -22,6 +22,8 @@
 #ifndef WORLD_ACTORS_ANIMATIONTRACKER_H
 #define WORLD_ACTORS_ANIMATIONTRACKER_H
 
+#include "ultima/ultima8/misc/common_types.h"
+#include "ultima/ultima8/misc/point3.h"
 #include "ultima/ultima8/world/actors/animation.h"
 #include "ultima/ultima8/world/actors/pathfinder.h"
 
@@ -52,10 +54,10 @@ public:
 	//! caller must decide if animation should continue after a 'false'
 	bool step();
 
-	//! do a single step of the animation, starting at (x,y,z)
+	//! do a single step of the animation, starting at the point
 	//! returns true if everything ok, false if not
 	//! caller must decide if animation should continue after a 'false'
-	bool stepFrom(int32 x, int32 y, int32 z);
+	bool stepFrom(const Point3 &pt);
 
 	//! update the PathfindingState with latest coordinates and flags
 	void updateState(PathfindingState &state);
@@ -64,14 +66,11 @@ public:
 	void updateActorFlags();
 
 	//! get the current position
-	void getPosition(int32 &x, int32 &y, int32 &z) const {
-		x = _x;
-		y = _y;
-		z = _z;
+	Point3 getPosition() const {
+		return _curr;
 	}
 
-	void getInterpolatedPosition(int32 &x, int32 &y, int32 &z, int fc)
-			const;
+	Point3 getInterpolatedPosition(int fc) const;
 
 	//! get the difference between current position and previous position
 	void getSpeed(int32 &dx, int32 &dy, int32 &dz) const;
@@ -89,7 +88,7 @@ public:
 	//! get the current AnimFrame
 	const AnimFrame *getAnimFrame() const;
 
-	void setTargetedMode(int32 x, int32 y, int32 z);
+	void setTargetedMode(const Point3 &pt);
 
 	bool isDone() const {
 		return _done;
@@ -126,9 +125,9 @@ private:
 	const AnimAction *_animAction;
 
 	// actor state
-	int32 _prevX, _prevY, _prevZ;
-	int32 _x, _y, _z;
-	int32 _startX, _startY, _startZ;
+	Point3 _prev;
+	Point3 _curr;
+	Point3 _start;
 	int32 _targetDx, _targetDy, _targetDz;
 	int32 _targetOffGroundLeft;
 	bool _firstStep, _flipped;

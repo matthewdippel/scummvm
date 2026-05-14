@@ -141,7 +141,7 @@ int16 atsAction(int16 txtNr, int16 txtMode, int16 mode) {
 						break;
 
 					case 73:
-						if (!_G(gameState).R9Gitter) {
+						if (!_G(gameState).R9Grid) {
 							_G(gameState)._personHide[P_CHEWY] = true;
 							startSetAILWait(5, 1, ANI_FRONT);
 							_G(gameState)._personHide[P_CHEWY] = false;
@@ -251,7 +251,7 @@ int16 atsAction(int16 txtNr, int16 txtMode, int16 mode) {
 						break;
 
 					case 142:
-						retValue = Room17::energie_hebel();
+						retValue = Room17::energy_lever();
 						break;
 
 					case 146:
@@ -278,7 +278,7 @@ int16 atsAction(int16 txtNr, int16 txtMode, int16 mode) {
 					case 161:
 					case 162:
 					case 163:
-						Room24::use_hebel(txtNr);
+						Room24::use_lever(txtNr);
 						break;
 
 					case 165:
@@ -635,11 +635,11 @@ int16 atsAction(int16 txtNr, int16 txtMode, int16 mode) {
 						break;
 
 					case 463:
-						retValue = Room77::proc1();
+						retValue = Room77::procOpenBoatHoleWithCorkscrew();
 						break;
 
 					case 464:
-						retValue = Room77::proc2();
+						retValue = Room77::procPlugBoatHoleWithRubber();
 						break;
 
 					case 467:
@@ -1050,7 +1050,7 @@ int16 atsAction(int16 txtNr, int16 txtMode, int16 mode) {
 				case TXT_MARK_USE:
 					switch (txtNr) {
 					case 90:
-						_G(atds)->set_ats_str(90, TXT_MARK_USE, _G(gameState).R13Band);
+						_G(atds)->set_all_ats_str(90, TXT_MARK_USE, _G(gameState).R13Band);
 						break;
 
 					case 124:
@@ -1072,7 +1072,7 @@ int16 atsAction(int16 txtNr, int16 txtMode, int16 mode) {
 
 					case 267:
 						if (!_G(gameState).R41LolaOk && _G(gameState).R41RepairInfo)
-							_G(atds)->set_ats_str(267, 1, ATS_DATA);
+							_G(atds)->set_all_ats_str(267, 1, ATS_DATA);
 						break;
 
 					case 283:
@@ -2166,6 +2166,7 @@ void useItemWithInvItem(int16 itemId) {
 		scrolly = _G(gameState).scrolly;
 		_G(gameState).scrollx = 0;
 		_G(gameState).scrolly = 0;
+		_G(cur)->hideCursor();
 
 		_G(room)->load_tgp(NOTEBOOK_START, &_G(room_blk), GBOOK_TGP, false, GBOOK);
 		_G(out)->setPointer(_G(workptr));
@@ -2184,6 +2185,7 @@ void useItemWithInvItem(int16 itemId) {
 
 		_G(room)->load_tgp(_G(gameState)._personRoomNr[P_CHEWY], &_G(room_blk), EPISODE1_TGP, true, EPISODE1);
 
+		_G(cur)->showCursor();
 		_G(gameState).scrollx = scrollx;
 		_G(gameState).scrolly = scrolly;
 		break;
@@ -2238,7 +2240,7 @@ void useItemWithInvItem(int16 itemId) {
 
 	case WOOL_INV:
 		remove_inventory(WOOL_INV);
-		_G(atds)->set_ats_str(BOTTLE_INV, 1, INV_ATS_DATA);
+		_G(atds)->set_all_ats_str(BOTTLE_INV, 1, INV_ATS_DATA);
 		_G(gameState).R56WhiskyMix = true;
 		break;
 
@@ -2258,13 +2260,13 @@ void useItemWithInvItem(int16 itemId) {
 		start_spz(CH_TALK6, 255, false, P_CHEWY);
 		startAadWait(_G(gameState)._personRoomNr[P_CHEWY] + 350);
 		_G(flags).InventMenu = true;
-		_G(atds)->set_ats_str(ARTIFACT_INV, 1, INV_ATS_DATA);
+		_G(atds)->set_all_ats_str(ARTIFACT_INV, 1, INV_ATS_DATA);
 		break;
 
 	case 88:
 		_G(gameState).changedArtifactOrigin = true;
 		startAadWait(350);
-		_G(atds)->set_ats_str(ARTIFACT_INV, 1, INV_ATS_DATA);
+		_G(atds)->set_all_ats_str(ARTIFACT_INV, 1, INV_ATS_DATA);
 		break;
 
 	case 102:

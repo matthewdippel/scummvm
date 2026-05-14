@@ -31,50 +31,61 @@
 
 #include "engines/nancy/ui/viewport.h"
 
+#include "common/config-manager.h"
+#include "video/bink_decoder.h"
+
 namespace Nancy {
 namespace UI {
 
 // does NOT put the object in a valid state until loadVideo is called
 void Viewport::init() {
-	Common::SeekableReadStream *viewChunk = g_nancy->getBootChunkStream("VIEW");
-	viewChunk->seek(0);
+	auto *bootSummary = GetEngineData(BSUM);
+	assert(bootSummary);
 
-	Common::Rect dest;
-	readRect(*viewChunk, dest);
-	viewChunk->skip(16); // skip viewport source rect
-	readRect(*viewChunk, _format1Bounds);
-	readRect(*viewChunk, _format2Bounds);
+	auto *viewportData = GetEngineData(VIEW);
+	assert(viewportData);
 
-	_screenPosition = dest;
+	moveTo(viewportData->screenPosition);
 
-	setEdgesSize(g_nancy->_verticalEdgesSize, g_nancy->_verticalEdgesSize, g_nancy->_horizontalEdgesSize, g_nancy->_horizontalEdgesSize);
+	setEdgesSize(	bootSummary->verticalEdgesSize,
+					bootSummary->verticalEdgesSize,
+					bootSummary->horizontalEdgesSize,
+					bootSummary->horizontalEdgesSize);
 
 	RenderObject::init();
 }
 
 void Viewport::handleInput(NancyInput &input) {
-	Time playTime = g_nancy->getTotalPlayTime();
+	const State::Scene::SceneSummary &summary = NancySceneState.getSceneSummary();
+	Time systemTime = g_system->getMillis();
 	byte direction = 0;
+
+	if (summary.slowMoveTimeDelta == kNoAutoScroll) {
+		// Individual scenes may disable auto-move even when it's globally turned on
+		_autoMove = false;
+	} else {
+		_autoMove = ConfMan.getBool("auto_move", ConfMan.getActiveDomainName());
+	}
 
 	// Make cursor sticky when scrolling the viewport
 	if (	g_nancy->getGameType() != kGameTypeVampire &&
 			input.input & (NancyInput::kLeftMouseButton | NancyInput::kRightMouseButton)
 			&& _stickyCursorPos.x > -1) {
-		g_system->warpMouse(_stickyCursorPos.x, _stickyCursorPos.y);
+		g_nancy->_cursor->warpCursor(_stickyCursorPos);
 		input.mousePos = _stickyCursorPos;
 	}
 
 	Common::Rect viewportActiveZone;
 
 	if (g_nancy->getGameType() == kGameTypeVampire) {
-		viewportActiveZone = g_nancy->_graphicsManager->getScreen()->getBounds();
+		viewportActiveZone = g_nancy->_graphics->getScreen()->getBounds();
 		viewportActiveZone.bottom = _screenPosition.bottom;
 	} else {
 		viewportActiveZone = _screenPosition;
 	}
 
 	if (viewportActiveZone.contains(input.mousePos)) {
-		g_nancy->_cursorManager->setCursorType(CursorManager::kNormal);
+		g_nancy->_cursor->setCursorType(CursorManager::kNormal);
 
 		if (input.mousePos.x < _nonScrollZone.left) {
 			direction |= kLeft;
@@ -120,12 +131,35 @@ void Viewport::handleInput(NancyInput &input) {
 	}
 
 	if (direction) {
-		g_nancy->_cursorManager->setCursorType(CursorManager::kMove);
+		if (direction & kLeft) {
+			if (summary.fastMoveTimeDelta == kInvertedNode) {
+				// Support nancy6+ inverted rotation scenes
+				g_nancy->_cursor->setCursorType(CursorManager::kInvertedRotateLeft);
+			} else {
+				g_nancy->_cursor->setCursorType(CursorManager::kRotateLeft);
+			}
+		} else if (direction & kRight) {
+			if (summary.fastMoveTimeDelta == kInvertedNode) {
+				// Support nancy6+ inverted rotation scenes
+				g_nancy->_cursor->setCursorType(CursorManager::kInvertedRotateRight);
+			} else {
+				g_nancy->_cursor->setCursorType(CursorManager::kRotateRight);
+			}
+		} else if (direction & kUp) {
+			g_nancy->_cursor->setCursorType(CursorManager::kMoveUp);
+		} else if (direction & kDown) {
+			g_nancy->_cursor->setCursorType(CursorManager::kMoveDown);
+		}
 
 		if (input.input & NancyInput::kRightMouseButton) {
 			direction |= kMoveFast;
-		} else if ((input.input & NancyInput::kLeftMouseButton) == 0) {
+		} else if ((input.input & NancyInput::kLeftMouseButton) == 0 && _autoMove == false) {
 			direction = 0;
+		}
+
+		// Just pressed RMB down, cancel the timer (removes jank when auto move is on)
+		if (input.input & NancyInput::kRightMouseButtonDown) {
+			_nextMovementTime = 0;
 		}
 
 		// If we hover over an edge we don't want to click an element in the viewport underneath
@@ -153,10 +187,9 @@ void Viewport::handleInput(NancyInput &input) {
 
 	// Perform the movement
 	if (direction) {
-		const Nancy::State::Scene::SceneSummary &summary = NancySceneState.getSceneSummary();
 		Time movementDelta = NancySceneState.getMovementTimeDelta(direction & kMoveFast);
 
-		if (playTime > _nextMovementTime) {
+		if (systemTime > _nextMovementTime) {
 			if (direction & kLeft) {
 				setNextFrame();
 			}
@@ -173,64 +206,94 @@ void Viewport::handleInput(NancyInput &input) {
 				scrollDown(summary.verticalScrollDelta);
 			}
 
-			_nextMovementTime = playTime + movementDelta;
+			_nextMovementTime = systemTime + movementDelta;
 		}
 	}
 
 	_movementLastFrame = direction;
 }
 
-void Viewport::loadVideo(const Common::String &filename, uint frameNr, uint verticalScroll, NancyFlag dontWrap, uint16 format, const Common::String &palette) {
-	if (_decoder.isVideoLoaded()) {
-		_decoder.close();
+void Viewport::loadVideo(const Common::Path &filename, uint frameNr, uint verticalScroll, byte panningType, uint16 format, const Common::Path &palette) {
+	if (_decoder->isVideoLoaded()) {
+		_decoder->close();
 	}
 
-	if (!_decoder.loadFile(filename + ".avf")) {
-		error("Couldn't load video file %s", filename.c_str());
+	Common::String suffix;
+
+	if (_videoType == kVideoPlaytypeAVF) {
+		suffix = ".avf";
+
+		if (!Common::File::exists(filename.append(".avf"))) {
+			if (Common::File::exists(filename.append(".bik"))) {
+				suffix = ".bik";
+				_videoType = kVideoPlaytypeBink;
+				_decoder.reset(new Video::BinkDecoder());
+			} else {
+				error("Couldn't load video file %s.avf or %s.bik", filename.toString().c_str(), filename.toString().c_str());
+			}
+		}
+	} else {
+		suffix = ".bik";
+		if (!Common::File::exists(filename.append(".bik"))) {
+			if (Common::File::exists(filename.append(".avf"))) {
+				suffix = ".avf";
+				_videoType = kVideoPlaytypeAVF;
+				_decoder.reset(new AVFDecoder());
+			} else {
+				error("Couldn't load video file %s.avf or %s.bik", filename.toString().c_str(), filename.toString().c_str());
+			}
+		}
+	}
+
+	if (!_decoder->loadFile(filename.append(suffix))) {
+		error("Couldn't load video file %s", filename.toString().c_str());
 	}
 
 	_videoFormat = format;
 
 	enableEdges(kUp | kDown | kLeft | kRight);
 
+	_panningType = panningType;
+
 	setFrame(frameNr);
 	setVerticalScroll(verticalScroll);
 
-	if (palette.size()) {
-		GraphicsManager::loadSurfacePalette(_drawSurface, palette);
-		_fullFrame.setPalette(_drawSurface.getPalette(), 0, 256);
+	if (!palette.empty()) {
+		GraphicsManager::loadSurfacePalette(_fullFrame, palette);
+		setPalette(palette);
 	}
 
 	_movementLastFrame = 0;
 	_nextMovementTime = 0;
-	_dontWrap = dontWrap;
-}
-
-void Viewport::setPalette(const Common::String &paletteName) {
-	GraphicsManager::loadSurfacePalette(_drawSurface, paletteName);
-	_fullFrame.setPalette(_drawSurface.getPalette(), 0, 256);
-	_needsRedraw = true;
-}
-
-void Viewport::setPalette(const Common::String &paletteName, uint paletteStart, uint paletteSize) {
-	GraphicsManager::loadSurfacePalette(_drawSurface, paletteName, paletteStart, paletteSize);
-	_fullFrame.setPalette(_drawSurface.getPalette(), 0, 256);
-	_needsRedraw = true;
 }
 
 void Viewport::setFrame(uint frameNr) {
-	assert(frameNr < _decoder.getFrameCount());
+	assert(frameNr < _decoder->getFrameCount());
 
-	const Graphics::Surface *newFrame = _decoder.decodeFrame(frameNr);
+	const Graphics::Surface *newFrame;
+
+	if (_videoType == kVideoPlaytypeAVF) {
+		AVFDecoder *decoder = dynamic_cast<AVFDecoder *>(_decoder.get());
+		if (!decoder)
+			error("Viewport::setFrame(): Decoder is not an AVFDecoder");
+		newFrame = decoder->decodeFrame(frameNr);
+		decoder->seek(frameNr); // Seek to take advantage of caching
+	} else {
+		Video::BinkDecoder *decoder = dynamic_cast<Video::BinkDecoder *>(_decoder.get());
+		if (!decoder)
+			error("Viewport::setFrame(): Decoder is not a BinkDecoder");
+		decoder->seekToFrame(frameNr); // Seek to take advantage of caching
+		newFrame = decoder->decodeNextFrame();
+	}
 
 	// Format 1 uses quarter-size images, while format 2 uses full-size ones
 	// Videos in TVD are always upside-down
-	GraphicsManager::copyToManaged(*newFrame, _fullFrame, g_nancy->getGameType() == kGameTypeVampire, _videoFormat == 1);
+	GraphicsManager::copyToManaged(*newFrame, _fullFrame, g_nancy->getGameType() == kGameTypeVampire, _videoFormat == kSmallVideoFormat);
 
 	_needsRedraw = true;
 	_currentFrame = frameNr;
 
-	if (_dontWrap == kTrue && !((_edgesMask & kLeft) && (_edgesMask & kRight))) {
+	if (_panningType == kPanLeftRight && !((_edgesMask & kLeft) && (_edgesMask & kRight))) {
 		if (_currentFrame == 0) {
 			disableEdges(kRight);
 		} else if (_currentFrame == getFrameCount() - 1) {
@@ -263,14 +326,18 @@ void Viewport::setVerticalScroll(uint scroll) {
 	_drawSurface.create(_fullFrame, sourceBounds);
 	_needsRedraw = true;
 
-	if (scroll == getMaxScroll()) {
-		disableEdges(kDown);
-		enableEdges(kUp);
-	} else if (scroll == 0) {
-		disableEdges(kUp);
-		enableEdges(kDown);
+	if (getMaxScroll() > 0) {
+		if (scroll == getMaxScroll()) {
+			disableEdges(kDown);
+			enableEdges(kUp);
+		} else if (scroll == 0) {
+			disableEdges(kUp);
+			enableEdges(kDown);
+		} else {
+			enableEdges(kUp | kDown);
+		}
 	} else {
-		enableEdges(kUp | kDown);
+		disableEdges(kUp | kDown);
 	}
 }
 
@@ -288,16 +355,6 @@ void Viewport::scrollDown(uint delta) {
 
 uint16 Viewport::getMaxScroll() const {
 	return _fullFrame.h - _drawSurface.h - (g_nancy->getGameType() == kGameTypeVampire ? 1 : 0);
-}
-
-Common::Rect Viewport::getBoundsByFormat(uint format) const {
-	if (format == 1) {
-		return _format1Bounds;
-	} else if (format == 2) {
-		return _format2Bounds;
-	} else {
-		return Common::Rect();
-	}
 }
 
 // Convert a viewport-space rectangle to screen coordinates

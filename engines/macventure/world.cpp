@@ -65,15 +65,15 @@ void World::startNewGame() {
 	if (_saveGame)
 		delete _saveGame;
 
-	if ((_startGameFileName = _engine->getStartGameFileName()) == "")
+	if ((_startGameFileName = _engine->getStartGameFileName()).empty())
 		error("WORLD: Could not load initial game configuration");
 
 	Common::File saveGameFile;
 	if (!saveGameFile.open(_startGameFileName))
 		error("WORLD: Could not load initial game configuration");
 
-	debugC(2, kMVDebugMain, "Loading save game state from %s", _startGameFileName.c_str());
-	Common::SeekableReadStream *saveGameRes = saveGameFile.readStream(saveGameFile.size());
+	debugC(2, kMVDebugMain, "Loading save game state from %s", _startGameFileName.toString().c_str());
+	Common::SeekableReadStream *saveGameRes = Common::MacResManager::openFileOrDataFork(_startGameFileName);
 
 	_saveGame = new SaveGame(_engine, saveGameRes);
 
@@ -201,18 +201,32 @@ void World::updateObj(ObjID objID) {
 		win = _engine->getObjWindow(objID);
 	}
 	if (win) {
-		_engine->focusObjWin(objID);
+		_engine->focusObjectWindow(objID);
 		_engine->runObjQueue();
 		_engine->updateWindow(win);
 	}
 }
 
 void World::captureChildren(ObjID objID) {
-	warning("Capture children unimplemented!");
+	Common::Array<ObjID> captured;
+	Common::Array<ObjID> children = getChildren(getObjAttr(objID, 0), true);
+
+	for (auto &child: children) {
+		if (objID < child && _engine->getOverlapPercent(child, objID) >= 40)
+			captured.push_back(child);
+	}
+	while (captured.size()) {
+		ObjID popped = captured.back();
+		captured.pop_back();
+		setObjAttr(popped, 0, objID);
+	}
 }
 
 void World::releaseChildren(ObjID objID) {
-	warning("Release children unimplemented!");
+	Common::Array<ObjID> children = getChildren(objID, 1);
+	ObjID parent = getObjAttr(objID, 0);
+	for (auto &child: children)
+		setObjAttr(child, 0, parent);
 }
 
 Common::String World::getText(ObjID objID, ObjID source, ObjID target) {
@@ -280,11 +294,12 @@ void World::loadGameFrom(Common::InSaveFile *file) {
 		delete _saveGame;
 	}
 	_saveGame = new SaveGame(_engine, file);
+	_engine->setConsoleText(_saveGame->getText());
 	calculateObjectRelations();
 }
 
 void World::saveGameInto(Common::OutSaveFile *file) {
-	_saveGame->saveInto(file);
+	_saveGame->saveInto(_engine, file);
 }
 
 // SaveGame
@@ -330,7 +345,7 @@ const Common::String &SaveGame::getText() {
 	return _text;
 }
 
-void SaveGame::saveInto(Common::OutSaveFile *file) {
+void SaveGame::saveInto(MacVentureEngine *engine, Common::OutSaveFile *file) {
 	warning("Saving the game not yet tested!");
 	// Save attibutes
 	Common::Array<AttributeGroup>::const_iterator itg;
@@ -346,9 +361,9 @@ void SaveGame::saveInto(Common::OutSaveFile *file) {
 		file->writeUint16BE((*global));
 	}
 	// Save text
-	// TODO: Insert text from GUI console
-	_text = "Hello";
-	file->write(_text.c_str(), _text.size());
+	_text = engine->getConsoleText();
+	file->writeString(_text);
+	file->writeByte(0);
 }
 
 void SaveGame::loadGroups(MacVentureEngine *engine, Common::SeekableReadStream *res) {
@@ -371,8 +386,7 @@ void SaveGame::loadGlobals(MacVentureEngine *engine, Common::SeekableReadStream 
 }
 
 void SaveGame::loadText(MacVentureEngine *engine, Common::SeekableReadStream *res) {
-	// TODO: Load console text. For now, the GUI doesn't even look at this.
-	_text = "Placeholder Console Text";
+	_text = res->readString();
 }
 
 

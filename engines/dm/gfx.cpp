@@ -28,7 +28,7 @@
 #include "common/system.h"
 #include "common/file.h"
 #include "common/endian.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 
 #include "dm/gfx.h"
 #include "dm/dungeonman.h"
@@ -2755,7 +2755,7 @@ bool DisplayMan::isDrawnWallOrnAnAlcove(int16 wallOrnOrd, ViewWall viewWallIndex
 	unsigned char inscriptionString[70];
 	bool isInscription = (wallOrnamentIndex == dungeon._currMapInscriptionWallOrnIndex);
 	if (isInscription)
-		dungeon.decodeText((char *)inscriptionString, _inscriptionThing, kDMTextTypeInscription);
+		dungeon.decodeText((char *)inscriptionString, sizeof(inscriptionString), _inscriptionThing, kDMTextTypeInscription);
 
 	int16 blitPosX;
 	byte *ornBlitBitmap;
@@ -3457,12 +3457,12 @@ T0115077_DrawSecondHalfSquareCreature:
 				AL_4_nativeBitmapIndex++; /* Skip the front image */
 				derivedBitmapIndex += 2;
 				if (getFlag(creatureGraphicInfoRed, kDMCreatureMaskSide)) {
-					AL_4_nativeBitmapIndex++; /* If the creature has a side image, it preceeds the attack image */
+					AL_4_nativeBitmapIndex++; /* If the creature has a side image, it precedes the attack image */
 					derivedBitmapIndex += 2;
 				}
 
 				if (getFlag(creatureGraphicInfoRed, kDMCreatureMaskBack)) {
-					AL_4_nativeBitmapIndex++; /* If the creature has a back image, it preceeds the attack image */
+					AL_4_nativeBitmapIndex++; /* If the creature has a back image, it precedes the attack image */
 					derivedBitmapIndex += 2;
 				}
 			} else {
@@ -3471,7 +3471,7 @@ T0115077_DrawSecondHalfSquareCreature:
 				if (useCreatureBackBitmap) {
 					useFlippedHorizontallyCreatureFrontImage = false;
 					if (getFlag(creatureGraphicInfoRed, kDMCreatureMaskSide)) {
-						AL_4_nativeBitmapIndex += 2; /* If the creature has a side image, it preceeds the back image */
+						AL_4_nativeBitmapIndex += 2; /* If the creature has a side image, it precedes the back image */
 						derivedBitmapIndex += 4;
 					} else {
 						AL_4_nativeBitmapIndex++; /* If the creature does not have a side image, the back image follows the front image */

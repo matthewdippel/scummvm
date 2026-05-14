@@ -22,12 +22,13 @@
 #ifndef ZVISION_TITLER_CONTROL_H
 #define ZVISION_TITLER_CONTROL_H
 
-#include "zvision/scripting/control.h"
-
-#include "graphics/surface.h"
-
-#include "common/rect.h"
 #include "common/array.h"
+#include "common/file.h"
+#include "common/path.h"
+#include "common/rect.h"
+#include "common/stream.h"
+#include "graphics/surface.h"
+#include "zvision/scripting/control.h"
 
 namespace ZVision {
 
@@ -46,7 +47,7 @@ private:
 	int16 _curString;
 	Graphics::Surface *_surface;
 
-	void readStringsFile(const Common::String &fileName);
+	void readStringsFile(const Common::Path &fileName);
 };
 
 } // End of namespace ZVision

@@ -25,6 +25,7 @@
 #include "scumm/scumm_v4.h"
 #include "scumm/file.h"
 #include "scumm/resource.h"
+#include "scumm/sound.h"
 #include "scumm/util.h"
 
 namespace Scumm {
@@ -47,13 +48,37 @@ int ScummEngine_v4::readResTypeList(ResType type) {
 		_res->_types[type][idx]._roomoffs = _fileHandle->readUint32LE();
 	}
 
+	// WORKAROUND: It seems that the French floppy EGA had its own Roland MT-32 patch, with
+	// a DISK09.LEC file different from the one still distributed by LucasFilm Games/Disney
+	// today. Unfortunately, if different patches existed back then, they appear to be lost.
+	//
+	// This allows using the official English Roland MT-32 patch along with any EGA version,
+	// by adjusting the sound directory offsets to match the available patch.
+	if (type == rtSound && _game.id == GID_MONKEY_EGA && _sound->_musicType == MDT_MIDI) {
+		Common::File rolandPatchFile;
+		if (rolandPatchFile.open("DISK09.LEC")) {
+			Common::String md5 = Common::computeStreamMD5AsString(rolandPatchFile);
+			if (md5 == "64ab9552f71dd3344767718eb01e5fd5") {
+				uint32 patchOffsets[19] = {
+					28957,	23427,	35913,	49919,	51918,
+					53643,	55368,	57093,	58818,	62502,
+					73,		66844,	71991,	83107,	91566,
+					95614,	98650,	105020,	112519
+				};
+				for (ResId idx = 150; idx < 169; idx++) {
+					_res->_types[type][idx]._roomno = 94;
+					_res->_types[type][idx]._roomoffs = patchOffsets[idx - 150];
+				}
+			}
+		}
+	}
+
 	return num;
 }
 
 void ScummEngine_v4::readIndexFile() {
 	uint16 blocktype;
 	uint32 itemsize;
-	int numblock = 0;
 
 	debug(9, "readIndexFile()");
 
@@ -102,14 +127,12 @@ void ScummEngine_v4::readIndexFile() {
 	allocateArrays();
 
 	while (true) {
-		itemsize = _fileHandle->readUint32LE();
+		/*itemsize = */_fileHandle->readUint32LE();
 
 		if (_fileHandle->eos() || _fileHandle->err())
 			break;
 
 		blocktype = _fileHandle->readUint16LE();
-
-		numblock++;
 
 		switch (blocktype) {
 
@@ -146,7 +169,7 @@ void ScummEngine_v4::readIndexFile() {
 			break;
 
 		default:
-			error("Bad ID %c%c found in directory", blocktype & 0xFF, blocktype >> 8);
+			error("Bad ID %04X found in index file directory", blocktype);
 		}
 	}
 	closeRoom();
@@ -163,7 +186,7 @@ void ScummEngine_v4::loadCharset(int no) {
 	char buf[20];
 	byte *data;
 
-	sprintf(buf, "%03d.LFL", 900 + no);
+	Common::sprintf_s(buf, "%03d.LFL", 900 + no);
 	file.open(buf);
 
 	if (file.isOpen() == false) {
@@ -182,7 +205,7 @@ void ScummEngine_v4::loadCharset(int no) {
 	// does exist, but at the invalid \x86 position.  So we replace \x85 with
 	// \x86 (and then \x86 with \x87 so that the whole charset resource keeps
 	// the same size), but only when detecting the faulty 904.LFL file.
-	if ((_game.id == GID_MONKEY_EGA || _game.id == GID_MONKEY_VGA) && no == 4 && size == 4857 && _language == Common::FR_FRA && _enableEnhancements) {
+	if ((_game.id == GID_MONKEY_EGA || _game.id == GID_MONKEY_VGA) && no == 4 && size == 4857 && _language == Common::FR_FRA && enhancementEnabled(kEnhTextLocFixes)) {
 		Common::MemoryReadStream stream(data, size);
 		Common::String md5 = Common::computeStreamMD5AsString(stream);
 
@@ -212,7 +235,7 @@ void ScummEngine_v4::readMAXS(int blockSize) {
 
 	_shadowPaletteSize = 256;
 
-	_shadowPalette = (byte *) calloc(_shadowPaletteSize, 1);	// FIXME - needs to be removed later
+	_shadowPalette = (byte *)reallocateArray(_shadowPalette, _shadowPaletteSize, 1);	// FIXME - needs to be removed later
 }
 
 void ScummEngine_v4::readGlobalObjects() {

@@ -23,8 +23,8 @@
 #define BACKENDS_CLOUD_GOOGLEDRIVE_GOOGLEDRIVEUPLOADREQUEST_H
 
 #include "backends/cloud/storage.h"
-#include "backends/networking/curl/curljsonrequest.h"
-#include "backends/networking/curl/request.h"
+#include "backends/networking/http/httpjsonrequest.h"
+#include "backends/networking/http/request.h"
 #include "common/callback.h"
 
 namespace Cloud {
@@ -44,23 +44,23 @@ class GoogleDriveUploadRequest: public Networking::Request {
 
 	void start();
 	void resolveId();
-	void idResolvedCallback(Storage::UploadResponse response);
-	void idResolveFailedCallback(Networking::ErrorResponse error);
+	void idResolvedCallback(const Storage::UploadResponse &response);
+	void idResolveFailedCallback(const Networking::ErrorResponse &error);
 	void startUpload();
-	void startUploadCallback(Networking::JsonResponse response);
-	void startUploadErrorCallback(Networking::ErrorResponse error);
+	void startUploadCallback(const Networking::JsonResponse &response);
+	void startUploadErrorCallback(const Networking::ErrorResponse &error);
 	void uploadNextPart();
-	void partUploadedCallback(Networking::JsonResponse response);
-	void partUploadedErrorCallback(Networking::ErrorResponse error);
+	void partUploadedCallback(const Networking::JsonResponse &response);
+	void partUploadedErrorCallback(const Networking::ErrorResponse &error);
 	bool handleHttp308(const Networking::NetworkReadStream *stream);
-	void finishUpload(StorageFile status);
+	void finishUpload(const StorageFile &status);
 
 public:
-	GoogleDriveUploadRequest(GoogleDriveStorage *storage, Common::String path, Common::SeekableReadStream *contents, Storage::UploadCallback callback, Networking::ErrorCallback ecb);
-	virtual ~GoogleDriveUploadRequest();
+	GoogleDriveUploadRequest(GoogleDriveStorage *storage, const Common::String &path, Common::SeekableReadStream *contents, Storage::UploadCallback callback, Networking::ErrorCallback ecb);
+	~GoogleDriveUploadRequest() override;
 
-	virtual void handle();
-	virtual void restart();
+	void handle() override;
+	void restart() override;
 };
 
 } // End of namespace GoogleDrive

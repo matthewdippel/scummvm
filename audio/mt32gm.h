@@ -111,6 +111,7 @@
 class MidiDriver_MT32GM : public MidiDriver_Multisource {
 public:
 	static const byte MT32_DEFAULT_INSTRUMENTS[8];
+	static const int16 MT32_DEFAULT_INSTRUMENTS_CONTROLLER_DEFAULTS[16];
 	static const byte MT32_DEFAULT_PANNING[8];
 	static const uint8 MT32_DEFAULT_CHANNEL_VOLUME = 102;
 	static const uint8 GM_DEFAULT_CHANNEL_VOLUME = 100;
@@ -296,7 +297,7 @@ public:
 	 * not sent before this time has passed.
 	 */
 	uint16 sysExMT32(const byte *msg, uint16 length, const uint32 targetAddress, bool queue = false, bool delay = true, int8 source = -1);
-	void metaEvent(int8 source, byte type, byte *data, uint16 length) override;
+	void metaEvent(int8 source, byte type, const byte *data, uint16 length) override;
 
 	void stopAllNotes(bool stopSustainedNotes = false) override;
 	/**
@@ -352,7 +353,7 @@ protected:
 	 * Initializes the General MIDI device. The device will be reset.
 	 * If the initForMT32 parameter is specified, the device will be set up for
 	 * MT-32 MIDI data. If the device supports Roland GS, the enableGS
-	 * parameter can be specified for enhanced GS MT-32 compatiblity.
+	 * parameter can be specified for enhanced GS MT-32 compatibility.
 	 *
 	 * @param initForMT32 True if the device should be initialized for MT-32 mapping
 	 * @param enableGS True if the device should be initialized for GS MT-32 mapping

@@ -27,6 +27,7 @@
 #include "common/system.h"
 #include "graphics/cursorman.h"
 #include "graphics/surface.h"
+#include "image/cicn.h"
 #include "image/pict.h"
 
 #include "pegasus/cursor.h"
@@ -54,8 +55,7 @@ Cursor::~Cursor() {
 }
 
 void Cursor::addCursorFrames(uint16 id) {
-	PegasusEngine *vm = (PegasusEngine *)g_engine;
-	Common::SeekableReadStream *cursStream = vm->_resFork->getResource(MKTAG('C', 'u', 'r', 's'), id);
+	Common::SeekableReadStream *cursStream = g_vm->_resFork->getResource(MKTAG('C', 'u', 'r', 's'), id);
 	if (!cursStream)
 		error("Could not load cursor frames set %d", id);
 
@@ -84,9 +84,9 @@ void Cursor::setCurrentFrameIndex(int32 index) {
 
 			if (_info[index].surface->format.bytesPerPixel == 1) {
 				CursorMan.replaceCursorPalette(_info[index].palette, 0, _info[index].colorCount);
-				CursorMan.replaceCursor(_info[index].surface->getPixels(), _info[index].surface->w, _info[index].surface->h, _info[index].hotspot.x, _info[index].hotspot.y, 0);
+				CursorMan.replaceCursor(*_info[index].surface, _info[index].hotspot.x, _info[index].hotspot.y, 0);
 			} else {
-				CursorMan.replaceCursor(_info[index].surface->getPixels(), _info[index].surface->w, _info[index].surface->h, _info[index].hotspot.x, _info[index].hotspot.y, _info[index].surface->format.RGBToColor(0xFF, 0xFF, 0xFF), false, &_info[index].surface->format);
+				CursorMan.replaceCursor(*_info[index].surface, _info[index].hotspot.x, _info[index].hotspot.y, _info[index].surface->format.RGBToColor(0xFF, 0xFF, 0xFF), false);
 			}
 		}
 	}
@@ -135,11 +135,9 @@ void Cursor::loadCursorImage(CursorInfo &cursorInfo) {
 	if (cursorInfo.surface)
 		return;
 
-	PegasusEngine *vm = (PegasusEngine *)g_engine;
-
-	if (vm->isDVD()) {
+	if (g_vm->isDVD()) {
 		// The DVD version has some higher color PICT images for its cursors
-		Common::SeekableReadStream *pictStream = vm->_resFork->getResource(MKTAG('P', 'I', 'C', 'T'), cursorInfo.tag + 1000);
+		Common::SeekableReadStream *pictStream = g_vm->_resFork->getResource(MKTAG('P', 'I', 'C', 'T'), cursorInfo.tag + 1000);
 
 		if (pictStream) {
 			Image::PICTDecoder pict;
@@ -155,76 +153,19 @@ void Cursor::loadCursorImage(CursorInfo &cursorInfo) {
 	cursorInfo.surface = new Graphics::Surface();
 
 	// The CD version uses (only) lower color cicn images for its cursors
-	Common::SeekableReadStream *cicnStream = vm->_resFork->getResource(MKTAG('c', 'i', 'c', 'n'), cursorInfo.tag);
+	Common::SeekableReadStream *cicnStream = g_vm->_resFork->getResource(MKTAG('c', 'i', 'c', 'n'), cursorInfo.tag);
 
-	if (!cicnStream)
-		error("Failed to find color icon %d", cursorInfo.tag);
+	if (cicnStream) {
+		Image::CicnDecoder cicn;
+		if (!cicn.loadStream(*cicnStream))
+			error("Failed to decode cursor cicn %d", cursorInfo.tag);
 
-	// PixMap section
-	Image::PICTDecoder::PixMap pixMap = Image::PICTDecoder::readPixMap(*cicnStream);
-
-	// Mask section
-	cicnStream->readUint32BE(); // mask baseAddr
-	uint16 maskRowBytes = cicnStream->readUint16BE(); // mask rowBytes
-	cicnStream->skip(3 * 2); // mask rect
-	/* uint16 maskHeight = */ cicnStream->readUint16BE();
-
-	// Bitmap section
-	cicnStream->readUint32BE(); // baseAddr
-	uint16 rowBytes = cicnStream->readUint16BE();
-	cicnStream->readUint16BE(); // top
-	cicnStream->readUint16BE(); // left
-	uint16 height = cicnStream->readUint16BE(); // bottom
-	cicnStream->readUint16BE(); // right
-
-	// Data section
-	cicnStream->readUint32BE(); // icon handle
-	cicnStream->skip(maskRowBytes * height); // FIXME: maskHeight doesn't work here, though the specs say it should
-	cicnStream->skip(rowBytes * height);
-
-	// Palette section
-	cicnStream->readUint32BE(); // always 0
-	cicnStream->readUint16BE(); // always 0
-	cursorInfo.colorCount = cicnStream->readUint16BE() + 1;
-
-	cursorInfo.palette = new byte[cursorInfo.colorCount * 3];
-	for (uint16 i = 0; i < cursorInfo.colorCount; i++) {
-		cicnStream->readUint16BE();
-		cursorInfo.palette[i * 3] = cicnStream->readUint16BE() >> 8;
-		cursorInfo.palette[i * 3 + 1] = cicnStream->readUint16BE() >> 8;
-		cursorInfo.palette[i * 3 + 2] = cicnStream->readUint16BE() >> 8;
+		cursorInfo.surface = cicn.getSurface()->convertTo(g_system->getScreenFormat(), cicn.getPalette().data(), cicn.getPalette().size());
+		delete cicnStream;
+		return;
 	}
 
-	// PixMap data
-	if (pixMap.pixelSize == 8) {
-		cursorInfo.surface->create(pixMap.rowBytes, pixMap.bounds.height(), Graphics::PixelFormat::createFormatCLUT8());
-		cicnStream->read(cursorInfo.surface->getPixels(), pixMap.rowBytes * pixMap.bounds.height());
-
-		// While this looks sensible, it actually doesn't work for some cursors
-		// (ie. the 'can grab' hand)
-		//cursorInfo.surface->w = pixMap.bounds.width();
-	} else if (pixMap.pixelSize == 1) {
-		cursorInfo.surface->create(pixMap.bounds.width(), pixMap.bounds.height(), Graphics::PixelFormat::createFormatCLUT8());
-
-		for (int y = 0; y < pixMap.bounds.height(); y++) {
-			byte *line = (byte *)cursorInfo.surface->getBasePtr(0, y);
-
-			for (int x = 0; x < pixMap.bounds.width();) {
-				byte b = cicnStream->readByte();
-
-				for (int i = 0; i < 8; i++) {
-					*line++ = ((b & (1 << (7 - i))) != 0) ? 1 : 0;
-
-					if (++x == pixMap.bounds.width())
-						break;
-				}
-			}
-		}
-	} else {
-		error("Unhandled %dbpp cicn images", pixMap.pixelSize);
-	}
-
-	delete cicnStream;
+	error("Failed to find color icon %d", cursorInfo.tag);
 }
 
 } // End of namespace Pegasus

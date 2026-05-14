@@ -19,6 +19,9 @@
  *
  */
 
+// For _tcscpy
+#define FORBIDDEN_SYMBOL_EXCEPTION_strcpy
+
 // We cannot use common/scummsys.h directly as it will include
 // windows.h and we need to do it by hand to allow excluded functions
 #if defined(HAVE_CONFIG_H)
@@ -71,11 +74,11 @@
 const PROPERTYKEY PKEY_Title = { /* fmtid = */ { 0xF29F85E0, 0x4FF9, 0x1068, { 0xAB, 0x91, 0x08, 0x00, 0x2B, 0x27, 0xB3, 0xD9 } }, /* propID = */ 2 };
 
 Win32TaskbarManager::Win32TaskbarManager(SdlWindow_Win32 *window) : _window(window), _taskbar(nullptr), _count(0), _icon(nullptr) {
+	CoInitialize(nullptr);
+
 	// Do nothing if not running on Windows 7 or later
 	if (!Win32::confirmWindowsVersion(6, 1))
 		return;
-
-	CoInitialize(nullptr);
 
 	// Try creating instance (on fail, _taskbar will contain NULL)
 	HRESULT hr = CoCreateInstance(CLSID_TaskbarList,
@@ -118,11 +121,11 @@ void Win32TaskbarManager::setOverlayIcon(const Common::String &name, const Commo
 	}
 
 	// Compute full icon path
-	Common::String iconPath = getIconPath(name, ".ico");
+	Common::Path iconPath = getIconPath(name, ".ico");
 	if (iconPath.empty())
 		return;
 
-	TCHAR *tIconPath = Win32::stringToTchar(iconPath);
+	TCHAR *tIconPath = Win32::stringToTchar(iconPath.toString(Common::Path::kNativeSeparator));
 	HICON pIcon = (HICON)::LoadImage(nullptr, tIconPath, IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
 	free(tIconPath);
 	if (!pIcon) {
@@ -164,7 +167,7 @@ void Win32TaskbarManager::setCount(int count) {
 
 	// FIXME: This isn't really nice and could use a cleanup.
 	//        The only good thing is that it doesn't use GDI+
-	//        and thus does not have a dependancy on it,
+	//        and thus does not have a dependency on it,
 	//        with the downside of being a lot more ugly.
 	//        Maybe replace it by a Graphic::Surface, use
 	//        ScummVM font drawing and extract the contents at
@@ -295,11 +298,11 @@ void Win32TaskbarManager::addRecent(const Common::String &name, const Common::St
 		link->SetPath(path);
 		link->SetArguments(game);
 
-		Common::String iconPath = getIconPath(name, ".ico");
+		Common::Path iconPath = getIconPath(name, ".ico");
 		if (iconPath.empty()) {
 			link->SetIconLocation(path, 0); // No game-specific icon available
 		} else {
-			LPWSTR icon = Win32::ansiToUnicode(iconPath.c_str());
+			LPWSTR icon = Win32::ansiToUnicode(iconPath.toString(Common::Path::kNativeSeparator).c_str());
 
 			link->SetIconLocation(icon, 0);
 

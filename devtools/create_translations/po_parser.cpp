@@ -144,6 +144,7 @@ void PoMessageEntryList::addMessageEntry(const char *translation, const char *me
 		if (strcmp(str, "utf-8") != 0 && strcmp(str, "UTF-8") != 0) {
 			_useUTF8 = false;
 		}
+		delete[] str;
 		return;
 	}
 
@@ -259,8 +260,8 @@ PoMessageEntryList *parsePoFile(const char *file, PoMessageList& messages) {
 	if (!inFile)
 		return nullptr;
 
-	char msgidBuf[2048], msgctxtBuf[2048], msgstrBuf[2048];
-	char line[2048], *currentBuf = msgstrBuf;
+	char msgidBuf[20480], msgctxtBuf[20480], msgstrBuf[20480];
+	char line[20480], *currentBuf = msgstrBuf;
 
 	// Get language from file name and create PoMessageEntryList
 	int index = 0, start_index = strlen(file) - 1;

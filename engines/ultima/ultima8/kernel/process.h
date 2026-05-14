@@ -22,9 +22,13 @@
 #ifndef ULTIMA8_KERNEL_USECODE_PROCESS_H
 #define ULTIMA8_KERNEL_USECODE_PROCESS_H
 
-#include "ultima/shared/std/containers.h"
 #include "ultima/ultima8/misc/classtype.h"
-#include "ultima/ultima8/misc/pent_include.h"
+#include "ultima/ultima8/misc/common_types.h"
+#include "ultima/ultima8/misc/debugger.h"
+
+namespace Common {
+class ReadStream;
+}
 
 namespace Ultima {
 namespace Ultima8 {
@@ -110,8 +114,8 @@ public:
 		return _ticksPerRun;
 	}
 
-	//! dump some info about this process to pout
-	virtual void dumpInfo() const;
+	//! dump some info about this process to a string
+	virtual Common::String dumpInfo() const;
 
 	//! load Process data
 	bool loadData(Common::ReadStream *rs, uint32 version);
@@ -143,7 +147,7 @@ protected:
 
 	//! Processes waiting for this one to finish.
 	//! When this process terminates, awaken them and pass them the result val.
-	Std::vector<ProcId> _waiting;
+	Common::Array<ProcId> _waiting;
 
 public:
 
@@ -153,7 +157,9 @@ public:
 		PROC_TERMINATED  = 0x0004,
 		PROC_TERM_DEFERRED = 0x0008, //!< automatically call terminate next frame
 		PROC_FAILED      = 0x0010,
-		PROC_RUNPAUSED   = 0x0020    //!< run even if game is paused
+		PROC_RUNPAUSED   = 0x0020,    //!< run even if game is paused
+		PROC_TERM_DISPOSE = 0x0040,  //!< Dispose after termination
+		PROC_PREVENT_SAVE = 0x0080   //!< When set, prevent game from saving
 	};
 
 };

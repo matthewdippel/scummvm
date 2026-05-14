@@ -60,15 +60,16 @@ public:
 
 class MoviePlayer {
 public:
-	MoviePlayer(SwordEngine *vm, Text *textMan, ResMan *resMan, OSystem *system, Video::VideoDecoder *decoder, DecoderType decoderType);
+	MoviePlayer(SwordEngine *vm, Text *textMan, ResMan *resMan, Sound *sound, OSystem *system, Video::VideoDecoder *decoder, DecoderType decoderType);
 	virtual ~MoviePlayer();
-	bool load(uint32 id);
+	Common::Error load(uint32 id);
 	void play();
 
 protected:
 	SwordEngine *_vm;
 	Text *_textMan;
 	ResMan *_resMan;
+	Sound *_sound;
 	OSystem *_system;
 	Common::List<MovieText> _movieTexts;
 	int _textX, _textY, _textWidth, _textHeight;
@@ -76,6 +77,7 @@ protected:
 	uint32 _black;
 	uint32 _c1Color, _c2Color, _c3Color, _c4Color;
 	DecoderType _decoderType;
+	bool _modeChange;
 
 	Video::VideoDecoder *_decoder;
 
@@ -88,7 +90,7 @@ protected:
 	void convertColor(byte r, byte g, byte b, float &h, float &s, float &v);
 };
 
-MoviePlayer *makeMoviePlayer(uint32 id, SwordEngine *vm, Text *textMan, ResMan *resMan, OSystem *system);
+MoviePlayer *makeMoviePlayer(uint32 id, SwordEngine *vm, Text *textMan, ResMan *resMan, Sound *sound, OSystem *system);
 
 } // End of namespace Sword1
 

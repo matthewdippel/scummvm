@@ -93,28 +93,27 @@ void Versailles_DialogsManager::executeShow(const Common::String &show) {
 
 void Versailles_DialogsManager::playDialog(const Common::String &video, const Common::String &sound,
 		const Common::String &text, const SubtitlesSettings &settings) {
-	// Don't look for HNS file here
-	Common::String videoFName(_engine->prepareFileName(video, "hnm"));
 	Common::String soundFName(sound);
-
 	if (_padAudioFileName) {
 		while (soundFName.size() < 8) {
 			soundFName += '_';
 		}
 	}
-	soundFName = _engine->prepareFileName(soundFName, "wav");
 
-	Video::HNMDecoder *videoDecoder = new Video::HNMDecoder(true);
+	Common::Path videoPath(_engine->getFilePath(kFileTypeDialAnim, video));
+	Common::Path soundPath(_engine->getFilePath(kFileTypeDialSound, soundFName));
 
-	if (!videoDecoder->loadFile(videoFName)) {
-		warning("Failed to open movie file %s/%s", video.c_str(), videoFName.c_str());
+	Video::HNMDecoder *videoDecoder = new Video::HNMDecoder(g_system->getScreenFormat(), true);
+
+	if (!videoDecoder->loadFile(videoPath)) {
+		warning("Failed to open movie file %s/%s", video.c_str(), videoPath.toString(Common::Path::kNativeSeparator).c_str());
 		delete videoDecoder;
 		return;
 	}
 
 	Common::File *audioFile = new Common::File();
-	if (!audioFile->open(soundFName)) {
-		warning("Failed to open sound file %s/%s", sound.c_str(), soundFName.c_str());
+	if (!audioFile->open(soundPath)) {
+		warning("Failed to open sound file %s/%s", sound.c_str(), soundPath.toString(Common::Path::kNativeSeparator).c_str());
 		delete videoDecoder;
 		delete audioFile;
 		return;
@@ -353,23 +352,22 @@ uint Versailles_DialogsManager::askPlayerQuestions(const Common::String &video,
 }
 
 void Versailles_DialogsManager::loadFrame(const Common::String &video) {
-	Common::String videoFName(_engine->prepareFileName(video, "hnm"));
+	Common::Path videoPath(_engine->getFilePath(kFileTypeDialAnim, video));
 
-	Video::HNMDecoder *videoDecoder = new Video::HNMDecoder();
+	Video::HNMDecoder videoDecoder(g_system->getScreenFormat());
 
-	if (!videoDecoder->loadFile(videoFName)) {
-		warning("Failed to open movie file %s/%s", video.c_str(), videoFName.c_str());
-		delete videoDecoder;
+	if (!videoDecoder.loadFile(videoPath)) {
+		warning("Failed to open movie file %s/%s", video.c_str(), videoPath.toString(Common::Path::kNativeSeparator).c_str());
 		return;
 	}
 
 	// Preload first frame to draw questions on it
-	const Graphics::Surface *firstFrame = videoDecoder->decodeNextFrame();
+	const Graphics::Surface *firstFrame = videoDecoder.decodeNextFrame();
 	_lastImage.create(firstFrame->w, firstFrame->h, firstFrame->format);
 	_lastImage.blitFrom(*firstFrame);
 
-	if (videoDecoder->hasDirtyPalette()) {
-		const byte *palette = videoDecoder->getPalette();
+	if (videoDecoder.hasDirtyPalette()) {
+		const byte *palette = videoDecoder.getPalette();
 		_engine->setupPalette(palette, 0, 256);
 	}
 }

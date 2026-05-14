@@ -19,7 +19,6 @@
  *
  */
 
-#include "common/achievements.h"
 #include "common/debug-channels.h"
 #include "common/scummsys.h"
 #include "common/archive.h"
@@ -29,25 +28,38 @@
 #include "common/rect.h"
 #include "common/str.h"
 
+#include "engines/achievements.h"
 #include "engines/util.h"
+
+#include "gui/textviewer.h"
+#include "gui/gui-manager.h"
 
 #include "testbed/events.h"
 #include "testbed/fs.h"
 #include "testbed/graphics.h"
+#include "testbed/image.h"
 #include "testbed/midi.h"
 #include "testbed/misc.h"
 #include "testbed/networking.h"
 #include "testbed/savegame.h"
 #include "testbed/sound.h"
 #include "testbed/testbed.h"
+#include "testbed/video.h"
 #ifdef USE_CLOUD
 #include "testbed/cloud.h"
 #endif
 #ifdef USE_SDL_NET
 #include "testbed/webserver.h"
 #endif
+#include "testbed/printing.h"
 #ifdef USE_TTS
 #include "testbed/speech.h"
+#endif
+#ifdef USE_IMGUI
+#include "testbed/imgui.h"
+#endif
+#if defined USE_TINYGL && defined USE_OPENGL_GAME
+#include "testbed/tinygl.h"
 #endif
 
 namespace Testbed {
@@ -76,15 +88,16 @@ void TestbedExitDialog::init() {
 	addList(0, _yOffset, 500, 200, strArray);
 	text = "More Details can be viewed in the Log file : " + ConfParams.getLogFilename();
 	addText(450, 20, text, Graphics::kTextAlignLeft, 0, 0);
-	if (ConfParams.getLogDirectory().size()) {
-		text = "Directory : " + ConfParams.getLogDirectory();
-	} else {
+	if (ConfParams.getLogDirectory().empty()) {
 		text = "Directory : .";
+	} else {
+		text = "Directory : " + ConfParams.getLogDirectory().toString(Common::Path::kNativeSeparator);
 	}
 	addText(500, 20, text, Graphics::kTextAlignLeft, 0, 0);
 	_yOffset += 5;
 	addButtonXY(_xOffset + 80, _yOffset, 120, 24, "Rerun test suite", kCmdRerunTestbed);
 	addButtonXY(_xOffset + 240, _yOffset, 60, 24, "Close", GUI::kCloseCmd);
+	addButtonXY(_xOffset + 340, _yOffset, 60, 24, "Open Log", kViewLogCmd);
 }
 
 void TestbedExitDialog::handleCommand(GUI::CommandSender *sender, uint32 cmd, uint32 data) {
@@ -92,9 +105,15 @@ void TestbedExitDialog::handleCommand(GUI::CommandSender *sender, uint32 cmd, ui
 	default:
 		break;
 
-	case kCmdRerunTestbed :
+	case kCmdRerunTestbed:
 		ConfParams.setRerunFlag(true);
 		cmd = GUI::kCloseCmd;
+		break;
+	case kViewLogCmd:
+		Common::Path logPath = Common::Path(ConfParams.getLogDirectory());
+		GUI::TextViewerDialog viewer(logPath.appendComponent(ConfParams.getLogFilename()));
+		viewer.runModal();
+		g_gui.scheduleTopDialogRedraw();
 		break;
 	}
 
@@ -106,7 +125,7 @@ bool TestbedEngine::hasFeature(EngineFeature f) const {
 }
 
 TestbedEngine::TestbedEngine(OSystem *syst)
- : Engine(syst) {
+	: Engine(syst) {
 	// Put your engine in a sane state, but do nothing big yet;
 	// in particular, do not load data from files; rather, if you
 	// need to do such things, do them from init().
@@ -115,7 +134,7 @@ TestbedEngine::TestbedEngine(OSystem *syst)
 
 	// However this is the place to specify all default directories
 	// Put game-data dir in search path
-	Common::FSNode gameRoot(ConfMan.get("path"));
+	Common::FSNode gameRoot(ConfMan.getPath("path"));
 	if (gameRoot.exists()) {
 		SearchMan.addDirectory(gameRoot.getDisplayName(), gameRoot);
 	}
@@ -129,6 +148,9 @@ void TestbedEngine::pushTestsuites(Common::Array<Testsuite *> &testsuiteList) {
 	Testsuite *ts;
 	// GFX
 	ts = new GFXTestSuite();
+	testsuiteList.push_back(ts);
+	// Image
+	ts = new ImageTestSuite();
 	testsuiteList.push_back(ts);
 	// FS
 	ts = new FSTestSuite();
@@ -151,12 +173,15 @@ void TestbedEngine::pushTestsuites(Common::Array<Testsuite *> &testsuiteList) {
 	// Networking
 	ts = new NetworkingTestSuite();
 	testsuiteList.push_back(ts);
+	// Printing
+	ts = new PrintingTestSuite();
+	testsuiteList.push_back(ts);
 #ifdef USE_TTS
-	 // TextToSpeech
-	 ts = new SpeechTestSuite();
-	 testsuiteList.push_back(ts);
+	// TextToSpeech
+	ts = new SpeechTestSuite();
+	testsuiteList.push_back(ts);
 #endif
-#if defined(USE_CLOUD) && defined(USE_LIBCURL)
+#ifdef USE_CLOUD
 	// Cloud
 	ts = new CloudTestSuite();
 	testsuiteList.push_back(ts);
@@ -164,6 +189,19 @@ void TestbedEngine::pushTestsuites(Common::Array<Testsuite *> &testsuiteList) {
 #ifdef USE_SDL_NET
 	// Webserver
 	ts = new WebserverTestSuite();
+	testsuiteList.push_back(ts);
+#endif
+#ifdef USE_IMGUI
+	// ImGui
+	ts = new ImGuiTestSuite();
+	testsuiteList.push_back(ts);
+#endif
+	// Video decoder
+	ts = new VideoDecoderTestSuite();
+	testsuiteList.push_back(ts);
+#if defined USE_TINYGL && defined USE_OPENGL_GAME
+	// TinyGL
+	ts = new TinyGLTestSuite();
 	testsuiteList.push_back(ts);
 #endif
 }
@@ -213,8 +251,7 @@ void TestbedEngine::checkForAllAchievements() {
 
 Common::Error TestbedEngine::run() {
 	if (ConfMan.hasKey("start_movie")) {
-		videoTest();
-		return Common::kNoError;
+		return Videotests::videoTest(ConfMan.getPath("start_movie"));
 	}
 
 	// Initialize graphics using following:

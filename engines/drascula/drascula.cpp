@@ -23,6 +23,7 @@
 #include "common/keyboard.h"
 #include "common/file.h"
 #include "common/config-manager.h"
+#include "common/text-to-speech.h"
 #include "common/textconsole.h"
 #include "common/translation.h"
 
@@ -165,7 +166,7 @@ DrasculaEngine::DrasculaEngine(OSystem *syst, const DrasculaGameDescription *gam
 
 	_rnd = new Common::RandomSource("drascula");
 
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 	SearchMan.addSubDirectoryMatching(gameDataDir, "audio");
 
 	_system->getAudioCDManager()->open();
@@ -173,6 +174,8 @@ DrasculaEngine::DrasculaEngine(OSystem *syst, const DrasculaGameDescription *gam
 	_lang = kEnglish;
 
 	_keyBufferHead = _keyBufferTail = 0;
+
+	_actionBufferHead = _actionBufferTail = 0;
 
 	_roomHandlers = nullptr;
 }
@@ -247,6 +250,18 @@ Common::Error DrasculaEngine::run() {
 	default:
 		warning("Unknown game language. Falling back to English");
 		_lang = kEnglish;
+	}
+
+	Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
+	if (ttsMan != nullptr) {
+		ttsMan->setLanguage(ConfMan.get("language"));
+		ttsMan->enable(ConfMan.getBool("tts_enabled"));
+
+		if (_lang == kRussian) {
+			_ttsTextEncoding = Common::CodePage::kWindows1251;
+		} else {
+			_ttsTextEncoding = Common::CodePage::kDos850;
+		}
 	}
 
 	setDebugger(new Console(this));
@@ -402,6 +417,7 @@ bool DrasculaEngine::runCurrentChapter() {
 	int framesWithoutAction = 0;
 
 	_rightMouseButton = 0;
+	_leftMouseButtonHeld = false;
 
 	previousMusic = -1;
 
@@ -629,45 +645,52 @@ bool DrasculaEngine::runCurrentChapter() {
 			selectVerb(kVerbNone);
 		}
 
+		if (_leftMouseButton == 0)
+			_leftMouseButtonHeld = false;
+
 		if (_leftMouseButton == 1 && _menuBar) {
 			selectVerbFromBar();
-		} else if (_leftMouseButton == 1 && takeObject == 0) {
+		} else if (_leftMouseButton == 1 && takeObject == 0 && !_leftMouseButtonHeld) {
 			if (verify1())
 				return true;
-			delay(100);
-		} else if (_leftMouseButton == 1 && takeObject == 1) {
+			delay(50);
+			_leftMouseButtonHeld = true;
+		} else if (_leftMouseButton == 1 && takeObject == 1 && !_leftMouseButtonHeld) {
 			if (verify2())
 				return true;
+			delay(50);
+			_leftMouseButtonHeld = true;
 		}
 
 		_menuBar = (_mouseY < 24 && !_menuScreen) ? true : false;
 
 		_canSaveLoad = true;
 		Common::KeyCode key = getScan();
+		Common::CustomEventType action = getAction();
 		_canSaveLoad = false;
 		if (_loadedDifferentChapter)
 			return true;
-		if (key == Common::KEYCODE_F1 && !_menuScreen) {
+		if (action == kActionLook && !_menuScreen) {
 			selectVerb(kVerbLook);
-		} else if (key == Common::KEYCODE_F2 && !_menuScreen) {
+		} else if (action == kActionPick && !_menuScreen) {
 			selectVerb(kVerbPick);
-		} else if (key == Common::KEYCODE_F3 && !_menuScreen) {
+		} else if (action == kActionOpen && !_menuScreen) {
 			selectVerb(kVerbOpen);
-		} else if (key == Common::KEYCODE_F4 && !_menuScreen) {
+		} else if (action == kActionClose && !_menuScreen) {
 			selectVerb(kVerbClose);
-		} else if (key == Common::KEYCODE_F5 && !_menuScreen) {
+		} else if (action == kActionTalk && !_menuScreen) {
 			selectVerb(kVerbTalk);
-		} else if (key == Common::KEYCODE_F6 && !_menuScreen) {
+		} else if (action == kActionMove && !_menuScreen) {
 			selectVerb(kVerbMove);
-		} else if (key == Common::KEYCODE_F7) {
+		} else if (action == kActionLoadGame) {
 			// ScummVM load screen
 			if (!scummVMSaveLoadDialog(false))
 				return true;
-		} else if (key == Common::KEYCODE_F8) {
+		} else if (action == kActionVerbReset) {
 			selectVerb(kVerbNone);
-		} else if (key == Common::KEYCODE_F9) {
+		} else if (action == kActionVolumeControls) {
 			volumeControls();
-		} else if (key == Common::KEYCODE_F10) {
+		} else if (action == kActionSaveGame) {
 			if (!ConfMan.getBool("originalsaveload")) {
 				// ScummVM save screen
 				scummVMSaveLoadDialog(true);
@@ -676,28 +699,34 @@ bool DrasculaEngine::runCurrentChapter() {
 				if (!saveLoadScreen())
 					return true;
 			}
-		} else if (key == Common::KEYCODE_v) {
+		} else if (action == kActionSubtitlesEnable) {
 			_subtitlesDisabled = true;
 			ConfMan.setBool("subtitles", !_subtitlesDisabled);
 
 			print_abc(_textsys[2], 96, 86);
+
+			sayText(_textsys[2], Common::TextToSpeechManager::INTERRUPT);
+
 			updateScreen();
 			delay(1410);
-		} else if (key == Common::KEYCODE_t) {
+		} else if (action == kActionSubtitlesDisable) {
 			_subtitlesDisabled = false;
 			ConfMan.setBool("subtitles", !_subtitlesDisabled);
 
 			print_abc(_textsys[3], 94, 86);
+
+			sayText(_textsys[3], Common::TextToSpeechManager::INTERRUPT);
+
 			updateScreen();
 			delay(1460);
-		} else if (key == Common::KEYCODE_ESCAPE) {
+		} else if (action == kActionQuit) {
 			if (!confirmExit())
 				return false;
-		} else if (currentChapter == 6 && key == Common::KEYCODE_0 && _roomNumber == 61) {
+		} else if (currentChapter == 6 && action == kActionEasterEgg && _roomNumber == 61) {
 			loadPic("alcbar.alg", bgSurface, 255);
 		}
 
-		if (_leftMouseButton != 0 || _rightMouseButton != 0 || key != 0)
+		if (_leftMouseButton != 0 || _rightMouseButton != 0 || key != 0 || action != kActionNone)
 			framesWithoutAction = 0;
 
 		if (framesWithoutAction == 15000) {
@@ -807,6 +836,32 @@ void DrasculaEngine::flushKeyBuffer() {
 	_keyBufferHead = _keyBufferTail = 0;
 }
 
+Common::CustomEventType DrasculaEngine::getAction() {
+	updateEvents();
+	if (_actionBufferHead == _actionBufferTail)
+		return kActionNone;
+
+	Common::CustomEventType action = _actionBuffer[_actionBufferTail];
+	_actionBufferTail = (_actionBufferTail + 1) % ACTIONBUFSIZE;
+
+	return action;
+}
+
+void DrasculaEngine::addActionToBuffer(Common::CustomEventType& action) {
+	if ((_actionBufferHead + 1) % ACTIONBUFSIZE == _actionBufferTail) {
+		warning("action buffer overflow");
+		return;
+	}
+
+	_actionBuffer[_actionBufferHead] = action;
+	_actionBufferHead = (_actionBufferHead + 1) % ACTIONBUFSIZE;
+}
+
+void DrasculaEngine::flushActionBuffer() {
+	updateEvents();
+	_actionBufferHead = _actionBufferTail = 0;
+}
+
 void DrasculaEngine::updateEvents() {
 	Common::Event event;
 	Common::EventManager *eventMan = _system->getEventManager();
@@ -815,6 +870,11 @@ void DrasculaEngine::updateEvents() {
 
 	while (eventMan->pollEvent(event)) {
 		switch (event.type) {
+		case Common::EVENT_CUSTOM_ENGINE_ACTION_START:
+			addActionToBuffer(event.customType);
+			break;
+		case Common::EVENT_CUSTOM_ENGINE_ACTION_END:
+			break;
 		case Common::EVENT_KEYDOWN:
 			addKeyToBuffer(event.kbd);
 			break;
@@ -965,12 +1025,40 @@ bool DrasculaEngine::loadDrasculaDat() {
 		return false;
 	}
 
-	_charMapSize = in.readUint16BE();
+	uint16 charMapLettersSize = in.readUint16BE();
+	uint16 charMapSignsSize = in.readUint16BE();
+	uint16 charMapCyrillicSize = in.readUint16BE();
+	uint16 charMapAccentedSize = in.readUint16BE();
+	_charMapSize = charMapLettersSize + charMapSignsSize;
+	if (_lang == kRussian)
+		_charMapSize += charMapCyrillicSize;
+	else
+		_charMapSize += charMapAccentedSize;
 	_charMap = (CharInfo *)malloc(sizeof(CharInfo) * _charMapSize);
-	for (i = 0; i < _charMapSize; i++) {
-		_charMap[i].inChar = in.readByte();
-		_charMap[i].mappedChar = in.readSint16BE();
-		_charMap[i].charType = in.readByte();
+	int map_i = 0;
+	for (i = 0; i < charMapLettersSize + charMapSignsSize; i++, map_i++) {
+		_charMap[map_i].inChar = in.readByte();
+		_charMap[map_i].mappedChar = in.readSint16BE();
+		_charMap[map_i].charType = in.readByte();
+	}
+	if (_lang == kRussian) {
+		// load cyrillic characters
+		for (i = 0; i < charMapCyrillicSize; i++, map_i++) {
+			_charMap[map_i].inChar = in.readByte();
+			_charMap[map_i].mappedChar = in.readSint16BE();
+			_charMap[map_i].charType = in.readByte();
+		}
+		// skip accented characters
+		in.skip(4 * charMapAccentedSize);
+	} else {
+		// skeep cyrillic characters
+		in.skip(4 * charMapCyrillicSize);
+		// load accented characters
+		for (i = 0; i < charMapAccentedSize; i++, map_i++) {
+			_charMap[map_i].inChar = in.readByte();
+			_charMap[map_i].mappedChar = in.readSint16BE();
+			_charMap[map_i].charType = in.readByte();
+		}
 	}
 
 	_itemLocationsSize = in.readUint16BE();
@@ -1134,6 +1222,19 @@ void DrasculaEngine::freeTexts(char **ptr) {
 
 	free(*ptr);
 	free(ptr);
+}
+
+void DrasculaEngine::sayText(const Common::String &text, Common::TextToSpeechManager::Action action) {
+	Common::TextToSpeechManager *ttsMan = g_system->getTextToSpeechManager();
+
+	// _previousSaid is used to prevent the TTS from looping when sayText is called inside a loop,
+	// for example when the cursor stays on a verb icon. Without it when the text ends it would speak
+	// the same text again.
+	// _previousSaid is cleared when appropriate to allow for repeat requests
+	if (ttsMan && ConfMan.getBool("tts_enabled") && _previousSaid != text) {
+		_previousSaid = text;
+		ttsMan->say(text, action, _ttsTextEncoding);
+	}
 }
 
 } // End of namespace Drascula

@@ -22,10 +22,14 @@
 #ifndef DIRECTOR_MOVIE_H
 #define DIRECTOR_MOVIE_H
 
+#define DEFAULT_CAST_LIB 1
+#define SHARED_CAST_LIB -1337
+
 namespace Common {
 struct Event;
 class ReadStreamEndian;
 class SeekableReadStreamEndian;
+class MemoryWriteStream;
 }
 
 namespace Director {
@@ -68,6 +72,7 @@ struct InfoEntry {
 	}
 
 	Common::String readString(bool pascal = true);
+	void writeString(Common::String string, bool pascal = true);
 };
 
 struct InfoEntries {
@@ -87,72 +92,101 @@ public:
 
 	static Common::Rect readRect(Common::ReadStreamEndian &stream);
 	static InfoEntries loadInfoEntries(Common::SeekableReadStreamEndian &stream, uint16 version);
+	static void saveInfoEntries(Common::SeekableWriteStream *writeStream, InfoEntries info);
 
+	static void writeRect(Common::WriteStream *writeStream, Common::Rect rect);
+
+	void loadCastLibMapping(Common::SeekableReadStreamEndian &stream);
 	bool loadArchive();
 	void setArchive(Archive *archive);
 	Archive *getArchive() const { return _movieArchive; };
 	Common::String getMacName() const { return _macName; }
 	Window *getWindow() const { return _window; }
 	DirectorEngine *getVM() const { return _vm; }
-	Cast *getCast() const { return _casts.getValOrDefault(0, nullptr); }
+	Cast *getCast() const { return _casts.getValOrDefault(DEFAULT_CAST_LIB, nullptr); }
+	Cast *getCast(CastMemberID memberID);
+	Cast *getCastByLibResourceID(int libresourceID);
 	Cast *getSharedCast() const { return _sharedCast; }
+	const Common::HashMap<int, Cast *> *getCasts() const { return &_casts; }
 	Score *getScore() const { return _score; }
 
 	void clearSharedCast();
-	void loadSharedCastsFrom(Common::String filename);
+	void loadSharedCastsFrom(Common::Path &filename);
+	Archive *loadExternalCastFrom(Common::Path &filename);
+	bool loadCastLibFrom(uint16 libId, Common::Path &filename);
 
 	CastMember *getCastMember(CastMemberID memberID);
 	CastMember *createOrReplaceCastMember(CastMemberID memberID, CastMember *cast);
 	bool eraseCastMember(CastMemberID memberID);
-	CastMember *getCastMemberByName(const Common::String &name, int castLib);
+	bool duplicateCastMember(CastMemberID source, CastMemberID target);
+	CastMemberID getCastMemberIDByMember(int memberID);
+	int getCastLibIDByName(const Common::String &name);
+	void setCastLibName(const Common::String &name, int castLib);
+	CastMemberID getCastMemberIDByName(const Common::String &name);
+	CastMemberID getCastMemberIDByNameAndType(const Common::String &name, int castLib, CastType type);
 	CastMemberInfo *getCastMemberInfo(CastMemberID memberID);
+	bool isValidCastMember(CastMemberID memberID, CastType type);
 	const Stxt *getStxt(CastMemberID memberID);
+
 
 	LingoArchive *getMainLingoArch();
 	LingoArchive *getSharedLingoArch();
 	ScriptContext *getScriptContext(ScriptType type, CastMemberID id);
-	Symbol getHandler(const Common::String &name);
+	Symbol getHandler(const Common::String &name, uint16 castLibHint = 0);
 
-	// events.cpp
+	// lingo/lingo-events.cpp
 	bool processEvent(Common::Event &event);
+	void broadcastEvent(LEvent event);
 
 	// lingo/lingo-events.cpp
 	void setPrimaryEventHandler(LEvent event, const Common::String &code);
+	void resolveScriptEvent(LingoEvent &event);
 	void processEvent(LEvent event, int targetId = 0);
-	void queueUserEvent(LEvent event, int targetId = 0);
+	void queueInputEvent(LEvent event, int targetId = 0, Common::Point pos = Common::Point(-1, -1));
+
+	Common::String formatMovieInfo();
 
 private:
 	void loadFileInfo(Common::SeekableReadStreamEndian &stream);
 
-	void queueEvent(Common::Queue<LingoEvent> &queue, LEvent event, int targetId = 0);
+	void queueEvent(Common::Queue<LingoEvent> &queue, LEvent event, int targetId = 0, Common::Point pos = Common::Point(-1, -1));
 	void queueSpriteEvent(Common::Queue<LingoEvent> &queue, LEvent event, int eventId, int spriteId);
-	void queueFrameEvent(Common::Queue<LingoEvent> &queue, LEvent event, int eventId);
-	void queueMovieEvent(Common::Queue<LingoEvent> &queue, LEvent event, int eventId);
 
 public:
 	Archive *_movieArchive;
 	uint16 _version;
 	Common::Platform _platform;
 	Common::Rect _movieRect;
-	uint16 _currentClickOnSpriteId;
+	uint16 _lastClickedSpriteId;
+	uint16 _currentHoveredSpriteId;
+	uint _currentSpriteNum;
+	CastMemberID _currentMouseDownCastID;
+	CastMemberID _currentMouseDownSpriteScriptID;
+	bool _currentMouseDownSpriteImmediate;
 	uint16 _currentEditableTextChannel;
 	uint32 _lastEventTime;
 	uint32 _lastRollTime;
 	uint32 _lastClickTime;
 	uint32 _lastClickTime2;
 	Common::Point _lastClickPos;
+	Common::Point _lastMousePos;
 	uint32 _lastKeyTime;
 	uint32 _lastTimerReset;
 	uint32 _stageColor;
 	Cast *_sharedCast;
 	bool _allowOutdatedLingo;
+	bool _remapPalettesWhenNeeded;
+	Common::String _createdBy;
+	Common::String _changedBy;
+	Common::String _origDirectory;
+	CastMemberID _defaultPalette;
 
 	bool _videoPlayback;
 
 	int _nextEventId;
-	Common::Queue<LingoEvent> _userEventQueue;
+	Common::Queue<LingoEvent> _inputEventQueue;
 
-	unsigned char _key;
+	uint16 _key;
 	int _keyCode;
 	byte _keyFlags;
 
@@ -163,14 +197,23 @@ public:
 	int _checkBoxAccess;
 
 	uint16 _currentHiliteChannelId;
+	uint16 _lastEnteredChannelId;
 
-	uint _lastTimeOut;
-	uint _timeOutLength;
+	int _lastTimeOut;
+	int _timeOutLength;
 	bool _timeOutKeyDown;
 	bool _timeOutMouse;
 	bool _timeOutPlay;
 
 	bool _isBeepOn;
+	Common::HashMap<LEvent, int> _lastEventId;
+
+	Common::String _script;
+
+	// A flag to disable the event processing in the Movie
+	// This flag will be set when the user's interaction (mouse and key events like mouseUp, keyUp)
+	// shouldn't be recorded as movie event, which may cause undesirable change in the lingo script
+	bool _inGuiMessageBox = false;
 
 private:
 	Window *_window;
@@ -178,19 +221,16 @@ private:
 	Lingo *_lingo;
 	Cast *_cast;
 	Common::HashMap<int, Cast *> _casts;
+	Common::HashMap<Common::String, int, Common::IgnoreCase_Hash, Common::IgnoreCase_EqualTo> _castNames;
 	Score *_score;
 
 	uint32 _flags;
 
 	Common::String _macName;
-	Common::String _createdBy;
-	Common::String _changedBy;
-	Common::String _script;
-	Common::String _directory;
 
 	bool _mouseDownWasInButton;
 	Channel *_currentDraggedChannel;
-	Common::Point _draggingSpritePos;
+	Common::Point _draggingSpriteOffset;
 };
 
 } // End of namespace Director

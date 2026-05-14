@@ -19,7 +19,7 @@
  *
  */
 
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 #include "ultima/nuvie/core/nuvie_defs.h"
 #include "ultima/nuvie/conf/configuration.h"
 #include "audio/mixer.h"
@@ -59,7 +59,7 @@ static const TownsSfxLookup sfx_lookup_tbl[] = {
 	{NUVIE_SFX_ATTACK_SWING, 2}
 };
 
-TownsSfxManager::TownsSfxManager(Configuration *cfg, Audio::Mixer *m) : SfxManager(cfg, m),
+TownsSfxManager::TownsSfxManager(const Configuration *cfg, Audio::Mixer *m) : SfxManager(cfg, m),
 		fireStream(nullptr) {
 	config->pathFromValue("config/townsdir", "sounds2.dat", sounds2dat_filepath);
 	loadSound1Dat();
@@ -72,7 +72,7 @@ TownsSfxManager::~TownsSfxManager() {
 }
 
 void TownsSfxManager::loadSound1Dat() {
-	Std::string filename;
+	Common::Path filename;
 	U6Lzw decompressor;
 	U6Lib_n lib;
 	NuvieIOBuffer iobuf;
@@ -81,23 +81,26 @@ void TownsSfxManager::loadSound1Dat() {
 	config->pathFromValue("config/townsdir", "sounds1.dat", filename);
 	unsigned char *slib32_data = decompressor.decompress_file(filename, slib32_len);
 
-	if (slib32_len == 0)
+	if (slib32_len == 0) {
+		error("Failed to load FM-Towns sound file %s", filename.toString().c_str());
 		return;
+	}
 
 	iobuf.open(slib32_data, slib32_len);
 	free(slib32_data);
 
-	if (!lib.open(&iobuf, 4))
+	if (!lib.open(&iobuf, 4)) {
+		error("Failed to load FM-Towns sound file %s", filename.toString().c_str());
 		return;
+	}
 
-	uint8 i;
-	for (i = 0; i < TOWNS_SFX_SOUNDS1_SIZE; i++) {
+	for (int i = 0; i < TOWNS_SFX_SOUNDS1_SIZE; i++) {
 		sounds1_dat[i].buf = lib.get_item(i);
 		sounds1_dat[i].len = lib.get_item_size(i);
 	}
 
 	// Fire SFX is made up of three individual samples played in a random sequence
-	Std::vector<Audio::RewindableAudioStream *> streams;
+	Common::Array<Audio::RewindableAudioStream *> streams;
 	streams.push_back(new FMtownsDecoderStream(sounds1_dat[6].buf, sounds1_dat[6].len));
 	streams.push_back(new FMtownsDecoderStream(sounds1_dat[7].buf, sounds1_dat[7].len));
 	streams.push_back(new FMtownsDecoderStream(sounds1_dat[8].buf, sounds1_dat[8].len));
@@ -106,7 +109,7 @@ void TownsSfxManager::loadSound1Dat() {
 }
 
 bool TownsSfxManager::playSfx(SfxIdType sfx_id, uint8 volume) {
-	return playSfxLooping(sfx_id, NULL, volume);
+	return playSfxLooping(sfx_id, nullptr, volume);
 }
 
 
@@ -122,7 +125,7 @@ bool TownsSfxManager::playSfxLooping(SfxIdType sfx_id, Audio::SoundHandle *handl
 }
 
 void TownsSfxManager::playSoundSample(uint8 sample_num, Audio::SoundHandle *looping_handle, uint8 volume) {
-	Audio::AudioStream *stream = NULL;
+	Audio::AudioStream *stream = nullptr;
 	Audio::SoundHandle handle;
 
 	if (sample_num > 5 && sample_num < 9) {

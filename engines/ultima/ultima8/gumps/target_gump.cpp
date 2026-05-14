@@ -19,8 +19,8 @@
  *
  */
 
+#include "ultima/ultima.h"
 #include "ultima/ultima8/gumps/target_gump.h"
-
 #include "ultima/ultima8/ultima8.h"
 #include "ultima/ultima8/kernel/mouse.h"
 #include "ultima/ultima8/gumps/gump_notify_process.h"
@@ -36,9 +36,10 @@ TargetGump::TargetGump() : ModalGump(), _targetTracing(false) {
 
 }
 
-
+// Skip pause as usecode processes need to complete & matches original game
 TargetGump::TargetGump(int x, int y)
-	: ModalGump(x, y, 0, 0), _targetTracing(false) {
+	: ModalGump(x, y, 0, 0, 0, FLAG_DONT_SAVE | FLAG_PREVENT_SAVE, LAYER_MODAL, false),
+	_targetTracing(false) {
 
 }
 
@@ -56,8 +57,7 @@ void TargetGump::InitGump(Gump *newparent, bool take_focus) {
 	CreateNotifier();
 
 	Mouse *mouse = Mouse::get_instance();
-	mouse->pushMouseCursor();
-	mouse->setMouseCursor(Mouse::MOUSE_TARGET);
+	mouse->pushMouseCursor(Mouse::MOUSE_TARGET);
 }
 
 void TargetGump::Close(bool no_del) {
@@ -76,24 +76,37 @@ bool TargetGump::PointOnGump(int mx, int my) {
 }
 
 void TargetGump::onMouseUp(int button, int32 mx, int32 my) {
-	_targetTracing = true;
+	if (button == Mouse::BUTTON_LEFT) {
+		_targetTracing = true;
 
-	_parent->GumpToScreenSpace(mx, my);
+		_parent->GumpToScreenSpace(mx, my);
 
-	Gump *desktopgump = _parent;
-	ObjId objId = desktopgump->TraceObjId(mx, my);
-	Item *item = getItem(objId);
+		Gump *desktopgump = _parent;
+		ObjId objId = desktopgump->TraceObjId(mx, my);
+		Item *item = getItem(objId);
 
-	if (item) {
-		// done
-		pout << "Target result: ";
-		item->dumpInfo();
+		if (item) {
+			// done
+			debugC(kDebugObject, "Target result: %s", item->dumpInfo().c_str());
 
-		_processResult = objId;
+			_processResult = objId;
+			Close();
+		}
+
+		_targetTracing = false;
+	}
+}
+
+bool TargetGump::OnKeyDown(int key, int mod) {
+	switch (key) {
+	case Common::KEYCODE_ESCAPE: {
 		Close();
+	} break;
+	default:
+		break;
 	}
 
-	_targetTracing = false;
+	return true;
 }
 
 uint32 TargetGump::I_target(const uint8 * /*args*/, unsigned int /*argsize*/) {
@@ -103,14 +116,12 @@ uint32 TargetGump::I_target(const uint8 * /*args*/, unsigned int /*argsize*/) {
 	return targetgump->GetNotifyProcess()->getPid();
 }
 
-
-
 void TargetGump::saveData(Common::WriteStream *ws) {
-	CANT_HAPPEN_MSG("Trying to save ModalGump");
+	warning("Trying to save ModalGump");
 }
 
 bool TargetGump::loadData(Common::ReadStream *rs, uint32 versin) {
-	CANT_HAPPEN_MSG("Trying to load ModalGump");
+	warning("Trying to load ModalGump");
 	return false;
 }
 

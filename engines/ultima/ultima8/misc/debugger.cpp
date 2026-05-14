@@ -19,62 +19,53 @@
  *
  */
 
+#include "ultima/ultima8/misc/debugger.h"
+
 #include "common/config-manager.h"
-#include "common/tokenizer.h"
-#include "image/png.h"
+#include "common/file.h"
+#include "common/system.h"
 #include "image/bmp.h"
-#include "ultima/ultima8/ultima8.h"
+#include "image/png.h"
 #include "ultima/ultima8/audio/audio_process.h"
 #include "ultima/ultima8/audio/music_process.h"
-#include "ultima/ultima8/filesys/file_system.h"
-#include "ultima/ultima8/graphics/inverter_process.h"
-#include "ultima/ultima8/graphics/render_surface.h"
+#include "ultima/ultima8/games/game_data.h"
+#include "ultima/ultima8/gfx/inverter_process.h"
+#include "ultima/ultima8/gfx/main_shape_archive.h"
+#include "ultima/ultima8/gfx/render_surface.h"
+#include "ultima/ultima8/gfx/texture.h"
 #include "ultima/ultima8/gumps/fast_area_vis_gump.h"
 #include "ultima/ultima8/gumps/game_map_gump.h"
+#include "ultima/ultima8/gumps/menu_gump.h"
 #include "ultima/ultima8/gumps/minimap_gump.h"
 #include "ultima/ultima8/gumps/movie_gump.h"
 #include "ultima/ultima8/gumps/quit_gump.h"
 #include "ultima/ultima8/gumps/shape_viewer_gump.h"
-#include "ultima/ultima8/gumps/menu_gump.h"
 #include "ultima/ultima8/kernel/kernel.h"
 #include "ultima/ultima8/kernel/object_manager.h"
 #include "ultima/ultima8/misc/id_man.h"
-#include "ultima/ultima8/misc/util.h"
-#include "ultima/ultima8/usecode/uc_machine.h"
+#include "ultima/ultima8/ultima8.h"
 #include "ultima/ultima8/usecode/bit_set.h"
-#include "ultima/ultima8/world/world.h"
+#include "ultima/ultima8/usecode/uc_machine.h"
+#include "ultima/ultima8/world/actors/avatar_mover_process.h"
+#include "ultima/ultima8/world/actors/main_actor.h"
+#include "ultima/ultima8/world/actors/pathfinder.h"
+#include "ultima/ultima8/world/actors/quick_avatar_mover_process.h"
 #include "ultima/ultima8/world/camera_process.h"
+#include "ultima/ultima8/world/current_map.h"
 #include "ultima/ultima8/world/get_object.h"
 #include "ultima/ultima8/world/item_factory.h"
-#include "ultima/ultima8/world/actors/quick_avatar_mover_process.h"
-#include "ultima/ultima8/world/actors/avatar_mover_process.h"
-#include "ultima/ultima8/world/target_reticle_process.h"
 #include "ultima/ultima8/world/item_selection_process.h"
-#include "ultima/ultima8/world/actors/main_actor.h"
-
-#ifdef DEBUG
-#include "ultima/ultima8/world/actors/pathfinder.h"
-#endif
-
+#include "ultima/ultima8/world/target_reticle_process.h"
+#include "ultima/ultima8/world/world.h"
 
 namespace Ultima {
 namespace Ultima8 {
 
 Debugger *g_debugger;
 
-// Console out/err pointers
-console_ostream<char> *ppout;
-console_err_ostream<char> *pperr;
-
-Debugger::Debugger() : Shared::Debugger() {
+Debugger::Debugger() : GUI::Debugger() {
 	g_debugger = this;
 
-	// Set output pointers
-	ppout = &_strOut;
-	pperr = &_errOut;
-
-	// WARNING: Not only can the methods below be executed directly in the debugger,
-	// they also act as the methods keybindings are made to. So be wary of changing names
 	registerCmd("quit", WRAP_METHOD(Debugger, cmdQuit));
 	registerCmd("Ultima8Engine::quit", WRAP_METHOD(Debugger, cmdQuit));
 	registerCmd("Ultima8Engine::saveGame", WRAP_METHOD(Debugger, cmdSaveGame));
@@ -82,46 +73,10 @@ Debugger::Debugger() : Shared::Debugger() {
 	registerCmd("Ultima8Engine::newGame", WRAP_METHOD(Debugger, cmdNewGame));
 	registerCmd("Ultima8Engine::engineStats", WRAP_METHOD(Debugger, cmdEngineStats));
 	registerCmd("Ultima8Engine::setVideoMode", WRAP_METHOD(Debugger, cmdSetVideoMode));
-	registerCmd("Ultima8Engine::toggleAvatarInStasis", WRAP_METHOD(Debugger, cmdToggleAvatarInStasis));
-	registerCmd("Ultima8Engine::togglePaintEditorItems", WRAP_METHOD(Debugger, cmdTogglePaintEditorItems));
-	registerCmd("Ultima8Engine::toggleShowTouchingItems", WRAP_METHOD(Debugger, cmdToggleShowTouchingItems));
+	registerCmd("Ultima8Engine::toggleAvatarInStasis", WRAP_METHOD(Debugger, cmdAvatarInStasis));
+	registerCmd("Ultima8Engine::togglePaintEditorItems", WRAP_METHOD(Debugger, cmdShowEditorItems));
+	registerCmd("Ultima8Engine::toggleShowTouchingItems", WRAP_METHOD(Debugger, cmdShowTouchingItems));
 	registerCmd("Ultima8Engine::closeItemGumps", WRAP_METHOD(Debugger, cmdCloseItemGumps));
-
-	registerCmd("AvatarMoverProcess::startJump", WRAP_METHOD(Debugger, cmdStartJump));
-	registerCmd("AvatarMoverProcess::stopJump", WRAP_METHOD(Debugger, cmdStopJump));
-	registerCmd("AvatarMoverProcess::startTurnLeft", WRAP_METHOD(Debugger, cmdStartTurnLeft));
-	registerCmd("AvatarMoverProcess::startTurnRight", WRAP_METHOD(Debugger, cmdStartTurnRight));
-	registerCmd("AvatarMoverProcess::startMoveForward", WRAP_METHOD(Debugger, cmdStartMoveForward));
-	registerCmd("AvatarMoverProcess::startMoveBack", WRAP_METHOD(Debugger, cmdStartMoveBack));
-	registerCmd("AvatarMoverProcess::stopTurnLeft", WRAP_METHOD(Debugger, cmdStopTurnLeft));
-	registerCmd("AvatarMoverProcess::stopTurnRight", WRAP_METHOD(Debugger, cmdStopTurnRight));
-	registerCmd("AvatarMoverProcess::stopMoveForward", WRAP_METHOD(Debugger, cmdStopMoveForward));
-	registerCmd("AvatarMoverProcess::stopMoveBack", WRAP_METHOD(Debugger, cmdStopMoveBack));
-
-	registerCmd("AvatarMoverProcess::startMoveLeft", WRAP_METHOD(Debugger, cmdStartMoveLeft));
-	registerCmd("AvatarMoverProcess::startMoveRight", WRAP_METHOD(Debugger, cmdStartMoveRight));
-	registerCmd("AvatarMoverProcess::startMoveUp", WRAP_METHOD(Debugger, cmdStartMoveUp));
-	registerCmd("AvatarMoverProcess::startMoveDown", WRAP_METHOD(Debugger, cmdStartMoveDown));
-	registerCmd("AvatarMoverProcess::stopMoveLeft", WRAP_METHOD(Debugger, cmdStopMoveLeft));
-	registerCmd("AvatarMoverProcess::stopMoveRight", WRAP_METHOD(Debugger, cmdStopMoveRight));
-	registerCmd("AvatarMoverProcess::stopMoveUp", WRAP_METHOD(Debugger, cmdStopMoveUp));
-	registerCmd("AvatarMoverProcess::stopMoveDown", WRAP_METHOD(Debugger, cmdStopMoveDown));
-
-	registerCmd("AvatarMoverProcess::startMoveRun", WRAP_METHOD(Debugger, cmdStartMoveRun));
-	registerCmd("AvatarMoverProcess::stopMoveRun", WRAP_METHOD(Debugger, cmdStopMoveRun));
-	registerCmd("AvatarMoverProcess::startMoveStep", WRAP_METHOD(Debugger, cmdStartMoveStep));
-	registerCmd("AvatarMoverProcess::stopMoveStep", WRAP_METHOD(Debugger, cmdStopMoveStep));
-	registerCmd("AvatarMoverProcess::startAttack", WRAP_METHOD(Debugger, cmdStartAttack));
-	registerCmd("AvatarMoverProcess::stopAttack", WRAP_METHOD(Debugger, cmdStopAttack));
-
-	registerCmd("AvatarMoverProcess::shortJump", WRAP_METHOD(Debugger, cmdShortJump));
-	registerCmd("AvatarMoverProcess::stepLeft", WRAP_METHOD(Debugger, cmdStepLeft));
-	registerCmd("AvatarMoverProcess::stepRight", WRAP_METHOD(Debugger, cmdStepRight));
-	registerCmd("AvatarMoverProcess::stepForward", WRAP_METHOD(Debugger, cmdStepForward));
-	registerCmd("AvatarMoverProcess::stepBack", WRAP_METHOD(Debugger, cmdStepBack));
-	registerCmd("AvatarMoverProcess::rollLeft", WRAP_METHOD(Debugger, cmdRollLeft));
-	registerCmd("AvatarMoverProcess::rollRight", WRAP_METHOD(Debugger, cmdRollRight));
-	registerCmd("AvatarMoverProcess::toggleCrouch", WRAP_METHOD(Debugger, cmdToggleCrouch));
 
 	registerCmd("CameraProcess::moveToAvatar", WRAP_METHOD(Debugger, cmdCameraOnAvatar));
 
@@ -129,16 +84,17 @@ Debugger::Debugger() : Shared::Debugger() {
 	registerCmd("AudioProcess::playSFX", WRAP_METHOD(Debugger, cmdPlaySFX));
 	registerCmd("AudioProcess::stopSFX", WRAP_METHOD(Debugger, cmdStopSFX));
 
-	registerCmd("Cheat::toggle", WRAP_METHOD(Debugger, cmdToggleCheatMode));
+	registerCmd("Cheat::toggle", WRAP_METHOD(Debugger, cmdCheatMode));
 	registerCmd("Cheat::maxstats", WRAP_METHOD(Debugger, cmdMaxStats));
 	registerCmd("Cheat::heal", WRAP_METHOD(Debugger, cmdHeal));
-	registerCmd("Cheat::toggleInvincibility", WRAP_METHOD(Debugger, cmdToggleInvincibility));
+	registerCmd("Cheat::toggleInvincibility", WRAP_METHOD(Debugger, cmdInvincibility));
 	registerCmd("Cheat::items", WRAP_METHOD(Debugger, cmdCheatItems));
 	registerCmd("Cheat::equip", WRAP_METHOD(Debugger, cmdCheatEquip));
+	registerCmd("Cheat::hackMover", WRAP_METHOD(Debugger, cmdHackMover));
 
-	registerCmd("GameMapGump::startHighlightItems", WRAP_METHOD(Debugger, cmdStartHighlightItems));
-	registerCmd("GameMapGump::stopHighlightItems", WRAP_METHOD(Debugger, cmdStopHighlightItems));
-	registerCmd("GameMapGump::toggleHighlightItems", WRAP_METHOD(Debugger, cmdToggleHighlightItems));
+	registerCmd("GameMapGump::toggleHighlightItems", WRAP_METHOD(Debugger, cmdHighlightItems));
+	registerCmd("GameMapGump::toggleFootpads", WRAP_METHOD(Debugger, cmdFootpads));
+	registerCmd("GameMapGump::gridlines", WRAP_METHOD(Debugger, cmdGridlines));	
 	registerCmd("GameMapGump::dumpMap", WRAP_METHOD(Debugger, cmdDumpMap));
 	registerCmd("GameMapGump::dumpAllMaps", WRAP_METHOD(Debugger, cmdDumpAllMaps));
 	registerCmd("GameMapGump::incrementSortOrder", WRAP_METHOD(Debugger, cmdIncrementSortOrder));
@@ -147,7 +103,7 @@ Debugger::Debugger() : Shared::Debugger() {
 	registerCmd("Kernel::processTypes", WRAP_METHOD(Debugger, cmdProcessTypes));
 	registerCmd("Kernel::processInfo", WRAP_METHOD(Debugger, cmdProcessInfo));
 	registerCmd("Kernel::listProcesses", WRAP_METHOD(Debugger, cmdListProcesses));
-	registerCmd("Kernel::toggleFrameByFrame", WRAP_METHOD(Debugger, cmdToggleFrameByFrame));
+	registerCmd("Kernel::toggleFrameByFrame", WRAP_METHOD(Debugger, cmdFrameByFrame));
 	registerCmd("Kernel::advanceFrame", WRAP_METHOD(Debugger, cmdAdvanceFrame));
 
 	registerCmd("MainActor::teleport", WRAP_METHOD(Debugger, cmdTeleport));
@@ -167,7 +123,7 @@ Debugger::Debugger() : Shared::Debugger() {
 	registerCmd("MainActor::useEnergyCube", WRAP_METHOD(Debugger, cmdUseEnergyCube));
 	registerCmd("MainActor::detonateBomb", WRAP_METHOD(Debugger, cmdDetonateBomb));
 	registerCmd("MainActor::dropWeapon", WRAP_METHOD(Debugger, cmdDropWeapon));
-	registerCmd("MainActor::toggleCombat", WRAP_METHOD(Debugger, cmdToggleCombat));
+	registerCmd("MainActor::toggleCombat", WRAP_METHOD(Debugger, cmdCombat));
 	registerCmd("ItemSelectionProcess::startSelection", WRAP_METHOD(Debugger, cmdStartSelection));
 	registerCmd("ItemSelectionProcess::useSelectedItem", WRAP_METHOD(Debugger, cmdUseSelection));
 	registerCmd("ItemSelectionProcess::grabItems", WRAP_METHOD(Debugger, cmdGrabItems));
@@ -175,90 +131,51 @@ Debugger::Debugger() : Shared::Debugger() {
 	registerCmd("ObjectManager::objectTypes", WRAP_METHOD(Debugger, cmdObjectTypes));
 	registerCmd("ObjectManager::objectInfo", WRAP_METHOD(Debugger, cmdObjectInfo));
 
-	registerCmd("QuickAvatarMoverProcess::startMoveUp", WRAP_METHOD(Debugger, cmdStartQuickMoveUp));
-	registerCmd("QuickAvatarMoverProcess::startMoveDown", WRAP_METHOD(Debugger, cmdStartQuickMoveDown));
-	registerCmd("QuickAvatarMoverProcess::startMoveLeft", WRAP_METHOD(Debugger, cmdStartQuickMoveLeft));
-	registerCmd("QuickAvatarMoverProcess::startMoveRight", WRAP_METHOD(Debugger, cmdStartQuickMoveRight));
-	registerCmd("QuickAvatarMoverProcess::startAscend", WRAP_METHOD(Debugger, cmdStartQuickMoveAscend));
-	registerCmd("QuickAvatarMoverProcess::startDescend", WRAP_METHOD(Debugger, cmdStartQuickMoveDescend));
-	registerCmd("QuickAvatarMoverProcess::stopMoveUp", WRAP_METHOD(Debugger, cmdStopQuickMoveUp));
-	registerCmd("QuickAvatarMoverProcess::stopMoveDown", WRAP_METHOD(Debugger, cmdStopQuickMoveDown));
-	registerCmd("QuickAvatarMoverProcess::stopMoveLeft", WRAP_METHOD(Debugger, cmdStopQuickMoveLeft));
-	registerCmd("QuickAvatarMoverProcess::stopMoveRight", WRAP_METHOD(Debugger, cmdStopQuickMoveRight));
-	registerCmd("QuickAvatarMoverProcess::stopAscend", WRAP_METHOD(Debugger, cmdStopQuickMoveAscend));
-	registerCmd("QuickAvatarMoverProcess::stopDescend", WRAP_METHOD(Debugger, cmdStopQuickMoveDescend));
-	registerCmd("QuickAvatarMoverProcess::toggleQuarterSpeed", WRAP_METHOD(Debugger, cmdToggleQuarterSpeed));
-	registerCmd("QuickAvatarMoverProcess::toggleClipping", WRAP_METHOD(Debugger, cmdToggleClipping));
+	registerCmd("QuickAvatarMoverProcess::toggle", WRAP_METHOD(Debugger, cmdQuickMover));
+	registerCmd("QuickAvatarMoverProcess::toggleClipping", WRAP_METHOD(Debugger, cmdClipping));
 
 	registerCmd("UCMachine::getGlobal", WRAP_METHOD(Debugger, cmdGetGlobal));
 	registerCmd("UCMachine::setGlobal", WRAP_METHOD(Debugger, cmdSetGlobal));
-#ifdef DEBUG
 	registerCmd("UCMachine::traceObjID", WRAP_METHOD(Debugger, cmdTraceObjID));
 	registerCmd("UCMachine::tracePID", WRAP_METHOD(Debugger, cmdTracePID));
 	registerCmd("UCMachine::traceClass", WRAP_METHOD(Debugger, cmdTraceClass));
-	registerCmd("UCMachine::traceEvents", WRAP_METHOD(Debugger, cmdTraceEvents));
 	registerCmd("UCMachine::traceAll", WRAP_METHOD(Debugger, cmdTraceAll));
 	registerCmd("UCMachine::stopTrace", WRAP_METHOD(Debugger, cmdStopTrace));
-#endif
 
 	registerCmd("FastAreaVisGump::toggle", WRAP_METHOD(Debugger, cmdToggleFastArea));
 	registerCmd("InverterProcess::invertScreen", WRAP_METHOD(Debugger, cmdInvertScreen));
 	registerCmd("MenuGump::showMenu", WRAP_METHOD(Debugger, cmdShowMenu));
 	registerCmd("MiniMapGump::toggle", WRAP_METHOD(Debugger, cmdToggleMinimap));
-	registerCmd("MiniMapGump::generateWholeMap", WRAP_METHOD(Debugger, cmdGenerateWholeMap));
+	registerCmd("MiniMapGump::generate", WRAP_METHOD(Debugger, cmdGenerateMinimap));
+	registerCmd("MiniMapGump::clear", WRAP_METHOD(Debugger, cmdClearMinimap));
 	registerCmd("MovieGump::play", WRAP_METHOD(Debugger, cmdPlayMovie));
 	registerCmd("MusicProcess::playMusic", WRAP_METHOD(Debugger, cmdPlayMusic));
 	registerCmd("QuitGump::verifyQuit", WRAP_METHOD(Debugger, cmdVerifyQuit));
 	registerCmd("ShapeViewerGump::U8ShapeViewer", WRAP_METHOD(Debugger, cmdU8ShapeViewer));
+	registerCmd("RenderSurface::benchmark", WRAP_METHOD(Debugger, cmdBenchmarkRenderSurface));
 
-#ifdef DEBUG
+#ifdef DEBUG_PATHFINDER
 	registerCmd("Pathfinder::visualDebug", WRAP_METHOD(Debugger, cmdVisualDebugPathfinder));
 #endif
 }
 
 Debugger::~Debugger() {
 	g_debugger = nullptr;
-	ppout = nullptr;
-	pperr = nullptr;
 }
-
-
-void Debugger::executeCommand(const Common::String &args) {
-	Common::Array<Common::String> argv;
-	StringToArgv(args, argv);
-
-	executeCommand(argv);
-}
-
-void Debugger::executeCommand(const Common::Array<Common::String> &argv) {
-	if (argv.empty())
-		return;
-
-	Common::String commandName = argv[0];
-	if (commandName.hasPrefix("GUIApp::"))
-		commandName = "Ultima8Engine::" + Common::String(commandName.c_str() + 8);
-
-	Common::Array<const char *> cArgs;
-	cArgs.push_back(commandName.c_str());
-	for (uint idx = 1; idx < argv.size(); ++idx)
-		cArgs.push_back(argv[idx].c_str());
-
-	bool keepRunning = false;
-	if (!handleCommand(argv.size(), &cArgs[0], keepRunning)) {
-		debugPrintf("Unknown command - %s\n", commandName.c_str());
-		keepRunning = true;
-	}
-
-	// If any message occurred, then we need to ensure the debugger is opened if it isn't already
-	if (keepRunning)
-		attach();
-}
-
 
 bool Debugger::cmdSaveGame(int argc, const char **argv) {
 	if (argc == 2) {
+		if (!Ultima8Engine::get_instance()->canSaveGameStateCurrently()) {
+			debugPrintf("Saving game is currently unavailable\n");
+			return true;
+		}
+
 		// Save a _game with the given name into the quicksave slot
-		Ultima8Engine::get_instance()->saveGame(1, argv[1]);
+		Common::Error result = Ultima8Engine::get_instance()->saveGameState(1, argv[1]);
+		if (result.getCode() != Common::kNoError) {
+			debugPrintf("Saving game failed: %s\n", result.getDesc().c_str());
+			return true;
+		}
 	} else {
 		Ultima8Engine::get_instance()->saveGameDialog();
 	}
@@ -300,32 +217,73 @@ bool Debugger::cmdEngineStats(int argc, const char **argv) {
 
 bool Debugger::cmdSetVideoMode(int argc, const char **argv) {
 	if (argc != 3) {
-		debugPrintf("Usage: Ultima8Engine::setVidMode width height\n");
+		debugPrintf("Usage: %s <width> <height>\n", argv[0]);
 		return true;
 	} else {
-		Ultima8Engine::get_instance()->changeVideoMode(strtol(argv[1], 0, 0), strtol(argv[2], 0, 0));
+		Common::Error err = Ultima8Engine::get_instance()->changeVideoMode(strtol(argv[1], 0, 0), strtol(argv[2], 0, 0));
+		if (err.getCode() != Common::kNoError)
+			debugPrintf("Failed to set video mode: %s", err.getDesc().c_str());
 		return false;
 	}
 }
 
-bool Debugger::cmdToggleAvatarInStasis(int argc, const char **argv) {
+bool Debugger::cmdAvatarInStasis(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off]\n", argv[0]);
+		return true;
+	}
+
 	Ultima8Engine *g = Ultima8Engine::get_instance();
-	g->toggleAvatarInStasis();
-	debugPrintf("avatarInStasis = %s\n", strBool(g->isAvatarInStasis()));
+	bool flag = !g->isAvatarInStasis();
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			flag = true;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			flag = false;
+	}
+
+	g->setAvatarInStasis(flag);
+	debugPrintf("avatarInStasis = %s\n", strBool(flag));
 	return true;
 }
 
-bool Debugger::cmdTogglePaintEditorItems(int argc, const char **argv) {
+bool Debugger::cmdShowEditorItems(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off]\n", argv[0]);
+		return true;
+	}
+
 	Ultima8Engine *g = Ultima8Engine::get_instance();
-	g->togglePaintEditorItems();
-	debugPrintf("paintEditorItems = %s\n", strBool(g->isPaintEditorItems()));
+	bool flag = !g->isShowEditorItems();
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			flag = true;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			flag = false;
+	}
+
+	g->setShowEditorItems(flag);
+	debugPrintf("showEditorItems = %s\n", strBool(flag));
 	return false;
 }
 
-bool Debugger::cmdToggleShowTouchingItems(int argc, const char **argv) {
+bool Debugger::cmdShowTouchingItems(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off]\n", argv[0]);
+		return true;
+	}
+
 	Ultima8Engine *g = Ultima8Engine::get_instance();
-	g->toggleShowTouchingItems();
-	debugPrintf("ShowTouchingItems = %s\n", strBool(g->isShowTouchingItems()));
+	bool flag = !g->isShowTouchingItems();
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			flag = true;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			flag = false;
+	}
+
+	g->setShowTouchingItems(flag);
+	debugPrintf("showTouchingItems = %s\n", strBool(flag));
 	return false;
 }
 
@@ -341,13 +299,12 @@ bool Debugger::cmdListSFX(int argc, const char **argv) {
 		debugPrintf("Error: No AudioProcess\n");
 
 	} else {
-		Std::list<AudioProcess::SampleInfo>::const_iterator it;
-		for (it = ap->_sampleInfo.begin(); it != ap->_sampleInfo.end(); ++it) {
+		for (const auto &si : ap->_sampleInfo) {
 			debugPrintf("Sample: num %d, obj %d, loop %d, prio %d",
-				it->_sfxNum, it->_objId, it->_loops, it->_priority);
-			if (!it->_barked.empty()) {
+				si._sfxNum, si._objId, si._loops, si._priority);
+			if (!si._barked.empty()) {
 				debugPrintf(", speech: \"%s\"",
-					it->_barked.substr(it->_curSpeechStart, it->_curSpeechEnd - it->_curSpeechStart).c_str());
+					si._barked.substr(si._curSpeechStart, si._curSpeechEnd - si._curSpeechStart).c_str());
 			}
 			debugPrintf("\n");
 		}
@@ -362,7 +319,7 @@ bool Debugger::cmdStopSFX(int argc, const char **argv) {
 		debugPrintf("Error: No AudioProcess\n");
 		return true;
 	} else if (argc < 2) {
-		debugPrintf("usage: stopSFX <_sfxNum> [<_objId>]\n");
+		debugPrintf("Usage: %s <sfxNum> [objId]\n", argv[0]);
 		return true;
 	} else {
 		int sfxNum = static_cast<int>(strtol(argv[1], 0, 0));
@@ -379,7 +336,7 @@ bool Debugger::cmdPlaySFX(int argc, const char **argv) {
 		debugPrintf("Error: No AudioProcess\n");
 		return true;
 	} else if (argc < 2) {
-		debugPrintf("usage: playSFX <_sfxNum>\n");
+		debugPrintf("Usage: %s <sfxNum>\n", argv[0]);
 		return true;
 	} else {
 		int sfxNum = static_cast<int>(strtol(argv[1], 0, 0));
@@ -389,10 +346,23 @@ bool Debugger::cmdPlaySFX(int argc, const char **argv) {
 }
 
 
-bool Debugger::cmdToggleCheatMode(int argc, const char **argv) {
+bool Debugger::cmdCheatMode(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off]\n", argv[0]);
+		return true;
+	}
+
 	Ultima8Engine *g = Ultima8Engine::get_instance();
-	g->setCheatMode(!g->areCheatsEnabled());
-	debugPrintf("Cheats = %s\n", strBool(g->areCheatsEnabled()));
+	bool flag = !g->areCheatsEnabled();
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			flag = true;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			flag = false;
+	}
+
+	g->setCheatMode(flag);
+	debugPrintf("Cheats = %s\n", strBool(flag));
 	return true;
 }
 
@@ -632,35 +602,116 @@ bool Debugger::cmdHeal(int argc, const char **argv) {
 	return false;
 }
 
-bool Debugger::cmdToggleInvincibility(int argc, const char **argv) {
-	if (!Ultima8Engine::get_instance()->areCheatsEnabled()) {
+bool Debugger::cmdInvincibility(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off]\n", argv[0]);
+		return true;
+	}
+
+	Ultima8Engine *g = Ultima8Engine::get_instance();
+	if (!g->areCheatsEnabled()) {
 		debugPrintf("Cheats are disabled\n");
 		return true;
 	}
-	MainActor *av = getMainActor();
 
-	if (av->hasActorFlags(Actor::ACT_INVINCIBLE)) {
-		av->clearActorFlag(Actor::ACT_INVINCIBLE);
-		debugPrintf("Avatar is no longer invincible.\n");
-	} else {
+	MainActor *av = getMainActor();
+	bool flag = !av->hasActorFlags(Actor::ACT_INVINCIBLE);
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			flag = true;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			flag = false;
+	}
+
+	if (flag) {
 		av->setActorFlag(Actor::ACT_INVINCIBLE);
 		debugPrintf("Avatar invincible.\n");
+	} else {
+		av->clearActorFlag(Actor::ACT_INVINCIBLE);
+		debugPrintf("Avatar is no longer invincible.\n");
 	}
 
 	return true;
 }
 
+bool Debugger::cmdHackMover(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off]\n", argv[0]);
+		return true;
+	}
 
-bool Debugger::cmdStartHighlightItems(int argc, const char **argv) {
-	GameMapGump::Set_highlightItems(true);
+	Ultima8Engine *g = Ultima8Engine::get_instance();
+	bool flag = !g->isHackMoverEnabled();
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			flag = true;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			flag = false;
+	}
+
+	g->setHackMoverEnabled(flag);
+	debugPrintf("Hack mover = %s\n", strBool(flag));
 	return false;
 }
-bool Debugger::cmdStopHighlightItems(int argc, const char **argv) {
-	GameMapGump::Set_highlightItems(false);
+
+bool Debugger::cmdHighlightItems(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off]\n", argv[0]);
+		return true;
+	}
+
+	bool flag = !GameMapGump::is_highlightItems();
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			flag = true;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			flag = false;
+	}
+
+	GameMapGump::Set_highlightItems(flag);
 	return false;
 }
-bool Debugger::cmdToggleHighlightItems(int argc, const char **argv) {
-	GameMapGump::Set_highlightItems(!GameMapGump::is_highlightItems());
+
+bool Debugger::cmdFootpads(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off]\n", argv[0]);
+		return true;
+	}
+
+	bool flag = !GameMapGump::getShowFootpads();
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			flag = true;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			flag = false;
+	}
+
+	GameMapGump::setShowFootpads(flag);
+	return false;
+}
+
+bool Debugger::cmdGridlines(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off|<number>]\n", argv[0]);
+		return true;
+	}
+	
+	int gridlines = GameMapGump::getGridlines() == 0 ? -1 : 0;
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			gridlines = -1;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			gridlines = 0;
+		else
+			gridlines = atoi(argv[1]);
+	}
+
+	// ensure a sane minimum value
+	if (gridlines > 0 && gridlines < 8) {
+		gridlines = 8;
+	}
+
+	GameMapGump::setGridlines(gridlines);
 	return false;
 }
 
@@ -681,7 +732,7 @@ void Debugger::dumpCurrentMap() {
 	// Work out the map limits in chunks
 	for (int32 y = 0; y < MAP_NUM_CHUNKS; y++) {
 		for (int32 x = 0; x < MAP_NUM_CHUNKS; x++) {
-			const Std::list<Item *> *list = curmap->getItemList(x, y);
+			const Common::List<Item *> *list = curmap->getItemList(x, y);
 
 			// Should iterate the items!
 			// (items could extend outside of this chunk and they have height)
@@ -740,8 +791,8 @@ void Debugger::dumpCurrentMap() {
 	CurrentMap *currentMap = World::get_instance()->getCurrentMap();
 	currentMap->setWholeMapFast();
 
-	RenderSurface *s = RenderSurface::CreateSecondaryRenderSurface(awidth,
-		aheight);
+	Graphics::Screen *screen = Ultima8Engine::get_instance()->getScreen();
+	RenderSurface *s = new RenderSurface(awidth, aheight, screen->format);
 
 	debugPrintf("Rendering map...\n");
 
@@ -754,14 +805,15 @@ void Debugger::dumpCurrentMap() {
 	// Now render the map
 	s->BeginPainting();
 	s->SetOrigin(0, 0);
-	CameraProcess::SetCameraProcess(new CameraProcess(cx + camheight * 4, cy + camheight * 4, camheight));
+	Point3 pt(cx + camheight * 4, cy + camheight * 4, camheight);
+	CameraProcess::SetCameraProcess(new CameraProcess(pt));
 	g->Paint(s, 256, false);
 	s->EndPainting();
 
 #ifdef USE_PNG
-	Std::string filename = Common::String::format("map_%03d.png", currentMap->getNum());
+	Common::Path filename(Common::String::format("map_%03d.png", currentMap->getNum()));
 #else
-	Std::string filename = Common::String::format("map_%03d.bmp", currentMap->getNum());
+	Common::Path filename(Common::String::format("map_%03d.bmp", currentMap->getNum()));
 #endif
 
 	Common::DumpFile dumpFile;
@@ -775,9 +827,9 @@ void Debugger::dumpCurrentMap() {
 	}
 
 	if (result) {
-		debugPrintf("Map dumped: %s\n", filename.c_str());
+		debugPrintf("Map dumped: %s\n", filename.toString().c_str());
 	} else {
-		debugPrintf("Could not write file: %s\n", filename.c_str());
+		debugPrintf("Could not write file: %s\n", filename.toString().c_str());
 	}
 
 	delete g;
@@ -789,7 +841,8 @@ bool Debugger::cmdDumpMap(int argc, const char **argv) {
 	// Save because we're going to potentially break the game by enlarging
 	// the fast area and available object IDs.
 	int slot = Ultima8Engine::get_instance()->getAutosaveSlot();
-	if (!Ultima8Engine::get_instance()->saveGame(slot, "Pre-dumpMap save")) {
+	Common::Error result = Ultima8Engine::get_instance()->saveGameState(slot, "Pre-dumpMap save");
+	if (result.getCode() != Common::kNoError) {
 		debugPrintf("Could not dump map: pre-dumpMap save failed\n");
 		return false;
 	}
@@ -815,7 +868,8 @@ bool Debugger::cmdDumpAllMaps(int argc, const char **argv) {
 	// Save because we're going to potentially break the game by enlarging
 	// the fast area and available object IDs and changing maps
 	int slot = Ultima8Engine::get_instance()->getAutosaveSlot();
-	if (!Ultima8Engine::get_instance()->saveGame(slot, "Pre-dumpMap save")) {
+	Common::Error result = Ultima8Engine::get_instance()->saveGameState(slot, "Pre-dumpMap save");
+	if (result.getCode() != Common::kNoError) {
 		debugPrintf("Could not dump map: pre-dumpMap save failed\n");
 		return false;
 	}
@@ -857,7 +911,7 @@ bool Debugger::cmdProcessTypes(int argc, const char **argv) {
 
 bool Debugger::cmdListProcesses(int argc, const char **argv) {
 	if (argc > 2) {
-		debugPrintf("usage: listProcesses [<itemnum>]\n");
+		debugPrintf("Usage: %s [itemnum]\n", argv[0]);
 	} else {
 		Kernel *kern = Kernel::get_instance();
 		ObjId item = 0;
@@ -867,11 +921,10 @@ bool Debugger::cmdListProcesses(int argc, const char **argv) {
 		} else {
 			debugPrintf("Processes:\n");
 		}
-		for (ProcessIterator it = kern->_processes.begin();
-			it != kern->_processes.end(); ++it) {
-			Process *p = *it;
-			if (argc == 1 || p->_itemNum == item)
-				p->dumpInfo();
+		for (const auto *p : kern->_processes) {
+			if (argc == 1 || p->_itemNum == item) {
+				debugPrintf("%s\n", p->dumpInfo().c_str());
+			}
 		}
 	}
 
@@ -880,7 +933,7 @@ bool Debugger::cmdListProcesses(int argc, const char **argv) {
 
 bool Debugger::cmdProcessInfo(int argc, const char **argv) {
 	if (argc != 2) {
-		debugPrintf("usage: processInfo <objectnum>\n");
+		debugPrintf("Usage: %s <objectnum>\n", argv[0]);
 	} else {
 		Kernel *kern = Kernel::get_instance();
 
@@ -890,20 +943,32 @@ bool Debugger::cmdProcessInfo(int argc, const char **argv) {
 		if (p == 0) {
 			debugPrintf("No such process: %d\n", procid);
 		} else {
-			p->dumpInfo();
+			debugPrintf("%s\n", p->dumpInfo().c_str());
 		}
 	}
 
 	return true;
 }
 
-bool Debugger::cmdToggleFrameByFrame(int argc, const char **argv) {
-	Kernel *kern = Kernel::get_instance();
-	bool fbf = !kern->isFrameByFrame();
-	kern->setFrameByFrame(fbf);
-	debugPrintf("FrameByFrame = %s\n", strBool(fbf));
+bool Debugger::cmdFrameByFrame(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off]\n", argv[0]);
+		return true;
+	}
 
-	if (fbf)
+	Kernel *kern = Kernel::get_instance();
+	bool flag = !kern->isFrameByFrame();
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			flag = true;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			flag = false;
+	}
+
+	kern->setFrameByFrame(flag);
+	debugPrintf("FrameByFrame = %s\n", strBool(flag));
+
+	if (flag)
 		kern->pause();
 	else
 		kern->unpause();
@@ -952,11 +1017,11 @@ bool Debugger::cmdTeleport(int argc, const char **argv) {
 			strtol(argv[4], 0, 0));
 		break;
 	default:
-		debugPrintf("teleport usage:\n");
-		debugPrintf("teleport <mapnum> <x> <y> <z>: teleport to (x,y,z) on map mapnum\n");
-		debugPrintf("teleport <x> <y> <z>: teleport to (x,y,z) on current map\n");
-		debugPrintf("teleport <mapnum> <eggnum>: teleport to target egg eggnum on map mapnum\n");
-		debugPrintf("teleport <eggnum>: teleport to target egg eggnum on current map\n");
+		debugPrintf("Usage:\n");
+		debugPrintf("%s <mapnum> <x> <y> <z>: teleport to (x,y,z) on map mapnum\n", argv[0]);
+		debugPrintf("%s <x> <y> <z>: teleport to (x,y,z) on current map\n", argv[0]);
+		debugPrintf("%s <mapnum> <eggnum>: teleport to target egg eggnum on map mapnum\n", argv[0]);
+		debugPrintf("%s <eggnum>: teleport to target egg eggnum on current map\n", argv[0]);
 		return true;
 	}
 
@@ -965,17 +1030,16 @@ bool Debugger::cmdTeleport(int argc, const char **argv) {
 
 bool Debugger::cmdMark(int argc, const char **argv) {
 	if (argc == 1) {
-		debugPrintf("Usage: mark <mark>: set named mark to this location\n");
+		debugPrintf("Usage: %s <mark>: set named mark to this location\n", argv[0]);
 		return true;
 	}
 
 	MainActor *mainActor = getMainActor();
 	int curmap = mainActor->getMapNum();
-	int32 x, y, z;
-	mainActor->getLocation(x, y, z);
+	Point3 pt = mainActor->getLocation();
 
 	Common::String key = Common::String::format("mark_%s", argv[1]);
-	Common::String value = Common::String::format("%d %d %d %d", curmap, x, y, z);
+	Common::String value = Common::String::format("%d %d %d %d", curmap, pt.x, pt.y, pt.z);
 	ConfMan.set(key, value);
 
 	debugPrintf("Set mark \"%s\" to %s\n", argv[1], value.c_str());
@@ -988,7 +1052,7 @@ bool Debugger::cmdRecall(int argc, const char **argv) {
 		return true;
 	}
 	if (argc == 1) {
-		debugPrintf("Usage: recall <mark>: recall to named mark\n");
+		debugPrintf("Usage: %s <mark>: recall to named mark\n", argv[0]);
 		return true;
 	}
 
@@ -1013,18 +1077,16 @@ bool Debugger::cmdRecall(int argc, const char **argv) {
 
 bool Debugger::cmdListMarks(int argc, const char **argv) {
 	const Common::ConfigManager::Domain *domain = ConfMan.getActiveDomain();
-	Common::ConfigManager::Domain::const_iterator dit;
 	Common::StringArray marks;
-	for (dit = domain->begin(); dit != domain->end(); ++dit) {
-		if (dit->_key.hasPrefix("mark_")) {
-			marks.push_back(dit->_key.substr(5));
+	for (const auto & dit : *domain) {
+		if (dit._key.hasPrefix("mark_")) {
+			marks.push_back(dit._key.substr(5));
 		}
 	}
 
 	Common::sort(marks.begin(), marks.end());
-	Common::StringArray::const_iterator mit;
-	for (mit = marks.begin(); mit != marks.end(); ++mit) {
-		debugPrintf("%s\n", mit->c_str());
+	for (const auto &m : marks) {
+		debugPrintf("%s\n", m.c_str());
 	}
 
 	return true;
@@ -1041,29 +1103,23 @@ bool Debugger::cmdName(int argc, const char **argv) {
 
 bool Debugger::cmdUseBackpack(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't use backpack: avatarInStasis\n");
+		debugPrintf("Can't use backpack: avatarInStasis");
 		return false;
 	}
 	MainActor *av = getMainActor();
-	Item *backpack = getItem(av->getEquip(7));
+	Item *backpack = getItem(av->getEquip(ShapeInfo::SE_BACKPACK));
 	if (backpack)
 		backpack->callUsecodeEvent_use();
 	return false;
 }
 
-static bool _isAvatarControlled() {
-	World *world = World::get_instance();
-	return (world && world->getControlledNPCNum() == 1);
-}
-
 bool Debugger::cmdNextInventory(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't use inventory: avatarInStasis\n");
+		debugPrintf("Can't use inventory: avatarInStasis");
 		return false;
 	}
 
-	// Only if controlling avatar.
-	if (!_isAvatarControlled()) {
+	if (!Ultima8Engine::get_instance()->isAvatarControlled()) {
 		return false;
 	}
 
@@ -1074,12 +1130,11 @@ bool Debugger::cmdNextInventory(int argc, const char **argv) {
 
 bool Debugger::cmdNextWeapon(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't change weapon: avatarInStasis\n");
+		debugPrintf("Can't change weapon: avatarInStasis");
 		return false;
 	}
 
-	// Only if controlling avatar.
-	if (!_isAvatarControlled()) {
+	if (!Ultima8Engine::get_instance()->isAvatarControlled()) {
 		return false;
 	}
 
@@ -1090,12 +1145,11 @@ bool Debugger::cmdNextWeapon(int argc, const char **argv) {
 
 bool Debugger::cmdUseInventoryItem(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't use active inventory item: avatarInStasis\n");
+		debugPrintf("Can't use active inventory item: avatarInStasis");
 		return false;
 	}
 
-	// Only if controlling avatar.
-	if (!_isAvatarControlled()) {
+	if (!Ultima8Engine::get_instance()->isAvatarControlled()) {
 		return false;
 	}
 
@@ -1112,12 +1166,11 @@ bool Debugger::cmdUseInventoryItem(int argc, const char **argv) {
 
 bool Debugger::cmdUseMedikit(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't use medikit: avatarInStasis\n");
+		debugPrintf("Can't use medikit: avatarInStasis");
 		return false;
 	}
 
-	// Only if controlling avatar.
-	if (!_isAvatarControlled()) {
+	if (!Ultima8Engine::get_instance()->isAvatarControlled()) {
 		return false;
 	}
 
@@ -1128,12 +1181,11 @@ bool Debugger::cmdUseMedikit(int argc, const char **argv) {
 
 bool Debugger::cmdUseEnergyCube(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't use energy cube: avatarInStasis\n");
+		debugPrintf("Can't use energy cube: avatarInStasis");
 		return false;
 	}
 
-	// Only if controlling avatar.
-	if (!_isAvatarControlled()) {
+	if (!Ultima8Engine::get_instance()->isAvatarControlled()) {
 		return false;
 	}
 
@@ -1144,12 +1196,11 @@ bool Debugger::cmdUseEnergyCube(int argc, const char **argv) {
 
 bool Debugger::cmdDetonateBomb(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't detonate bomb: avatarInStasis\n");
+		debugPrintf("Can't detonate bomb: avatarInStasis");
 		return false;
 	}
 
-	// Only if controlling avatar.
-	if (!_isAvatarControlled()) {
+	if (!Ultima8Engine::get_instance()->isAvatarControlled()) {
 		return false;
 	}
 
@@ -1160,12 +1211,11 @@ bool Debugger::cmdDetonateBomb(int argc, const char **argv) {
 
 bool Debugger::cmdDropWeapon(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't drop weapon: avatarInStasis\n");
+		debugPrintf("Can't drop weapon: avatarInStasis");
 		return false;
 	}
 
-	// Only if controlling avatar.
-	if (!_isAvatarControlled()) {
+	if (!Ultima8Engine::get_instance()->isAvatarControlled()) {
 		return false;
 	}
 
@@ -1176,7 +1226,7 @@ bool Debugger::cmdDropWeapon(int argc, const char **argv) {
 
 bool Debugger::cmdUseInventory(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't use inventory: avatarInStasis\n");
+		debugPrintf("Can't use inventory: avatarInStasis");
 		return false;
 	}
 	MainActor *av = getMainActor();
@@ -1211,193 +1261,52 @@ bool Debugger::cmdUseKeyring(int argc, const char **argv) {
 
 bool Debugger::cmdCameraOnAvatar(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isCruStasis()) {
-		debugPrintf("Can't move camera: cruStasis\n");
+		debugPrintf("Can't move camera: cruStasis");
 		return false;
 	}
 	Actor *actor = getControlledActor();
 	if (actor) {
-		int32 x, y, z;
-		actor->getCentre(x, y, z);
-		if (x > 0 || y > 0)
-			CameraProcess::SetCameraProcess(new CameraProcess(x, y, z));
+		Point3 pt = actor->getCentre();
+		if (pt.x > 0 || pt.y > 0)
+			CameraProcess::SetCameraProcess(new CameraProcess(pt));
 	}
 	return false;
 }
 
-static bool _avatarMoveKey(uint32 flag, const char *debugname) {
-	Ultima8Engine *engine = Ultima8Engine::get_instance();
-	engine->moveKeyEvent();
-	if (engine->isAvatarInStasis()) {
-		debug("Can't %s: avatarInStasis\n", debugname);
-		return false;
+bool Debugger::cmdCombat(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off]\n", argv[0]);
+		return true;
 	}
-	AvatarMoverProcess *proc = engine->getAvatarMoverProcess();
 
-	if (proc) {
-		proc->setMovementFlag(flag);
-	}
-	return false;
-}
-
-static bool _avatarMoveKeyEnd(uint32 flag) {
-	Ultima8Engine *engine = Ultima8Engine::get_instance();
-	engine->moveKeyEvent();
-
-	AvatarMoverProcess *proc = engine->getAvatarMoverProcess();
-	if (proc) {
-		proc->clearMovementFlag(flag);
-	}
-	return false;
-}
-
-bool Debugger::cmdStartAttack(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_ATTACKING, "attack");
-}
-
-bool Debugger::cmdStopAttack(int argc, const char **argv) {
-	return _avatarMoveKeyEnd(AvatarMoverProcess::MOVE_ATTACKING);
-}
-
-bool Debugger::cmdStartJump(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_JUMP, "jump");
-}
-
-bool Debugger::cmdStopJump(int argc, const char **argv) {
-	return _avatarMoveKeyEnd(AvatarMoverProcess::MOVE_JUMP);
-}
-
-bool Debugger::cmdStartTurnLeft(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_TURN_LEFT, "turn left");
-}
-
-bool Debugger::cmdStartTurnRight(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_TURN_RIGHT, "turn right");
-}
-
-bool Debugger::cmdStartMoveForward(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_FORWARD, "move forward");
-}
-
-bool Debugger::cmdStartMoveBack(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_BACK, "move back");
-}
-
-bool Debugger::cmdStartMoveLeft(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_LEFT, "move left");
-}
-
-bool Debugger::cmdStartMoveRight(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_RIGHT, "move right");
-}
-
-bool Debugger::cmdStartMoveUp(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_UP, "move up");
-}
-
-bool Debugger::cmdStartMoveDown(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_DOWN, "move down");
-}
-
-bool Debugger::cmdStopTurnLeft(int argc, const char **argv) {
-	return _avatarMoveKeyEnd(AvatarMoverProcess::MOVE_TURN_LEFT);
-}
-
-bool Debugger::cmdStopTurnRight(int argc, const char **argv) {
-	return _avatarMoveKeyEnd(AvatarMoverProcess::MOVE_TURN_RIGHT);
-}
-
-bool Debugger::cmdStopMoveForward(int argc, const char **argv) {
-	return _avatarMoveKeyEnd(AvatarMoverProcess::MOVE_FORWARD);
-}
-
-bool Debugger::cmdStopMoveBack(int argc, const char **argv) {
-	// Clear both back and forward as avatar turns then moves forward when not in combat
-	return _avatarMoveKeyEnd(AvatarMoverProcess::MOVE_BACK | AvatarMoverProcess::MOVE_FORWARD);
-}
-
-bool Debugger::cmdStopMoveLeft(int argc, const char **argv) {
-	return _avatarMoveKeyEnd(AvatarMoverProcess::MOVE_LEFT);
-}
-
-bool Debugger::cmdStopMoveRight(int argc, const char **argv) {
-	return _avatarMoveKeyEnd(AvatarMoverProcess::MOVE_RIGHT);
-}
-
-bool Debugger::cmdStopMoveUp(int argc, const char **argv) {
-	return _avatarMoveKeyEnd(AvatarMoverProcess::MOVE_UP);
-}
-
-bool Debugger::cmdStopMoveDown(int argc, const char **argv) {
-	return _avatarMoveKeyEnd(AvatarMoverProcess::MOVE_DOWN);
-}
-
-bool Debugger::cmdStartMoveRun(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_RUN, "run");
-}
-
-bool Debugger::cmdStopMoveRun(int argc, const char **argv) {
-	return _avatarMoveKeyEnd(AvatarMoverProcess::MOVE_RUN);
-}
-
-bool Debugger::cmdStartMoveStep(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_STEP, "step");
-}
-
-bool Debugger::cmdStopMoveStep(int argc, const char **argv) {
-	return _avatarMoveKeyEnd(AvatarMoverProcess::MOVE_STEP);
-}
-
-bool Debugger::cmdShortJump(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_SHORT_JUMP, "short jump");
-}
-
-bool Debugger::cmdStepLeft(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_STEP_LEFT, "step left");
-}
-
-bool Debugger::cmdStepRight(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_STEP_RIGHT, "step right");
-}
-
-bool Debugger::cmdStepForward(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_STEP_FORWARD, "step forward");
-}
-
-bool Debugger::cmdStepBack(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_STEP_BACK, "step back");
-}
-
-bool Debugger::cmdRollLeft(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_ROLL_LEFT, "roll left");
-}
-
-bool Debugger::cmdRollRight(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_ROLL_RIGHT, "roll right");
-}
-
-bool Debugger::cmdToggleCrouch(int argc, const char **argv) {
-	return _avatarMoveKey(AvatarMoverProcess::MOVE_TOGGLE_CROUCH, "toggle crouch");
-}
-
-bool Debugger::cmdToggleCombat(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't toggle combat: avatarInStasis\n");
+		debugPrintf("Can't toggle combat: avatarInStasis");
 		return false;
 	}
 
 	MainActor *av = getMainActor();
-	av->toggleInCombat();
+	bool flag = !av->isInCombat();
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			flag = true;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			flag = false;
+	}
+	if (flag)
+		av->setInCombat(0);
+	else
+		av->clearInCombat();
+
 	return false;
 }
 
 bool Debugger::cmdStartSelection(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't select items: avatarInStasis\n");
+		debugPrintf("Can't select items: avatarInStasis");
 		return false;
 	}
 
-	// Only if controlling avatar.
-	if (!_isAvatarControlled()) {
+	if (!Ultima8Engine::get_instance()->isAvatarControlled()) {
 		return false;
 	}
 
@@ -1412,12 +1321,11 @@ bool Debugger::cmdStartSelection(int argc, const char **argv) {
 
 bool Debugger::cmdUseSelection(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't use items: avatarInStasis\n");
+		debugPrintf("Can't use items: avatarInStasis");
 		return false;
 	}
 
-	// Only if controlling avatar.
-	if (!_isAvatarControlled()) {
+	if (!Ultima8Engine::get_instance()->isAvatarControlled()) {
 		return false;
 	}
 
@@ -1429,12 +1337,11 @@ bool Debugger::cmdUseSelection(int argc, const char **argv) {
 
 bool Debugger::cmdGrabItems(int argc, const char **argv) {
 	if (Ultima8Engine::get_instance()->isAvatarInStasis()) {
-		debugPrintf("Can't grab items: avatarInStasis\n");
+		debugPrintf("Can't grab items: avatarInStasis");
 		return false;
 	}
 
-	// Only if controlling avatar.
-	if (!_isAvatarControlled()) {
+	if (!Ultima8Engine::get_instance()->isAvatarControlled()) {
 		return false;
 	}
 
@@ -1454,7 +1361,7 @@ bool Debugger::cmdObjectTypes(int argc, const char **argv) {
 
 bool Debugger::cmdObjectInfo(int argc, const char **argv) {
 	if (argc != 2) {
-		debugPrintf("usage: objectInfo <objectnum>\n");
+		debugPrintf("Usage: %s <objectnum>\n", argv[0]);
 	} else {
 		ObjectManager *objMan = ObjectManager::get_instance();
 
@@ -1472,116 +1379,53 @@ bool Debugger::cmdObjectInfo(int argc, const char **argv) {
 			else
 				debugPrintf("No such object: %d\n", objid);
 		} else {
-			obj->dumpInfo();
+			debugPrintf("%s\n", obj->dumpInfo().c_str());
 		}
 	}
 
 	return true;
 }
 
-bool Debugger::cmdStartQuickMoveUp(int argc, const char **argv) {
-	if (Ultima8Engine::get_instance()->areCheatsEnabled()) {
-		QuickAvatarMoverProcess::startMover(-64, -64, 0, 0);
-		return false;
-	} else {
+bool Debugger::cmdQuickMover(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off]\n", argv[0]);
+		return true;
+	}
+
+	bool flag = !QuickAvatarMoverProcess::isEnabled();
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			flag = true;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			flag = false;
+	}
+
+	QuickAvatarMoverProcess::setEnabled(flag);
+	debugPrintf("QuickAvatarMoverProcess::_enabled = %s\n", strBool(flag));
+	return false;
+}
+
+bool Debugger::cmdClipping(int argc, const char **argv) {
+	if (argc > 2) {
+		debugPrintf("Usage: %s [on|off]\n", argv[0]);
+		return true;
+	}
+
+	if (!Ultima8Engine::get_instance()->areCheatsEnabled()) {
 		debugPrintf("Cheats aren't enabled\n");
 		return true;
 	}
-}
 
-bool Debugger::cmdStartQuickMoveDown(int argc, const char **argv) {
-	if (Ultima8Engine::get_instance()->areCheatsEnabled()) {
-		QuickAvatarMoverProcess::startMover(+64, +64, 0, 1);
-		return false;
-	} else {
-		debugPrintf("Cheats aren't enabled\n");
-		return true;
+	bool flag = !QuickAvatarMoverProcess::isClipping();
+	if (argc > 1) {
+		if (scumm_stricmp(argv[1], "on") == 0 || scumm_stricmp(argv[1], "true") == 0)
+			flag = true;
+		else if (scumm_stricmp(argv[1], "off") == 0 || scumm_stricmp(argv[1], "false") == 0)
+			flag = false;
 	}
-}
 
-bool Debugger::cmdStartQuickMoveLeft(int argc, const char **argv) {
-	if (Ultima8Engine::get_instance()->areCheatsEnabled()) {
-		QuickAvatarMoverProcess::startMover(-64, +64, 0, 2);
-		return false;
-	} else {
-		debugPrintf("Cheats aren't enabled\n");
-		return true;
-	}
-}
-
-bool Debugger::cmdStartQuickMoveRight(int argc, const char **argv) {
-	if (Ultima8Engine::get_instance()->areCheatsEnabled()) {
-		QuickAvatarMoverProcess::startMover(+64, -64, 0, 3);
-		return false;
-	} else {
-		debugPrintf("Cheats aren't enabled\n");
-		return true;
-	}
-}
-
-bool Debugger::cmdStartQuickMoveAscend(int argc, const char **argv) {
-	if (Ultima8Engine::get_instance()->areCheatsEnabled()) {
-		QuickAvatarMoverProcess::startMover(0, 0, 8, 4);
-		return false;
-	} else {
-		debugPrintf("Cheats aren't enabled\n");
-		return true;
-	}
-}
-
-bool Debugger::cmdStartQuickMoveDescend(int argc, const char **argv) {
-	if (Ultima8Engine::get_instance()->areCheatsEnabled()) {
-		QuickAvatarMoverProcess::startMover(0, 0, -8, 5);
-		return false;
-	} else {
-		debugPrintf("Cheats aren't enabled\n");
-		return true;
-	}
-}
-
-bool Debugger::cmdStopQuickMoveUp(int argc, const char **argv) {
-	QuickAvatarMoverProcess::terminateMover(0);
-	return false;
-}
-
-bool Debugger::cmdStopQuickMoveDown(int argc, const char **argv) {
-	QuickAvatarMoverProcess::terminateMover(1);
-	return false;
-}
-
-bool Debugger::cmdStopQuickMoveLeft(int argc, const char **argv) {
-	QuickAvatarMoverProcess::terminateMover(2);
-	return false;
-}
-
-bool Debugger::cmdStopQuickMoveRight(int argc, const char **argv) {
-	QuickAvatarMoverProcess::terminateMover(3);
-	return false;
-}
-
-bool Debugger::cmdStopQuickMoveAscend(int argc, const char **argv) {
-	QuickAvatarMoverProcess::terminateMover(4);
-	return false;
-}
-
-bool Debugger::cmdStopQuickMoveDescend(int argc, const char **argv) {
-	QuickAvatarMoverProcess::terminateMover(5);
-	return false;
-}
-
-bool Debugger::cmdToggleQuarterSpeed(int argc, const char **argv) {
-	QuickAvatarMoverProcess::setQuarterSpeed(!QuickAvatarMoverProcess::isQuarterSpeed());
-	return false;
-}
-
-bool Debugger::cmdToggleClipping(int argc, const char **argv) {
-	if (Ultima8Engine::get_instance()->areCheatsEnabled()) {
-		QuickAvatarMoverProcess::toggleClipping();
-		debugPrintf("QuickAvatarMoverProcess::_clipping = %s\n",
-			strBool(QuickAvatarMoverProcess::isClipping()));
-	} else {
-		debugPrintf("Cheats aren't enabled\n");
-	}
+	QuickAvatarMoverProcess::setClipping(flag);
+	debugPrintf("QuickAvatarMoverProcess::_clipping = %s\n", strBool(flag));
 	return true;
 }
 
@@ -1589,7 +1433,7 @@ bool Debugger::cmdToggleClipping(int argc, const char **argv) {
 bool Debugger::cmdGetGlobal(int argc, const char **argv) {
 	UCMachine *uc = UCMachine::get_instance();
 	if (argc != 3) {
-		debugPrintf("usage: UCMachine::getGlobal offset size\n");
+		debugPrintf("Usage: %s <offset> <size>\n", argv[0]);
 		return true;
 	}
 
@@ -1603,7 +1447,7 @@ bool Debugger::cmdGetGlobal(int argc, const char **argv) {
 bool Debugger::cmdSetGlobal(int argc, const char **argv) {
 	UCMachine *uc = UCMachine::get_instance();
 	if (argc != 4) {
-		debugPrintf("usage: UCMachine::setGlobal offset size value\n");
+		debugPrintf("Usage: %s <offset> <size> <value>\n", argv[0]);
 		return true;
 	}
 
@@ -1617,11 +1461,9 @@ bool Debugger::cmdSetGlobal(int argc, const char **argv) {
 	return true;
 }
 
-#ifdef DEBUG
-
 bool Debugger::cmdTracePID(int argc, const char **argv) {
 	if (argc != 2) {
-		debugPrintf("Usage: UCMachine::tracePID _pid\n");
+		debugPrintf("Usage: %s <pid>\n", argv[0]);
 		return true;
 	}
 
@@ -1637,7 +1479,7 @@ bool Debugger::cmdTracePID(int argc, const char **argv) {
 
 bool Debugger::cmdTraceObjID(int argc, const char **argv) {
 	if (argc != 2) {
-		debugPrintf("Usage: UCMachine::traceObjID objid\n");
+		debugPrintf("Usage: %s <objid>\n", argv[0]);
 		return true;
 	}
 
@@ -1653,7 +1495,7 @@ bool Debugger::cmdTraceObjID(int argc, const char **argv) {
 
 bool Debugger::cmdTraceClass(int argc, const char **argv) {
 	if (argc != 2) {
-		debugPrintf("Usage: UCMachine::traceClass class\n");
+		debugPrintf("Usage: %s <class>\n", argv[0]);
 		return true;
 	}
 
@@ -1676,15 +1518,6 @@ bool Debugger::cmdTraceAll(int argc, const char **argv) {
 	return true;
 }
 
-bool Debugger::cmdTraceEvents(int argc, const char **argv) {
-	UCMachine *uc = UCMachine::get_instance();
-	uc->_tracingEnabled = true;
-	uc->_traceEvents = true;
-
-	debugPrintf("UCMachine: tracing usecode events\n");
-	return true;
-}
-
 bool Debugger::cmdStopTrace(int argc, const char **argv) {
 	UCMachine *uc = UCMachine::get_instance();
 	uc->_traceObjIDs.clear();
@@ -1692,14 +1525,10 @@ bool Debugger::cmdStopTrace(int argc, const char **argv) {
 	uc->_traceClasses.clear();
 	uc->_tracingEnabled = false;
 	uc->_traceAll = false;
-	uc->_traceEvents = false;
 
 	debugPrintf("Trace stopped\n");
 	return true;
 }
-
-#endif
-
 
 bool Debugger::cmdVerifyQuit(int argc, const char **argv) {
 	QuitGump::verifyQuit();
@@ -1714,8 +1543,8 @@ bool Debugger::cmdU8ShapeViewer(int argc, const char **argv) {
 bool Debugger::cmdShowMenu(int argc, const char **argv) {
 	World *world = World::get_instance();
 	// In Crusader escape is also used to stop controlling another NPC
-	if (world && world->getControlledNPCNum() != 1) {
-		world->setControlledNPCNum(1);
+	if (world && world->getControlledNPCNum() != kMainActorId) {
+		world->setControlledNPCNum(kMainActorId);
 		return false;
 	}
 	if (Ultima8Engine::get_instance()->isCruStasis()) {
@@ -1756,15 +1585,15 @@ bool Debugger::cmdInvertScreen(int argc, const char **argv) {
 
 bool Debugger::cmdPlayMovie(int argc, const char **argv) {
 	if (argc != 2) {
-		debugPrintf("play usage: play <moviename>\n");
+		debugPrintf("Usage: %s <moviename>\n", argv[0]);
 		return true;
 	}
 
-	Std::string filename = Common::String::format("static/%s.skf", argv[1]);
-	FileSystem *filesys = FileSystem::get_instance();
-	Common::SeekableReadStream *skf = filesys->ReadFile(filename);
-	if (!skf) {
+	Common::String filename = Common::String::format("static/%s.skf", argv[1]);
+	auto *skf = new Common::File();
+	if (!skf->open(filename.c_str())) {
 		debugPrintf("movie not found.\n");
+		delete skf;
 		return true;
 	}
 
@@ -1775,7 +1604,7 @@ bool Debugger::cmdPlayMovie(int argc, const char **argv) {
 bool Debugger::cmdPlayMusic(int argc, const char **argv) {
 	if (MusicProcess::_theMusicProcess) {
 		if (argc != 2) {
-			debugPrintf("MusicProcess::playMusic (tracknum)\n");
+			debugPrintf("Usage: %s <tracknum>\n", argv[0]);
 		} else {
 			debugPrintf("Playing track %s\n", argv[1]);
 			MusicProcess::_theMusicProcess->playMusic_internal(atoi(argv[1]));
@@ -1797,24 +1626,120 @@ bool Debugger::cmdToggleMinimap(int argc, const char **argv) {
 		mmg = new MiniMapGump(4, 4);
 		mmg->InitGump(0);
 		mmg->setRelativePosition(Gump::TOP_LEFT, 4, 4);
+	} else if (mmg->IsHidden()) {
+		mmg->UnhideGump();
 	} else {
-		mmg->Close();
+		mmg->HideGump();
 	}
 
 	return false;
 }
 
-bool Debugger::cmdGenerateWholeMap(int argc, const char **argv) {
-	World *world = World::get_instance();
-	CurrentMap *currentmap = world->getCurrentMap();
-	currentmap->setWholeMapFast();
+bool Debugger::cmdGenerateMinimap(int argc, const char **argv) {
+	Ultima8Engine *app = Ultima8Engine::get_instance();
+	Gump *desktop = app->getDesktopGump();
+	MiniMapGump *gump = dynamic_cast<MiniMapGump *>(desktop->FindGump<MiniMapGump>());
+
+	if (gump) {
+		gump->generate();
+
+		if (argc > 1) {
+			Common::Path filename(argv[1]);
+			bool result = gump->dump(filename);
+			if (result) {
+				debugPrintf("Mini map dumped: %s\n", filename.toString().c_str());
+			} else {
+				debugPrintf("Could not write file: %s\n", filename.toString().c_str());
+			}
+		}
+	}
 	return false;
 }
 
-#ifdef DEBUG
+
+bool Debugger::cmdClearMinimap(int argc, const char **argv) {
+	Ultima8Engine *app = Ultima8Engine::get_instance();
+	Gump *desktop = app->getDesktopGump();
+	MiniMapGump *gump = dynamic_cast<MiniMapGump *>(desktop->FindGump<MiniMapGump>());
+
+	if (gump) {
+		gump->clear();
+	}
+	return false;
+}
+
+bool Debugger::cmdBenchmarkRenderSurface(int argc, const char **argv) {
+	if (argc != 4) {
+		debugPrintf("Usage: %s <shapenum> <framenum> <iterations>\n", argv[0]);
+		return true;
+	}
+
+	int shapenum = atoi(argv[1]);
+	int frame = atoi(argv[2]);
+	int count = atoi(argv[3]);
+
+	GameData *gamedata = GameData::get_instance();
+	Shape *s = gamedata->getMainShapes()->getShape(shapenum);
+
+	Graphics::Screen *screen = Ultima8Engine::get_instance()->getScreen();
+	RenderSurface *surface = new RenderSurface(320, 200, screen->format);
+	surface->BeginPainting();
+
+	uint32 start, end;
+	uint32 blendColor = TEX32_PACK_RGBA(0x7F, 0x00, 0x00, 0x7F);
+
+	start = g_system->getMillis();
+	for (int i = 0; i < count; i++) {
+		surface->Paint(s, frame, 160, 100);
+	}
+	end = g_system->getMillis();
+	debugPrintf("Paint: %d\n", end - start);
+
+	start = g_system->getMillis();
+	for (int i = 0; i < count; i++) {
+		surface->PaintTranslucent(s, frame, 160, 100);
+	}
+	end = g_system->getMillis();
+	debugPrintf("PaintTranslucent: %d\n", end - start);
+
+	start = g_system->getMillis();
+	for (int i = 0; i < count; i++) {
+		surface->Paint(s, frame, 160, 100, true);
+	}
+	end = g_system->getMillis();
+	debugPrintf("PaintMirrored: %d\n", end - start);
+
+	start = g_system->getMillis();
+	for (int i = 0; i < count; i++) {
+		surface->PaintInvisible(s, frame, 160, 100, false, false);
+	}
+	end = g_system->getMillis();
+	debugPrintf("PaintInvisible: %d\n", end - start);
+
+	start = g_system->getMillis();
+	for (int i = 0; i < count; i++) {
+		surface->PaintHighlight(s, frame, 160, 100, false, false, blendColor);
+	}
+	end = g_system->getMillis();
+	debugPrintf("PaintHighlight: %d\n", end - start);
+
+	start = g_system->getMillis();
+	for (int i = 0; i < count; i++) {
+		surface->PaintHighlightInvis(s, frame, 160, 100, false, false, blendColor);
+	}
+	end = g_system->getMillis();
+	debugPrintf("PaintHighlightInvis: %d\n", end - start);
+
+	surface->EndPainting();
+	delete surface;
+
+	return true;
+}
+
 bool Debugger::cmdVisualDebugPathfinder(int argc, const char **argv) {
+#ifdef DEBUG_PATHFINDER
 	if (argc != 2) {
-		debugPrintf("Usage: Pathfinder::visualDebug objid\n");
+		debugPrintf("Usage: %s <objid>\n", argv[0]);
 		debugPrintf("Specify objid -1 to stop tracing.\n");
 		return true;
 	}
@@ -1826,10 +1751,9 @@ bool Debugger::cmdVisualDebugPathfinder(int argc, const char **argv) {
 		Pathfinder::_visualDebugActor = (uint16)p;
 		debugPrintf("Pathfinder: visually tracing _actor %d\n", Pathfinder::_visualDebugActor);
 	}
-
+#endif
 	return true;
 }
-#endif
 
 } // End of namespace Ultima8
 } // End of namespace Ultima

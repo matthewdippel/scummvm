@@ -91,6 +91,8 @@ struct ExecStack {
 	int argc;
 	StackPtr variables_argp; // Argument pointer
 
+	int tempCount;           // Number of temp variables allocated by link opcode
+
 	SegmentId local_segment; // local variables etc
 
 	Selector debugSelector;     // The selector which was used to call or -1 if not applicable
@@ -115,6 +117,7 @@ struct ExecStack {
 		fp = sp = sp_;
 		argc = argc_;
 		variables_argp = argp_;
+		tempCount = 0;
 		if (localsSegment_ != kUninitializedSegment)
 			local_segment = localsSegment_;
 		else
@@ -142,6 +145,7 @@ enum GlobalVar {
 	kGlobalVarCurrentRoom    = 2,
 	kGlobalVarSpeed          = 3,  // SCI16
 	kGlobalVarQuit           = 4,
+	kGlobalVarCast           = 5,
 	kGlobalVarSounds         = 8,
 	kGlobalVarPlanes         = 10, // SCI32
 	kGlobalVarCurrentRoomNo  = 11,
@@ -370,12 +374,6 @@ ExecStack *send_selector(EngineState *s, reg_t send_obj, reg_t work_obj,
  * @param[in] s			The state to use
  */
 void run_vm(EngineState *s);
-
-/**
- * Debugger functionality
- * @param[in] s					The state at which debugging should take place
- */
-void script_debug(EngineState *s);
 
 /**
  * Looks up a selector and returns its type and value

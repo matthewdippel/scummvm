@@ -76,7 +76,7 @@ void TinyGLRenderer::init() {
 void TinyGLRenderer::clear() {
 	tglClearColor(0.f, 0.f, 0.f, 1.f); // Solid black
 	tglClear(TGL_COLOR_BUFFER_BIT | TGL_DEPTH_BUFFER_BIT);
-	tglColor3f(1.0f, 1.0f, 1.0f);
+	tglColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
 void TinyGLRenderer::selectTargetWindow(Window *window, bool is3D, bool scaled) {
@@ -107,17 +107,17 @@ void TinyGLRenderer::selectTargetWindow(Window *window, bool is3D, bool scaled) 
 
 		if (!window) {
 			if (scaled) {
-				tglOrtho(0.0, kOriginalWidth, kOriginalHeight, 0.0, -1.0, 1.0);
+				tglOrthof(0, kOriginalWidth, kOriginalHeight, 0, -1, 1);
 			} else {
-				tglOrtho(0.0, _system->getWidth(), _system->getHeight(), 0.0, -1.0, 1.0);
+				tglOrthof(0, _system->getWidth(), _system->getHeight(), 0, -1, 1);
 			}
 		} else {
 			if (scaled) {
 				Common::Rect originalRect = window->getOriginalPosition();
-				tglOrtho(0.0, originalRect.width(), originalRect.height(), 0.0, -1.0, 1.0);
+				tglOrthof(0, originalRect.width(), originalRect.height(), 0, -1, 1);
 			} else {
 				Common::Rect vp = window->getPosition();
-				tglOrtho(0.0, vp.width(), vp.height(), 0.0, -1.0, 1.0);
+				tglOrthof(0, vp.width(), vp.height(), 0, -1, 1);
 			}
 		}
 
@@ -191,7 +191,7 @@ void TinyGLRenderer::draw2DText(const Common::String &text, const Common::Point 
 	tglEnable(TGL_TEXTURE_2D);
 	tglDepthMask(TGL_FALSE);
 
-	tglColor3f(1.0f, 1.0f, 1.0f);
+	tglColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
 	int x = position.x;
 	int y = position.y;
@@ -266,7 +266,7 @@ void TinyGLRenderer::drawTexturedRect3D(const Math::Vector3d &topLeft, const Mat
 }
 
 Graphics::Surface *TinyGLRenderer::getScreenshot() {
-	return TinyGL::copyToBuffer(Texture::getRGBAPixelFormat());
+	return TinyGL::copyFromFrameBuffer(Texture::getRGBAPixelFormat());
 }
 
 void TinyGLRenderer::flipBuffer() {

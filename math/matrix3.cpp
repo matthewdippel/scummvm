@@ -23,14 +23,6 @@
 
 namespace Math {
 
-Matrix<3, 3>::Matrix() :
-	MatrixType<3, 3>(), Rotation3D<Matrix<3, 3> >() {
-}
-
-Matrix<3, 3>::Matrix(const MatrixBase<3, 3> &m) :
-	MatrixType<3, 3>(m), Rotation3D<Matrix<3, 3> >() {
-}
-
 void swap (float &a, float &b) {
 	float c = a; a = b; b = c;
 }
@@ -43,7 +35,7 @@ void Matrix<3, 3>::transpose() {
 
 /**
  * Generates a lookat matrix. For reference, see
- * http://clb.confined.space/MathGeoLib/nightly/docs/float3x3_LookAt.php
+ * https://clb.confined.space/MathGeoLib/nightly/docs/float3x3_LookAt.php
  */
 void Matrix<3, 3>::buildFromTargetDir(const Math::Vector3d &modelForward, const Math::Vector3d &targetDirection,
 	                              const Math::Vector3d &modelUp, const Math::Vector3d &worldUp) {

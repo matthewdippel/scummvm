@@ -28,7 +28,7 @@
 #include "kyra/graphics/screen_lol.h"
 #endif // ENABLE_LOL
 
-#include "common/iff_container.h"
+#include "common/formats/iff_container.h"
 #include "common/system.h"
 
 namespace Kyra {
@@ -99,6 +99,11 @@ TIMInterpreter::TIMInterpreter(KyraEngine_v1 *engine, Screen_v2 *screen_v2, OSys
 	_palDelayInc = _palDiff = _palDelayAcc = 0;
 	_abortFlag = 0;
 	_tim = nullptr;
+
+	_currentFunc = 0;
+	_finished = false;
+	_avtlChunkSize = 0;
+	_filename = nullptr;
 }
 
 TIMInterpreter::~TIMInterpreter() {
@@ -309,7 +314,8 @@ void TIMInterpreter::displayText(uint16 textId, int16 flags) {
 	if (flags < 0) {
 		static const uint8 colorMap[] = { 0x00, 0xF0, 0xFE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-		_screen->setFont(sjisMode ? Screen::FID_SJIS_TEXTMODE_FNT : Screen::FID_8_FNT);
+		_screen->setFont(_vm->gameFlags().lang == Common::Language::ZH_TWN && _vm->gameFlags().gameID == GI_LOL ? Screen::FID_CHINESE_FNT :
+				 sjisMode ? Screen::FID_SJIS_TEXTMODE_FNT : Screen::FID_8_FNT);
 		_screen->setTextColorMap(colorMap);
 		_screen->_charSpacing = -2;
 	}
@@ -358,7 +364,8 @@ void TIMInterpreter::displayText(uint16 textId, int16 flags) {
 	if (flags < 0) {
 		static const uint8 colorMap[] = { 0x00, 0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0x00, 0x00, 0x00, 0x00 };
 
-		_screen->setFont(sjisMode ? Screen::FID_SJIS_TEXTMODE_FNT : Screen::FID_INTRO_FNT);
+		_screen->setFont(_vm->gameFlags().lang == Common::Language::ZH_TWN && _vm->gameFlags().gameID == GI_LOL ? Screen::FID_CHINESE_FNT :
+				 sjisMode ? Screen::FID_SJIS_TEXTMODE_FNT : Screen::FID_INTRO_FNT);
 		_screen->setTextColorMap(colorMap);
 		_screen->_charSpacing = 0;
 	}
@@ -376,7 +383,8 @@ void TIMInterpreter::displayText(uint16 textId, int16 flags, uint8 color) {
 	if (flags == 255)
 		return;
 
-	_screen->setFont((_vm->gameFlags().lang == Common::JA_JPN && _vm->gameFlags().use16ColorMode) ? Screen::FID_SJIS_TEXTMODE_FNT : Screen::FID_INTRO_FNT);
+	_screen->setFont(_vm->gameFlags().lang == Common::Language::ZH_TWN && _vm->gameFlags().gameID == GI_LOL ? Screen::FID_CHINESE_FNT :
+			 (_vm->gameFlags().lang == Common::JA_JPN && _vm->gameFlags().use16ColorMode) ? Screen::FID_SJIS_TEXTMODE_FNT : Screen::FID_INTRO_FNT);
 
 	static const uint8 colorMap[] = { 0x00, 0xA0, 0xA1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 	_screen->setTextColorMap(colorMap);
@@ -989,7 +997,7 @@ void TIMInterpreter_LoL::checkSpeechProgress() {
 	}
 }
 
-char *TIMInterpreter_LoL::getTableString(int id) {
+const char *TIMInterpreter_LoL::getTableString(int id) {
 	return _vm->getLangString(id);
 }
 

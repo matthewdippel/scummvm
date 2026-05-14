@@ -22,6 +22,7 @@
 #ifndef SCUMM_IMUSE_H
 #define SCUMM_IMUSE_H
 
+#include "audio/mididrv.h"
 #include "common/scummsys.h"
 #include "common/serializer.h"
 #include "common/mutex.h"
@@ -50,13 +51,11 @@ class IMuse : public MusicEngine {
 public:
 	enum {
 		PROP_TEMPO_BASE,
-		PROP_NATIVE_MT32,
-		PROP_GS,
-		PROP_AMIGA,
 		PROP_LIMIT_PLAYERS,
 		PROP_RECYCLE_PLAYERS,
-		PROP_GAME_ID,
-		PROP_PC_SPEAKER
+		PROP_QUALITY,
+		PROP_MUSICVOLUME,
+		PROP_SFXVOLUME
 	};
 
 public:
@@ -72,12 +71,12 @@ public:
 public:
 	virtual void startSoundWithNoteOffset(int sound, int offset) = 0;
 
-	// MusicEngine base class methods.
-	// Not actually redefined here because none are implemented.
+	// MusicEngine base class methods. Only this one is implemented:
+	void setQuality(int qual) override { property(PROP_QUALITY, qual); }
 
 public:
 	// Factory methods
-	static IMuse *create(OSystem *syst, MidiDriver *nativeMidiDriver, MidiDriver *adlibMidiDriver);
+	static IMuse *create(ScummEngine *vm, MidiDriver *nativeMidiDriver, MidiDriver *adlibMidiDriver, MidiDriverFlags sndType, bool nativeMT32);
 };
 
 } // End of namespace Scumm

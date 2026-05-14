@@ -26,12 +26,11 @@
 #define __has_feature(x) 0 // Compatibility with non-clang compilers.
 #endif
 
-#if __cplusplus < 201103L && (!defined(_MSC_VER) || _MSC_VER < 1700)
-#define override           // Compatibility with non-C++11 compilers.
+#if defined(_MSC_VER) && _MSC_VER < 1900
+#error MSVC support requires MSVC 2015 or newer
 #endif
 
 #include <list>
-#include <map>
 #include <map>
 #include <string>
 #include <vector>
@@ -90,12 +89,17 @@ struct EngineDesc {
 	/**
 	 * Whether the engine should be included in the build or not.
 	 */
-	bool enable;
+	bool enable = false;
 
 	/**
 	 * Features required for this engine.
 	 */
 	StringList requiredFeatures;
+
+	/**
+	 * Components wished for this engine.
+	 */
+	StringList wishedComponents;
 
 	/**
 	 * A list of all available sub engine names. Sub engines are engines
@@ -175,6 +179,22 @@ struct Feature {
 };
 typedef std::list<Feature> FeatureList;
 
+struct Component {
+	std::string name;   ///< Name of the component
+	std::string define; ///< Define of the component
+
+	Feature &feature; ///< Associated feature
+
+	std::string description; ///< Human readable description of the component
+
+	bool needed;
+
+	bool operator==(const std::string &n) const {
+		return (name == n);
+	}
+};
+typedef std::list<Component> ComponentList;
+
 struct Tool {
 	const char *name; ///< Name of the tools
 	bool enable;      ///< Whether the tools is enabled or not
@@ -189,6 +209,23 @@ typedef std::list<Tool> ToolList;
 FeatureList getAllFeatures();
 
 /**
+ * Creates a list of all components.
+ *
+ * @param srcDir The source directory containing the configure script
+ * @param features The features list used to link the component to its feature
+ *
+ * @return A list including all components available linked to its features.
+ */
+ComponentList getAllComponents(const std::string &srcDir, FeatureList &features);
+
+/**
+ * Disable the features for the unused components.
+ *
+ * @param components List of components for the build
+ */
+void disableComponents(const ComponentList &components);
+
+/**
  * Returns a list of all defines, according to the feature set
  * passed.
  *
@@ -198,7 +235,7 @@ StringList getFeatureDefines(const FeatureList &features);
 
 /**
  * Sets the state of a given feature. This can be used to
- * either include or exclude an feature.
+ * either include or exclude a feature.
  *
  * @param name Name of the feature.
  * @param features List of features to operate on.
@@ -217,6 +254,16 @@ bool setFeatureBuildState(const std::string &name, FeatureList &features, bool e
 bool getFeatureBuildState(const std::string &name, const FeatureList &features);
 
 /**
+ * Specifies the required SDL version of a feature.
+ */
+enum SDLVersion {
+	kSDLVersionAny = 0,
+	kSDLVersion1, ///< SDL 1.2
+	kSDLVersion2, ///< SDL 2
+	kSDLVersion3  ///< SDL 3
+};
+
+/**
  * Structure to describe a build setup.
  *
  * This includes various information about which engines to
@@ -230,6 +277,7 @@ struct BuildSetup {
 	std::string srcDir;     ///< Path to the sources.
 	std::string filePrefix; ///< Prefix for the relative path arguments in the project files.
 	std::string outputDir;  ///< Path where to put the MSVC project files.
+	std::string libsDir;    ///< Path to libraries for MSVC builds.  If absent, use LIBS_DEFINE environment var instead.
 
 	StringList includeDirs; ///< List of additional include paths
 	StringList libraryDirs; ///< List of additional library paths
@@ -237,31 +285,28 @@ struct BuildSetup {
 	EngineDescList engines; ///< Engine list for the build (this may contain engines, which are *not* enabled!).
 	FeatureList features;   ///< Feature list for the build (this may contain features, which are *not* enabled!).
 
+	ComponentList components;
+
 	StringList defines;   ///< List of all defines for the build.
 	StringList testDirs;  ///< List of all folders containing tests
 
-	bool devTools;             ///< Generate project files for the tools
-	bool tests;                ///< Generate project files for the tests
-	bool runBuildEvents;       ///< Run build events as part of the build (generate revision number and copy engine/theme data & needed files to the build folder
-	bool createInstaller;      ///< Create installer after the build
-	bool useSDL2;              ///< Whether to use SDL2 or not.
-	bool useCanonicalLibNames; ///< Whether to use canonical libraries names or default ones
-	bool useStaticDetection;   ///< Whether to link detection features inside the executable or not.
-	bool useWindowsUnicode;    ///< Whether to use Windows Unicode APIs or ANSI APIs.
+	bool devTools = false;             ///< Generate project files for the tools
+	bool tests = false;                ///< Generate project files for the tests
+	bool runBuildEvents = false;       ///< Run build events as part of the build (generate revision number and copy engine/theme data & needed files to the build folder
+	bool createInstaller = false;      ///< Create installer after the build
+	SDLVersion useSDL = kSDLVersion2;  ///< Which version of SDL to use.
+	bool useStaticDetection = true;    ///< Whether to link detection features inside the executable or not.
+	bool useWindowsUnicode = true;     ///< Whether to use Windows Unicode APIs or ANSI APIs.
+	bool useWindowsSubsystem = false;  ///< Whether to use Windows subsystem or Console subsystem (default: Console)
+	bool appleEmbedded = false;        ///< Whether the build will target iOS or tvOS instead of macOS.
+	bool useXCFramework = false;       ///< Whether to use Apple XCFrameworks instead of static libraries
+	bool useVcpkg = false;             ///< Whether to load libraries from vcpkg or SCUMMVM_LIBS
+	bool useSlnx = false;              ///< Whether to use old .sln or new .slnx format
+	bool win32 = false;                ///< Target is Windows
 
-	BuildSetup() {
-		devTools = false;
-		tests = false;
-		runBuildEvents = false;
-		createInstaller = false;
-		useSDL2 = true;
-		useCanonicalLibNames = false;
-		useStaticDetection = true;
-		useWindowsUnicode = true;
-	}
-
-	bool featureEnabled(std::string feature) const;
-	Feature getFeature(std::string feature) const;
+	bool featureEnabled(const std::string &feature) const;
+	Feature getFeature(const std::string &feature) const;
+	const char *getSDLName() const;
 };
 
 /**
@@ -309,6 +354,20 @@ enum MSVC_Architecture {
 
 std::string getMSVCArchName(MSVC_Architecture arch);
 std::string getMSVCConfigName(MSVC_Architecture arch);
+
+enum EngineDataGroup {
+	kEngineDataGroupNormal,
+	kEngineDataGroupCore,
+	kEngineDataGroupBig,
+
+	kEngineDataGroupCount,
+};
+
+struct EngineDataGroupResolution {
+	EngineDataGroup engineDataGroup;
+	const char *mkFilePath;
+	const char *winHeaderPath;
+};
 
 /**
  * Creates a list of all supported versions of Visual Studio.
@@ -407,6 +466,21 @@ void splitFilename(const std::string &fileName, std::string &name, std::string &
 void splitPath(const std::string &path, std::string &dir, std::string &file);
 
 /**
+ * Calculates the include path and PCH file path (without the base directory).
+ *
+ * @param filePath Path to the source file.
+ * @param pchIncludeRoot Path to the PCH inclusion root directory (ending with separator).
+ * @param pchDirs List of PCH directories.
+ * @param pchExclude List of PCH exclusions.
+ * @param separator Path separator
+ * @param outPchIncludePath Output path to be used by #include directives.
+ * @param outPchFilePath Output file path.
+ * @param outPchFileName Output file name.
+ * @return True if the file path uses PCH, false if not.
+ */
+bool calculatePchPaths(const std::string &sourceFilePath, const std::string &pchIncludeRoot, const StringList &pchDirs, const StringList &pchExclude, char separator, std::string &outPchIncludePath, std::string &outPchFilePath, std::string &outPchFileName);
+
+/**
  * Returns the basename of a path.
  * examples:
  *   a/b/c/d.ext -> d.ext
@@ -470,8 +544,8 @@ struct FileNode {
 	explicit FileNode(const std::string &n) : name(n), children() {}
 
 	~FileNode() {
-		for (NodeList::iterator i = children.begin(); i != children.end(); ++i)
-			delete *i;
+		for (auto &i : children)
+			delete i;
 	}
 
 	std::string name;  ///< Name of the node
@@ -480,6 +554,11 @@ struct FileNode {
 
 class ProjectProvider {
 public:
+	struct EngineDataGroupDef {
+		StringList dataFiles;
+		std::string winHeaderPath;
+	};
+
 	typedef std::map<std::string, std::string> UUIDMap;
 
 	/**
@@ -489,7 +568,7 @@ public:
 	 * @param project_warnings List of project-specific warnings
 	 * @param version Target project version.
 	 */
-	ProjectProvider(StringList &global_warnings, std::map<std::string, StringList> &project_warnings, const int version = 0);
+	ProjectProvider(StringList &global_warnings, std::map<std::string, StringList> &project_warnings, StringList &global_errors);
 	virtual ~ProjectProvider() {}
 
 	/**
@@ -508,12 +587,14 @@ public:
 	static std::string getLastPathComponent(const std::string &path);
 
 protected:
-	const int _version;                                  ///< Target project version
-	StringList &_globalWarnings;                         ///< Global warnings
+	StringList &_globalWarnings;                         ///< Global (ignored) warnings
+	StringList &_globalErrors;                           ///< Global errors (promoted from warnings)
 	std::map<std::string, StringList> &_projectWarnings; ///< Per-project warnings
 
 	UUIDMap _engineUuidMap; ///< List of (project name, UUID) pairs
 	UUIDMap _allProjUuidMap;
+
+	EngineDataGroupDef _engineDataGroupDefs[kEngineDataGroupCount];
 
 	/**
 	 *  Create workspace/solution file
@@ -547,7 +628,7 @@ protected:
 	 * @param excludeList Files to exclude (must have "moduleDir" as prefix).
 	 */
 	virtual void createProjectFile(const std::string &name, const std::string &uuid, const BuildSetup &setup, const std::string &moduleDir,
-	                               const StringList &includeList, const StringList &excludeList) = 0;
+								   const StringList &includeList, const StringList &excludeList, const std::string &pchIncludeRoot, const StringList &pchDirs, const StringList &pchExclude) = 0;
 
 	/**
 	 * Writes file entries for the specified directory node into
@@ -560,7 +641,8 @@ protected:
 	 * @param filePrefix Generic prefix to all files of the node.
 	 */
 	virtual void writeFileListToProject(const FileNode &dir, std::ostream &projectFile, const int indentation,
-	                                    const std::string &objPrefix, const std::string &filePrefix) = 0;
+										const std::string &objPrefix, const std::string &filePrefix,
+										const std::string &pchIncludeRoot, const StringList &pchDirs, const StringList &pchExclude) = 0;
 
 	/**
 	 * Output a list of project references to the file stream
@@ -584,7 +666,8 @@ protected:
 	 * @param filePrefix Prefix to use for relative path arguments.
 	 */
 	void addFilesToProject(const std::string &dir, std::ostream &projectFile,
-	                       const StringList &includeList, const StringList &excludeList,
+						   const StringList &includeList, const StringList &excludeList,
+						   const std::string &pchIncludeRoot, const StringList &pchDirs, const StringList &pchExclude,
 	                       const std::string &filePrefix);
 
 	/**
@@ -598,7 +681,17 @@ protected:
 	 * @param includeList Reference to a list, where included files should be added.
 	 * @param excludeList Reference to a list, where excluded files should be added.
 	 */
-	void createModuleList(const std::string &moduleDir, const StringList &defines, StringList &testDirs, StringList &includeList, StringList &excludeList, bool forDetection = false) const;
+	void createModuleList(const std::string &moduleDir, const StringList &defines, StringList &testDirs, StringList &includeList, StringList &excludeList, StringList &pchDirs, StringList &pchExclude, bool forDetection = false) const;
+
+	/**
+	 * Creates a list of data files from a specified .mk file
+	 *
+	 * @param makeFilePath Path to the engine data makefile.
+	 * @param defines List of set defines.
+	 * @param outDataFiles Output list of data files.
+	 * @param outWinHeaderPath Output Windows resource header path.
+	 */
+	void createDataFilesList(EngineDataGroup engineDataGroup, const std::string &baseDir, const StringList &defines, StringList &outDataFiles, std::string &outWinHeaderPath) const;
 
 	/**
 	 * Creates an UUID for every enabled engine of the
@@ -648,6 +741,11 @@ private:
 	 * @param setup Description of the desired build.
 	 */
 	void createEnginePluginsTable(const BuildSetup &setup);
+
+	/**
+	 * Creates resource embed files
+	 */
+	void createResourceEmbeds(const BuildSetup &setup) const;
 };
 
 } // namespace CreateProjectTool

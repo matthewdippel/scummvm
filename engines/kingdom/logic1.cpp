@@ -54,11 +54,13 @@ void Logic::GPL1_11() {
 		_vm->_keyActive = false;
 		_vm->_noIFScreen = true;
 		_vm->playSound(0);
-		while(!_vm->_keyActive) {
+		_vm->_demoMovieSkipped = false;
+		while(!_vm->_keyActive && !_vm->shouldQuit() && !_vm->_demoMovieSkipped) {
 			_vm->fadeToBlack2();
 			_vm->playMovie(54);
 		}
-		GPLogic1_SubSP10();
+		_vm->_demoMovieSkipped = false;
+		GPLogic1_SubSP10(); // return to main menu
 		break;
 	case 0x194:
 		// CHECKME	_QuitFlag = 2;
@@ -75,7 +77,9 @@ void Logic::GPL1_11() {
 		_vm->_cursorDrawn = false;
 		_vm->fadeToBlack2();
 		_vm->playSound(0);
+		_vm->_demoMovieSkipped = false;
 		_vm->playMovie(54);
+		_vm->_demoMovieSkipped = false;
 		GPLogic1_SubSP10();
 		break;
 	default:
@@ -699,7 +703,7 @@ void Logic::GPL1_121() {
 			GPLogic1_SubSP121();
 		break;
 	case 0x43E:
-		if (_vm->_pMovie == 023)
+		if (_vm->_pMovie == 23)
 			GPLogic1_SubSP121();
 		else {
 			_vm->_sound = _vm->_lastSound;

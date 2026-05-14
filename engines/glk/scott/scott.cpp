@@ -140,7 +140,8 @@ void Scott::runGame() {
 	// Check for savegame
 	_saveSlot = ConfMan.hasKey("save_slot") ? ConfMan.getInt("save_slot") : -1;
 
-	_G(_initialState) = saveCurrentState();
+	if (!shouldQuit())
+		_G(_initialState) = saveCurrentState();
 
 	while (!shouldQuit()) {
 		glk_tick();
@@ -240,18 +241,18 @@ void Scott::display(winid_t w, const char *fmt, ...) {
 		glk_put_string_stream(_G(_transcript), msg.c_str());
 }
 
-void Scott::display(winid_t w, const Common::U32String fmt, ...) {
+void Scott::display_u32_internal(winid_t w, const Common::U32String *fmt, ...) {
 	Common::U32String msg;
 
 	va_list ap;
 
 	va_start(ap, fmt);
-	Common::U32String::vformat(fmt.begin(), fmt.end(), msg, ap);
+	Common::U32String::vformat(fmt->begin(), fmt->end(), msg, ap);
 	va_end(ap);
 
-	glk_put_string_stream_uni(glk_window_get_stream(w), msg.u32_str());
+	glk_put_string_stream_uni(glk_window_get_stream(w), msg);
 	if (_G(_transcript))
-		glk_put_string_stream_uni(_G(_transcript), msg.u32_str());
+		glk_put_string_stream_uni(_G(_transcript), msg);
 }
 
 void Scott::updateSettings() {
@@ -327,7 +328,7 @@ void Scott::delay(double seconds) {
 		do {
 			glk_select(&ev);
 			updates(ev);
-		} while (drawingVector());
+		} while (drawingVector() && !g_vm->shouldQuit());
 		if (_G(_gliSlowDraw))
 			seconds = 0.5;
 	}
@@ -337,7 +338,7 @@ void Scott::delay(double seconds) {
 	do {
 		glk_select(&ev);
 		updates(ev);
-	} while (ev.type != evtype_Timer);
+	} while (ev.type != evtype_Timer && !g_vm->shouldQuit());
 
 	glk_request_timer_events(0);
 }
@@ -375,7 +376,7 @@ const char *Scott::mapSynonym(int noun) {
 		if (*tp == '*')
 			tp++;
 		else
-			strcpy(lastword, tp);
+			Common::strcpy_s(lastword, tp);
 		if (n == noun)
 			return lastword;
 		n++;
@@ -1920,7 +1921,7 @@ int Scott::yesOrNo() {
 			}
 		} else
 			updates(ev);
-	} while (result == 0);
+	} while (result == 0 && !g_vm->shouldQuit());
 
 	return (result == 1);
 }
@@ -1940,7 +1941,7 @@ void Scott::hitEnter() {
 			}
 		} else
 			updates(ev);
-	} while (result == 0);
+	} while (result == 0 && !g_vm->shouldQuit());
 
 	return;
 }

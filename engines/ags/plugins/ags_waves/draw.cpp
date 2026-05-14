@@ -79,6 +79,9 @@ void AGSWaves::DrawBlur(ScriptMethodParams &params) {
 				vx++;
 			}
 
+			if (!pixels_parsed)
+				pixels_parsed = 1;
+
 			int rN = totalRed / pixels_parsed;
 			int gN = totalGreen / pixels_parsed;
 			int bN = totalBlue / pixels_parsed;
@@ -125,6 +128,9 @@ void AGSWaves::DrawBlur(ScriptMethodParams &params) {
 				vy++;
 			}
 
+			if (!pixels_parsed)
+				pixels_parsed = 1;
+
 			int rN = totalRed / pixels_parsed;
 			int gN = totalGreen / pixels_parsed;
 			int bN = totalBlue / pixels_parsed;
@@ -143,7 +149,7 @@ void AGSWaves::DrawBlur(ScriptMethodParams &params) {
 void AGSWaves::DrawTunnel(ScriptMethodParams &params) {
 	PARAMS3(int, spriteD, float, scale, float, speed);
 
-	d_time = speed;
+	d_time = PARAM_TO_FLOAT(speed);
 	BITMAP *src = _engine->GetSpriteGraphic(spriteD);
 	uint32 *pixela = (uint32 *)_engine->GetRawBitmapSurface(src);
 	int32 src_width = 640;
@@ -151,7 +157,7 @@ void AGSWaves::DrawTunnel(ScriptMethodParams &params) {
 	int32 src_depth = 32;
 	_engine->GetBitmapDimensions(src, &src_width, &src_height, &src_depth);
 
-	BITMAP *src2 = _engine->GetSpriteGraphic(int(scale));
+	BITMAP *src2 = _engine->GetSpriteGraphic((int32)PARAM_TO_FLOAT(scale));
 	uint32 *pixelb = (uint32 *)_engine->GetRawBitmapSurface(src2);
 	int h = screenHeight;
 	int w = screenWidth;
@@ -255,7 +261,7 @@ void AGSWaves::DrawForceField(ScriptMethodParams &params) {
 	}
 	if (b_time[id] == 0.0) b_time[id] = 1.0;
 	if (b_time[id] < 1.0) b_time[id] = 1.0;
-	b_time[id] += speed;
+	b_time[id] += PARAM_TO_FLOAT(speed);
 	BITMAP *src = _engine->GetSpriteGraphic(spriteD);
 
 	uint32 *pixelb = (uint32 *)_engine->GetRawBitmapSurface(src);
@@ -668,6 +674,9 @@ void AGSWaves::TintProper(ScriptMethodParams &params) {
 				vx++;
 			}
 
+			if (!pixels_parsed)
+				pixels_parsed = 1;
+
 			int rN = totalRed / pixels_parsed;
 			int gN = totalGreen / pixels_parsed;
 			int bN = totalBlue / pixels_parsed;
@@ -718,6 +727,9 @@ void AGSWaves::TintProper(ScriptMethodParams &params) {
 
 				vy++;
 			}
+
+			if (!pixels_parsed)
+				pixels_parsed = 1;
 
 			int rN = totalRed / pixels_parsed;
 			int gN = totalGreen / pixels_parsed;

@@ -27,31 +27,33 @@
 namespace Xyzzy {
 
 enum XyzzyDebugChannels {
-	kDebugGraphics = 1 << 0,
-	kDebugPath     = 1 << 1,
-	kDebugScan     = 1 << 2,
-	kDebugFilePath = 1 << 3,
-	kDebugScript   = 1 << 4
+	kDebugGraphics = 1,
+	kDebugPath,
+	kDebugScan,
+	kDebugFilePath,
+	kDebugScript,
 };
 
-extern const PlainGameDescriptor GAME_NAMES[];
+extern const PlainGameDescriptor xyzzyGames[];
 
-extern const ADGameDescription GAME_DESCRIPTIONS[];
+extern const ADGameDescription gameDescriptions[];
 
-} // namespace Xyzzy
+#define GAMEOPTION_ORIGINAL_SAVELOAD GUIO_GAMEOPTIONS1
 
-class XyzzyMetaEngineDetection : public AdvancedMetaEngineDetection {
+} // End of namespace Xyzzy
+
+class XyzzyMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 	static const DebugChannelDef debugFlagList[];
 
 public:
 	XyzzyMetaEngineDetection();
 	~XyzzyMetaEngineDetection() override {}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "xyzzy";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Xyzzy";
 	}
 
@@ -64,4 +66,4 @@ public:
 	}
 };
 
-#endif
+#endif // XYZZY_DETECTION_H

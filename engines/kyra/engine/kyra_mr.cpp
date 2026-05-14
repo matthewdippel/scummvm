@@ -151,6 +151,15 @@ KyraEngine_MR::KyraEngine_MR(OSystem *system, const GameFlags &flags) : KyraEngi
 	_configHelium = false;
 	_fadeOutMusicChannel = -1;
 	memset(_scaleTable, 0, sizeof(_scaleTable));
+	_gui = nullptr;
+	_soundListSize = _sfxFileMapSize = _sfxFileListSize = _mainMenuStringsSize = _itemStringMapSize = _malcolmShapeXOffset = _malcolmShapeYOffset = _currentTalkFile = 0;
+	_sceneMinX = _sceneMaxX = _badConscienceAnim = _scoreMax = _scoreTableSize = 0;
+	_sfxFileMap = _itemMagicTable = _itemStringMap = _scoreTable = nullptr;
+	_sfxFileList = _mainMenuStrings = nullptr;
+	_shownMessage = nullptr;
+	_itemAnimDefinition = nullptr;
+	_restoreCommandLine = _badConsciencePosition = _useFrameTable = false;
+	_actorFileSize = 0;
 }
 
 KyraEngine_MR::~KyraEngine_MR() {
@@ -209,7 +218,10 @@ KyraEngine_MR::~KyraEngine_MR() {
 Common::Error KyraEngine_MR::init() {
 	_screen = new Screen_MR(this, _system);
 	assert(_screen);
-	_screen->setResolution();
+
+	Common::Error err = _screen->setResolution();
+	if (err.getCode() != Common::kNoError)
+		return err;
 
 	setDebugger(new Debugger_v2(this));
 
@@ -697,11 +709,9 @@ void KyraEngine_MR::runStartupScript(int script, int unk1) {
 	EMCData data;
 	memset(&state, 0, sizeof(state));
 	memset(&data, 0, sizeof(data));
-	char filename[13];
-	strcpy(filename, "_START0X.EMC");
-	filename[7] = (script % 10) + '0';
+	Common::String filename = Common::String::format("_START0%c.EMC", '0' + (char)(script % 10));
 
-	_emc->load(filename, &data, &_opcodes);
+	_emc->load(filename.c_str(), &data, &_opcodes);
 	_emc->init(&state, &data);
 	_emc->start(&state, 0);
 	state.regs[6] = unk1;
@@ -713,22 +723,22 @@ void KyraEngine_MR::runStartupScript(int script, int unk1) {
 }
 
 void KyraEngine_MR::openTalkFile(int file) {
-	char talkFilename[16];
+	Common::String talkFilename;
 
 	if (file == 0) {
-		strcpy(talkFilename, "ANYTALK.TLK");
+		talkFilename = "ANYTALK.TLK";
 	} else {
 		if (_currentTalkFile > 0) {
-			sprintf(talkFilename, "CH%dTALK.TLK", _currentTalkFile);
+			talkFilename = Common::String::format("CH%dTALK.TLK", _currentTalkFile);
 			_res->unloadPakFile(talkFilename);
 		}
-		sprintf(talkFilename, "CH%dTALK.TLK", file);
+		talkFilename = Common::String::format("CH%dTALK.TLK", file);
 	}
 
 	_currentTalkFile = file;
-	if (!_res->loadPakFile(talkFilename)) {
+	if (!_res->loadPakFile(Common::Path(talkFilename))) {
 		if (speechEnabled()) {
-			warning("Couldn't load voice file '%s', falling back to text only mode", talkFilename);
+			warning("Couldn't load voice file '%s', falling back to text only mode", talkFilename.c_str());
 			_configVoice = 0;
 
 			// Sync the config manager with the new settings
@@ -767,12 +777,11 @@ void KyraEngine_MR::loadCharacterShapes(int newShapes) {
 	const char highNum = (newShapes / 10) + '0';
 
 	for (int i = 0; i < 6; ++i) {
-		char filename[16];
-		strcpy(filename, filenames[i]);
-		filename[numberOffset[i]+0] = highNum;
-		filename[numberOffset[i]+1] = lowNum;
-		_res->exists(filename, true);
-		_res->loadFileToBuf(filename, _screenBuffer, 64000);
+		Common::String filename = filenames[i];
+		filename.setChar(highNum, numberOffset[i]);
+		filename.setChar(lowNum, numberOffset[i] + 1);
+		_res->exists(filename.c_str(), true);
+		_res->loadFileToBuf(filename.c_str(), _screenBuffer, 64000);
 		for (int j = startShape[i]; j <= endShape[i]; ++j) {
 			if (j == 87)
 				continue;
@@ -1261,7 +1270,7 @@ int KyraEngine_MR::loadLanguageFile(const char *file, uint8 *&buffer) {
 
 	uint32 size = 0;
 	Common::String nBuf = file;
-	nBuf += _languageExtension[_lang];
+	nBuf += _languageExtension[_scriptLang];
 	buffer = _res->fileData(nBuf.c_str(), &size);
 
 	return buffer ? size : 0;
@@ -1319,8 +1328,8 @@ bool KyraEngine_MR::updateScore(int scoreId, int strId) {
 	setNextIdleAnimTimer();
 	_scoreFlagTable[scoreIndex] |= (1 << scoreBit);
 
-	strcpy(_stringBuffer, (const char *)getTableEntry(_scoreFile, strId));
-	strcat(_stringBuffer, ":        ");
+	Common::strlcpy(_stringBuffer, (const char *)getTableEntry(_scoreFile, strId), 500);
+	Common::strlcat(_stringBuffer, ":        ", 500);
 
 	assert(scoreId < _scoreTableSize);
 

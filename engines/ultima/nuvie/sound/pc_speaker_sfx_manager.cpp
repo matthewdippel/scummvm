@@ -19,7 +19,7 @@
  *
  */
 
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 #include "ultima/nuvie/core/nuvie_defs.h"
 #include "ultima/nuvie/sound/pc_speaker_sfx_manager.h"
 #include "ultima/nuvie/sound/decoder/adlib_sfx_stream.h"
@@ -30,7 +30,7 @@
 namespace Ultima {
 namespace Nuvie {
 
-PCSpeakerSfxManager::PCSpeakerSfxManager(Configuration *cfg, Audio::Mixer *m) : SfxManager(cfg, m) {
+PCSpeakerSfxManager::PCSpeakerSfxManager(const Configuration *cfg, Audio::Mixer *m) : SfxManager(cfg, m) {
 
 }
 
@@ -39,12 +39,12 @@ PCSpeakerSfxManager::~PCSpeakerSfxManager() {
 }
 
 bool PCSpeakerSfxManager::playSfx(SfxIdType sfx_id, uint8 volume) {
-	return playSfxLooping(sfx_id, NULL, volume);
+	return playSfxLooping(sfx_id, nullptr, volume);
 }
 
 
 bool PCSpeakerSfxManager::playSfxLooping(SfxIdType sfx_id, Audio::SoundHandle *handle, uint8 volume) {
-	Audio::AudioStream *stream = NULL;
+	Audio::AudioStream *stream = nullptr;
 
 	if (sfx_id == NUVIE_SFX_BLOCKED) {
 		stream = new PCSpeakerFreqStream(311, 0xa);

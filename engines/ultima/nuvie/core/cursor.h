@@ -22,7 +22,7 @@
 #ifndef NUVIE_CORE_CURSOR_H
 #define NUVIE_CORE_CURSOR_H
 
-#include "ultima/shared/std/string.h"
+#include "common/str.h"
 #include "ultima/shared/std/containers.h"
 
 
@@ -46,9 +46,9 @@ typedef struct {
 class Cursor {
 	friend class Screen;
 	Screen *screen;
-	Configuration *config;
+	const Configuration *config;
 	sint32 cur_x, cur_y; // location on screen, unused normally
-	Std::vector<MousePointer *> cursors; // pointer list
+	Common::Array<MousePointer *> cursors; // pointer list
 	uint8 cursor_id; // which pointer is active
 
 	unsigned char *cleanup; // restore image behind cursor
@@ -68,8 +68,8 @@ public:
 	~Cursor()                              {
 		unload_all();
 	}
-	bool init(Configuration *c, Screen *s, nuvie_game_t game_type);
-	uint32 load_all(Std::string filename, nuvie_game_t game_type);
+	bool init(const Configuration *c, Screen *s, nuvie_game_t game_type);
+	uint32 load_all(const Common::Path &filename, nuvie_game_t game_type);
 	void unload_all();
 	bool set_pointer(uint8 ptr_num);
 
@@ -90,18 +90,18 @@ public:
 		hidden = false;
 	}
 
-	void get_hotspot(uint16 &x, uint16 &y) {
+	void get_hotspot(uint16 &x, uint16 &y) const {
 		x = cursors[cursor_id]->point_x;
 		y = cursors[cursor_id]->point_y;
 	}
 	bool display()                         {
-		return (display(cur_x, cur_y));
+		return display(cur_x, cur_y);
 	}
 	bool display(int px, int py);
 	void clear();
 	void update();
 
-	bool is_visible() {
+	bool is_visible() const {
 		return !hidden;
 	}
 };

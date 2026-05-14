@@ -27,6 +27,7 @@
 
 #include "engines/wintermute/ad/ad_response_context.h"
 #include "engines/wintermute/base/base_persistence_manager.h"
+#include "engines/wintermute/dcgf.h"
 
 namespace Wintermute {
 
@@ -41,14 +42,13 @@ AdResponseContext::AdResponseContext(BaseGame *inGame) : BaseClass(inGame) {
 
 //////////////////////////////////////////////////////////////////////////
 AdResponseContext::~AdResponseContext() {
-	delete[] _context;
-	_context = nullptr;
+	SAFE_DELETE_ARRAY(_context);
 }
 
 
 //////////////////////////////////////////////////////////////////////////
 bool AdResponseContext::persist(BasePersistenceManager *persistMgr) {
-	persistMgr->transferPtr(TMEMBER_PTR(_gameRef));
+	persistMgr->transferPtr(TMEMBER_PTR(_game));
 	persistMgr->transferCharPtr(TMEMBER(_context));
 	persistMgr->transferSint32(TMEMBER(_id));
 
@@ -57,13 +57,11 @@ bool AdResponseContext::persist(BasePersistenceManager *persistMgr) {
 
 //////////////////////////////////////////////////////////////////////////
 void AdResponseContext::setContext(const char *context) {
-	delete[] _context;
-	_context = nullptr;
+	SAFE_DELETE_ARRAY(_context);
 	if (context) {
-		_context = new char [strlen(context) + 1];
-		if (_context) {
-			strcpy(_context, context);
-		}
+		size_t contextSize = strlen(context) + 1;
+		_context = new char [contextSize];
+		Common::strcpy_s(_context, contextSize, context);
 	}
 }
 

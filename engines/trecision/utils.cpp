@@ -85,14 +85,22 @@ uint16 TrecisionEngine::getKey() {
 	}
 }
 
+uint16 TrecisionEngine::getAction() {
+	Common::CustomEventType customType = _curAction;
+	_curAction = kActionNone;
+
+	return customType;
+}
+
 Common::KeyCode TrecisionEngine::waitKey() {
 	_graphicsMgr->hideCursor();
-	while (_curKey == Common::KEYCODE_INVALID)
+	while (_curKey == Common::KEYCODE_INVALID && _curAction == kActionNone && !_joyButtonUp)
 		checkSystem();
 	_graphicsMgr->showCursor();
 
 	Common::KeyCode t = _curKey;
 	_curKey = Common::KEYCODE_INVALID;
+	_joyButtonUp = false;
 
 	return t;
 }
@@ -184,7 +192,7 @@ float TrecisionEngine::sinCosAngle(float sinus, float cosinus) {
 		return (float)acos(cosinus);
 
 	// 3 quad
-	return PI2 - (float)acos(cosinus);
+	return (M_PI * 2) - (float)acos(cosinus);
 }
 
 void TrecisionEngine::processTime() {

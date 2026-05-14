@@ -122,8 +122,8 @@ void TinyTSA::start() {
 	Neighborhood::start();
 }
 
-Common::String TinyTSA::getBriefingMovie() {
-	Common::String movieName = Neighborhood::getBriefingMovie();
+Common::Path TinyTSA::getBriefingMovie() {
+	Common::Path movieName = Neighborhood::getBriefingMovie();
 
 	if (movieName.empty()) {
 		switch (getCurrentActivation()) {
@@ -157,8 +157,8 @@ Common::String TinyTSA::getBriefingMovie() {
 	return movieName;
 }
 
-Common::String TinyTSA::getEnvScanMovie() {
-	Common::String movieName = Neighborhood::getEnvScanMovie();
+Common::Path TinyTSA::getEnvScanMovie() {
+	Common::Path movieName = Neighborhood::getEnvScanMovie();
 
 	if (movieName.empty()) {
 		g_AIChip->showEnvScanClicked();
@@ -212,7 +212,7 @@ void TinyTSA::clickInHotspot(const Input &input, const Hotspot *clickedSpot) {
 	if (clickedSpot) {
 		switch (clickedSpot->getObjectID()) {
 		case kTinyTSA37NorthJumpMenuSpotID:
-			// This hotspot isn't accessable from Tiny TSA
+			// This hotspot isn't accessible from Tiny TSA
 			warning("jump menu spot");
 			return;
 		case kTinyTSA37NorthJumpToNoradSpotID:
@@ -478,7 +478,7 @@ void TinyTSA::arriveFromWSC() {
 	}
 }
 
-Common::String TinyTSA::getNavMovieName() {
+Common::Path TinyTSA::getNavMovieName() {
 	return "Images/TSA/Tiny TSA.movie";
 }
 

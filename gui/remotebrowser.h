@@ -25,7 +25,7 @@
 #include "gui/dialog.h"
 #include "common/fs.h"
 #include "backends/cloud/storagefile.h"
-#include "backends/networking/curl/request.h"
+#include "backends/networking/http/request.h"
 #include "backends/cloud/storage.h"
 
 namespace GUI {
@@ -64,8 +64,8 @@ protected:
 	void updateListing();
 	void goUp();
 	void listDirectory(const Cloud::StorageFile &node);
-	void directoryListedCallback(Cloud::Storage::ListDirectoryResponse response);
-	void directoryListedErrorCallback(Networking::ErrorResponse error);
+	void directoryListedCallback(const Cloud::Storage::ListDirectoryResponse &response);
+	void directoryListedErrorCallback(const Networking::ErrorResponse &error);
 
 	struct FileListOrder : public Common::BinaryFunction<Cloud::StorageFile, Cloud::StorageFile, bool> {
 		bool operator()(const Cloud::StorageFile &x, const Cloud::StorageFile &y) const {

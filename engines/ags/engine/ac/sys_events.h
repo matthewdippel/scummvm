@@ -27,21 +27,6 @@
 
 namespace AGS3 {
 
-// AGS own mouse button codes
-// TODO: these were internal button codes, but AGS script uses different ones,
-// which start with Left=1, and make more sense (0 is easier to use as "no value").
-// Must research if there are any dependencies to these internal values, and if not,
-// then just replace these matching script ones!
-// UPD: even plugin API seem to match script codes and require remap to internals.
-// UPD: or use SDL constants in the engine, but make conversion more visible by using a function.
-enum eAGSMouseButton {
-	MouseNone = -1,
-	MouseLeft = 0,
-	MouseRight = 1,
-	MouseMiddle = 2
-};
-
-
 // Keyboard input handling
 //
 // avoid including SDL.h here, at least for now, because that leads to conflicts with allegro
@@ -74,22 +59,21 @@ extern KeyInput ags_keycode_from_scummvm(const Common::Event &event, bool old_ke
 extern bool ags_keyevent_ready();
 // Queries for the next key event in buffer; returns uninitialized data if none was queued
 extern Common::Event ags_get_next_keyevent();
-// Tells if the key is currently down, provided AGS key;
-// Returns positive value if it's down, 0 if it's not, negative value if the key code is not supported.
+// Tells if the key is currently down, provided AGS key.
 // NOTE: for particular script codes this function returns positive if either of two keys are down.
 extern int ags_iskeydown(eAGSKeyCode ags_key);
 // Simulates key press with the given AGS key
-extern void ags_simulate_keypress(eAGSKeyCode ags_key);
+extern void ags_simulate_keypress(eAGSKeyCode ags_key, bool old_keyhandle);
 
 
 // Mouse input handling
 //
 // Tells if the mouse button is currently down
-extern bool ags_misbuttondown(int but);
-// Returns mouse button code
-extern int  ags_mgetbutton();
-// Returns recent relative mouse movement
-extern void ags_mouse_get_relxy(int &x, int &y);
+extern bool ags_misbuttondown(eAGSMouseButton but);
+// Returns last "clicked" mouse button
+extern eAGSMouseButton ags_mgetbutton();
+// Returns recent relative mouse movement; resets accumulated values
+extern void ags_mouse_acquire_relxy(int &x, int &y);
 // Updates mouse cursor position in game
 extern void ags_domouse();
 // Returns -1 for wheel down and +1 for wheel up

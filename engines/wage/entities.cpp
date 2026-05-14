@@ -59,7 +59,6 @@ namespace Wage {
 
 void Designed::setDesignBounds(Common::Rect *bounds) {
 	_designBounds = bounds;
-	_design->setBounds(bounds);
 }
 
 Designed::~Designed() {
@@ -72,6 +71,7 @@ Context::Context() {
 	_kills = 0;
 	_experience = 0;
 	_frozen = false;
+	_freezeTimer = 0;
 
 	for (int i = 0; i < 26 * 9; i++)
 		 _userVariables[i] = 0;
@@ -159,13 +159,13 @@ void Scene::paint(Graphics::ManagedSurface *surface, int x, int y) {
 Designed *Scene::lookUpEntity(int x, int y) {
 	for (ObjList::const_iterator it = _objs.end(); it != _objs.begin(); ) {
 		it--;
-		if ((*it)->_design->isPointOpaque(x, y))
+		if ((*it)->_design->isInBounds(x, y))
 			return *it;
 	}
 
 	for (ChrList::const_iterator it = _chrs.end(); it != _chrs.begin(); ) {
 		it--;
-		if ((*it)->_design->isPointOpaque(x, y))
+		if ((*it)->_design->isInBounds(x, y))
 			return *it;
 	}
 
@@ -269,6 +269,8 @@ Designed *Obj::removeFromCharOrScene() {
 }
 
 void Obj::resetState(Chr *owner, Scene *scene) {
+	removeFromCharOrScene();
+
 	warning("STUB: Obj::resetState()");
 }
 

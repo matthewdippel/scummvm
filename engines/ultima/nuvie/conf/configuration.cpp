@@ -41,21 +41,20 @@ Configuration::Configuration() : _configChanged(false) {
 }
 
 Configuration::~Configuration() {
-	for (Std::vector<Shared::XMLTree *>::iterator i = _trees.begin();
-	        i != _trees.end(); ++i) {
-		delete(*i);
+	for (Shared::XMLTree *t : _trees) {
+		delete(t);
 	}
 
 	if (_configChanged)
 		ConfMan.flushToDisk();
 }
 
-bool Configuration::readConfigFile(Std::string fname, Std::string root,
+bool Configuration::readConfigFile(const Common::String &fname, const Common::String &root,
 								   bool readonly) {
 	_configFilename = fname;
 	Shared::XMLTree *tree = new Shared::XMLTree();
 
-	if (!tree->readConfigFile(fname)) {
+	if (!tree->readConfigFile(Common::Path(fname))) {
 		delete tree;
 		return false;
 	}
@@ -65,34 +64,32 @@ bool Configuration::readConfigFile(Std::string fname, Std::string root,
 }
 
 void Configuration::write() {
-	for (Std::vector<Shared::XMLTree *>::iterator i = _trees.begin();
-	        i != _trees.end(); ++i) {
-		if (!(*i)->isReadonly())
-			(*i)->write();
+	for (Shared::XMLTree *t : _trees) {
+		if (!t->isReadonly())
+			t->write();
 	}
 }
 
 void Configuration::clear() {
-	for (Std::vector<Shared::XMLTree *>::iterator i = _trees.begin();
-	        i != _trees.end(); ++i) {
-		delete(*i);
+	for (Shared::XMLTree *t : _trees) {
+		delete(t);
 	}
 	_trees.clear();
 }
 
-void Configuration::value(const Std::string &key, Std::string &ret,
-						  const char *defaultvalue) {
+void Configuration::value(const Common::String &key, Common::String &ret,
+						  const char *defaultvalue) const {
 	// Check for a .cfg file value in the trees
-	for (Std::vector<Shared::XMLTree *>::reverse_iterator i = _trees.rbegin();
-	        i != _trees.rend(); ++i) {
-		if ((*i)->hasNode(key)) {
-			(*i)->value(key, ret, defaultvalue);
+	for (int i = _trees.size() - 1; i >= 0; --i) {
+		const Shared::XMLTree *tree = _trees[i];
+		if (tree->hasNode(key)) {
+			tree->value(key, ret, defaultvalue);
 			return;
 		}
 	}
 
 	assert(key.hasPrefix("config/"));
-	Std::string k = key.substr(7);
+	Common::String k = key.substr(7);
 
 	// Check for local entry
 	if (_localKeys.contains(k)) {
@@ -109,18 +106,18 @@ void Configuration::value(const Std::string &key, Std::string &ret,
 	ret = defaultvalue;
 }
 
-void Configuration::value(const Std::string &key, int &ret, int defaultvalue) {
+void Configuration::value(const Common::String &key, int &ret, int defaultvalue) const {
 	// Check for a .cfg file value in the trees
-	for (Std::vector<Shared::XMLTree *>::reverse_iterator i = _trees.rbegin();
-	        i != _trees.rend(); ++i) {
-		if ((*i)->hasNode(key)) {
-			(*i)->value(key, ret, defaultvalue);
+	for (int i = _trees.size() - 1; i >= 0; --i) {
+		const Shared::XMLTree *tree = _trees[i];
+		if (tree->hasNode(key)) {
+			tree->value(key, ret, defaultvalue);
 			return;
 		}
 	}
 
 	assert(key.hasPrefix("config/"));
-	Std::string k = key.substr(7);
+	Common::String k = key.substr(7);
 
 	// Check for local entry
 	if (_localKeys.contains(k)) {
@@ -137,18 +134,18 @@ void Configuration::value(const Std::string &key, int &ret, int defaultvalue) {
 	ret = defaultvalue;
 }
 
-void Configuration::value(const Std::string &key, bool &ret, bool defaultvalue) {
+void Configuration::value(const Common::String &key, bool &ret, bool defaultvalue) const {
 	// Check for a .cfg file value in the trees
-	for (Std::vector<Shared::XMLTree *>::reverse_iterator i = _trees.rbegin();
-	        i != _trees.rend(); ++i) {
-		if ((*i)->hasNode(key)) {
-			(*i)->value(key, ret, defaultvalue);
+	for (int i = _trees.size() - 1; i >= 0; --i) {
+		const Shared::XMLTree *tree = _trees[i];
+		if (tree->hasNode(key)) {
+			tree->value(key, ret, defaultvalue);
 			return;
 		}
 	}
 
 	assert(key.hasPrefix("config/"));
-	Std::string k = key.substr(7);
+	Common::String k = key.substr(7);
 
 	// Check for local entry
 	if (_localKeys.contains(k)) {
@@ -167,30 +164,28 @@ void Configuration::value(const Std::string &key, bool &ret, bool defaultvalue) 
 	ret = defaultvalue;
 }
 
-void Configuration::pathFromValue(const Std::string &key, Std::string file, Std::string &full_path) {
-	value(key, full_path);
+void Configuration::pathFromValue(const Common::String &key, const Common::String &file, Common::Path &full_path) const {
+	Common::String tmp;
+	value(key, tmp);
 
-	if (full_path.length() > 0 && full_path[full_path.length() - 1] != U6PATH_DELIMITER)
-		full_path += U6PATH_DELIMITER + file;
-	else
-		full_path += file;
+	full_path = Common::Path(tmp).joinInPlace(file);
 }
 
-bool Configuration::set(const Std::string &key, const Std::string &value) {
+bool Configuration::set(const Common::String &key, const Common::String &value) {
 	// Currently a value is written to the last writable tree with
 	// the correct root.
 
-	for (Std::vector<Shared::XMLTree *>::reverse_iterator i = _trees.rbegin();
-	        i != _trees.rend(); ++i) {
-		if (!((*i)->isReadonly()) &&
-		        (*i)->checkRoot(key)) {
-			(*i)->set(key, value);
+	for (int i = _trees.size() - 1; i >= 0; --i) {
+		Shared::XMLTree *tree = _trees[i];
+		if (!(tree->isReadonly()) &&
+		        tree->checkRoot(key)) {
+			tree->set(key, value);
 			return true;
 		}
 	}
 
 	assert(key.hasPrefix("config/"));
-	Std::string k = key.substr(7);
+	Common::String k = key.substr(7);
 
 	if (_localKeys.contains(k)) {
 		_localKeys[k] = value;
@@ -204,26 +199,26 @@ bool Configuration::set(const Std::string &key, const Std::string &value) {
 	return true;
 }
 
-bool Configuration::set(const Std::string &key, const char *value) {
-	return set(key, Std::string(value));
+bool Configuration::set(const Common::String &key, const char *value) {
+	return set(key, Common::String(value));
 }
 
 
-bool Configuration::set(const Std::string &key, int value) {
+bool Configuration::set(const Common::String &key, int value) {
 	// Currently a value is written to the last writable tree with
 	// the correct root.
 
-	for (Std::vector<Shared::XMLTree *>::reverse_iterator i = _trees.rbegin();
-	        i != _trees.rend(); ++i) {
-		if (!((*i)->isReadonly()) &&
-		        (*i)->checkRoot(key)) {
-			(*i)->set(key, value);
+	for (int i = _trees.size() - 1; i >= 0; --i) {
+		Shared::XMLTree *tree = _trees[i];
+		if (!(tree->isReadonly()) &&
+		        tree->checkRoot(key)) {
+			tree->set(key, value);
 			return true;
 		}
 	}
 
 	assert(key.hasPrefix("config/"));
-	Std::string k = key.substr(7);
+	Common::String k = key.substr(7);
 
 	if (_localKeys.contains(k)) {
 		_localKeys[k] = Common::String::format("%d", value);
@@ -237,21 +232,21 @@ bool Configuration::set(const Std::string &key, int value) {
 	return true;
 }
 
-bool Configuration::set(const Std::string &key, bool value) {
+bool Configuration::set(const Common::String &key, bool value) {
 	// Currently a value is written to the last writable tree with
 	// the correct root.
 
-	for (Std::vector<Shared::XMLTree *>::reverse_iterator i = _trees.rbegin();
-	        i != _trees.rend(); ++i) {
-		if (!((*i)->isReadonly()) &&
-		        (*i)->checkRoot(key)) {
-			(*i)->set(key, value);
+	for (int i = _trees.size() - 1; i >= 0; --i) {
+		Shared::XMLTree *tree = _trees[i];
+		if (!(tree->isReadonly()) &&
+		        tree->checkRoot(key)) {
+			tree->set(key, value);
 			return true;
 		}
 	}
 
 	assert(key.hasPrefix("config/"));
-	Std::string k = key.substr(7);
+	Common::String k = key.substr(7);
 	Common::String strValue = value ? "yes" : "no";
 
 	if (_localKeys.contains(k)) {
@@ -265,50 +260,30 @@ bool Configuration::set(const Std::string &key, bool value) {
 	return true;
 }
 
-ConfigNode *Configuration::getNode(const Std::string &key) {
+ConfigNode *Configuration::getNode(const Common::String &key) {
 	return new ConfigNode(*this, key);
 }
 
-Std::set<Std::string> Configuration::listKeys(const Std::string &key, bool longformat) {
-	Std::set<Std::string> keys;
-	for (Common::Array<Shared::XMLTree *>::iterator i = _trees.begin();
-	        i != _trees.end(); ++i) {
-		Common::Array<Common::String> k = (*i)->listKeys(key, longformat);
-		for (Common::Array<Common::String>::iterator iter = k.begin();
-		        iter != k.end(); ++iter) {
-			keys.insert(*iter);
-		}
-	}
-	return keys;
-}
-
-void Configuration::getSubkeys(KeyTypeList &ktl, Std::string basekey) {
-	for (Std::vector<Shared::XMLTree *>::iterator tree = _trees.begin();
-	        tree != _trees.end(); ++tree) {
+void Configuration::getSubkeys(KeyTypeList &ktl, const Common::String &basekey) {
+	for (Shared::XMLTree *tree : _trees) {
 		Shared::XMLTree::KeyTypeList l;
-		(*tree)->getSubkeys(l, basekey);
+		tree->getSubkeys(l, basekey);
 
-		for (Shared::XMLTree::KeyTypeList::iterator i = l.begin();
-		        i != l.end(); ++i) {
+		for (const auto &i : l) {
 			bool found = false;
-			for (KeyTypeList::iterator j = ktl.begin();
-			        j != ktl.end() && !found; ++j) {
-				if (j->first == i->first) {
+			for (auto &j : ktl) {
+				if (j.first == i.first) {
 					// already have this subkey, so just replace the value
-					j->second = i->second;
+					j.second = i.second;
 					found = true;
 				}
 			}
 			if (!found) {
 				// new subkey
-				ktl.push_back(*i);
+				ktl.push_back(i);
 			}
 		}
 	}
-}
-
-bool Configuration::isDefaultsSet() const {
-	return ConfMan.hasKey("config/video/screen_width");
 }
 
 void Configuration::load(GameId gameId, bool isEnhanced) {
@@ -318,7 +293,7 @@ void Configuration::load(GameId gameId, bool isEnhanced) {
 	else
 		setUnenhancedDefaults(gameId);
 
-	// nuvie.cfg in the game folder can supercede any ScummVM settings
+	// nuvie.cfg in the game folder can supersede any ScummVM settings
 	if (Common::File::exists("nuvie.cfg"))
 		(void)readConfigFile("nuvie.cfg", "config");
 

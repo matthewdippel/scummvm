@@ -22,15 +22,14 @@
 #ifndef BACKENDS_CLOUD_SAVESSYNCREQUEST_H
 #define BACKENDS_CLOUD_SAVESSYNCREQUEST_H
 
-#include "backends/networking/curl/request.h"
+#include "backends/networking/http/request.h"
 #include "backends/cloud/storage.h"
 #include "common/hashmap.h"
 #include "common/hash-str.h"
-#include "gui/object.h"
 
 namespace Cloud {
 
-class SavesSyncRequest: public Networking::Request, public GUI::CommandSender {
+class SavesSyncRequest: public Networking::Request {
 	Storage *_storage;
 	Storage::BoolCallback _boolCallback;
 	Common::HashMap<Common::String, uint32> _localFilesTimestamps;
@@ -42,30 +41,37 @@ class SavesSyncRequest: public Networking::Request, public GUI::CommandSender {
 	bool _ignoreCallback;
 	uint32 _totalFilesToHandle;
 	Common::String _date;
+	uint32 _bytesToDownload, _bytesDownloaded;
 
 	void start();
-	void directoryListedCallback(Storage::ListDirectoryResponse response);
-	void directoryListedErrorCallback(Networking::ErrorResponse error);
-	void directoryCreatedCallback(Storage::BoolResponse response);
-	void directoryCreatedErrorCallback(Networking::ErrorResponse error);
-	void fileDownloadedCallback(Storage::BoolResponse response);
-	void fileDownloadedErrorCallback(Networking::ErrorResponse error);
-	void fileUploadedCallback(Storage::UploadResponse response);
-	void fileUploadedErrorCallback(Networking::ErrorResponse error);
+	void directoryListedCallback(const Storage::ListDirectoryResponse &response);
+	void directoryListedErrorCallback(const Networking::ErrorResponse &error);
+	void directoryCreatedCallback(const Storage::BoolResponse &response);
+	void directoryCreatedErrorCallback(const Networking::ErrorResponse &error);
+	void fileDownloadedCallback(const Storage::BoolResponse &response);
+	void fileDownloadedErrorCallback(const Networking::ErrorResponse &error);
+	void fileUploadedCallback(const Storage::UploadResponse &response);
+	void fileUploadedErrorCallback(const Networking::ErrorResponse &error);
 	void downloadNextFile();
 	void uploadNextFile();
-	virtual void finishError(Networking::ErrorResponse error, Networking::RequestState state = Networking::FINISHED);
+	void finishError(const Networking::ErrorResponse &error, Networking::RequestState state = Networking::FINISHED) override;
 	void finishSync(bool success);
+
+	uint32 getDownloadedBytes() const;
+	uint32 getBytesToDownload() const;
 
 public:
 	SavesSyncRequest(Storage *storage, Storage::BoolCallback callback, Networking::ErrorCallback ecb);
-	virtual ~SavesSyncRequest();
+	~SavesSyncRequest() override;
 
-	virtual void handle();
-	virtual void restart();
+	void handle() override;
+	void restart() override;
 
 	/** Returns a number in range [0, 1], where 1 is "complete". */
 	double getDownloadingProgress() const;
+
+	/** Fills a struct with numbers about current sync downloading progress. */
+	void getDownloadingInfo(Storage::SyncDownloadingInfo &info) const;
 
 	/** Returns a number in range [0, 1], where 1 is "complete". */
 	double getProgress() const;

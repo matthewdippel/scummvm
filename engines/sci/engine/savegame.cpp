@@ -40,7 +40,7 @@
 #include "sci/engine/script.h"	// for SCI_OBJ_EXPORTS and SCI_OBJ_SYNONYMS
 #include "sci/graphics/helpers.h"
 #include "sci/graphics/menu.h"
-#include "sci/graphics/palette.h"
+#include "sci/graphics/palette16.h"
 #include "sci/graphics/ports.h"
 #include "sci/graphics/screen.h"
 #include "sci/parser/vocabulary.h"
@@ -132,7 +132,7 @@ struct SegmentObjTableEntrySyncer : Common::BinaryFunction<Common::Serializer, t
 			syncWithSerializer(s, *entry.data);
 		} else if (s.isLoading()) {
 			if (s.getVersion() < 37) {
-				typename T::value_type dummy;
+				typename T::value_type dummy{};
 				syncWithSerializer(s, dummy);
 			}
 			entry.data = nullptr;
@@ -568,7 +568,7 @@ void Script::saveLoadWithSerializer(Common::Serializer &s) {
 
 	s.skip(4, VER(14), VER(19));		// OBSOLETE: Used to be _numExports
 	s.skip(4, VER(14), VER(19));		// OBSOLETE: Used to be _numSynonyms
-	s.syncAsSint32LE(_lockers);
+	s.syncAsUint32LE(_lockers);
 
 	// Sync _objects. This is a hashmap, and we use the following on disk format:
 	// First we store the number of items in the hashmap, then we store each
@@ -688,6 +688,8 @@ void MusicEntry::saveLoadWithSerializer(Common::Serializer &s) {
 	s.syncAsSint16LE(fadeStep);
 	s.syncAsSint32LE(fadeTicker);
 	s.syncAsSint32LE(fadeTickerStep);
+	s.syncAsByte(fadeSetVolume, VER(46));
+	s.syncAsByte(fadeCompleted, VER(46));
 	s.syncAsByte(stopAfterFading, VER(45));
 	s.syncAsByte(status);
 	if (s.getVersion() >= 32)
@@ -845,6 +847,13 @@ void GfxPalette::palVarySaveLoadPalette(Common::Serializer &s, Palette *palette)
 }
 
 void GfxPalette::saveLoadWithSerializer(Common::Serializer &s) {
+	if (s.isLoading()) {
+		// Palette cycling schedules must be reset on load because we persist the engine tick count.
+		// Otherwise, loading during cycling leaves the animation stuck until the new lower tick count
+		// reaches the stale scheduled values. (Example: SQ5 Kiz Urazgubi waterfalls)
+		// SSCI didn't persist or reset engine tick count so it didn't need to reset the schedules.
+		_schedules.clear();
+	}
 	if (s.getVersion() >= 25) {
 		// We need to save intensity of the _sysPalette at least for kq6 when entering the dark cave (room 390)
 		//  from room 340. scripts will set intensity to 60 for this room and restore them when leaving.
@@ -1240,21 +1249,9 @@ bool gamestate_save(EngineState *s, Common::WriteStream *fh, const Common::Strin
 
 	// If the game version is empty, we are probably saving from the GMM, so read it
 	// from the version global and then the VERSION file
-	if (ver == "") {
-		// The version global was originally 28 but then became 27.
-		// When it was 28, 27 was a volume level, so differentiate by type.
-		reg_t versionRef = s->variables[VAR_GLOBAL][kGlobalVarVersionNew];
-		if (versionRef.isNumber()) {
-			versionRef = s->variables[VAR_GLOBAL][kGlobalVarVersionOld];
-		}
-#ifdef ENABLE_SCI32
-		// LSL7 and Phant2 store the version string as an object instead of a reference
-		if (s->_segMan->isObject(versionRef)) {
-			versionRef = readSelector(s->_segMan, versionRef, SELECTOR(data));
-		}
-#endif
-		ver = s->_segMan->getString(versionRef);
-		if (ver == "") {
+	if (ver.empty()) {
+		ver = s->getGameVersionFromGlobal();
+		if (ver.empty()) {
 			Common::ScopedPtr<Common::SeekableReadStream> versionFile(SearchMan.createReadStreamForMember("VERSION"));
 			ver = versionFile ? versionFile->readLine() : "";
 		}
@@ -1383,7 +1380,7 @@ void gamestate_afterRestoreFixUp(EngineState *s, int savegameId) {
 			// will result in some graphics being incorrect (lowres).
 			// That's why we are setting the global after restoring a saved game depending on hires/lowres state.
 			// The CD demo of KQ6 does the same and uses the exact same global.
-			if ((g_sci->getPlatform() == Common::kPlatformWindows) || (g_sci->forceHiresGraphics())) {
+			if ((g_sci->getPlatform() == Common::kPlatformWindows) || (g_sci->useHiresGraphics())) {
 				s->variables[VAR_GLOBAL][0xA9].setOffset(1);
 			} else {
 				s->variables[VAR_GLOBAL][0xA9].setOffset(0);
@@ -1467,6 +1464,7 @@ void gamestate_restore(EngineState *s, Common::SeekableReadStream *fh) {
 
 		if (meta.gameObjectOffset > 0 && meta.script0Size > 0) {
 			Resource *script0 = g_sci->getResMan()->findResource(ResourceId(kResourceTypeScript, 0), false);
+			assert(script0);
 			if (script0->size() != meta.script0Size || g_sci->getGameObject().getOffset() != meta.gameObjectOffset) {
 				showScummVMDialog(_("This saved game was created with a different version of the game, unable to load it"));
 
@@ -1527,8 +1525,7 @@ void gamestate_restore(EngineState *s, Common::SeekableReadStream *fh) {
 	g_sci->_soundCmd->reconstructPlayList();
 
 	// Message state:
-	delete s->_msgState;
-	s->_msgState = new MessageState(s->_segMan);
+	s->initMessageState();
 
 	// System strings:
 	s->_segMan->initSysStrings();

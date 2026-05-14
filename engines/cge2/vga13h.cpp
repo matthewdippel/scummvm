@@ -27,7 +27,7 @@
 #include "common/array.h"
 #include "common/config-manager.h"
 #include "common/rect.h"
-#include "graphics/palette.h"
+#include "graphics/paletteman.h"
 #include "cge2/general.h"
 #include "cge2/vga13h.h"
 #include "cge2/bitmap.h"
@@ -222,8 +222,9 @@ void Sprite::setName(char *newName) {
 		_ext->_name = nullptr;
 	}
 	if (newName) {
-		_ext->_name = new char[strlen(newName) + 1];
-		strcpy(_ext->_name, newName);
+		size_t ln = strlen(newName) + 1;
+		_ext->_name = new char[ln];
+		Common::strcpy_s(_ext->_name, ln, newName);
 	}
 }
 
@@ -243,6 +244,7 @@ int Sprite::labVal(Action snq, int lab) {
 			return i;
 	} else {
 		char tmpStr[kLineMax + 1];
+		static_assert(sizeof(tmpStr) >= kPathMax, "mergeExt expects kPathMax buffer");
 		_vm->mergeExt(tmpStr, _file, kSprExt);
 
 		if (_vm->_resman->exist(tmpStr)) { // sprite description file exist

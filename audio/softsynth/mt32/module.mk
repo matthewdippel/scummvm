@@ -3,6 +3,7 @@ MODULE := audio/softsynth/mt32
 MODULE_OBJS := \
 	Analog.o \
 	BReverbModel.o \
+	Display.o \
 	File.o \
 	FileStream.o \
 	LA32FloatWaveGenerator.o \
@@ -31,3 +32,6 @@ MODULE_OBJS := \
 
 # Include common rules
 include $(srcdir)/rules.mk
+
+# Force rebuild when configuration changed
+$(MODULE_OBJS-$(MODULE)): %.o: config.mk

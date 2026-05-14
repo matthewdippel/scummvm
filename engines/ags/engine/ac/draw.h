@@ -22,13 +22,15 @@
 #ifndef AGS_ENGINE_AC_DRAW_H
 #define AGS_ENGINE_AC_DRAW_H
 
-#include "ags/lib/std/memory.h"
+#include "common/std/memory.h"
 #include "ags/shared/core/types.h"
 #include "ags/shared/ac/common_defines.h"
 #include "ags/shared/gfx/gfx_def.h"
 #include "ags/shared/gfx/allegro_bitmap.h"
 #include "ags/shared/gfx/bitmap.h"
 #include "ags/shared/game/room_struct.h"
+#include "ags/engine/ac/runtime_defines.h"
+#include "ags/engine/ac/walk_behind.h"
 
 namespace AGS3 {
 namespace AGS {
@@ -45,6 +47,13 @@ using namespace AGS; // FIXME later
 
 #define IS_ANTIALIAS_SPRITES _GP(usetup).enable_antialiasing && (_GP(play).disable_antialiasing == 0)
 
+// Render stage flags, for filtering out certain elements
+// during room transitions, capturing screenshots, etc.
+// NOTE: these values are internal and purely arbitrary atm.
+#define RENDER_BATCH_ENGINE_OVERLAY 0x0001
+#define RENDER_BATCH_MOUSE_CURSOR   0x0002
+#define RENDER_SHOT_SKIP_ON_FADE    (RENDER_BATCH_ENGINE_OVERLAY | RENDER_BATCH_MOUSE_CURSOR)
+
 /**
  * Buffer and info flags for viewport/camera pairs rendering in software mode
  */
@@ -60,15 +69,50 @@ struct RoomCameraDrawData {
 	bool    IsOverlap;   // whether room viewport overlaps any others (marking dirty rects is complicated)
 };
 
+typedef int32_t sprkey_t;
+// TODO: refactor the draw unit into a virtual interface with
+// two implementations: for software and video-texture render,
+// instead of checking whether the current method is "software".
+struct DrawState {
+	// Whether we should use software rendering methods
+	// (aka raw draw), as opposed to video texture transform & fx
+	bool SoftwareRender = false;
+	// Whether we should redraw whole game screen each frame
+	bool FullFrameRedraw = false;
+	// Walk-behinds representation
+	WalkBehindMethodEnum WalkBehindMethod = DrawAsSeparateSprite;
+	// Whether there are currently remnants of a on-screen effect
+	bool ScreenIsDirty = false;
+
+	// A map of shared "control blocks" per each sprite used
+	// when preparing object textures. "Control block" is currently just
+	// an integer which lets to check whether the object texture is in sync
+	// with the sprite. When the dynamic sprite is updated or deleted,
+	// the control block is marked as invalid and removed from the map;
+	// but certain objects may keep the shared ptr to the old block with
+	// "invalid" mark, thus they know that they must reset their texture.
+	//
+	// TODO: investigate an alternative of having a equivalent of
+	// "shared texture" with sprite ID ref in Software renderer too,
+	// which would allow to use same method of testing DDB ID for both
+	// kinds of renderers, thus saving on 1 extra notification mechanism.
+	std::unordered_map<sprkey_t, std::shared_ptr<uint32_t> >
+		SpriteNotifyMap;
+};
+
 // ObjTexture is a helper struct that pairs a raw bitmap with
 // a renderer's texture and an optional position
 struct ObjTexture {
 	// Sprite ID
 	uint32_t SpriteID = UINT32_MAX;
-	// Raw bitmap
+	// Raw bitmap; used for software render mode,
+	// or when particular object types require generated image.
 	std::unique_ptr<Shared::Bitmap> Bmp;
 	// Corresponding texture, created by renderer
 	Engine::IDriverDependantBitmap *Ddb = nullptr;
+	// Sprite notification block: becomes invalid to notify an updated
+	// or deleted sprtie
+	std::shared_ptr<uint32_t> SpriteNotify;
 	// Sprite's position
 	Point Pos;
 	// Texture's offset, *relative* to the logical sprite's position;
@@ -76,25 +120,42 @@ struct ObjTexture {
 	Point Off;
 
 	ObjTexture() = default;
-	ObjTexture(Shared::Bitmap *bmp, Engine::IDriverDependantBitmap *ddb, int x, int y, int xoff = 0, int yoff = 0)
-		: Bmp(bmp), Ddb(ddb), Pos(x, y), Off(xoff, yoff) {
+	ObjTexture(uint32_t sprite_id, Shared::Bitmap *bmp, Engine::IDriverDependantBitmap *ddb, int x, int y, int xoff = 0, int yoff = 0)
+		: SpriteID(sprite_id), Bmp(bmp), Ddb(ddb), Pos(x, y), Off(xoff, yoff) {
 	}
 	ObjTexture(ObjTexture &&o);
 	~ObjTexture();
 
 	ObjTexture &operator =(ObjTexture &&o);
+
+	// Tests if the sprite change was notified
+	inline bool IsChangeNotified() const {
+		return SpriteNotify && (*SpriteNotify != SpriteID);
+	}
 };
 
 // ObjectCache stores cached object data, used to determine
 // if active sprite / texture should be reconstructed
 struct ObjectCache {
-	Shared::Bitmap *image = nullptr;
-	bool  in_use = false;
+	std::unique_ptr<AGS::Shared::Bitmap> image;
+	bool  in_use = false;  // CHECKME: possibly may be removed
 	int   sppic = 0;
 	short tintr = 0, tintg = 0, tintb = 0, tintamnt = 0, tintlight = 0;
 	short lightlev = 0, zoom = 0;
 	bool  mirrored = 0;
 	int   x = 0, y = 0;
+
+	ObjectCache() = default;
+	ObjectCache(int pic_, int tintr_, int tintg_, int tintb_, int tint_amnt_, int tint_light_,
+				int light_, int zoom_, bool mirror_, int posx_, int posy_)
+		: sppic(pic_), tintr(tintr_), tintg(tintg_), tintb(tintb_), tintamnt(tint_amnt_), tintlight(tint_light_)
+		, lightlev(light_), zoom(zoom_), mirrored(mirror_), x(posx_), y(posy_) {}
+};
+
+struct DrawFPS {
+	Engine::IDriverDependantBitmap *ddb = nullptr;
+	std::unique_ptr<Shared::Bitmap> bmp;
+	int font = -1; // in case normal font changes at runtime
 };
 
 // Converts AGS color index to the actual bitmap color using game's color depth
@@ -131,8 +192,11 @@ void detect_roomviewport_overlaps(size_t z_index);
 void on_roomcamera_changed(Camera *cam);
 // Marks particular object as need to update the texture
 void mark_object_changed(int objid);
-// Resets all object caches which reference this sprite
-void reset_objcache_for_sprite(int sprnum);
+// TODO: write a generic drawable/objcache system where each object
+// allocates a drawable for itself, and disposes one if being removed.
+void reset_drawobj_for_overlay(int objnum);
+// Marks all game objects which reference this sprite for redraw
+void notify_sprite_changed(int sprnum, bool deleted);
 
 // whether there are currently remnants of a DisplaySpeech
 void mark_screen_dirty();
@@ -178,24 +242,28 @@ void draw_sprite_slot_support_alpha(Shared::Bitmap *ds, bool ds_has_alpha, int x
 void draw_gui_sprite(Shared::Bitmap *ds, int pic, int x, int y, bool use_alpha = true, Shared::BlendMode blend_mode = Shared::kBlendMode_Alpha);
 void draw_gui_sprite_v330(Shared::Bitmap *ds, int pic, int x, int y, bool use_alpha = true, Shared::BlendMode blend_mode = Shared::kBlendMode_Alpha);
 void draw_gui_sprite(Shared::Bitmap *ds, bool use_alpha, int xpos, int ypos,
-	Shared::Bitmap *image, bool src_has_alpha, Shared::BlendMode blend_mode = Shared::kBlendMode_Alpha, int alpha = 0xFF);
+					 Shared::Bitmap *image, bool src_has_alpha, Shared::BlendMode blend_mode = Shared::kBlendMode_Alpha, int alpha = 0xFF);
+// Puts a pixel of certain color, scales it if running in upscaled resolution (legacy feature)
+void putpixel_scaled(Shared::Bitmap *ds, int x, int y, int col);
 
-// Generates a transformed sprite, using src image and parameters;
-// * if transformation is necessary - writes into dst and returns dst;
-// * if no transformation is necessary - simply returns src;
-Shared::Bitmap *transform_sprite(Shared::Bitmap *src, bool src_has_alpha, std::unique_ptr<Shared::Bitmap> &dst,
-	const Size dst_sz, Shared::GraphicFlip flip = Shared::kFlip_None);
 // Render game on screen
 void render_to_screen();
 // Callbacks for the graphics driver
 void draw_game_screen_callback();
 void GfxDriverOnInitCallback(void *data);
-bool GfxDriverNullSpriteCallback(int x, int y);
-void putpixel_compensate(Shared::Bitmap *g, int xx, int yy, int col);
-// create the actsps[aa] image with the object drawn correctly
-// returns 1 if nothing at all has changed and actsps is still
-// intact from last time; 0 otherwise
-int construct_object_gfx(int aa, int *drawnWidth, int *drawnHeight, bool alwaysUseSoftware);
+bool GfxDriverSpriteEvtCallback(int evt, int data);
+
+// Create the actsps[objid] image with the object drawn correctly.
+// Returns true if nothing at all has changed and actsps is still
+// intact from last time; false otherwise.
+// Hardware-accelerated do not require altering the raw bitmap itself,
+// so they only detect whether the sprite ID itself has changed.
+// Software renderers modify the cached bitmap whenever any visual
+// effect changes (scaling, tint, etc).
+// * force_software option forces HW renderers to  construct the image
+// in software mode as well.
+bool construct_object_gfx(int objid, bool force_software);
+bool construct_char_gfx(int charid, bool force_software);
 // Returns a cached character image prepared for the render
 Shared::Bitmap *get_cached_character_image(int charid);
 // Returns a cached object image prepared for the render
@@ -214,22 +282,22 @@ void setpal();
 // This conversion is done before anything else (like moving from room to
 // viewport on screen, or scaling game further in the window by the graphic
 // renderer).
-AGS_INLINE int get_fixed_pixel_size(int pixels);
+int get_fixed_pixel_size(int pixels);
 // coordinate conversion data,script ---> final game resolution
-extern AGS_INLINE int data_to_game_coord(int coord);
-extern AGS_INLINE void data_to_game_coords(int *x, int *y);
-extern AGS_INLINE void data_to_game_round_up(int *x, int *y);
+extern int data_to_game_coord(int coord);
+extern void data_to_game_coords(int *x, int *y);
+extern void data_to_game_round_up(int *x, int *y);
 // coordinate conversion final game resolution ---> data,script
-extern AGS_INLINE int game_to_data_coord(int coord);
-extern AGS_INLINE void game_to_data_coords(int &x, int &y);
-extern AGS_INLINE int game_to_data_round_up(int coord);
+extern int game_to_data_coord(int coord);
+extern void game_to_data_coords(int &x, int &y);
+extern int game_to_data_round_up(int coord);
 // convert contextual data coordinates to final game resolution
-extern AGS_INLINE void ctx_data_to_game_coord(int &x, int &y, bool hires_ctx);
-extern AGS_INLINE void ctx_data_to_game_size(int &x, int &y, bool hires_ctx);
-extern AGS_INLINE int ctx_data_to_game_size(int size, bool hires_ctx);
-extern AGS_INLINE int game_to_ctx_data_size(int size, bool hires_ctx);
+extern void ctx_data_to_game_coord(int &x, int &y, bool hires_ctx);
+extern void ctx_data_to_game_size(int &x, int &y, bool hires_ctx);
+extern int ctx_data_to_game_size(int size, bool hires_ctx);
+extern int game_to_ctx_data_size(int size, bool hires_ctx);
 // This function converts game coordinates coming from script to the actual game resolution.
-extern AGS_INLINE void defgame_to_finalgame_coords(int &x, int &y);
+extern void defgame_to_finalgame_coords(int &x, int &y);
 
 // Creates bitmap of a format compatible with the gfxdriver;
 // if col_depth is 0, uses game's native color depth.
@@ -246,7 +314,8 @@ Shared::Bitmap *PrepareSpriteForUse(Shared::Bitmap *bitmap, bool has_alpha);
 Shared::PBitmap PrepareSpriteForUse(Shared::PBitmap bitmap, bool has_alpha);
 // Makes a screenshot corresponding to the last screen render and returns it as a bitmap
 // of the requested width and height and game's native color depth.
-Shared::Bitmap *CopyScreenIntoBitmap(int width, int height, bool at_native_res = false);
+Shared::Bitmap *CopyScreenIntoBitmap(int width, int height, const Rect *src_rect = nullptr,
+									 bool at_native_res = false, uint32_t batch_skip_filter = 0u);
 
 } // namespace AGS3
 

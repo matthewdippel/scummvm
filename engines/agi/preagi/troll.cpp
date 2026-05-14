@@ -20,6 +20,7 @@
  */
 
 #include "agi/preagi/preagi.h"
+#include "agi/preagi/picture_troll.h"
 #include "agi/preagi/troll.h"
 #include "agi/graphics.h"
 
@@ -31,16 +32,18 @@
 namespace Agi {
 
 TrollEngine::TrollEngine(OSystem *syst, const AGIGameDescription *gameDesc) : PreAgiEngine(syst, gameDesc) {
+	_picture = nullptr;
 }
 
 TrollEngine::~TrollEngine() {
+	delete _picture;
 }
 
 // User Interface
 
 void TrollEngine::pressAnyKey(int col) {
 	drawStr(24, col, kColorDefault, IDS_TRO_PRESSANYKEY);
-	g_system->updateScreen();
+	_system->updateScreen();
 	getSelection(kSelAnyKey);
 }
 
@@ -48,7 +51,7 @@ void TrollEngine::drawMenu(const char *szMenu, int iSel) {
 	clearTextArea();
 	drawStr(21, 0, kColorDefault, szMenu);
 	drawStr(22 + iSel, 0, kColorDefault, " *");
-	g_system->updateScreen();
+	_system->updateScreen();
 }
 
 bool TrollEngine::getMenuSel(const char *szMenu, int *iSel, int nSel) {
@@ -129,33 +132,22 @@ bool TrollEngine::getMenuSel(const char *szMenu, int *iSel, int nSel) {
 // Graphics
 
 void TrollEngine::drawPic(int iPic, bool f3IsCont, bool clr, bool troll) {
-	_picture->setDimensions(IDI_TRO_PIC_WIDTH, IDI_TRO_PIC_HEIGHT);
-
 	if (clr) {
 		clearScreen(0x0f, false);
-		_picture->clear();
 	}
 
-	_picture->setPictureData(_gameData + IDO_TRO_FRAMEPIC);
-	_picture->drawPicture();
+	// draw the frame picture
+	_picture->setStopOnF3(false);
+	_picture->setTrollMode(false);
+	_picture->decodePictureFromBuffer(_gameData + IDO_TRO_FRAMEPIC, 4096, clr, IDI_TRO_PIC_WIDTH, IDI_TRO_PIC_HEIGHT);
 
-	_picture->setPictureData(_gameData + _pictureOffsets[iPic]);
+	// draw the picture
+	_picture->setStopOnF3(!f3IsCont);
+	_picture->setTrollMode(troll);
+	_picture->decodePictureFromBuffer(_gameData + _pictureOffsets[iPic], 4096, false, IDI_TRO_PIC_WIDTH, IDI_TRO_PIC_HEIGHT);
 
-	int addFlag = 0;
-
-	if (troll)
-		addFlag = kPicFTrollMode;
-
-	if (f3IsCont) {
-		_picture->setPictureFlags(kPicFf3Cont | addFlag);
-	} else {
-		_picture->setPictureFlags(kPicFf3Stop | addFlag);
-	}
-
-	_picture->drawPicture();
-
-	_picture->showPic(); // TODO: *HAVE* to add coordinates + height/width!!
-	g_system->updateScreen();
+	_picture->showPicture(0, 0, IDI_TRO_PIC_WIDTH, IDI_TRO_PIC_HEIGHT);
+	_system->updateScreen();
 }
 
 // Game Logic
@@ -196,10 +188,16 @@ void TrollEngine::waitAnyKeyIntro() {
 	while (!shouldQuit()) {
 		while (_system->getEventManager()->pollEvent(event)) {
 			switch (event.type) {
+			case Common::EVENT_KEYDOWN:
+				// don't interrupt if a modifier is pressed
+				if (event.kbd.flags & Common::KBD_NON_STICKY) {
+					continue;
+				}
+				// fall through
 			case Common::EVENT_RETURN_TO_LAUNCHER:
 			case Common::EVENT_QUIT:
 			case Common::EVENT_LBUTTONUP:
-			case Common::EVENT_KEYDOWN:
+			case Common::EVENT_RBUTTONUP:
 				return;
 			default:
 				break;
@@ -212,11 +210,9 @@ void TrollEngine::waitAnyKeyIntro() {
 			// fall through
 		case 0:
 			drawStr(22, 3, kColorDefault, IDS_TRO_INTRO_2);
-			g_system->updateScreen();
 			break;
 		case 100:
 			drawStr(22, 3, kColorDefault, IDS_TRO_INTRO_3);
-			g_system->updateScreen();
 			break;
 		default:
 			break;
@@ -253,7 +249,7 @@ void TrollEngine::credits() {
 	drawStr(17, 7, 12, IDS_TRO_CREDITS_5);
 	drawStr(19, 2, 14, IDS_TRO_CREDITS_6);
 
-	g_system->updateScreen();
+	_system->updateScreen();
 
 	pressAnyKey();
 }
@@ -279,11 +275,11 @@ void TrollEngine::tutorial() {
 			switch (iSel) {
 			case IDI_TRO_SEL_OPTION_1:
 				clearScreen(0x22, false);
-				g_system->updateScreen();
+				_system->updateScreen();
 				break;
 			case IDI_TRO_SEL_OPTION_2:
 				clearScreen(0x00, false);
-				g_system->updateScreen();
+				_system->updateScreen();
 				break;
 			case IDI_TRO_SEL_OPTION_3:
 				done = true;
@@ -297,7 +293,7 @@ void TrollEngine::tutorial() {
 		clearScreen(0x4F);
 		drawStr(7, 4, kColorDefault, IDS_TRO_TUTORIAL_5);
 		drawStr(9, 4, kColorDefault, IDS_TRO_TUTORIAL_6);
-		g_system->updateScreen();
+		_system->updateScreen();
 
 		if (!getSelection(kSelYesNo))
 			break;
@@ -307,37 +303,37 @@ void TrollEngine::tutorial() {
 	clearScreen(0x5F);
 	drawStr(4, 1, kColorDefault, IDS_TRO_TUTORIAL_7);
 	drawStr(5, 1, kColorDefault, IDS_TRO_TUTORIAL_8);
-	g_system->updateScreen();
+	_system->updateScreen();
 	pressAnyKey();
 
 	clearScreen(0x2F);
 	drawStr(6, 1, kColorDefault, IDS_TRO_TUTORIAL_9);
-	g_system->updateScreen();
+	_system->updateScreen();
 	pressAnyKey();
 
 	clearScreen(0x19);
 	drawStr(7, 1, kColorDefault, IDS_TRO_TUTORIAL_10);
 	drawStr(8, 1, kColorDefault, IDS_TRO_TUTORIAL_11);
-	g_system->updateScreen();
+	_system->updateScreen();
 	pressAnyKey();
 
 	clearScreen(0x6E);
 	drawStr(9, 1, kColorDefault, IDS_TRO_TUTORIAL_12);
 	drawStr(10, 1, kColorDefault, IDS_TRO_TUTORIAL_13);
-	g_system->updateScreen();
+	_system->updateScreen();
 	pressAnyKey();
 
 	clearScreen(0x4C);
 	drawStr(11, 1, kColorDefault, IDS_TRO_TUTORIAL_14);
 	drawStr(12, 1, kColorDefault, IDS_TRO_TUTORIAL_15);
-	g_system->updateScreen();
+	_system->updateScreen();
 	pressAnyKey();
 
 	clearScreen(0x5D);
 	drawStr(13, 1, kColorDefault, IDS_TRO_TUTORIAL_16);
 	drawStr(14, 1, kColorDefault, IDS_TRO_TUTORIAL_17);
 	drawStr(15, 1, kColorDefault, IDS_TRO_TUTORIAL_18);
-	g_system->updateScreen();
+	_system->updateScreen();
 	pressAnyKey();
 
 	// show treasures
@@ -346,7 +342,7 @@ void TrollEngine::tutorial() {
 	for (int i = 0; i < IDI_TRO_MAX_TREASURE; i++)
 		drawStr(19 - i, 11, kColorDefault, _items[i].name);
 
-	g_system->updateScreen();
+	_system->updateScreen();
 
 	pressAnyKey();
 }
@@ -356,15 +352,14 @@ void TrollEngine::intro() {
 	clearScreen(0x2F);
 	drawStr(9, 10, kColorDefault, IDS_TRO_INTRO_0);
 	drawStr(14, 15, kColorDefault, IDS_TRO_INTRO_1);
-	g_system->updateScreen();
-	_system->delayMillis(3200);
+	wait(3200);
 
 	CursorMan.showMouse(true);
 
 	// Draw logo
 	setDefaultTextColor(0x0f);
 	drawPic(45, false, true);
-	g_system->updateScreen();
+	_system->updateScreen();
 
 	// wait for keypress and alternate message
 	waitAnyKeyIntro();
@@ -372,7 +367,7 @@ void TrollEngine::intro() {
 	// have you played this game before?
 	drawStr(22, 3, kColorDefault, IDS_TRO_INTRO_4);
 	drawStr(23, 6, kColorDefault, IDS_TRO_INTRO_5);
-	g_system->updateScreen();
+	_system->updateScreen();
 
 	if (!getSelection(kSelYesNo))
 		tutorial();
@@ -401,10 +396,10 @@ void TrollEngine::gameOver() {
 
 	drawPic(46, true, true);
 
-	sprintf(szMoves, IDS_TRO_GAMEOVER_0, _moves);
+	Common::sprintf_s(szMoves, IDS_TRO_GAMEOVER_0, _moves);
 	drawStr(21, 1, kColorDefault, szMoves);
 	drawStr(22, 1, kColorDefault, IDS_TRO_GAMEOVER_1);
-	g_system->updateScreen();
+	_system->updateScreen();
 
 	pressAnyKey();
 }
@@ -423,9 +418,7 @@ int TrollEngine::drawRoom(char *menu) {
 	bool contFlag = false;
 
 	if (_currentRoom == 1) {
-		_picture->setDimensions(IDI_TRO_PIC_WIDTH, IDI_TRO_PIC_HEIGHT);
 		clearScreen(0x00, false);
-		_picture->clear();
 	} else {
 
 		if (_currentRoom != 42) {
@@ -435,7 +428,7 @@ int TrollEngine::drawRoom(char *menu) {
 		}
 
 		drawPic(_currentRoom, contFlag, true);
-		g_system->updateScreen();
+		_system->updateScreen();
 
 		if (_currentRoom == 42) {
 			drawPic(44, false, false); // don't clear
@@ -446,16 +439,20 @@ int TrollEngine::drawRoom(char *menu) {
 		}
 	}
 
-	g_system->updateScreen();
+	_system->updateScreen();
 
 	int n = 0;
+	menu[0] = ' '; // leading space
+	menu[1] = '\0';
 	strncat(menu, (char *)_gameData + _locMessagesIdx[_currentRoom], 39);
 
 	for (int i = 0; i < 3; i++) {
 		if (_roomDescs[_roomPicture - 1].options[i]) {
-			strncat(menu, Common::String::format("\n  %d.", i).c_str(), 5);
+			strncat(menu, Common::String::format("  %d.", i + 1).c_str(), 4);
 
 			strncat(menu, (char *)_gameData + _options[_roomDescs[_roomPicture - 1].options[i] - 1], 35);
+			menu[(i + 2) * 40 - 1] = ' ';
+			menu[(i + 2) * 40] = '\0';
 
 			n = i + 1;
 		}
@@ -468,16 +465,18 @@ void TrollEngine::playTune(int tune, int len) {
 	if (!_soundOn)
 		return;
 
-	int freq, duration;
 	int ptr = _tunes[tune - 1];
 
 	for (int i = 0; i < len; i++) {
-		freq = READ_LE_UINT16(_gameData + ptr);
+		int freq = READ_LE_UINT16(_gameData + ptr);
 		ptr += 2;
-		duration = READ_LE_UINT16(_gameData + ptr);
+		int duration = READ_LE_UINT16(_gameData + ptr);
 		ptr += 2;
 
-		playNote(freq, duration);
+		// Play note without processing events.
+		// The sounds are so short in this game that we don't
+		// need to process events while playing notes.
+		playSpeakerNote(freq, duration, kWaitBlock);
 	}
 }
 
@@ -487,7 +486,7 @@ void TrollEngine::pickupTreasure(int treasureId) {
 	if (_currentRoom != 24) {
 		clearTextArea();
 		drawPic(_currentRoom, false, true);
-		g_system->updateScreen();
+		_system->updateScreen();
 	}
 
 	printUserMessage(treasureId + 16);
@@ -552,8 +551,6 @@ void TrollEngine::gameLoop() {
 	memset(_inventory, 0, sizeof(_inventory));
 
 	while (!done && !shouldQuit()) {
-		*menu = 0;
-
 		currentOption = 0;
 
 		numberOfOptions = drawRoom(menu);
@@ -700,7 +697,7 @@ void TrollEngine::fillOffsets() {
 		_items[i].name[15] = 0;
 	}
 
-	for (i = 0; i < IDO_TRO_NONTROLLROOMS; i++)
+	for (i = 0; i < IDI_TRO_NUM_NONTROLL; i++)
 		_nonTrollRooms[i] = _gameData[IDO_TRO_NONTROLLROOMS + i];
 
 	_tunes[0] = 0x3BFD;
@@ -714,7 +711,7 @@ void TrollEngine::fillOffsets() {
 // Init
 
 void TrollEngine::init() {
-	_picture->setPictureVersion(AGIPIC_V15);
+	_picture = new PictureMgr_Troll(this, _gfx);
 	//SetScreenPar(320, 200, (char *)ibm_fontdata);
 
 	const int gaps[] = { 0x3A40,  0x4600,  0x4800,  0x5800,  0x5a00,  0x6a00,

@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/endian.h"
@@ -144,9 +150,6 @@ void Draw_v2::animateCursor(int16 cursor) {
 		} else if (_cursorHotspotX != -1) {
 			hotspotX = _cursorHotspotX;
 			hotspotY = _cursorHotspotY;
-		} else if (_cursorHotspotsX != nullptr) {
-			hotspotX = _cursorHotspotsX[_cursorIndex];
-			hotspotY = _cursorHotspotsY[_cursorIndex];
 		}
 
 		newX = _vm->_global->_inter_mouseX - hotspotX;
@@ -158,19 +161,9 @@ void Draw_v2::animateCursor(int16 cursor) {
 				(cursorIndex + 1) * _cursorWidth - 1,
 				_cursorHeight - 1, 0, 0);
 
-		uint32 keyColor = 0;
-		if (_doCursorPalettes && _cursorKeyColors && _doCursorPalettes[cursorIndex])
-			keyColor = _cursorKeyColors[cursorIndex];
-
 		CursorMan.replaceCursor(_scummvmCursor->getData(),
-				_cursorWidth, _cursorHeight, hotspotX, hotspotY, keyColor, false, &_vm->getPixelFormat());
-
-		if (_doCursorPalettes && _doCursorPalettes[cursorIndex]) {
-			CursorMan.replaceCursorPalette(_cursorPalettes + (cursorIndex * 256 * 3),
-					_cursorPaletteStarts[cursorIndex], _cursorPaletteCounts[cursorIndex]);
-			CursorMan.disableCursorPalette(false);
-		} else
-			CursorMan.disableCursorPalette(true);
+				_cursorWidth, _cursorHeight, hotspotX, hotspotY, 0, false, &_vm->getPixelFormat());
+		CursorMan.disableCursorPalette(true);
 
 		if (_frontSurface != _backSurface) {
 			if (!_noInvalidated) {
@@ -397,6 +390,9 @@ void Draw_v2::printTotText(int16 id) {
 	_backColor = 0;
 	_transparency = 1;
 
+#ifdef USE_TTS
+	Common::String ttsMessage;
+#endif
 	while (true) {
 		if ((((*ptr >= 1) && (*ptr <= 7)) || (*ptr == 10)) && (strPos != 0)) {
 			str[MAX(strPos, strPos2)] = 0;
@@ -431,6 +427,10 @@ void Draw_v2::printTotText(int16 id) {
 				_fontIndex   = fontIndex;
 				_frontColor  = frontColor;
 				_textToPrint = str;
+#ifdef USE_TTS
+				ttsMessage += _textToPrint;
+				ttsMessage += " ";
+#endif
 
 				if (isSubtitle) {
 					_fontIndex  = _subtitleFont;
@@ -444,10 +444,10 @@ void Draw_v2::printTotText(int16 id) {
 							width -= _fonts[_fontIndex]->getCharWidth() / 2;
 							str[strlen(str) - 1] = '\0';
 						}
-						spriteOperation(DRAW_PRINTTEXT);
+						spriteOperation(DRAW_PRINTTEXT, false);
 					}
 				} else
-					spriteOperation(DRAW_PRINTTEXT);
+					spriteOperation(DRAW_PRINTTEXT, false);
 
 				width = strlen(str);
 				for (strPos = 0; strPos < width; strPos++) {
@@ -573,13 +573,13 @@ void Draw_v2::printTotText(int16 id) {
 			cmd = ptrEnd[17] & 0x7F;
 			if (cmd == 0) {
 				val = READ_LE_UINT16(ptrEnd + 18) * 4;
-				sprintf(buf, "%d", (int32)VAR_OFFSET(val));
+				Common::sprintf_s(buf, "%d", (int32)VAR_OFFSET(val));
 			} else if (cmd == 1) {
 				val = READ_LE_UINT16(ptrEnd + 18) * 4;
 				Common::strlcpy(buf, GET_VARO_STR(val), 20);
 			} else {
 				val = READ_LE_UINT16(ptrEnd + 18) * 4;
-				sprintf(buf, "%d", (int32)VAR_OFFSET(val));
+				Common::sprintf_s(buf, "%d", (int32)VAR_OFFSET(val));
 				if (buf[0] == '-') {
 					while (strlen(buf) - 1 < (uint32)ptrEnd[17]) {
 						_vm->_util->insertStr("0", buf, 1);
@@ -626,6 +626,18 @@ void Draw_v2::printTotText(int16 id) {
 		}
 	}
 
+#ifdef USE_TTS
+	if (_previousTot != ttsMessage && !isSubtitle) {
+		if (_vm->_game->_hotspots->hoveringOverHotspot()) {
+			_vm->sayText(ttsMessage);
+		} else {
+			_vm->sayText(ttsMessage, Common::TextToSpeechManager::QUEUE);
+		}
+
+		_previousTot = ttsMessage;
+	}
+#endif
+
 	delete textItem;
 	_renderFlags = savedFlags;
 
@@ -640,7 +652,7 @@ void Draw_v2::printTotText(int16 id) {
 	}
 }
 
-void Draw_v2::spriteOperation(int16 operation) {
+void Draw_v2::spriteOperation(int16 operation, bool ttsAddHotspotText) {
 	int16 len;
 	int16 x, y;
 	SurfacePtr sourceSurf, destSurf;
@@ -745,10 +757,10 @@ void Draw_v2::spriteOperation(int16 operation) {
 			break;
 
 		_spritesArray[_destSurface]->blit(*_spritesArray[_sourceSurface],
-				_spriteLeft, spriteTop,
+				_spriteLeft, _spriteTop,
 				_spriteLeft + _spriteRight - 1,
 				_spriteTop + _spriteBottom - 1,
-				_destSpriteX, _destSpriteY, (_transparency == 0) ? -1 : 0);
+				_destSpriteX, _destSpriteY, (_transparency == 0) ? -1 : 0, _transparency & 0x80);
 
 		dirtiedRect(_destSurface, _destSpriteX, _destSpriteY,
 				_destSpriteX + _spriteRight - 1, _destSpriteY + _spriteBottom - 1);
@@ -762,15 +774,15 @@ void Draw_v2::spriteOperation(int16 operation) {
 
 	case DRAW_FILLRECT:
 		if (!(_backColor & 0xFF00) || !(_backColor & 0x0100)) {
-			_spritesArray[_destSurface]->fillRect(destSpriteX,
+			_spritesArray[_destSurface]->fillRect(_destSpriteX,
 					_destSpriteY, _destSpriteX + _spriteRight - 1,
-					_destSpriteY + _spriteBottom - 1, getColor(_backColor));
+					_destSpriteY + _spriteBottom - 1, _backColor);
 		} else {
 			uint8 strength = 16 - (((uint16) _backColor) >> 12);
 
-			_spritesArray[_destSurface]->shadeRect(destSpriteX,
+			_spritesArray[_destSurface]->shadeRect(_destSpriteX,
 					_destSpriteY, _destSpriteX + _spriteRight - 1,
-					_destSpriteY + _spriteBottom - 1, getColor(_backColor), strength);
+					_destSpriteY + _spriteBottom - 1, _backColor, strength);
 		}
 
 		dirtiedRect(_destSurface, _destSpriteX, _destSpriteY,
@@ -798,6 +810,9 @@ void Draw_v2::spriteOperation(int16 operation) {
 
 		if (!resource)
 			break;
+
+		if (_vm->_draw->_needAdjust == 3 || _vm->_draw->_needAdjust == 4)
+			adjustCoords(0, &_spriteRight, &_spriteBottom);
 
 		_vm->_video->drawPackedSprite(resource->getData(),
 				_spriteRight, _spriteBottom, _destSpriteX, _destSpriteY,
@@ -832,19 +847,19 @@ void Draw_v2::spriteOperation(int16 operation) {
 					len = *dataBuf++;
 					for (int i = 0; i < len; i++, dataBuf += 2) {
 						font->drawLetter(*_spritesArray[_destSurface], READ_LE_UINT16(dataBuf),
-								_destSpriteX, _destSpriteY, getColor(_frontColor),
-								getColor(_backColor), _transparency);
+								_destSpriteX, _destSpriteY, _frontColor,
+								_backColor, _transparency);
 					}
 				} else {
-					font->drawString(_textToPrint, _destSpriteX, _destSpriteY, getColor(_frontColor),
-							getColor(_backColor), _transparency, *_spritesArray[_destSurface]);
+					font->drawString(_textToPrint, _destSpriteX, _destSpriteY, _frontColor,
+							_backColor, _transparency, *_spritesArray[_destSurface]);
 					_destSpriteX += len * font->getCharWidth();
 				}
 			} else {
 				for (int i = 0; i < len; i++) {
 					font->drawLetter(*_spritesArray[_destSurface], _textToPrint[i],
-								_destSpriteX, _destSpriteY, getColor(_frontColor),
-								getColor(_backColor), _transparency);
+								_destSpriteX, _destSpriteY, _frontColor,
+								_backColor, _transparency);
 					_destSpriteX += font->getCharWidth(_textToPrint[i]);
 				}
 			}
@@ -866,6 +881,23 @@ void Draw_v2::spriteOperation(int16 operation) {
 				_destSpriteX += _fontToSprite[_fontIndex].width;
 			}
 		}
+
+#ifdef USE_TTS
+		// Ween's notepad displays 1 character at a time. Stopping speech as the characters are displayed prevents TTS from
+		// slowly voicing each character
+		if (_vm->getGameType() == kGameTypeWeen && _vm->isCurrentTot("edit.tot")) {
+			_vm->stopTextToSpeech();
+			
+			if (!_vm->_weenVoiceNotepad) {
+				ttsAddHotspotText = false;
+			}
+		}
+
+		if (ttsAddHotspotText) {
+			_vm->_game->_hotspots->addHotspotTTSText(_textToPrint, left, _destSpriteY,
+											_destSpriteX - 1, _destSpriteY + _fonts[_fontIndex]->getCharHeight() - 1, _destSurface);
+		}
+#endif
 
 		dirtiedRect(_destSurface, left, _destSpriteY,
 				_destSpriteX - 1, _destSpriteY + _fonts[_fontIndex]->getCharHeight() - 1);
@@ -905,7 +937,7 @@ void Draw_v2::spriteOperation(int16 operation) {
 		if ((_backColor != 16) && (_backColor != 144)) {
 			_spritesArray[_destSurface]->fillRect(_destSpriteX, _destSpriteY,
 			    _spriteRight, _spriteBottom,
-			    getColor(_backColor));
+			    _backColor);
 		}
 
 		dirtiedRect(_destSurface, _destSpriteX, _destSpriteY, _spriteRight, _spriteBottom);
@@ -913,12 +945,13 @@ void Draw_v2::spriteOperation(int16 operation) {
 
 	case DRAW_FILLRECTABS:
 		_spritesArray[_destSurface]->fillRect(_destSpriteX, _destSpriteY,
-		    _spriteRight, _spriteBottom, getColor(_backColor));
+		    _spriteRight, _spriteBottom, _backColor);
 
 		dirtiedRect(_destSurface, _destSpriteX, _destSpriteY, _spriteRight, _spriteBottom);
 		break;
 
 	default:
+		warning("unknown operation %d in Draw_v2::spriteOperation", operation);
 		break;
 	}
 

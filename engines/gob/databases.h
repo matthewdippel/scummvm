@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_DATABASES_H
@@ -31,14 +37,16 @@
 
 namespace Gob {
 
-class Databases {
+class TranslationDatabases {
 public:
-	Databases();
-	~Databases();
+	TranslationDatabases();
+	~TranslationDatabases();
 
 	void setLanguage(Common::Language language);
+	void setEncodingIsOEM(bool encodingIsOEM) { _encodingIsOEM = encodingIsOEM; }
+	bool encodingIsOEM() const { return _encodingIsOEM; }
 
-	bool open(const Common::String &id, const Common::String &file);
+	bool open(const Common::String &id, const Common::Path &file);
 	bool close(const Common::String &id);
 
 	bool getString(const Common::String &id, Common::String group,
@@ -50,9 +58,24 @@ private:
 	DBMap _databases;
 
 	Common::String _language;
+	bool _encodingIsOEM = true;
 
 	int findField(const dBase &db, const Common::String &field, dBase::Type type) const;
 	bool buildMap(const dBase &db, Common::StringMap &map) const;
+};
+
+class Database {
+public:
+	Database() {}
+	~Database();
+
+	bool openTable(const Common::String &id, const Common::Path &file);
+	bool closeTable(const Common::String &id);
+
+	dBase *getTable(const Common::String &id);
+
+private:
+	Common::HashMap<Common::String, dBase*> _tables;
 };
 
 } // End of namespace Gob

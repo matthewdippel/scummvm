@@ -119,11 +119,16 @@ void EoBCoreEngine::readLevelFileData(int level) {
 
 	for (const char *const *sf = suffix; *sf && !s; sf++) {
 		file = Common::String::format("LEVEL%d.%s", level, *sf);
-		s = _res->createReadStream(file);
+		s = _res->createReadStream(Common::Path(file));
 	}
 
 	if (!s)
 		error("Failed to load level file LEVEL%d.INF/DRO/ELO/JOT", level);
+
+	if (_flags.gameID == GI_EOB2 && _flags.lang == Common::Language::ZH_TWN) {
+		_screen->loadChineseEOB2LZBitmap(s, 5, 15000);
+		return;
+	}
 
 	if (s->readUint16LE() + 2 == s->size()) {
 		// check for valid compression type
@@ -309,7 +314,7 @@ void EoBCoreEngine::addLevelItems() {
 	for (int i = 0; i < 1024; i++)
 		_levelBlockProperties[i].drawObjects = 0;
 
-	for (int i = 0; i < 600; i++) {
+	for (uint i = 0; i < _items.size(); i++) {
 		if (_items[i].level != _currentLevel || _items[i].block <= 0)
 			continue;
 		setItemPosition((Item *)&_levelBlockProperties[_items[i].block & 0x3FF].drawObjects, _items[i].block, i, _items[i].pos);
@@ -318,7 +323,7 @@ void EoBCoreEngine::addLevelItems() {
 
 void EoBCoreEngine::loadVcnData(const char *file, const uint8 *cgaMapping) {
 	uint32 vcnSize = 0;
-	Common::String fn = Common::String::format(_vcnFilePattern.c_str(), _lastBlockDataFile);
+	Common::String fn = Common::String::format(_vcnFilePattern.c_str(), _lastBlockDataFile.c_str());
 	_screen->loadBitmap(fn.c_str(), 3, 3, 0, true);
 
 	const uint8 *pos = _screen->getCPagePtr(3);
@@ -359,7 +364,7 @@ void EoBCoreEngine::loadVcnData(const char *file, const uint8 *cgaMapping) {
 }
 
 Common::SeekableReadStreamEndian *EoBCoreEngine::getVmpData(const char *file) {
-	return _res->createEndianAwareReadStream(Common::String::format(_vmpFilePattern.c_str(), file));
+	return _res->createEndianAwareReadStream(Common::Path(Common::String::format(_vmpFilePattern.c_str(), file)));
 }
 
 void EoBCoreEngine::loadBlockProperties(const char *mazFile) {
@@ -378,9 +383,13 @@ void EoBCoreEngine::loadBlockProperties(const char *mazFile) {
 }
 
 const uint8 *EoBCoreEngine::getBlockFileData(int) {
-	Common::SeekableReadStream *s = _res->createReadStream(_curBlockFile);
-	_screen->loadFileDataToPage(s, 15, s->size());
-	delete s;
+	if (_flags.gameID == GI_EOB2 && _flags.platform == Common::kPlatformPC98) {
+		_screen->loadBitmap(_curBlockFile.c_str(), 15, 15, 0);
+	} else {
+		Common::SeekableReadStream *s = _res->createReadStream(Common::Path(_curBlockFile));
+		_screen->loadFileDataToPage(s, 15, s->size());
+		delete s;
+	}
 	return _screen->getCPagePtr(15);
 }
 
@@ -457,12 +466,17 @@ void EoBCoreEngine::loadDecorations(const char *cpsFile, const char *decFile) {
 
 void EoBCoreEngine::assignWallsAndDecorations(int wallIndex, int vmpIndex, int decIndex, int specialType, int flags) {
 	_wllVmpMap[wallIndex] = vmpIndex;
-	for (int i = 0; i < 6; i++) {
-		for (int ii = 0; ii < 10; ii++) {
-			if (_characters[i].events[ii] == -57)
-				spellCallback_start_trueSeeing();
+
+	if (wallIndex == 46) {
+		// This is not part of the original code. The original will discard the true seeing spell effect when entering a new level.
+		for (int i = 0; i < 6; i++) {
+			for (int ii = 0; ii < 10; ii++) {
+				if (_characters[i].events[ii] == -57 && _characters[i].timers[ii])
+					spellCallback_start_trueSeeing();
+			}
 		}
 	}
+
 	_wllShapeMap[wallIndex] = _mappedDecorationsCount + 1;
 	_specialWallTypes[wallIndex] = specialType;
 	_wllWallFlags[wallIndex] = flags ^ 4;

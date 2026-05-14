@@ -52,6 +52,7 @@ void VectorRenderer::drawStep(const Common::Rect &area, const Common::Rect &clip
 	setStrokeWidth(step.stroke);
 	setFillMode((FillMode)step.fillMode);
 	setClippingRect(applyStepClippingRect(area, clip, step));
+	setShadowIntensity(step.shadowIntensity);
 
 	_dynamicData = extra;
 
@@ -104,12 +105,15 @@ int VectorRenderer::stepGetRadius(const DrawStep &step, const Common::Rect &area
 	if (step.scale != (1 << 16) && step.scale != 0)
 		radius = (radius * step.scale) >> 16;
 
+	if (radius < 0)
+		radius = 0;
+
 	return radius;
 }
 
 void VectorRenderer::stepGetPositions(const DrawStep &step, const Common::Rect &area, uint16 &in_x, uint16 &in_y, uint16 &in_w, uint16 &in_h) {
 	if (!step.autoWidth) {
-		in_w = step.w == -1 ? area.height() : step.w;
+		in_w = step.w == -1 ? area.width() : step.w;
 
 		switch (step.xAlign) {
 		case Graphics::DrawStep::kVectorAlignManual:
@@ -140,7 +144,7 @@ void VectorRenderer::stepGetPositions(const DrawStep &step, const Common::Rect &
 	}
 
 	if (!step.autoHeight) {
-		in_h = step.h == -1 ? area.width() : step.h;
+		in_h = step.h == -1 ? area.height() : step.h;
 
 		switch (step.yAlign) {
 		case Graphics::DrawStep::kVectorAlignManual:

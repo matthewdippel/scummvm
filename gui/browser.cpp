@@ -20,6 +20,7 @@
  */
 
 #include "gui/browser.h"
+#include "gui/helpdialog.h"
 #include "gui/gui-manager.h"
 #include "gui/widgets/edittext.h"
 #include "gui/widgets/list.h"
@@ -39,7 +40,8 @@ enum {
 	kChooseCmd = 'Chos',
 	kGoUpCmd = 'GoUp',
 	kHiddenCmd = 'Hidd',
-	kPathEditedCmd = 'Path'
+	kPathEditedCmd = 'Path',
+	kHelpCmd = 'Help',
 };
 
 /* We want to use this as a general directory selector at some point... possible uses
@@ -59,6 +61,7 @@ BrowserDialog::BrowserDialog(const Common::U32String &title, bool dirBrowser)
 
 	// Headline - TODO: should be customizable during creation time
 	new StaticTextWidget(this, "Browser.Headline", title);
+	new ButtonWidget(this, "Browser.Help", _("Help"), Common::U32String(), kHelpCmd);
 
 	// Current path - TODO: handle long paths ?
 	_currentPath = new EditTextWidget(this, "Browser.Path", Common::U32String(), Common::U32String(), 0, kPathEditedCmd);
@@ -74,7 +77,7 @@ BrowserDialog::BrowserDialog(const Common::U32String &title, bool dirBrowser)
 	_showHiddenWidget = new CheckboxWidget(this, "Browser.Hidden", _("Show hidden files"), _("Show files marked with the hidden attribute"), kHiddenCmd);
 
 	// Buttons
-	if (g_system->getOverlayWidth() > 320)
+	if (!g_gui.useLowResGUI())
 		new ButtonWidget(this, "Browser.Up", _("Go up"), _("Go to previous directory level"), kGoUpCmd);
 	else
 		new ButtonWidget(this, "Browser.Up", _c("Go up", "lowres"), _("Go to previous directory level"), kGoUpCmd);
@@ -103,22 +106,8 @@ void BrowserDialog::open() {
 	// Call super implementation
 	Dialog::open();
 
-#if defined(ANDROID_PLAIN_PORT)
-	// Currently, the "default" path in Android port will present a list of shortcuts, (most of) which should be usable.
-	// The "/" will list these shortcuts (see POSIXFilesystemNode::getChildren())
-	Common::String blPath = "/";
-	if (ConfMan.hasKey("browser_lastpath")) {
-		Common::String blPathCandidate = ConfMan.get("browser_lastpath");
-		blPathCandidate.trim();
-		if (!blPathCandidate.empty()) {
-			blPath = blPathCandidate;
-		}
-	}
-	_node = Common::FSNode(blPath);
-#else
 	if (ConfMan.hasKey("browser_lastpath"))
-		_node = Common::FSNode(ConfMan.get("browser_lastpath"));
-#endif
+		_node = Common::FSNode(ConfMan.getPath("browser_lastpath"));
 
 	if (!_node.isDirectory())
 		_node = Common::FSNode(".");
@@ -133,24 +122,13 @@ void BrowserDialog::handleCommand(CommandSender *sender, uint32 cmd, uint32 data
 	switch (cmd) {
 	//Search for typed-in directory
 	case kPathEditedCmd:
-#if defined(ANDROID_PLAIN_PORT)
-	{
-		// Currently, the "default" path in Android port will present a list of shortcuts, (most of) which should be usable.
-		// The "/" will list these shortcuts (see POSIXFilesystemNode::getChildren())
-		// If the user enters an empty text or blank spaces for the path, then upon committing it as an edit,
-		// Android will show the list of shortcuts and default the path text field to "/".
-		// The code is placed in brackets for edtPath var to have proper local scope in this particular switch case.
-		Common::String edtPath = Common::convertFromU32String(_currentPath->getEditString());
-		edtPath.trim();
-		if (edtPath.empty()) {
-			edtPath = "/";
-		}
-		_node = Common::FSNode(edtPath);
-	}
-#else
-		_node = Common::FSNode(Common::convertFromU32String(_currentPath->getEditString()));
-#endif
+		_node = Common::FSNode(Common::Path(Common::convertFromU32String(_currentPath->getEditString()), Common::Path::kNativeSeparator));
 		updateListing();
+		break;
+	case kHelpCmd: {
+		GUI::HelpDialog dlg;
+		dlg.runModal();
+		}
 		break;
 	//Search by text input
 	case kChooseCmd:
@@ -196,7 +174,7 @@ void BrowserDialog::handleCommand(CommandSender *sender, uint32 cmd, uint32 data
 	case kListSelectionChangedCmd:
 		// We do not allow selecting directories in directory
 		// browser mode, thus we will invalidate the selection
-		// when the user selects an directory over here.
+		// when the user selects a directory over here.
 		if (data != (uint32)-1 && _isDirBrowser && !_nodeContent[data].isDirectory())
 			_fileList->setSelected(-1);
 		break;
@@ -216,12 +194,12 @@ void BrowserDialog::handleCommand(CommandSender *sender, uint32 cmd, uint32 data
 
 void BrowserDialog::updateListing() {
 	// Update the path display
-	_currentPath->setEditString(_node.getPath());
+	_currentPath->setEditString(_node.getPath().toString(Common::Path::kNativeSeparator));
 
 	// We memorize the last visited path.
 	// Don't memorize a path that is not a directory
 	if (_node.isDirectory()) {
-		ConfMan.set("browser_lastpath", _node.getPath());
+		ConfMan.setPath("browser_lastpath", _node.getPath());
 	}
 
 	// Read in the data from the file system
@@ -233,18 +211,18 @@ void BrowserDialog::updateListing() {
 	// Populate the ListWidget
 	Common::U32StringArray list;
 	Common::U32String color = ListWidget::getThemeColor(ThemeEngine::kFontColorNormal);
-	for (Common::FSList::iterator i = _nodeContent.begin(); i != _nodeContent.end(); ++i) {
+	for (auto &node : _nodeContent) {
 		if (_isDirBrowser) {
-			if (i->isDirectory())
+			if (node.isDirectory())
 				color = ListWidget::getThemeColor(ThemeEngine::kFontColorNormal);
 			else
 				color = ListWidget::getThemeColor(ThemeEngine::kFontColorAlternate);
 		}
 
-		if (i->isDirectory())
-			list.push_back(color + Common::U32String(i->getName() + "/"));
+		if (node.isDirectory())
+			list.push_back(color + ListWidget::escapeString(Common::U32String(node.getName()) + "/"));
 		else
-			list.push_back(color + Common::U32String(i->getName()));
+			list.push_back(color + ListWidget::escapeString(Common::U32String(node.getName())));
 	}
 
 	_fileList->setList(list);

@@ -22,10 +22,12 @@
 #ifndef DIRECTOR_IMAGES_H
 #define DIRECTOR_IMAGES_H
 
+#include "graphics/palette.h"
 #include "image/image_decoder.h"
 
 namespace Common {
 class SeekableReadStream;
+struct Rect;
 }
 
 namespace Graphics {
@@ -47,15 +49,14 @@ public:
 	void destroy() override;
 	bool loadStream(Common::SeekableReadStream &stream) override;
 	const Graphics::Surface *getSurface() const override { return _surface; }
-	const byte *getPalette() const override { return _palette; }
+	const Graphics::Palette &getPalette() const override { return _palette; }
 	void loadPalette(Common::SeekableReadStream &stream);
-	uint16 getPaletteColorCount() const override { return _paletteColorCount; }
 
 private:
 	Image::Codec *_codec;
 	const Graphics::Surface *_surface;
-	byte *_palette;
-	uint8 _paletteColorCount;
+	Graphics::Palette _palette;
+	uint16 _bitsPerPixel;
 };
 
 class BITDDecoder : public Image::ImageDecoder {
@@ -67,19 +68,18 @@ public:
 	void destroy() override;
 	bool loadStream(Common::SeekableReadStream &stream) override;
 	const Graphics::Surface *getSurface() const override { return _surface; }
-	const byte *getPalette() const override { return _palette; }
+	const Graphics::Palette &getPalette() const override { return _palette; }
 	void loadPalette(Common::SeekableReadStream &stream);
-	uint16 getPaletteColorCount() const override { return _paletteColorCount; }
-	void convertPixelIntoSurface(void *surfacePointer, uint fromBpp, uint toBpp, int red, int green, int blue);
 
 private:
 	Graphics::Surface *_surface;
-	const byte *_palette;
-	uint8 _paletteColorCount;
+	Graphics::Palette _palette;
 	uint16 _bitsPerPixel;
 	uint16 _version;
 	uint16 _pitch;
 };
+
+void copyStretchImg(const Graphics::Surface *srcSurface, Graphics::Surface *targetSurface, const Common::Rect &srcRect, const Common::Rect &targetRect, const byte *pal = 0);
 
 } // End of namespace Director
 

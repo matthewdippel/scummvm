@@ -61,6 +61,12 @@ enum TestExitStatus {
 	kTestFailed
 };
 
+enum WriteFlags {
+	kWriteNoFlag = 0,
+	kWriteRGBColors = (1 << 0),
+	kWriteDrawFrame = (1 << 1)
+};
+
 typedef TestExitStatus (*InvokingFunction)();
 
 /**
@@ -113,7 +119,7 @@ public:
 	static bool handleInteractiveInput(const Common::String &textToDisplay, const char *opt1 = "Yes", const char *opt2 = "No", OptionSelected result = kOptionLeft);
 
 	static void displayMessage(const Common::String &textToDisplay, const char *defaultButton = "OK");
-	static Common::Rect writeOnScreen(const Common::String &textToDisplay, const Common::Point &pt, bool flag = false);
+	static Common::Rect writeOnScreen(const Common::String &textToDisplay, const Common::Point &pt, WriteFlags flag = kWriteNoFlag);
 	static void clearScreen(const Common::Rect &rect);
 	static void clearEntireScreen() {
 		const int width = g_system->getWidth();
@@ -148,8 +154,8 @@ public:
 	virtual const char *getName() const = 0;
 	virtual const char *getDescription() const = 0;
 
-	static void logPrintf(const char *s, ...) GCC_PRINTF(1, 2);
-	static void logDetailedPrintf(const char *s, ...) GCC_PRINTF(1, 2);
+	static void logPrintf(MSVC_PRINTF const char *s, ...) GCC_PRINTF(1, 2);
+	static void logDetailedPrintf(MSVC_PRINTF const char *s, ...) GCC_PRINTF(1, 2);
 
 	// Progress bar (Information Display) related methods.
 	/**

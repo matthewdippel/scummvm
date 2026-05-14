@@ -19,7 +19,7 @@
  *
  *
  * This file is dual-licensed.
- * In addition to the GPLv2 license mentioned above, MojoTouch has exclusively licensed
+ * In addition to the GPLv3 license mentioned above, MojoTouch has exclusively licensed
  * this code on November 10th, 2021, to be use in closed-source products.
  * Therefore, any contributions (commits) to it will also be dual-licensed.
  *
@@ -132,6 +132,10 @@ void MouseTrapGame::init() {
 	initX[5] = 3;
 	initX[6] = 4;
 	initX[7] = 4;
+
+	// easier AI gives a fixed board state, because the random configurations can give you some bad ones
+	if(_easierAi)
+		_random.setSeed(711);
 
 	for (int i = 7; i >= 0; i--) {
 		int8 j = _random.getRandomNumber(i);

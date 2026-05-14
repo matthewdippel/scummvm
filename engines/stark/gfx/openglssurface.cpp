@@ -22,7 +22,8 @@
 #include "engines/stark/gfx/openglssurface.h"
 
 #include "engines/stark/gfx/opengls.h"
-#include "engines/stark/gfx/texture.h"
+#include "engines/stark/gfx/bitmap.h"
+#include "engines/stark/gfx/color.h"
 
 #if defined(USE_OPENGL_SHADERS)
 
@@ -35,23 +36,25 @@ OpenGLSSurfaceRenderer::OpenGLSSurfaceRenderer(OpenGLSDriver *gfx) :
 		SurfaceRenderer(),
 		_gfx(gfx) {
 	_shader = _gfx->createSurfaceShaderInstance();
+	_shaderFill = _gfx->createSurfaceFillShaderInstance();
 }
 
 OpenGLSSurfaceRenderer::~OpenGLSSurfaceRenderer() {
+	delete _shaderFill;
 	delete _shader;
 }
 
-void OpenGLSSurfaceRenderer::render(const Texture *texture, const Common::Point &dest) {
-	render(texture, dest, texture->width(), texture->height());
+void OpenGLSSurfaceRenderer::render(const Bitmap *bitmap, const Common::Point &dest) {
+	render(bitmap, dest, bitmap->width(), bitmap->height());
 }
 
-void OpenGLSSurfaceRenderer::render(const Texture *texture, const Common::Point &dest, uint width, uint height) {
+void OpenGLSSurfaceRenderer::render(const Bitmap *bitmap, const Common::Point &dest, uint width, uint height) {
 	// Destination rectangle with given width and height
 	_gfx->start2DMode();
 
 	_shader->use();
 	_shader->setUniform1f("fadeLevel", _fadeLevel);
-	_shader->setUniform1f("snapToGrid", _snapToGrid);
+	_shader->setUniform("snapToGrid", _snapToGrid ? 1 : 0);
 	_shader->setUniform("verOffsetXY", normalizeOriginalCoordinates(dest.x, dest.y));
 	if (_noScalingOverride) {
 		_shader->setUniform("verSizeWH", normalizeCurrentCoordinates(width, height));
@@ -62,10 +65,35 @@ void OpenGLSSurfaceRenderer::render(const Texture *texture, const Common::Point 
 	Common::Rect nativeViewport = _gfx->getViewport();
 	_shader->setUniform("viewport", Math::Vector2d(nativeViewport.width(), nativeViewport.height()));
 
-	texture->bind();
+	bitmap->bind();
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
 	_shader->unbind();
+	_gfx->end2DMode();
+}
+
+void OpenGLSSurfaceRenderer::fill(const Color &color, const Common::Point &dest, uint width, uint height) {
+	// Destination rectangle with given width and height
+	_gfx->start2DMode();
+
+	_shaderFill->use();
+	_shaderFill->setUniform1f("fadeLevel", _fadeLevel);
+	_shaderFill->setUniform("snapToGrid", _snapToGrid ? 1 : 0);
+	_shaderFill->setUniform("verOffsetXY", normalizeOriginalCoordinates(dest.x, dest.y));
+	if (_noScalingOverride) {
+		_shaderFill->setUniform("verSizeWH", normalizeCurrentCoordinates(width, height));
+	} else {
+		_shaderFill->setUniform("verSizeWH", normalizeOriginalCoordinates(width, height));
+	}
+
+	Common::Rect nativeViewport = _gfx->getViewport();
+	_shaderFill->setUniform("viewport", Math::Vector2d(nativeViewport.width(), nativeViewport.height()));
+
+	_shaderFill->setUniform("color", Math::Vector4d(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f));
+
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+	_shaderFill->unbind();
 	_gfx->end2DMode();
 }
 

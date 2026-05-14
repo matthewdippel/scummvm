@@ -22,10 +22,12 @@
 #include "base/plugins.h"
 #include "common/translation.h"
 #include "engines/advancedDetector.h"
+
 #include "private/private.h"
+#include "private/detection.h"
 
 static const DebugChannelDef debugFlagList[] = {
-	{Private::kPrivateDebugFunction, "functions", "Function execution debug channel"},
+	{Private::kPrivateDebugFunction, "function", "Function execution debug channel"},
 	{Private::kPrivateDebugCode, "code", "Code execution debug channel"},
 	{Private::kPrivateDebugScript, "script", "Script execution debug channel"},
 	DEBUG_CHANNEL_END
@@ -46,7 +48,7 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::EN_USA,
 		Common::kPlatformWindows,
 		ADGF_NO_FLAGS,
-		GUIO1(GUIO_NOMIDI)
+		GUIO3(GUIO_NOMIDI, GAMEOPTION_SFX_SUBTITLES, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye", // Demo from the US release v1.0.0.23
@@ -56,7 +58,7 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::EN_USA,
 		Common::kPlatformWindows,
 		ADGF_DEMO,
-		GUIO1(GUIO_NOMIDI)
+		GUIO3(GUIO_NOMIDI, GAMEOPTION_SFX_SUBTITLES, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye",  // EU release (UK)
@@ -66,7 +68,7 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::EN_GRB,
 		Common::kPlatformWindows,
 		ADGF_NO_FLAGS,
-		GUIO1(GUIO_NOMIDI)
+		GUIO3(GUIO_NOMIDI, GAMEOPTION_SFX_SUBTITLES, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye", // Demo from the EU release
@@ -76,7 +78,7 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::EN_GRB,
 		Common::kPlatformWindows,
 		ADGF_DEMO,
-		GUIO1(GUIO_NOMIDI)
+		GUIO3(GUIO_NOMIDI, GAMEOPTION_SFX_SUBTITLES, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye", // Demo from PCGamer Disc 2.6 JULY 1996 v1.0.0.12
@@ -86,7 +88,7 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::EN_USA,
 		Common::kPlatformWindows,
 		ADGF_DEMO,
-		GUIO1(GUIO_NOMIDI)
+		GUIO3(GUIO_NOMIDI, GAMEOPTION_SFX_SUBTITLES, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye", // Another demo
@@ -96,7 +98,7 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::EN_USA,
 		Common::kPlatformWindows,
 		ADGF_DEMO,
-		GUIO1(GUIO_NOMIDI)
+		GUIO3(GUIO_NOMIDI, GAMEOPTION_SFX_SUBTITLES, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye", // EU release (ES)
@@ -106,7 +108,7 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::ES_ESP,
 		Common::kPlatformWindows,
 		ADGF_NO_FLAGS,
-		GUIO1(GUIO_NOMIDI)
+		GUIO3(GUIO_NOMIDI, GAMEOPTION_SFX_SUBTITLES, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye", // Demo from the EU release (ES)
@@ -116,7 +118,7 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::ES_ESP,
 		Common::kPlatformWindows,
 		ADGF_DEMO,
-		GUIO1(GUIO_NOMIDI)
+		GUIO3(GUIO_NOMIDI, GAMEOPTION_SFX_SUBTITLES, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye", // EU release (FR)
@@ -126,7 +128,7 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::FR_FRA,
 		Common::kPlatformWindows,
 		ADGF_NO_FLAGS,
-		GUIO1(GUIO_NOMIDI)
+		GUIO2(GUIO_NOMIDI, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye", // EU release (DE)
@@ -136,7 +138,17 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::DE_DEU,
 		Common::kPlatformWindows,
 		ADGF_NO_FLAGS,
-		GUIO1(GUIO_NOMIDI)
+		GUIO2(GUIO_NOMIDI, GAMEOPTION_HIGHLIGHT_MASKS)
+	},
+	{
+		"private-eye", // Promotional demo disc
+		"Demo",
+		AD_ENTRY2s("pvteye.z", "adb2ceca453da546d5e86baad0c73cd1", 262537,
+			"bklynlgo.bmp", "1dfb703349a46f8ec183de107992b7f5", 33118),
+			Common::EN_USA,
+			Common::kPlatformWindows,
+			ADGF_DEMO,
+			GUIO2(GUIO_NOMIDI, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye", // Demo from the EU release (DE)
@@ -146,7 +158,7 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::DE_DEU,
 		Common::kPlatformWindows,
 		ADGF_DEMO,
-		GUIO1(GUIO_NOMIDI)
+		GUIO2(GUIO_NOMIDI, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye", // Demo from the EU release (FR)
@@ -156,7 +168,7 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::FR_FRA,
 		Common::kPlatformWindows,
 		ADGF_DEMO,
-		GUIO1(GUIO_NOMIDI)
+		GUIO2(GUIO_NOMIDI, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye",  // RU release
@@ -166,7 +178,7 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::RU_RUS,
 		Common::kPlatformWindows,
 		ADGF_NO_FLAGS,
-		GUIO1(GUIO_NOMIDI)
+		GUIO2(GUIO_NOMIDI, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye",  // KO release
@@ -176,44 +188,63 @@ static const ADGameDescription gameDescriptions[] = {
 		Common::KO_KOR,
 		Common::kPlatformWindows,
 		ADGF_NO_FLAGS,
-		GUIO1(GUIO_NOMIDI)
+		GUIO2(GUIO_NOMIDI, GAMEOPTION_HIGHLIGHT_MASKS)
+	},
+	{
+		"private-eye",  // JP release
+		nullptr,
+		AD_ENTRY2s("pvteye.z", "f5fb6e89e98294a09ff21e72282b58dc", 239066,
+		   "intro.smk", "b8d15a522f896ccbe4539394b6b8ec8a", 7202836),
+		Common::JA_JPN,
+		Common::kPlatformWindows,
+		ADGF_NO_FLAGS,
+		GUIO2(GUIO_NOMIDI, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye", // MacOS release (US)
 		nullptr,
-		AD_ENTRY2s("game.mac", "33553cc04813d3f658bbe9d548377878", 81894,
-		   "bklynlgo.bmp", "1dfb703349a46f8ec183de107992b7f5", 33118),
+		AD_ENTRY2s("game.mac", "d:33553cc04813d3f658bbe9d548377878", 81894,
+		   "bklynlgo.bmp", "d:1dfb703349a46f8ec183de107992b7f5", 33118),
+		Common::EN_USA,
+		Common::kPlatformMacintosh,
+		ADGF_NO_FLAGS,
+		GUIO3(GUIO_NOMIDI, GAMEOPTION_SFX_SUBTITLES, GAMEOPTION_HIGHLIGHT_MASKS)
+	},
+	{
+		"private-eye", // MacOS release (US) uninstalled
+		0,
+		AD_ENTRY1s("Private Eye Installer", "d:02533427ebdf26d5dd12cee8e9f4de4d", 1647309),
 		Common::EN_USA,
 		Common::kPlatformMacintosh,
 		ADGF_NO_FLAGS,
 		GUIO1(GUIO_NOMIDI)
 	},
 	{
-		"private-eye", // MacOS release (US) uninstalled
-		_s("Compressed game detected. Please uncompress it as specified in the game description on our Wiki"),
-		AD_ENTRY1s("Private Eye Installer", "02533427ebdf26d5dd12cee8e9f4de4d", 1647309),
-		Common::EN_USA,
+		"private-eye", // MacOS release (JP) uninstalled
+		0,
+		AD_ENTRY1s("xn--16jc8na7ay6a0eyg9e5nud0e4525d", "d:113b57e2f6bdaf1146fe83fe0f992891", 1477309),
+		Common::JA_JPN,
 		Common::kPlatformMacintosh,
-		ADGF_UNSUPPORTED,
+		ADGF_NO_FLAGS,
 		GUIO1(GUIO_NOMIDI)
 	},
 	{
 		"private-eye", // MacOS demo (US)
-		nullptr,
-		AD_ENTRY2s("demogame.mac", "cfbceaa8b91f0f53c745db61d1bc9749", 6103,
-		    "bklynlgo.bmp", "1dfb703349a46f8ec183de107992b7f5", 33118),
+		"Demo",
+		AD_ENTRY2s("demogame.mac", "d:cfbceaa8b91f0f53c745db61d1bc9749", 6103,
+		    "bklynlgo.bmp", "d:1dfb703349a46f8ec183de107992b7f5", 33118),
 		Common::EN_USA,
 		Common::kPlatformMacintosh,
 		ADGF_DEMO,
-		GUIO1(GUIO_NOMIDI)
+		GUIO3(GUIO_NOMIDI, GAMEOPTION_SFX_SUBTITLES, GAMEOPTION_HIGHLIGHT_MASKS)
 	},
 	{
 		"private-eye", // MacOS demo (US) uninstalled
-		_s("Compressed game detected. Please uncompress it as specified in the game description on our Wiki"),
-		AD_ENTRY1s("Private Eye Demo Installer", "e7665ddc5e6d932c4a65598ecc4ec7d2", 1626393),
+		0,
+		AD_ENTRY1s("Private Eye Demo Installer", "d:e7665ddc5e6d932c4a65598ecc4ec7d2", 1626393),
 		Common::EN_USA,
 		Common::kPlatformMacintosh,
-		ADGF_DEMO | ADGF_UNSUPPORTED,
+		ADGF_DEMO,
 		GUIO1(GUIO_NOMIDI)
 	},
 	AD_TABLE_END_MARKER
@@ -226,18 +257,18 @@ static const char *const directoryGlobs[] = {
 	nullptr
 };
 
-class PrivateMetaEngineDetection : public AdvancedMetaEngineDetection {
+class PrivateMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	PrivateMetaEngineDetection() : AdvancedMetaEngineDetection(Private::gameDescriptions, sizeof(ADGameDescription), Private::privateGames) {
+	PrivateMetaEngineDetection() : AdvancedMetaEngineDetection(Private::gameDescriptions, Private::privateGames) {
 		_maxScanDepth = 2;
 		_directoryGlobs = directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "private";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Private Eye";
 	}
 

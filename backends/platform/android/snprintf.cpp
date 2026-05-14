@@ -183,8 +183,6 @@
  *
  */
 
-#if defined(__ANDROID__)
-
 // Allow use of stuff in <time.h>
 #define FORBIDDEN_SYMBOL_EXCEPTION_time_h
 
@@ -195,7 +193,7 @@
 // which gets messed up by our override mechanism; this could
 // be avoided by either changing the Android SDK to use the equally
 // legal and valid
-//   __attribute__ ((format(printf, 3, 4)))
+//   __attribute__ ((format(__printf__, 3, 4)))
 // or by refining our printf override to use a varadic macro
 // (which then wouldn't be portable, though).
 // Anyway, for now we just disable the printf override globally
@@ -1318,5 +1316,4 @@ static LDOUBLE mypow10(int exponent) {
 	}
 	return result;
 }
-#endif // defined(__ANDROID__)
 /* vim: set joinspaces noexpandtab textwidth=80 cinoptions=(4,u0: */

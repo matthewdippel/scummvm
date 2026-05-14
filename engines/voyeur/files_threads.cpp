@@ -25,6 +25,8 @@
 #include "voyeur/staticres.h"
 #include "common/config-manager.h"
 
+#include "backends/keymapper/keymapper.h"
+
 namespace Voyeur {
 
 int ThreadResource::_useCount[8];
@@ -471,7 +473,7 @@ void ThreadResource::parsePlayCommands() {
 						_vm->_bVoy->freeBoltMember(_vm->_playStampGroupId + i * 2 + 1);
 					}
 
-					Common::String file = Common::String::format("news%d.voc", i + 1);
+					Common::Path file(Common::String::format("news%d.voc", i + 1));
 					_vm->_soundManager->startVOCPlay(file);
 
 					while (!_vm->shouldQuit() && !_vm->_eventsManager->_mouseClicked &&
@@ -1140,6 +1142,10 @@ void ThreadResource::doRoom() {
 	vm._soundManager->startVOCPlay(vm._currentVocId);
 	voy._eventFlags &= ~EVTFLAG_TIME_DISABLED;
 
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->getKeymap("voyeur-default")->setEnabled(false);
+	keymapper->getKeymap("room")->setEnabled(true);
+
 	bool breakFlag = false;
 	while (!vm.shouldQuit() && !breakFlag) {
 		_vm->_voyeurArea = AREA_ROOM;
@@ -1292,14 +1298,14 @@ void ThreadResource::doRoom() {
 		vm._currentVocId = -1;
 	}
 
+	keymapper->getKeymap("room")->setEnabled(false);
+	keymapper->getKeymap("voyeur-default")->setEnabled(true);
+
 	vm._eventsManager->hideCursor();
 	chooseSTAMPButton(0);
 }
 
 int ThreadResource::doInterface() {
-	PictureResource *pic;
-	Common::Point pt;
-
 	_vm->_voy->_eventFlags |= EVTFLAG_TIME_DISABLED;
 	if (_vm->_voy->_abortInterface) {
 		_vm->_voy->_abortInterface = false;
@@ -1346,7 +1352,7 @@ int ThreadResource::doInterface() {
 	_vm->_currentVocId = 151 - _vm->getRandomNumber(5);
 	_vm->_voy->_vocSecondsOffset = _vm->getRandomNumber(29);
 
-	Common::String fname = _vm->_soundManager->getVOCFileName(_vm->_currentVocId);
+	Common::Path fname = _vm->_soundManager->getVOCFileName(_vm->_currentVocId);
 	_vm->_soundManager->startVOCPlay(fname);
 	_vm->_eventsManager->getMouseInfo();
 
@@ -1361,6 +1367,10 @@ int ThreadResource::doInterface() {
 	PictureResource *mangifyCursor = _vm->_bVoy->boltEntry(0x115)._picResource;
 
 	_vm->_eventsManager->setCursor(crosshairsCursor);
+
+	Common::Keymapper *keymapper = g_system->getEventManager()->getKeymapper();
+	keymapper->getKeymap("voyeur-default")->setEnabled(false);
+	keymapper->getKeymap("camera")->setEnabled(true);
 
 	// Main loop
 	int regionIndex = 0;
@@ -1382,7 +1392,7 @@ int ThreadResource::doInterface() {
 		}
 
 		// Calculate the mouse position within the entire mansion
-		pt = _vm->_eventsManager->getMousePos();
+		Common::Point pt = _vm->_eventsManager->getMousePos();
 		if (!mansionViewBounds.contains(pt))
 			pt = Common::Point(-1, -1);
 		else
@@ -1430,13 +1440,19 @@ int ThreadResource::doInterface() {
 				_vm->_gameMinute % 10, Common::Point(201, 25));
 
 			if (_vm->_voy->_RTANum & 4) {
-				int v = _vm->_gameHour / 10;
-				_vm->_screen->drawANumber(_vm->_screen->_vPort,
-					v == 0 ? 10 : v, Common::Point(161, 25));
-				_vm->_screen->drawANumber(_vm->_screen->_vPort,
-					_vm->_gameHour % 10, Common::Point(172, 25));
+				int v1, v2;
+				if (!_vm->_voy->_isAM && _vm->getLanguage() == Common::DE_DEU) {
+					v1 = (_vm->_gameHour + 12) / 10;
+					v2 = (_vm->_gameHour + 12) % 10;
+				} else {
+					v1 = _vm->_gameHour / 10;
+					v2 = _vm->_gameHour % 10;
+				}
+				
+				_vm->_screen->drawANumber(_vm->_screen->_vPort, v1 == 0 ? 10 : v1, Common::Point(161, 25));
+				_vm->_screen->drawANumber(_vm->_screen->_vPort, v2, Common::Point(172, 25));
 
-				pic = _vm->_bVoy->boltEntry(_vm->_voy->_isAM ? 272 : 273)._picResource;
+				PictureResource *pic = _vm->_bVoy->boltEntry(_vm->_voy->_isAM ? 272 : 273)._picResource;
 				_vm->_screen->sDrawPic(pic, _vm->_screen->_vPort,
 					Common::Point(215, 27));
 			}
@@ -1477,6 +1493,9 @@ int ThreadResource::doInterface() {
 		}
 	} while (!_vm->_eventsManager->_rightClick && !_vm->shouldQuit() &&
 		(!_vm->_eventsManager->_leftClick || regionIndex == -1));
+
+	keymapper->getKeymap("camera")->setEnabled(false);
+	keymapper->getKeymap("voyeur-default")->setEnabled(true);
 
 	_vm->_eventsManager->hideCursor();
 	_vm->_voy->_eventFlags |= EVTFLAG_TIME_DISABLED;

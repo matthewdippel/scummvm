@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_GOB_H
@@ -24,6 +30,7 @@
 
 #include "common/random.h"
 #include "common/system.h"
+#include "common/text-to-speech.h"
 
 #include "graphics/pixelformat.h"
 
@@ -35,23 +42,54 @@
 /**
  * This is the namespace of the Gob engine.
  *
- * Status of this engine: ???
+ * Status of this engine: Supported
  *
  * Games using this engine:
+ * - Adi 1
+ * - Adi 2
+ * - Adi 4
+ * - Adi 5
+ * - Adibou 1
+ * - Adibou 2
+ * - Adibou 3
+ * - Adibou présente Cuisine
+ * - Adibou présente Dessin
+ * - Adibou présente Magie
+ * - Adiboud'chou a la mer
+ * - Adiboud'chou sur la banquise
+ * - Adiboud'chou a la campagne
+ * - Adiboud'chou dans la jungle et la savane
+ * - English Fever
  * - Gobliiins
  * - Gobliins 2
  * - Goblins 3
  * - Ween: The Prophecy
  * - Bargon Attack
+ * - Le pays des Pierres Magiques
  * - Lost in Time
+ * - Nathan Vacances CM1/CE2
  * - The Bizarre Adventures of Woodruff and the Schnibble
  * - Fascination
+ * - Inca II: Nations of Immortality
  * - Urban Runner
  * - Bambou le sauveur de la jungle
+ * - Playtoons 1 Uncle Archibald
+ * - Playtoons 2 The Case of the Counterfeit Collaborator (Spirou)
+ * - Playtoons 3 The Secret of the Castle
+ * - Playtoons 4 The Mandarin Prince
+ * - Playtoons 5 The Stone of Wakan
+ * - Playtoons Construction Kit 1 Monsters
+ * - Playtoons Construction Kit 2 Knights
+ * - Playtoons Construction Kit 3 The Far West
  * - Geisha
+ * - Once Upon A Time: Abracadabra
+ * - Once Upon A Time: Baba Yaga
  * - Once Upon A Time: Little Red Riding Hood
  * - Croustibat
  */
+
+class GobMetaEngine;
+
 namespace Gob {
 
 class Game;
@@ -111,18 +149,18 @@ enum EndiannessMethod {
 };
 
 enum {
-	kDebugFuncOp     = 1 <<  0,
-	kDebugDrawOp     = 1 <<  1,
-	kDebugGobOp      = 1 <<  2,
-	kDebugSound      = 1 <<  3,
-	kDebugExpression = 1 <<  4,
-	kDebugGameFlow   = 1 <<  5,
-	kDebugFileIO     = 1 <<  6,
-	kDebugSaveLoad   = 1 <<  7,
-	kDebugGraphics   = 1 <<  8,
-	kDebugVideo      = 1 <<  9,
-	kDebugHotspots   = 1 << 10,
-	kDebugDemo       = 1 << 11
+	kDebugFuncOp = 1,
+	kDebugDrawOp,
+	kDebugGobOp,
+	kDebugSound,
+	kDebugExpression,
+	kDebugGameFlow,
+	kDebugFileIO,
+	kDebugSaveLoad,
+	kDebugGraphics,
+	kDebugVideo,
+	kDebugHotspots,
+	kDebugDemo,
 };
 
 class GobEngine : public Engine {
@@ -130,6 +168,7 @@ private:
 	GameType _gameType;
 	int32 _features;
 	Common::Platform _platform;
+	const char *_extra;
 
 	EndiannessMethod _endiannessMethod;
 
@@ -168,6 +207,8 @@ public:
 	GobConsole *_console;
 
 	bool _resourceSizeWorkaround;
+	bool _enableAdibou2FreeBananasWorkaround;
+	bool _enableAdibou2FlowersInfiniteLoopWorkaround;
 
 	Global *_global;
 	Util *_util;
@@ -187,11 +228,21 @@ public:
 	VideoPlayer *_vidPlayer;
 	PreGob *_preGob;
 
+#ifdef USE_TTS
+	bool _weenVoiceNotepad;
+	Common::CodePage _ttsEncoding;
+#endif
+
 	const char *getLangDesc(int16 language) const;
 	void validateLanguage();
 	void validateVideoMode(int16 videoMode);
 
 	void pauseGame();
+
+#ifdef USE_TTS
+	void sayText(const Common::String &text, Common::TextToSpeechManager::Action action = Common::TextToSpeechManager::INTERRUPT) const;
+	void stopTextToSpeech() const;
+#endif
 
 	EndiannessMethod getEndiannessMethod() const;
 	Endianness getEndianness() const;
@@ -202,16 +253,17 @@ public:
 	bool hasAdLib() const;
 	bool isSCNDemo() const;
 	bool isBATDemo() const;
+	bool is640x400() const;
 	bool is640x480() const;
 	bool is800x600() const;
+	bool is16Colors() const;
 	bool isTrueColor() const;
 	bool isDemo() const;
 
 	bool hasResourceSizeWorkaround() const;
 
 	bool isCurrentTot(const Common::String &tot) const;
-
-	void setTrueColor(bool trueColor);
+	void setTrueColor(bool trueColor, bool convertAllSurfaces, Graphics::PixelFormat *format = nullptr);
 
 	const Graphics::PixelFormat &getPixelFormat() const;
 
@@ -219,6 +271,18 @@ public:
 	~GobEngine() override;
 
 	void initGame(const GOBGameDescription *gd);
+
+	GameType getGameType(const char *gameId) const;
+	bool gameTypeHasAddOns() const override;
+	bool dirCanBeGameAddOn(const Common::FSDirectory &dir) const override;
+	bool dirMustBeGameAddOn(const Common::FSDirectory &dir) const override;
+
+	/**
+	 * Used to obtain the game version as a fallback
+	 * from our detection tables, if the VERSION file
+	 * is missing
+	 */
+	const char *getGameVersion() const;
 };
 
 } // End of namespace Gob

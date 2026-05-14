@@ -30,6 +30,7 @@ static const PlainGameDescriptor tSageGameTitles[] = {
 	{ "ringworld", "Ringworld: Revenge of the Patriarch" },
 	{ "blueforce", "Blue Force" },
 	{ "ringworld2", "Return to Ringworld" },
+	{ "protostar", "Protostar: War on the Frontier" },
 	{ "sherlock-logo", "The Lost Files of Sherlock Holmes (Logo)" },
 	{ 0, 0 }
 };
@@ -41,16 +42,16 @@ static const DebugChannelDef debugFlagList[] = {
 
 #include "tsage/detection_tables.h"
 
-class TSageMetaEngineDetection : public AdvancedMetaEngineDetection {
+class TSageMetaEngineDetection : public AdvancedMetaEngineDetection<TsAGE::tSageGameDescription> {
 public:
-	TSageMetaEngineDetection() : AdvancedMetaEngineDetection(TsAGE::gameDescriptions, sizeof(TsAGE::tSageGameDescription), tSageGameTitles) {
-	}
-
-	const char *getEngineId() const override {
-		return "tsage";
+	TSageMetaEngineDetection() : AdvancedMetaEngineDetection(TsAGE::gameDescriptions, tSageGameTitles) {
 	}
 
 	const char *getName() const override {
+		return "tsage";
+	}
+
+	const char *getEngineName() const override {
 		return "TsAGE";
 	}
 

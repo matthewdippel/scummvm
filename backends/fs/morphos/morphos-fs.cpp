@@ -318,13 +318,13 @@ AbstractFSList MorphOSFilesystemNode::listVolumes() const {
 			CONST_STRPTR devName = (CONST_STRPTR)((struct Task *)dosList->dol_Task->mp_SigTask)->tc_Node.ln_Name;
 			BPTR volumeLock;
 
-			strcpy(buffer, volName);
-			strcat(buffer, ":");
+			Common::strcpy_s(buffer, volName);
+			Common::strcat_s(buffer, ":");
 
 			volumeLock = Lock(buffer, SHARED_LOCK);
 			if (volumeLock) {
 
-				sprintf(buffer, "%s (%s)", volName, devName);
+				Common::sprintf_s(buffer, "%s (%s)", volName, devName);
 
 				entry = new MorphOSFilesystemNode(volumeLock, buffer);
 				if (entry) {
@@ -343,7 +343,7 @@ AbstractFSList MorphOSFilesystemNode::listVolumes() const {
 }
 
 Common::SeekableReadStream *MorphOSFilesystemNode::createReadStream() {
-	StdioStream *readStream = StdioStream::makeFromPath(getPath(), false);
+	StdioStream *readStream = StdioStream::makeFromPath(getPath(), StdioStream::WriteMode_Read);
 
 	if (readStream) {
 		readStream->setBufferSize(8192);
@@ -352,12 +352,25 @@ Common::SeekableReadStream *MorphOSFilesystemNode::createReadStream() {
 	return readStream;
 }
 
-Common::SeekableWriteStream *MorphOSFilesystemNode::createWriteStream() {
-	return StdioStream::makeFromPath(getPath(), true);
+Common::SeekableWriteStream *MorphOSFilesystemNode::createWriteStream(bool atomic) {
+	return StdioStream::makeFromPath(getPath(), atomic ?
+			StdioStream::WriteMode_WriteAtomic : StdioStream::WriteMode_Write);
 }
 
 bool MorphOSFilesystemNode::createDirectory() {
-	warning("MorphOSFilesystemNode::createDirectory(): Not supported");
+	Common::String createPath = _sPath;
+	if (createPath.lastChar() == '/') {
+		createPath.deleteLastChar();
+	}
+
+	BPTR dirLock = CreateDir(createPath.c_str());
+	if (dirLock) {
+		UnLock(dirLock);
+		_bIsValid = true;
+		_bIsDirectory = true;
+	} else {
+		debug(6, "MorphOSFilesystemNode::createDirectory() failed -> Directory '%s' could not be created!", createPath.c_str());
+	}
 	return _bIsValid && _bIsDirectory;
 }
 

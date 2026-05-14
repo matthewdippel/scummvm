@@ -30,7 +30,7 @@
 
 static const PlainGameDescriptor tinselGames[] = {
 	{"dw", "Discworld"},
-	{"dw2", "Discworld 2: Missing Presumed ...!?"},
+	{"dw2", "Discworld II: Missing Presumed ...!?"},
 	{"noir", "Discworld Noir"},
 	{0, 0}
 };
@@ -45,16 +45,16 @@ static const DebugChannelDef debugFlagList[] = {
 
 #include "tinsel/detection_tables.h"
 
-class TinselMetaEngineDetection : public AdvancedMetaEngineDetection {
+class TinselMetaEngineDetection : public AdvancedMetaEngineDetection<Tinsel::TinselGameDescription> {
 public:
-	TinselMetaEngineDetection() : AdvancedMetaEngineDetection(Tinsel::gameDescriptions, sizeof(Tinsel::TinselGameDescription), tinselGames) {
+	TinselMetaEngineDetection() : AdvancedMetaEngineDetection(Tinsel::gameDescriptions, tinselGames) {
 	}
 
-	const char *getEngineId() const  override{
+	const char *getName() const  override{
 		return "tinsel";
 	}
 
-	const char *getName() const override {
+	const char *getEngineName() const override {
 		return "Tinsel";
 	}
 
@@ -70,11 +70,11 @@ public:
 };
 
 struct SizeMD5 {
-	int size;
+	unsigned int size;
 	Common::String md5;
 };
-typedef Common::HashMap<Common::String, SizeMD5, Common::IgnoreCase_Hash, Common::IgnoreCase_EqualTo> SizeMD5Map;
-typedef Common::HashMap<Common::String, Common::FSNode, Common::IgnoreCase_Hash, Common::IgnoreCase_EqualTo> FileMap;
+typedef Common::HashMap<Common::Path, SizeMD5, Common::Path::IgnoreCase_Hash, Common::Path::IgnoreCase_EqualTo> SizeMD5Map;
+typedef Common::HashMap<Common::Path, Common::FSNode, Common::Path::IgnoreCase_Hash, Common::Path::IgnoreCase_EqualTo> FileMap;
 typedef Common::Array<const ADGameDescription *> ADGameDescList;
 
 /**
@@ -110,7 +110,7 @@ ADDetectedGame TinselMetaEngineDetection::fallbackDetect(const FileMap &allFiles
 						if (file2->isDirectory())
 							continue;
 
-						Common::String fname = file2->getName();
+						Common::Path fname = file2->getPathInArchive();
 						allFiles[fname] = *file2;
 					}
 				}
@@ -118,7 +118,7 @@ ADDetectedGame TinselMetaEngineDetection::fallbackDetect(const FileMap &allFiles
 			continue;
 		}
 
-		Common::String tstr = file->getName();
+		Common::Path tstr = file->getPathInArchive();
 
 		allFiles[tstr] = *file;	// Record the presence of this file
 	}
@@ -141,7 +141,7 @@ ADDetectedGame TinselMetaEngineDetection::fallbackDetect(const FileMap &allFiles
 				} while (*pOne);
 			}
 
-			Common::String fname(tempFilename);
+			Common::Path fname(tempFilename);
 			if (allFiles.contains(fname) && !filesSizeMD5.contains(fname)) {
 				SizeMD5 tmp;
 				Common::File testFile;
@@ -150,7 +150,7 @@ ADDetectedGame TinselMetaEngineDetection::fallbackDetect(const FileMap &allFiles
 					tmp.size = (int32)testFile.size();
 					tmp.md5 = computeStreamMD5AsString(testFile, _md5Bytes);
 				} else {
-					tmp.size = -1;
+					tmp.size = AD_NO_SIZE;
 				}
 
 				filesSizeMD5[fname] = tmp;
@@ -181,7 +181,7 @@ ADDetectedGame TinselMetaEngineDetection::fallbackDetect(const FileMap &allFiles
 				} while (*pOne);
 			}
 
-			Common::String tstr(tempFilename);
+			Common::Path tstr(tempFilename);
 
 			if (!filesSizeMD5.contains(tstr)) {
 				fileMissing = true;
@@ -193,7 +193,7 @@ ADDetectedGame TinselMetaEngineDetection::fallbackDetect(const FileMap &allFiles
 				break;
 			}
 
-			if (fileDesc->fileSize != -1 && fileDesc->fileSize != filesSizeMD5[tstr].size) {
+			if (fileDesc->fileSize != AD_NO_SIZE && fileDesc->fileSize != filesSizeMD5[tstr].size) {
 				fileMissing = true;
 				break;
 			}

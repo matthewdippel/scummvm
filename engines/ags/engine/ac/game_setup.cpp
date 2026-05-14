@@ -36,10 +36,9 @@ GameSetup::GameSetup() {
 	override_upscale = false;
 	mouse_speed = 1.f;
 	mouse_ctrl_when = kMouseCtrl_Fullscreen;
-	mouse_ctrl_enabled = false;
+	mouse_ctrl_enabled = true;
 	mouse_speed_def = kMouseSpeed_CurrentDisplay;
 	RenderAtScreenRes = false;
-	Supersampling = 1;
 	clear_cache_on_room_change = false;
 	load_latest_save = false;
 	rotation = kScreenRotation_Unlocked;

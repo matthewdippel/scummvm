@@ -28,6 +28,7 @@
 #if defined(USE_OPENGL_SHADERS)
 
 #include "engines/stark/gfx/openglsactor.h"
+#include "engines/stark/gfx/openglbitmap.h"
 #include "engines/stark/gfx/openglsprop.h"
 #include "engines/stark/gfx/openglssurface.h"
 #include "engines/stark/gfx/openglsfade.h"
@@ -57,6 +58,7 @@ static const GLfloat fadeVertices[] = {
 
 OpenGLSDriver::OpenGLSDriver() :
 	_surfaceShader(nullptr),
+	_surfaceFillShader(nullptr),
 	_actorShader(nullptr),
 	_fadeShader(nullptr),
 	_shadowShader(nullptr),
@@ -67,6 +69,7 @@ OpenGLSDriver::OpenGLSDriver() :
 OpenGLSDriver::~OpenGLSDriver() {
 	OpenGL::Shader::freeBuffer(_surfaceVBO);
 	OpenGL::Shader::freeBuffer(_fadeVBO);
+	delete _surfaceFillShader;
 	delete _surfaceShader;
 	delete _actorShader;
 	delete _fadeShader;
@@ -81,6 +84,10 @@ void OpenGLSDriver::init() {
 	_surfaceVBO = OpenGL::Shader::createBuffer(GL_ARRAY_BUFFER, sizeof(surfaceVertices), surfaceVertices);
 	_surfaceShader->enableVertexAttribute("position", _surfaceVBO, 2, GL_FLOAT, GL_TRUE, 2 * sizeof(float), 0);
 	_surfaceShader->enableVertexAttribute("texcoord", _surfaceVBO, 2, GL_FLOAT, GL_TRUE, 2 * sizeof(float), 0);
+
+	static const char* fillAttributes[] = { "position", nullptr };
+	_surfaceFillShader = OpenGL::Shader::fromFiles("stark_surface_fill", fillAttributes);
+	_surfaceFillShader->enableVertexAttribute("position", _surfaceVBO, 2, GL_FLOAT, GL_TRUE, 2 * sizeof(float), 0);
 
 	static const char* actorAttributes[] = { "position1", "position2", "bone1", "bone2", "boneWeight", "normal", "texcoord", nullptr };
 	_actorShader = OpenGL::Shader::fromFiles("stark_actor", actorAttributes);
@@ -130,18 +137,18 @@ void OpenGLSDriver::flipBuffer() {
 	g_system->updateScreen();
 }
 
-Texture *OpenGLSDriver::createTexture(const Graphics::Surface *surface, const byte *palette) {
-	OpenGlTexture *texture = new OpenGlTexture();
-
-	if (surface) {
-		texture->update(surface, palette);
-	}
-
-	return texture;
+Texture *OpenGLSDriver::createTexture() {
+	return new OpenGlTexture();
 }
 
-Texture *OpenGLSDriver::createBitmap(const Graphics::Surface *surface, const byte *palette) {
-	return createTexture(surface, palette);
+Bitmap *OpenGLSDriver::createBitmap(const Graphics::Surface *surface, const byte *palette) {
+	OpenGlBitmap *bitmap = new OpenGlBitmap();
+
+	if (surface) {
+		bitmap->update(surface, palette);
+	}
+
+	return bitmap;
 }
 
 VisualActor *OpenGLSDriver::createActorRenderer() {
@@ -211,6 +218,10 @@ OpenGL::Shader *OpenGLSDriver::createActorShaderInstance() {
 
 OpenGL::Shader *OpenGLSDriver::createSurfaceShaderInstance() {
 	return _surfaceShader->clone();
+}
+
+OpenGL::Shader *OpenGLSDriver::createSurfaceFillShaderInstance() {
+	return _surfaceFillShader->clone();
 }
 
 OpenGL::Shader *OpenGLSDriver::createFadeShaderInstance() {

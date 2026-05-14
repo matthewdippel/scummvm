@@ -22,6 +22,7 @@
 #ifndef ULTIMA8_GUMPS_SCROLLGUMP_H
 #define ULTIMA8_GUMPS_SCROLLGUMP_H
 
+#include "common/str.h"
 #include "ultima/ultima8/gumps/modal_gump.h"
 #include "ultima/ultima8/usecode/intrinsics.h"
 #include "ultima/ultima8/misc/classtype.h"
@@ -33,13 +34,13 @@ namespace Ultima8 {
  * A paper scroll (with a spell, etc)
  */
 class ScrollGump : public ModalGump {
-	Std::string _text;
+	Common::String _text;
 	ObjId _textWidget;
 public:
 	ENABLE_RUNTIME_CLASSTYPE()
 
 	ScrollGump();
-	ScrollGump(ObjId owner, const Std::string &msg);
+	ScrollGump(ObjId owner, const Common::String &msg);
 	~ScrollGump() override;
 
 	// Go to the next page on mouse click
@@ -47,6 +48,8 @@ public:
 
 	// Close on double click
 	void onMouseDouble(int button, int32 mx, int32 my) override;
+
+	bool OnKeyDown(int key, int mod) override;
 
 	// Init the gump, call after construction
 	void InitGump(Gump *newparent, bool take_focus = true) override;

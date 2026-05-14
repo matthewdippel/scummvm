@@ -68,6 +68,10 @@ KyraEngine_v1::KyraEngine_v1(OSystem *system, const GameFlags &flags)
 	_mouseX = _mouseY = 0;
 	_transOffsY = 0;
 	_asciiCodeEvents = _kbEventSkip = false;
+
+	_configMusic = 0;
+	_configSounds = false;
+	_configVoice = _configWalkspeed = 0;
 }
 
 void KyraEngine_v1::pauseEngineIntern(bool pause) {
@@ -260,7 +264,7 @@ int KyraEngine_v1::checkInput(Button *buttonList, bool mainLoop, int eventFlag) 
 					breakLoop = true;
 				} else {
 					char savegameName[14];
-					sprintf(savegameName, "Quicksave %d", event.kbd.keycode - Common::KEYCODE_0);
+					Common::sprintf_s(savegameName, "Quicksave %d", event.kbd.keycode - Common::KEYCODE_0);
 					saveGameStateIntern(saveLoadSlot, savegameName, nullptr);
 				}
 			} else if (event.kbd.hasFlags(Common::KBD_CTRL)) {
@@ -279,7 +283,7 @@ int KyraEngine_v1::checkInput(Button *buttonList, bool mainLoop, int eventFlag) 
 					keys = 0;
 				}
 
-				// When we got an keypress, which we might need to handle,
+				// When we got a keypress, which we might need to handle,
 				// break the event loop and pass it to GUI code.
 				if (keys)
 					breakLoop = true;
@@ -432,7 +436,7 @@ void KyraEngine_v1::setupKeyMap() {
 		return;
 
 	for (int i = 0; i < ARRAYSIZE(keys); i++)
-		_keyMap[keys[i].kcScummVM] = (_flags.gameID != GI_EOB1 && _flags.platform == Common::kPlatformPC98) ? keys[i].kcPC98 : ((_flags.platform == Common::kPlatformFMTowns) ? keys[i].kcFMTowns : keys[i].kcDOS);
+		_keyMap[keys[i].kcScummVM] = (_flags.gameID != GI_EOB1 && _flags.gameID != GI_EOB2 && _flags.platform == Common::kPlatformPC98) ? keys[i].kcPC98 : ((_flags.platform == Common::kPlatformFMTowns) ? keys[i].kcFMTowns : keys[i].kcDOS);
 }
 
 void KyraEngine_v1::updateInput() {

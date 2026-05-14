@@ -19,19 +19,101 @@
  *
  */
 
-#include "common/achievements.h"
+#include "common/translation.h"
 
-#include "engines/wintermute/wintermute.h"
-#include "engines/wintermute/base/base_persistence_manager.h"
+#include "engines/achievements.h"
 
-#include "engines/wintermute/keymapper_tables.h"
-#include "engines/wintermute/achievements_tables.h"
+#include "wintermute/wintermute.h"
+#include "wintermute/base/base_persistence_manager.h"
+
+#include "wintermute/keymapper_tables.h"
+#include "wintermute/achievements_tables.h"
 
 // Detection related files.
 #include "wintermute/detection.h"
 #include "wintermute/detection_tables.h"
 
 namespace Wintermute {
+
+static const ADExtraGuiOptionsMap gameGuiOptions[] = {
+	{
+		GAMEOPTION_SHOW_FPS,
+		{
+			_s("Show FPS-counter"),
+			_s("Show the current number of frames per second in the upper left corner"),
+			"show_fps",
+			false,
+			0,
+			0
+		},
+	},
+
+	{
+		GAMEOPTION_BILINEAR,
+		{
+			_s("Sprite bilinear filtering (SLOW)"),
+			_s("Apply bilinear filtering to individual sprites"),
+			"bilinear_filtering",
+			false,
+			0,
+			0
+		}
+	},
+
+#ifdef ENABLE_WME3D
+	{
+		GAMEOPTION_FORCE_2D_RENDERER,
+		{
+			_s("Force to use 2D renderer (2D games only)"),
+			_s("This setting forces ScummVM to use 2D renderer while running 2D games"),
+			"force_2d_renderer",
+			false,
+			0,
+			0
+		}
+	},
+#endif
+
+#ifdef USE_TTS
+	{
+		GAMEOPTION_TTS,
+		{
+			_s("Enable Text to Speech"),
+			_s("Use TTS to read text in the game (if TTS is available)"),
+			"tts_enabled",
+			false,
+			0,
+			0
+		}
+	},
+#endif
+
+	{
+		GAMEOPTION_USE_IT_VOICES,
+		{
+			_s("Use Italian speech pack"),
+			_s("Use Italian dubbing instead of the default English one"),
+			"use_it_voices",
+			false,
+			0,
+			0
+		}
+	},
+
+	{
+		GAMEOPTION_USE_SD_ASSETS,
+		{
+			_s("Run SD version (1280x800)"),
+			_s("Run the legacy SD version, which is better for small screens"),
+			"use_sd_assets",
+			false,
+			0,
+			0
+		}
+	},
+
+	AD_EXTRA_GUI_OPTIONS_TERMINATOR
+};
 
 /**
  * The fallback game descriptor used by the Wintermute engine's fallbackDetector.
@@ -50,15 +132,17 @@ static ADGameDescription s_fallbackDesc = {
 
 static char s_fallbackExtraBuf[256];
 
-class WintermuteMetaEngine : public AdvancedMetaEngine {
+class WintermuteMetaEngine : public AdvancedMetaEngine<WMEGameDescription> {
 public:
 	const char *getName() const override {
 		return "wintermute";
 	}
 
-	Common::Error createInstance(OSystem *syst, Engine **engine, const ADGameDescription *desc) const override {
-		const WMEGameDescription *gd = (const WMEGameDescription *)desc;
+	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override {
+		return gameGuiOptions;
+	}
 
+	Common::Error createInstance(OSystem *syst, Engine **engine, const WMEGameDescription *gd) const override {
 #ifndef ENABLE_FOXTAIL
 		if (gd->targetExecutable >= FOXTAIL_OLDEST_VERSION && gd->targetExecutable <= FOXTAIL_LATEST_VERSION) {
 			return Common::Error(Common::kUnsupportedGameidError, _s("FoxTail support is not compiled in"));
@@ -113,9 +197,9 @@ public:
 		return 100;
 	}
 
-	void removeSaveState(const char *target, int slot) const override {
+	bool removeSaveState(const char *target, int slot) const override {
 		Wintermute::BasePersistenceManager pm(target, true);
-		pm.deleteSaveSlot(slot);
+		return pm.deleteSaveSlot(slot);
 	}
 
 	SaveStateDescriptor querySaveMetaInfos(const char *target, int slot) const override {
@@ -178,9 +262,9 @@ public:
 			if (!file->getName().hasSuffixIgnoreCase(".dcp")) continue;
 
 			FileProperties tmp;
-			if (AdvancedMetaEngine::getFilePropertiesExtern(md5Bytes, allFiles, s_fallbackDesc, file->getName(), tmp)) {
+			if (AdvancedMetaEngine::getFilePropertiesExtern(md5Bytes, allFiles, kMD5Head, file->getPathInArchive(), tmp)) {
 				game.hasUnknownFiles = true;
-				game.matchedFiles[file->getName()] = tmp;
+				game.matchedFiles[file->getPathInArchive()] = tmp;
 			}
 		}
 

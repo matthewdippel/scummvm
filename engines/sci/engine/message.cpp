@@ -184,6 +184,15 @@ public:
 #endif
 
 bool MessageState::getRecord(CursorStack &stack, bool recurse, MessageRecord &record) {
+	if (stack.empty()) {
+		// SSCI did not check for an empty stack, it would just use the first element
+		// from its zero-initialized array and return false when message lookup failed.
+		// We know that this occurs from crash analytics. kMessage(K_MESSAGE_NEXT)
+		// somehow gets called before an initializing kMessage call. Bug #14613
+		warning("Message: stack is empty");
+		return false;
+	}
+
 	// find a workaround for the requested message and use the prescribed module
 	int module = stack.getModule();
 	MessageTuple &tuple = stack.top();
@@ -219,7 +228,10 @@ bool MessageState::getRecord(CursorStack &stack, bool recurse, MessageRecord &re
 			reader = new MessageReaderV4(*res);
 		break;
 	default:
-		error("Message: unsupported resource version %d", version);
+		// Ignore message resources with invalid versions.
+		// The LSL7 Russian "Fargus" translation contains an incorrectly
+		// compressed message resource that fails this check. Bug #16597
+		warning("Message: unsupported resource version %d", version);
 		return false;
 	}
 
@@ -300,7 +312,7 @@ bool MessageState::getRecord(CursorStack &stack, bool recurse, MessageRecord &re
 	}
 }
 
-int MessageState::getMessage(int module, MessageTuple &t, reg_t buf) {
+int MessageState::getMessage(int module, const MessageTuple &t, reg_t buf) {
 	_cursorStack.init(module, t);
 	return nextMessage(buf);
 }
@@ -317,7 +329,10 @@ int MessageState::nextMessage(reg_t buf) {
 			g_sci->_tts->setMessage(record.string);
 			return record.talker;
 		} else {
-			MessageTuple &t = _cursorStack.top();
+			MessageTuple t;
+			if (!_cursorStack.empty()) {
+				t = _cursorStack.top();
+			}
 			outputString(buf, Common::String::format("Msg %d: %s not found", _cursorStack.getModule(), t.toString().c_str()));
 			return 0;
 		}
@@ -498,7 +513,7 @@ void MessageState::outputString(reg_t buf, const Common::String &str) {
 		SegmentRef buffer_r = _segMan->dereference(buf);
 
 		if ((unsigned)buffer_r.maxSize >= str.size() + 1) {
-			_segMan->strcpy(buf, str.c_str());
+			_segMan->strcpy_(buf, str.c_str());
 		} else {
 			// LSL6 sets an exit text here, but the buffer size allocated
 			// is too small. Don't display a warning in this case, as we
@@ -511,7 +526,7 @@ void MessageState::outputString(reg_t buf, const Common::String &str) {
 
 			// Set buffer to empty string if possible
 			if (buffer_r.maxSize > 0)
-				_segMan->strcpy(buf, "");
+				_segMan->strcpy_(buf, "");
 		}
 #ifdef ENABLE_SCI32
 	}

@@ -35,21 +35,11 @@
 namespace Ultima {
 namespace Ultima8 {
 
-FireType::FireType(uint16 typeNo, uint16 minDamage, uint16 maxDamage, uint8 range,
-				 uint8 numShots, uint16 shieldCost, uint8 shieldMask, bool accurate,
-				 uint16 cellsPerRound, uint16 roundDuration, bool nearSprite) :
-	_typeNo(typeNo), _minDamage(minDamage), _maxDamage(maxDamage),
-	_range(range), _numShots(numShots), _shieldCost(shieldCost),
-	_shieldMask(shieldMask), _accurate(accurate),
-	_cellsPerRound(cellsPerRound), _roundDuration(roundDuration),
-	_nearSprite(nearSprite) {
-	assert(maxDamage >= minDamage);
-}
-
 uint16 FireType::getRandomDamage() const {
 	if (_minDamage == _maxDamage)
 		return _minDamage;
-	return _minDamage + (getRandom() % (_maxDamage - _minDamage));
+	Common::RandomSource &rs = Ultima8Engine::get_instance()->getRandomSource();
+	return rs.getRandomNumberRng(_minDamage, _maxDamage);
 }
 
 
@@ -68,9 +58,10 @@ static const int16 FIRESHAPE_3_REG[] = { 0x326, 0x320, 0x321, 0x323 };
 static const int16 FIRESHAPE_10_REM[] = { 0x31c, 0x31f, 0x322 };
 static const int16 FIRESHAPE_10_REG[] = { 0x31c, 0x31f, 0x321 };
 
-#define RANDOM_ELEM(array) (array[getRandom() % ARRAYSIZE(array)])
+#define RANDOM_ELEM(array) (array[rs.getRandomNumber(ARRAYSIZE(array) - 1)])
 
 void FireType::makeBulletSplashShapeAndPlaySound(int32 x, int32 y, int32 z) const {
+	Common::RandomSource &rs = Ultima8Engine::get_instance()->getRandomSource();
 	int16 sfxno = 0;
 	int16 shape = 0;
 
@@ -83,7 +74,7 @@ void FireType::makeBulletSplashShapeAndPlaySound(int32 x, int32 y, int32 z) cons
 			break;
 		case 2:
 			shape = 0x1d8;
-			if (GAME_IS_REGRET && (getRandom() % 3 == 0)) {
+			if (GAME_IS_REGRET && (rs.getRandomNumber(2) == 0)) {
 				sfxno = RANDOM_ELEM(FIRESOUND_1);
 			}
 			break;
@@ -98,7 +89,7 @@ void FireType::makeBulletSplashShapeAndPlaySound(int32 x, int32 y, int32 z) cons
 		case 5:
 			shape = 0x537;
 			if (GAME_IS_REGRET) {
-				if (getRandom() % 2)
+				if (rs.getRandomBit())
 					sfxno = 0x164;
 				else
 					sfxno = 0x71;
@@ -122,7 +113,7 @@ void FireType::makeBulletSplashShapeAndPlaySound(int32 x, int32 y, int32 z) cons
 			break;
 		case 0xd:
 			shape = 0x1d8;
-			if (GAME_IS_REMORSE || (getRandom() % 4 == 0))
+			if (GAME_IS_REMORSE || (rs.getRandomNumber(3) == 0))
 				sfxno = RANDOM_ELEM(FIRESOUND_1);
 			break;
 		case 0xe:
@@ -176,7 +167,7 @@ void FireType::makeBulletSplashShapeAndPlaySound(int32 x, int32 y, int32 z) cons
 	// now randomize frames
 	switch (shape) {
 	case 0x56b:
-		firstframe = (getRandom() % 3) * 6;
+		firstframe = rs.getRandomNumber(2) * 6;
 		lastframe = firstframe + 5;
 		break;
 	case 0x537:
@@ -184,11 +175,11 @@ void FireType::makeBulletSplashShapeAndPlaySound(int32 x, int32 y, int32 z) cons
 		break;
 	case 0x578:
 	case 0x642:
-		firstframe = (getRandom() % 3) * 5;
+		firstframe = rs.getRandomNumber(2) * 5;
 		lastframe = firstframe + 4;
 		break;
 	case 0x59b:
-		firstframe = (getRandom() % 2) * 4;
+		firstframe = rs.getRandomNumber(1) * 4;
 		lastframe = firstframe + 3;
 		break;
 	case 0x641: // No Regret only
@@ -196,7 +187,7 @@ void FireType::makeBulletSplashShapeAndPlaySound(int32 x, int32 y, int32 z) cons
 		lastframe = 3;
 		break;
 	case 0x1d8: {
-		switch (getRandom() % 4) {
+		switch (rs.getRandomNumber(3)) {
 			case 0:
 				lastframe = 4;
 				break;
@@ -258,8 +249,7 @@ void FireType::applySplashDamageAround(const Point3 &pt, int damage, int rangedi
 			continue;
 		int splashitemdamage = damage;
 		if (_typeNo == 3 || _typeNo == 4 || _typeNo == 10) {
-			Point3 pt2;
-			splashitem->getLocation(pt2);
+			Point3 pt2 = splashitem->getLocation();
 			int splashrange = pt.maxDistXYZ(pt2);
 			splashrange = (splashrange / 32) / 3;
 			if (splashrange)

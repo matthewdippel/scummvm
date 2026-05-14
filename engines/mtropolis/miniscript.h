@@ -29,7 +29,7 @@ namespace MTropolis {
 
 class MiniscriptThread;
 struct MiniscriptStackValue;
-struct IMiniscriptInstructionFactory;
+struct SIMiniscriptInstructionFactory;
 
 bool miniscriptEvaluateTruth(const DynamicValue &value);
 
@@ -40,23 +40,41 @@ public:
 	virtual MiniscriptInstructionOutcome execute(MiniscriptThread *thread) const = 0;
 };
 
+class IMiniscriptInstructionParserFeedback {
+public:
+	virtual ~IMiniscriptInstructionParserFeedback();
+
+	virtual uint registerGlobalGUIDIndex(uint32 guid) = 0;
+};
+
 class MiniscriptReferences {
 public:
 	struct LocalRef {
+		LocalRef();
+
 		uint32 guid;
 		Common::String name;
 		Common::WeakPtr<RuntimeObject> resolution;
 	};
 
-	explicit MiniscriptReferences(const Common::Array<LocalRef> &localRefs);
+	struct GlobalRef {
+		GlobalRef();
+
+		uint32 guid;
+		Common::WeakPtr<RuntimeObject> resolution;
+	};
+
+	explicit MiniscriptReferences(const Common::Array<LocalRef> &localRefs, const Common::Array<GlobalRef> &globalRefs);
 
 	void linkInternalReferences(ObjectLinkingScope *scope);
 	void visitInternalReferences(IStructuralReferenceVisitor *visitor);
 
 	Common::WeakPtr<RuntimeObject> getRefByIndex(uint index) const;
+	Common::WeakPtr<RuntimeObject> getGlobalRefByIndex(uint index) const;
 
 private:
 	Common::Array<LocalRef> _localRefs;
+	Common::Array<GlobalRef> _globalRefs;
 
 };
 
@@ -83,7 +101,18 @@ class MiniscriptParser {
 public:
 	static bool parse(const Data::MiniscriptProgram &programData, Common::SharedPtr<MiniscriptProgram> &outProgram, Common::SharedPtr<MiniscriptReferences> &outReferences);
 
-	static IMiniscriptInstructionFactory *resolveOpcode(uint16 opcode);
+	static SIMiniscriptInstructionFactory *resolveOpcode(uint16 opcode);
+
+private:
+	struct InstructionData {
+		InstructionData();
+
+		uint16 opcode;
+		uint16 flags;
+		size_t pdPosition;
+		SIMiniscriptInstructionFactory *instrFactory;
+		Common::Array<uint8> contents;
+	};
 };
 
 namespace MiniscriptInstructions {
@@ -316,11 +345,14 @@ namespace MiniscriptInstructions {
 		};
 
 		PushValue(DataType dataType, const void *value, bool isLValue);
+		~PushValue();
 
 	private:
 		MiniscriptInstructionOutcome execute(MiniscriptThread *thread) const override;
 
 		union ValueUnion {
+			ValueUnion();
+
 			bool b;
 			double f;
 			uint32 ref;
@@ -329,7 +361,7 @@ namespace MiniscriptInstructions {
 
 		DataType _dataType;
 		ValueUnion _value;
-		bool _isLValue;
+		//bool _isLValue;
 	};
 
 	class PushGlobal : public MiniscriptInstruction {
@@ -390,8 +422,6 @@ class MiniscriptThread {
 public:
 	MiniscriptThread(Runtime *runtime, const Common::SharedPtr<MessageProperties> &msgProps, const Common::SharedPtr<MiniscriptProgram> &program, const Common::SharedPtr<MiniscriptReferences> &refs, Modifier *modifier);
 
-	static void runOnVThread(VThread &vthread, const Common::SharedPtr<MiniscriptThread> &thread);
-
 	void error(const Common::String &message);
 
 	const Common::SharedPtr<MiniscriptProgram> &getProgram() const;
@@ -404,14 +434,20 @@ public:
 	void popValues(size_t count);
 	size_t getStackSize() const;
 	MiniscriptStackValue &getStackValueFromTop(size_t offset);
-
-	MiniscriptInstructionOutcome dereferenceRValue(size_t offset, bool cloneLists);
+	MiniscriptInstructionOutcome dereferenceRValue(size_t offset);
 
 	void jumpOffset(size_t offset);
 
 	bool evaluateTruthOfResult(bool &isTrue);
 
 	void createWriteIncomingDataProxy(DynamicValueWriteProxy &proxy);
+
+	void retryInstruction();
+
+	struct ResumeThreadCoroutine {
+		CORO_DEFINE_RETURN_TYPE(void);
+		CORO_DEFINE_PARAMS_1(Common::SharedPtr<MiniscriptThread>, thread);
+	};
 
 private:
 	struct IncomingDataWriteInterface {
@@ -420,18 +456,16 @@ private:
 		static MiniscriptInstructionOutcome refAttribIndexed(MiniscriptThread *thread, DynamicValueWriteProxy &proxy, void *objectRef, uintptr ptrOrOffset, const Common::String &attrib, const DynamicValue &index);
 	};
 
-	struct ResumeTaskData {
-		Common::SharedPtr<MiniscriptThread> thread;
-	};
+	MiniscriptInstructionOutcome runNextInstruction();
 
-	static VThreadState resumeTask(const ResumeTaskData &data);
-	VThreadState resume(const ResumeTaskData &data);
+	VThreadState resume(MiniscriptThread *thread);
 
 	MiniscriptInstructionOutcome tryLoadVariable(MiniscriptStackValue &stackValue);
 
 	Common::SharedPtr<MiniscriptProgram> _program;
 	Common::SharedPtr<MiniscriptReferences> _refs;
 	Common::SharedPtr<MessageProperties> _msgProps;
+
 	Modifier *_modifier;
 	Runtime *_runtime;
 	Common::Array<MiniscriptStackValue> _stack;
@@ -439,6 +473,8 @@ private:
 	size_t _currentInstruction;
 	bool _failed;
 };
+
+MiniscriptInstructionOutcome miniscriptIgnoreFailure(MiniscriptInstructionOutcome outcome);
 
 } // End of namespace MTropolis
 

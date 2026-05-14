@@ -58,7 +58,7 @@ bool Talk::loadText(uint32 textIndex, uint16 *textBuffer, uint16 bufferLength) {
 	uint32 fileNo = (textIndex >> 0xc) & 0xffff;
 	uint32 fileOffset = textIndex & 0xfff;
 
-	sprintf(filename, "drag%04d.txt", fileNo);
+	Common::sprintf_s(filename, "drag%04d.txt", fileNo);
 	uint32 size;
 	byte *data = _bigfileArchive->load(filename, size);
 	debug(1, "DIALOG: %s, %s, %d", filename, data, fileOffset);
@@ -567,9 +567,9 @@ bool Talk::talkToActor(ScriptOpCall &scriptOpCall) {
 		return false;
 	}
 
-	for (Common::Array<TalkDialogEntry*>::iterator it = _dialogEntries.begin(); it != _dialogEntries.end(); it++) {
+	for (auto &currentEntry : _dialogEntries) {
 		TalkDialogEntry *entry = (TalkDialogEntry *)malloc(sizeof(TalkDialogEntry));
-		memcpy(entry, *it, sizeof(TalkDialogEntry));
+		memcpy(entry, currentEntry, sizeof(TalkDialogEntry));
 		dialogEntries.push_back(entry);
 	}
 
@@ -577,8 +577,8 @@ bool Talk::talkToActor(ScriptOpCall &scriptOpCall) {
 	do {
 		_vm->clearAllText();
 		int numActiveDialogEntries = 0;
-		for (Common::Array<TalkDialogEntry*>::iterator it = dialogEntries.begin(); it != dialogEntries.end(); it++) {
-			if (!((*it)->flags & 1)) {
+		for (auto &currentEntry : dialogEntries) {
+			if (!(currentEntry->flags & 1)) {
 				numActiveDialogEntries++;
 			}
 		}
@@ -621,6 +621,12 @@ bool Talk::talkToActor(ScriptOpCall &scriptOpCall) {
 				if (selectedDialogText->iniId != 0) {
 					iniId = selectedDialogText->iniId;
 				}
+
+				// WORKAROUMD: German release has no ini setup which leads to iniId - 1 < 0
+				// Bugreport #13925
+				if (iniId == 0)
+					iniId = 1;
+
 				Actor *iniActor = _vm->_dragonINIResource->getRecord(iniId - 1)->actor;
 				sequenceId = iniActor->_sequenceID;
 //				playSoundFromTxtIndex(selectedDialogText->textIndex1);
@@ -846,8 +852,8 @@ void Talk::exitTalkMenu(bool isFlag8Set, bool isFlag100Set, Common::Array<TalkDi
 		_vm->setFlags(ENGINE_FLAG_100);
 	}
 
-	for (Common::Array<TalkDialogEntry*>::iterator it = dialogEntries.begin(); it != dialogEntries.end(); it++) {
-		delete *it;
+	for (auto *entry : dialogEntries) {
+		delete entry;
 	}
 	dialogEntries.clear();
 	_vm->_fontManager->clearText();
@@ -1113,8 +1119,8 @@ uint32 Talk::truncateDialogText(uint16 *srcText, uint16 *destText, uint32 srcLen
 }
 
 void Talk::clearDialogEntries() {
-	for (Common::Array<TalkDialogEntry*>::iterator it = _dialogEntries.begin(); it != _dialogEntries.end(); it++) {
-		delete *it;
+	for (auto *entry : _dialogEntries) {
+		delete entry;
 	}
 	_dialogEntries.clear();
 }

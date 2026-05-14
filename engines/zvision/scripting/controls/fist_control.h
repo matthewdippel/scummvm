@@ -22,10 +22,9 @@
 #ifndef ZVISION_FIST_CONTROL_H
 #define ZVISION_FIST_CONTROL_H
 
-#include "zvision/scripting/control.h"
-
 #include "common/array.h"
 #include "common/rect.h"
+#include "zvision/scripting/control.h"
 
 namespace Video {
 	class VideoDecoder;
@@ -71,7 +70,7 @@ public:
 	bool process(uint32 deltaTimeInMillis) override;
 
 private:
-	void readDescFile(const Common::String &fileName);
+	void readDescFile(const Common::Path &fileName);
 	void clearFistArray(Common::Array< Common::Array<Common::Rect> > &arr);
 	uint32 readBits(const char *str);
 	int mouseIn(const Common::Point &screenSpacePos, const Common::Point &backgroundImageSpacePos);

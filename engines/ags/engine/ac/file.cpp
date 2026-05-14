@@ -31,6 +31,7 @@
 #include "ags/engine/ac/path_helper.h"
 #include "ags/engine/ac/runtime_defines.h"
 #include "ags/engine/ac/string.h"
+#include "ags/engine/ac/dynobj/dynobj_manager.h"
 #include "ags/engine/debugging/debug_log.h"
 #include "ags/engine/debugging/debugger.h"
 #include "ags/engine/platform/base/ags_platform_driver.h"
@@ -65,7 +66,7 @@ int File_Exists(const char *fnmm) {
 	if (rp.AssetMgr)
 		return _GP(AssetMgr)->DoesAssetExist(rp.FullPath);
 
-	return (File::TestReadFile(rp.FullPath) || File::TestReadFile(rp.AltPath)) ? 1 : 0;
+	return (File::IsFile(rp.FullPath) || File::IsFile(rp.AltPath)) ? 1 : 0;
 }
 
 int File_Delete(const char *fnmm) {
@@ -94,6 +95,14 @@ void *sc_OpenFile(const char *fnmm, int mode) {
 	return scf;
 }
 
+const char *File_ResolvePath(const char *fnmm) {
+	ResolvedPath rp;
+	ResolveScriptPath(fnmm, true, rp);
+	// Make path pretty -
+	String path = Path::MakeAbsolutePath(rp.FullPath);
+	return CreateNewScriptString(path.GetCStr());
+}
+
 void File_Close(sc_File *fil) {
 	fil->Close();
 }
@@ -108,6 +117,11 @@ void File_WriteInt(sc_File *fil, int towrite) {
 
 void File_WriteRawChar(sc_File *fil, int towrite) {
 	FileWriteRawChar(fil->handle, towrite);
+}
+
+void File_WriteRawInt(sc_File *fil, int towrite) {
+	Stream *out = get_valid_file_stream_from_handle(fil->handle, "FileWriteRawInt");
+	out->WriteInt32(towrite);
 }
 
 void File_WriteRawLine(sc_File *fil, const char *towrite) {
@@ -142,8 +156,9 @@ static bool File_ReadRawLineImpl(sc_File *fil, char *buffer, size_t buf_len) {
 }
 
 void File_ReadRawLine(sc_File *fil, char *buffer) {
-	check_strlen(buffer);
-	File_ReadRawLineImpl(fil, buffer, _G(MAXSTRLEN));
+	size_t buflen = check_scstrcapacity(buffer);
+	File_ReadRawLineImpl(fil, buffer, buflen);
+	commit_scstr_update(buffer);
 }
 
 const char *File_ReadRawLineBack(sc_File *fil) {
@@ -175,10 +190,9 @@ const char *File_ReadStringBack(sc_File *fil) {
 		return CreateNewScriptString("");
 	}
 
-	char *retVal = (char *)malloc(lle);
-	in->Read(retVal, lle);
-
-	return CreateNewScriptString(retVal, false);
+	char *buffer = CreateNewScriptString(lle);
+	in->Read(buffer, lle);
+	return buffer;
 }
 
 int File_ReadInt(sc_File *fil) {
@@ -195,10 +209,7 @@ int File_ReadRawInt(sc_File *fil) {
 
 int File_Seek(sc_File *fil, int offset, int origin) {
 	Stream *in = get_valid_file_stream_from_handle(fil->handle, "File.Seek");
-	if (!in->Seek(offset, (StreamSeek)origin)) {
-		return -1;
-	}
-	return in->GetPosition();
+	return in->Seek(offset, (StreamSeek)origin);
 }
 
 int File_GetEOF(sc_File *fil) {
@@ -219,6 +230,13 @@ int File_GetPosition(sc_File *fil) {
 	Stream *stream = get_valid_file_stream_from_handle(fil->handle, "File.Position");
 	// TODO: a problem is that AGS script does not support unsigned or long int
 	return (int)stream->GetPosition();
+}
+
+const char *File_GetPath(sc_File *fil) {
+	if (fil->handle <= 0)
+		return nullptr;
+	Stream *stream = get_valid_file_stream_from_handle(fil->handle, "File.Path");
+	return CreateNewScriptString(stream->GetPath());
 }
 
 //=============================================================================
@@ -376,8 +394,16 @@ bool ResolveScriptPath(const String &orig_sc_path, bool read_only, ResolvedPath 
 		}
 #endif
 	} else if (sc_path.CompareLeft(GameDataDirToken) == 0) {
+#if AGS_PLATFORM_SCUMMVM
+		// the shared data dir should be remapped to the savedir otherwise some games
+		// are unable to create additional files
+		debugC(::AGS::kDebugFilePath, "Remapping %s to save folder", GameDataDirToken);
+		parent_dir = get_save_game_directory();
+		child_path = sc_path.Mid(strlen(GameSavedgamesDirToken));
+#else
 		parent_dir = GetGameAppDataDir();
 		child_path = sc_path.Mid(strlen(GameDataDirToken));
+#endif
 	} else {
 		child_path = sc_path;
 
@@ -405,13 +431,25 @@ bool ResolveScriptPath(const String &orig_sc_path, bool read_only, ResolvedPath 
 		debugC(::AGS::kDebugFilePath, "Adding ScummVM game target prefix and flatten path");
 		child_path.Replace('/', '-');
 		String gameTarget = ConfMan.getActiveDomainName();
-		if (child_path.CompareLeftNoCase(gameTarget) != 0)
-			child_path = String::FromFormat("%s-%s", gameTarget.GetCStr(), child_path.GetCStr());
+
+		// When in Quest for Glory II "import a hero" window, don't add the gamename prefix when listing saves. This way
+		// we can show saves created by the Sierra games
+		if (strcmp(_GP(game).guid, "{a46a9171-f6f9-456c-9b2b-a509b560ddc0}") || !(_G(displayed_room) == 1) || !read_only) {
+			if (child_path.CompareLeftNoCase(gameTarget) != 0)
+				child_path = String::FromFormat("%s-%s", gameTarget.GetCStr(), child_path.GetCStr());
+		} else {
+			debug("ResolveScriptPath: Skipping gameprefix for QfG2AGDI!");
+		}
 	}
+#else
+	// Create a proper ResolvedPath with FSLocation separating base location
+	// (which the engine is not allowed to create) and sub-dirs (created by the engine).
+	parent_dir = parent_dir.Concat(Path::GetDirectoryPath(child_path));
+	child_path = Path::GetFilename(child_path);
 #endif
 
-	// don't allow write operations for relative paths outside game dir
 	ResolvedPath test_rp = ResolvedPath(parent_dir, child_path, alt_path);
+	// don't allow write operations for relative paths outside game dir
 	if (!read_only) {
 		if (!Path::IsSameOrSubDir(test_rp.Loc.FullDir, test_rp.FullPath)) {
 			debug_script_warn("Attempt to access file '%s' denied (outside of game directory)", sc_path.GetCStr());
@@ -490,7 +528,7 @@ static int ags_pf_feof(void *userdata) {
 }
 
 static int ags_pf_ferror(void *userdata) {
-	return ((AGS_PACKFILE_OBJ *)userdata)->stream->HasErrors() ? 1 : 0;
+	return ((AGS_PACKFILE_OBJ *)userdata)->stream->GetError() ? 1 : 0;
 }
 
 // Custom PACKFILE callback table
@@ -542,15 +580,11 @@ AssetPath get_voice_over_assetpath(const String &filename) {
 	return AssetPath(filename, "voice");
 }
 
-ScriptFileHandle valid_handles[MAX_OPEN_SCRIPT_FILES + 1];
-// [IKM] NOTE: this is not precisely the number of files opened at this moment,
-// but rather maximal number of handles that were used simultaneously during game run
-int num_open_script_files = 0;
 ScriptFileHandle *check_valid_file_handle_ptr(Stream *stream_ptr, const char *operation_name) {
 	if (stream_ptr) {
-		for (int i = 0; i < num_open_script_files; ++i) {
-			if (stream_ptr == valid_handles[i].stream) {
-				return &valid_handles[i];
+		for (int i = 0; i < _G(num_open_script_files); ++i) {
+			if (stream_ptr == _G(valid_handles)[i].stream.get()) {
+				return &_G(valid_handles)[i];
 			}
 		}
 	}
@@ -562,9 +596,9 @@ ScriptFileHandle *check_valid_file_handle_ptr(Stream *stream_ptr, const char *op
 
 ScriptFileHandle *check_valid_file_handle_int32(int32_t handle, const char *operation_name) {
 	if (handle > 0) {
-		for (int i = 0; i < num_open_script_files; ++i) {
-			if (handle == valid_handles[i].handle) {
-				return &valid_handles[i];
+		for (int i = 0; i < _G(num_open_script_files); ++i) {
+			if (handle == _G(valid_handles)[i].handle) {
+				return &_G(valid_handles)[i];
 			}
 		}
 	}
@@ -576,7 +610,7 @@ ScriptFileHandle *check_valid_file_handle_int32(int32_t handle, const char *oper
 
 Stream *get_valid_file_stream_from_handle(int32_t handle, const char *operation_name) {
 	ScriptFileHandle *sc_handle = check_valid_file_handle_int32(handle, operation_name);
-	return sc_handle ? sc_handle->stream : nullptr;
+	return sc_handle ? sc_handle->stream.get() : nullptr;
 }
 
 //=============================================================================
@@ -598,6 +632,10 @@ RuntimeScriptValue Sc_File_Exists(const RuntimeScriptValue *params, int32_t para
 // void *(const char *fnmm, int mode)
 RuntimeScriptValue Sc_sc_OpenFile(const RuntimeScriptValue *params, int32_t param_count) {
 	API_SCALL_OBJAUTO_POBJ_PINT(sc_File, sc_OpenFile, const char);
+}
+
+RuntimeScriptValue Sc_File_ResolvePath(const RuntimeScriptValue *params, int32_t param_count) {
+	API_SCALL_OBJ_POBJ(const char, _GP(myScriptStringImpl), File_ResolvePath, const char);
 }
 
 // void (sc_File *fil)
@@ -627,7 +665,7 @@ RuntimeScriptValue Sc_File_ReadRawLine(void *self, const RuntimeScriptValue *par
 
 // const char* (sc_File *fil)
 RuntimeScriptValue Sc_File_ReadRawLineBack(void *self, const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_OBJCALL_OBJ(sc_File, const char, _GP(myScriptStringImpl), File_ReadRawLineBack);
+	API_OBJCALL_OBJ(sc_File, const char, _GP(myScriptStringImpl), File_ReadRawLineBack);
 }
 
 // void (sc_File *fil, char *toread)
@@ -637,7 +675,7 @@ RuntimeScriptValue Sc_File_ReadString(void *self, const RuntimeScriptValue *para
 
 // const char* (sc_File *fil)
 RuntimeScriptValue Sc_File_ReadStringBack(void *self, const RuntimeScriptValue *params, int32_t param_count) {
-	API_CONST_OBJCALL_OBJ(sc_File, const char, _GP(myScriptStringImpl), File_ReadStringBack);
+	API_OBJCALL_OBJ(sc_File, const char, _GP(myScriptStringImpl), File_ReadStringBack);
 }
 
 // void (sc_File *fil, int towrite)
@@ -648,6 +686,10 @@ RuntimeScriptValue Sc_File_WriteInt(void *self, const RuntimeScriptValue *params
 // void (sc_File *fil, int towrite)
 RuntimeScriptValue Sc_File_WriteRawChar(void *self, const RuntimeScriptValue *params, int32_t param_count) {
 	API_OBJCALL_VOID_PINT(sc_File, File_WriteRawChar);
+}
+
+RuntimeScriptValue Sc_File_WriteRawInt(void *self, const RuntimeScriptValue *params, int32_t param_count) {
+	API_OBJCALL_VOID_PINT(sc_File, File_WriteRawInt);
 }
 
 // void (sc_File *fil, const char *towrite)
@@ -678,27 +720,38 @@ RuntimeScriptValue Sc_File_GetPosition(void *self, const RuntimeScriptValue *par
 	API_OBJCALL_INT(sc_File, File_GetPosition);
 }
 
+RuntimeScriptValue Sc_File_GetPath(void *self, const RuntimeScriptValue *params, int32_t param_count) {
+	API_OBJCALL_OBJ(sc_File, const char, _GP(myScriptStringImpl), File_GetPath);
+}
 
 void RegisterFileAPI() {
-	ccAddExternalStaticFunction("File::Delete^1", Sc_File_Delete);
-	ccAddExternalStaticFunction("File::Exists^1", Sc_File_Exists);
-	ccAddExternalStaticFunction("File::Open^2", Sc_sc_OpenFile);
-	ccAddExternalObjectFunction("File::Close^0", Sc_File_Close);
-	ccAddExternalObjectFunction("File::ReadInt^0", Sc_File_ReadInt);
-	ccAddExternalObjectFunction("File::ReadRawChar^0", Sc_File_ReadRawChar);
-	ccAddExternalObjectFunction("File::ReadRawInt^0", Sc_File_ReadRawInt);
-	ccAddExternalObjectFunction("File::ReadRawLine^1", Sc_File_ReadRawLine);
-	ccAddExternalObjectFunction("File::ReadRawLineBack^0", Sc_File_ReadRawLineBack);
-	ccAddExternalObjectFunction("File::ReadString^1", Sc_File_ReadString);
-	ccAddExternalObjectFunction("File::ReadStringBack^0", Sc_File_ReadStringBack);
-	ccAddExternalObjectFunction("File::WriteInt^1", Sc_File_WriteInt);
-	ccAddExternalObjectFunction("File::WriteRawChar^1", Sc_File_WriteRawChar);
-	ccAddExternalObjectFunction("File::WriteRawLine^1", Sc_File_WriteRawLine);
-	ccAddExternalObjectFunction("File::WriteString^1", Sc_File_WriteString);
-	ccAddExternalObjectFunction("File::Seek^2", Sc_File_Seek);
-	ccAddExternalObjectFunction("File::get_EOF", Sc_File_GetEOF);
-	ccAddExternalObjectFunction("File::get_Error", Sc_File_GetError);
-	ccAddExternalObjectFunction("File::get_Position", Sc_File_GetPosition);
+	ScFnRegister file_api[] = {
+		{"File::Delete^1", API_FN_PAIR(File_Delete)},
+		{"File::Exists^1", API_FN_PAIR(File_Exists)},
+		{"File::Open^2", API_FN_PAIR(sc_OpenFile)},
+		{"File::ResolvePath^1", API_FN_PAIR(File_ResolvePath)},
+
+		{"File::Close^0", API_FN_PAIR(File_Close)},
+		{"File::ReadInt^0", API_FN_PAIR(File_ReadInt)},
+		{"File::ReadRawChar^0", API_FN_PAIR(File_ReadRawChar)},
+		{"File::ReadRawInt^0", API_FN_PAIR(File_ReadRawInt)},
+		{"File::ReadRawLine^1", API_FN_PAIR(File_ReadRawLine)},
+		{"File::ReadRawLineBack^0", API_FN_PAIR(File_ReadRawLineBack)},
+		{"File::ReadString^1", API_FN_PAIR(File_ReadString)},
+		{"File::ReadStringBack^0", API_FN_PAIR(File_ReadStringBack)},
+		{"File::WriteInt^1", API_FN_PAIR(File_WriteInt)},
+		{"File::WriteRawChar^1", API_FN_PAIR(File_WriteRawChar)},
+		{"File::WriteRawInt^1", API_FN_PAIR(File_WriteRawInt)},
+		{"File::WriteRawLine^1", API_FN_PAIR(File_WriteRawLine)},
+		{"File::WriteString^1", API_FN_PAIR(File_WriteString)},
+		{"File::Seek^2", API_FN_PAIR(File_Seek)},
+		{"File::get_EOF", API_FN_PAIR(File_GetEOF)},
+		{"File::get_Error", API_FN_PAIR(File_GetError)},
+		{"File::get_Position", API_FN_PAIR(File_GetPosition)},
+		{"File::get_Path", API_FN_PAIR(File_GetPath)},
+	};
+
+	ccAddExternalFunctions361(file_api);
 }
 
 } // namespace AGS3

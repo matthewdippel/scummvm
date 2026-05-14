@@ -28,6 +28,7 @@
 #include "common/str.h"
 #include "common/list.h"
 #include "common/mutex.h"
+#include "common/printman.h"
 
 #include "gui/ThemeEngine.h"
 #include "gui/widget.h"
@@ -36,6 +37,7 @@ class OSystem;
 
 namespace Graphics {
 class Font;
+class MacWindowManager;
 }
 
 namespace Common {
@@ -46,12 +48,23 @@ namespace Common {
 namespace GUI {
 
 enum {
+	kActionEnd,
+	kActionShiftEnd,
+	kActionHome,
+	kActionShiftHome,
+	kActionCopy,
+	kActionCut,
+	kActionPaste,
+};
+
+enum {
 	kIconsSetLoadedCmd  = 'icns'
 };
 
 class Dialog;
 class ThemeEval;
 class GuiObject;
+class Tooltip;
 
 #define g_gui	(GUI::GuiManager::instance())
 
@@ -88,6 +101,7 @@ public:
 	void processEvent(const Common::Event &event, Dialog *const activeDialog);
 	Common::Keymap *getKeymap() const;
 	void scheduleTopDialogRedraw();
+	void scheduleFullRedraw();
 
 	bool isActive() const	{ return ! _dialogStack.empty(); }
 
@@ -105,18 +119,17 @@ public:
 	float getScaleFactor() const { return _scaleFactor; }
 	void computeScaleFactor();
 
+	bool useLowResGUI() const { return _baseWidth <= 320; }
+
 	bool useRTL() const { return _useRTL; }
 	void setLanguageRTL();
-
-	void setDialogPaddings(int l, int r);
-	int getOverlayOffset() { return _topDialogRightPadding - _topDialogLeftPadding; }
 
 	const Graphics::Font &getFont(ThemeEngine::FontStyle style = ThemeEngine::kFontStyleBold) const { return *(_theme->getFont(style)); }
 	int getFontHeight(ThemeEngine::FontStyle style = ThemeEngine::kFontStyleBold) const { return _theme->getFontHeight(style); }
 	int getStringWidth(const Common::String &str, ThemeEngine::FontStyle style = ThemeEngine::kFontStyleBold) const { return _theme->getStringWidth(str, style); }
 	int getStringWidth(const Common::U32String &str, ThemeEngine::FontStyle style = ThemeEngine::kFontStyleBold) const { return _theme->getStringWidth(str, style); }
-	int getCharWidth(byte c, ThemeEngine::FontStyle style = ThemeEngine::kFontStyleBold) const { return _theme->getCharWidth(c, style); }
-	int getKerningOffset(byte left, byte right, ThemeEngine::FontStyle font = ThemeEngine::kFontStyleBold) const { return _theme->getKerningOffset(left, right, font); }
+	int getCharWidth(uint32 c, ThemeEngine::FontStyle style = ThemeEngine::kFontStyleBold) const { return _theme->getCharWidth(c, style); }
+	int getKerningOffset(uint32 left, uint32 right, ThemeEngine::FontStyle font = ThemeEngine::kFontStyleBold) const { return _theme->getKerningOffset(left, right, font); }
 
 	/**
 	 * Tell the GuiManager to check whether the screen resolution has changed.
@@ -140,9 +153,19 @@ public:
 
 	void initIconsSet();
 
+	void displayTopDialogOnly(bool mode);
+
+	Graphics::MacWindowManager *getWM();
+
+	// Defined in printing-dialog.cpp
+	void printImage(const Graphics::ManagedSurface &surf, bool defaultFitToPage, bool defaultCenter, PageOrientation defaultOrientation);
+	void printImage(const Graphics::ManagedSurface &surf);
+
 protected:
 	enum RedrawStatus {
 		kRedrawDisabled = 0,
+		kRedrawOpenTooltip,
+		kRedrawCloseTooltip,
 		kRedrawOpenDialog,
 		kRedrawCloseDialog,
 		kRedrawTopDialog,
@@ -166,12 +189,13 @@ protected:
 
 	bool		_useRTL;
 
-	int			_topDialogLeftPadding;
-	int			_topDialogRightPadding;
+	bool		_displayTopDialogOnly;
 
 	Common::Mutex _iconsMutex;
 	Common::SearchSet _iconsSet;
 	bool _iconsSetChanged;
+
+	Graphics::MacWindowManager *_wm = nullptr;
 
 	// position and time of last mouse click (used to detect double clicks)
 	struct MousePos {
@@ -182,15 +206,16 @@ protected:
 	} _lastClick, _lastMousePosition, _globalMousePosition;
 
 	struct TooltipData {
-		TooltipData() : x(-1), y(-1) { time = 0; wdg = nullptr; }
+		TooltipData() : x(-1), y(-1), wdg(nullptr) { time = 0; }
 		uint32 time; // Time
 		Widget *wdg; // Widget that had its tooltip shown
 		int16 x, y;  // Position of mouse before tooltip was focused
 	} _lastTooltipShown;
+	Tooltip *_tooltip;
 
 	// mouse cursor state
-	int		_cursorAnimateCounter;
-	int		_cursorAnimateTimer;
+	uint32	_cursorAnimateCounter;
+	uint32	_cursorAnimateTimer;
 	byte	_cursor[2048];
 
 	// delayed deletion of GuiObject
@@ -210,6 +235,8 @@ protected:
 	void closeTopDialog();
 
 	void redraw();
+	void redrawInternalTopDialogOnly();
+	void redrawInternal();
 
 	void setupCursor();
 	void animateCursor();
@@ -220,6 +247,8 @@ protected:
 
 	void giveFocusToDialog(Dialog *dialog);
 	void setLastMousePos(int16 x, int16 y);
+
+	void emptyTrash(Dialog *const activeDialog);
 };
 
 } // End of namespace GUI

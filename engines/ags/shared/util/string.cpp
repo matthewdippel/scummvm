@@ -89,7 +89,7 @@ bool String::IsNullOrSpace() const {
 	if (_len == 0)
 		return true;
 	for (const char *ptr = _cstr; *ptr; ++ptr) {
-		if (!Common::isSpace(*ptr))
+		if (!Common::isSpace(static_cast<uint8_t>(*ptr)))
 			return false;
 	}
 	return true;
@@ -461,7 +461,7 @@ void String::AppendFmtv(const char *fcstr, va_list argptr) {
 	va_copy(argptr_cpy, argptr);
 	size_t length = vsnprintf(nullptr, 0u, fcstr, argptr);
 	ReserveAndShift(false, length);
-	vsprintf(_cstr + _len, fcstr, argptr_cpy);
+	vsnprintf(_cstr + _len, length + 1, fcstr, argptr_cpy);
 	va_end(argptr_cpy);
 	_len += length;
 	_cstr[_len] = 0;
@@ -572,7 +572,7 @@ void String::FormatV(const char *fcstr, va_list argptr) {
 	va_copy(argptr_cpy, argptr);
 	size_t length = vsnprintf(nullptr, 0u, fcstr, argptr);
 	ReserveAndShift(false, Math::Surplus(length, _len));
-	vsprintf(_cstr, fcstr, argptr_cpy);
+	vsnprintf(_cstr, length + 1, fcstr, argptr_cpy);
 	va_end(argptr_cpy);
 	_len = length;
 	_cstr[_len] = 0;
@@ -715,7 +715,8 @@ void String::Reverse() {
 void String::ReverseUTF8() {
 	if (_len <= 1)
 		return; // nothing to reverse if 1 char or less
-	// TODO: may this be optimized to not alloc new buffer? or dont care
+	// TODO: may this be optimized to not alloc new buffer?
+	// otherwise, allocate a proper String data buf and replace existing
 	char *newstr = new char[_len + 1];
 	for (char *fw = _cstr, *fw2 = _cstr + 1,
 		*bw = _cstr + _len - 1, *bw2 = _cstr + _len;
@@ -734,6 +735,7 @@ void String::ReverseUTF8() {
 	}
 	newstr[_len] = 0;
 	SetString(newstr);
+	delete[] newstr;
 }
 
 void String::SetAt(size_t index, char c) {
@@ -778,7 +780,7 @@ void String::TrimLeft(char c) {
 		if (c && t != c) {
 			break;
 		}
-		if (!c && !Common::isSpace(t)) {
+		if (!c && !Common::isSpace(static_cast<uint8_t>(t))) {
 			break;
 		}
 		trim_ptr++;
@@ -805,7 +807,7 @@ void String::TrimRight(char c) {
 		if (c && t != c) {
 			break;
 		}
-		if (!c && !Common::isSpace(t)) {
+		if (!c && !Common::isSpace(static_cast<uint8_t>(t))) {
 			break;
 		}
 		trim_ptr--;

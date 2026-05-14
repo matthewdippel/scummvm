@@ -19,8 +19,6 @@
  *
  */
 
-#ifdef ENABLE_HE
-
 #include "scumm/players/player_he.h"
 #include "scumm/scumm.h"
 #include "scumm/file.h"
@@ -33,10 +31,11 @@ namespace Scumm {
 Player_HE::Player_HE(ScummEngine *scumm) :
 	_vm(scumm),
 	_currentMusic(-1),
-	_bank(NULL),
-	_parser(NULL),
-	_midi(NULL),
-	_masterVolume(256) {
+	_bank(nullptr),
+	_parser(nullptr),
+	_midi(nullptr),
+	_masterVolume(256),
+	_bankSize(0) {
 
 	for (int chan = 0; chan < 16; chan++)
 		_channelVolume[chan] = 127;
@@ -136,7 +135,7 @@ int Player_HE::getMusicTimer() {
 }
 
 void Player_HE::loadAdLibBank() {
-	ScummFile file;
+	ScummFile file(_vm);
 	Common::String drvName;
 	char entryName[14];
 	uint32 tag, entrySize, fileSize;
@@ -160,7 +159,7 @@ void Player_HE::loadAdLibBank() {
 
 	drvName += "drv";
 
-	if (!file.open(drvName))
+	if (!file.open(Common::Path(drvName)))
 		error("Player_HE::loadAdLibBank(): could not open %s", drvName.c_str());
 
 	uint32 size = (uint32)file.size();
@@ -236,5 +235,3 @@ void Player_HE::send(uint32 b) {
 }
 
 }
-
-#endif

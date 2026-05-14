@@ -40,24 +40,24 @@ private:
 	TileManager *tile_manager;
 	Map *map;
 	ObjManager *obj_manager;
-	Std::string savedir;
-	Std::string savename;
-	nuvie_game_t game_type;
+	Common::Path savedir;
+	Common::String savename;
+	//nuvie_game_t game_type;
 
 public:
 	TMXMap(TileManager *tm, Map *m, ObjManager *om);
 	virtual ~TMXMap();
-	bool exportTmxMapFiles(Std::string dir, nuvie_game_t type);
+	bool exportTmxMapFiles(const Common::Path &dir, nuvie_game_t type);
 private:
 	bool exportMapLevel(uint8 level);
 	void writeRoofTileset(uint8 level);
-	void writeLayer(NuvieIOFileWrite *tmx, uint16 width, Std::string layerName,
+	void writeLayer(NuvieIOFileWrite *tmx, uint16 width, Common::String layerName,
 		uint16 gidOffset, uint16 bitsPerTile, const unsigned char *data);
 	void writeObjectLayer(NuvieIOFileWrite *tmx, uint8 level);
 	void writeObjects(NuvieIOFileWrite *tmx, uint8 level, bool forceLower, bool toptiles);
-	Std::string writeObjectTile(Obj *obj, Std::string nameSuffix, uint16 tile_num, uint16 x, uint16 y, bool forceLower, bool toptile);
-	Std::string sint32ToString(sint32 value);
-	Std::string boolToString(bool value);
+	Common::String writeObjectTile(Obj *obj, Common::String nameSuffix, uint16 tile_num, uint16 x, uint16 y, bool forceLower, bool toptile);
+	Common::String sint32ToString(sint32 value);
+	Common::String boolToString(bool value);
 	bool canDrawTile(Tile *t, bool forceLower, bool toptile);
 };
 

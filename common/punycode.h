@@ -56,26 +56,18 @@ String punycode_encode(const U32String &src);
 /**
  * Convert Punycode to UTF-32. Returns the decoded string
  */
-U32String punycode_decode(const String &src);
+U32String punycode_decode(const String &src, bool *error = nullptr);
 
-String punycode_encodefilename(const U32String &src1);
+String punycode_encodefilename(const U32String &src);
 
 /**
  * Convert Punycode filename to Binary using special 0x81 escape character. Returns the decoded string
  */
-U32String punycode_decodefilename(const String &src1);
+U32String punycode_decodefilename(const String &src);
 
-/**
- * Convert path from Punycode
- */
-Path punycode_decodepath(const Path &src);
-
-/**
- * Convert path to Punycode
- */
-Path punycode_encodepath(const Path &src);
-
-bool punycode_hasprefix(const String &src);
+inline bool punycode_hasprefix(const String &src) {
+	return src.hasPrefix("xn--");
+}
 
 bool punycode_needEncode(const String &src);
 

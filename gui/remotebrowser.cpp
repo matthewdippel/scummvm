@@ -28,7 +28,7 @@
 #include "common/algorithm.h"
 
 #include "common/translation.h"
-#include "backends/networking/curl/request.h"
+#include "backends/networking/http/request.h"
 #include "backends/cloud/storage.h"
 #include "backends/cloud/cloudmanager.h"
 #include "gui/message.h"
@@ -52,7 +52,7 @@ RemoteBrowserDialog::RemoteBrowserDialog(const Common::U32String &title):
 	_fileList->setNumberingMode(kListNumberingOff);
 	_fileList->setEditable(false);
 
-	if (g_system->getOverlayWidth() > 320)
+	if (!g_gui.useLowResGUI())
 		new ButtonWidget(this, "Browser.Up", _("Go up"), _("Go to previous directory level"), kGoUpCmd);
 	else
 		new ButtonWidget(this, "Browser.Up", _c("Go up", "lowres"), _("Go to previous directory level"), kGoUpCmd);
@@ -144,11 +144,11 @@ void RemoteBrowserDialog::updateListing() {
 	if (!_navigationLocked) {
 		// Populate the ListWidget
 		Common::U32StringArray list;
-		for (Common::Array<Cloud::StorageFile>::iterator i = _nodeContent.begin(); i != _nodeContent.end(); ++i) {
-			if (i->isDirectory()) {
-				list.push_back(ListWidget::getThemeColor(ThemeEngine::kFontColorNormal) + Common::U32String(i->name() + "/"));
+		for (auto &node : _nodeContent) {
+			if (node.isDirectory()) {
+				list.push_back(ListWidget::getThemeColor(ThemeEngine::kFontColorNormal) + Common::U32String(node.name() + "/"));
 			} else {
-				list.push_back(ListWidget::getThemeColor(ThemeEngine::kFontColorAlternate) + Common::U32String(i->name()));
+				list.push_back(ListWidget::getThemeColor(ThemeEngine::kFontColorAlternate) + Common::U32String(node.name()));
 			}
 		}
 
@@ -193,8 +193,8 @@ void RemoteBrowserDialog::listDirectory(const Cloud::StorageFile &node) {
 
 		_workingRequest = CloudMan.listDirectory(
 			node.path(),
-			new Common::Callback<RemoteBrowserDialog, Cloud::Storage::ListDirectoryResponse>(this, &RemoteBrowserDialog::directoryListedCallback),
-			new Common::Callback<RemoteBrowserDialog, Networking::ErrorResponse>(this, &RemoteBrowserDialog::directoryListedErrorCallback),
+			new Common::Callback<RemoteBrowserDialog, const Cloud::Storage::ListDirectoryResponse &>(this, &RemoteBrowserDialog::directoryListedCallback),
+			new Common::Callback<RemoteBrowserDialog, const Networking::ErrorResponse &>(this, &RemoteBrowserDialog::directoryListedErrorCallback),
 			false
 		);
 	}
@@ -204,7 +204,7 @@ void RemoteBrowserDialog::listDirectory(const Cloud::StorageFile &node) {
 	updateListing();
 }
 
-void RemoteBrowserDialog::directoryListedCallback(Cloud::Storage::ListDirectoryResponse response) {
+void RemoteBrowserDialog::directoryListedCallback(const Cloud::Storage::ListDirectoryResponse &response) {
 	_workingRequest = nullptr;
 	if (_ignoreCallback)
 		return;
@@ -215,7 +215,7 @@ void RemoteBrowserDialog::directoryListedCallback(Cloud::Storage::ListDirectoryR
 	_updateList = true;
 }
 
-void RemoteBrowserDialog::directoryListedErrorCallback(Networking::ErrorResponse error) {
+void RemoteBrowserDialog::directoryListedErrorCallback(const Networking::ErrorResponse &error) {
 	_workingRequest = nullptr;
 	if (_ignoreCallback)
 		return;

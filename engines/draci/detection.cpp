@@ -25,6 +25,7 @@
 #include "engines/metaengine.h"
 
 #include "draci/draci.h"
+#include "draci/detection.h"
 
 static const DebugChannelDef debugFlagList[] = {
 	{Draci::kDraciGeneralDebugLevel, "general", "Draci general debug info"},
@@ -38,7 +39,7 @@ static const DebugChannelDef debugFlagList[] = {
 };
 
 static const PlainGameDescriptor draciGames[] = {
-	{ "draci", "Draci Historie" },
+	{ "draci", "Dra\304\215\303\255 Historie" },
 	{ nullptr, nullptr }
 };
 
@@ -52,7 +53,7 @@ const ADGameDescription gameDescriptions[] = {
 		Common::EN_ANY,
 		Common::kPlatformDOS,
 		ADGF_NO_FLAGS,
-		GUIO0()
+		GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_SPEECH)
 	},
 
 	{
@@ -62,7 +63,7 @@ const ADGameDescription gameDescriptions[] = {
 		Common::CS_CZE,
 		Common::kPlatformDOS,
 		ADGF_NO_FLAGS,
-		GUIO0()
+		GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_MISSING_VOICE)
 	},
 
 	{
@@ -72,7 +73,7 @@ const ADGameDescription gameDescriptions[] = {
 		Common::PL_POL,
 		Common::kPlatformDOS,
 		ADGF_NO_FLAGS,
-		GUIO0()
+		GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_MISSING_VOICE)
 	},
 
 	{
@@ -82,7 +83,7 @@ const ADGameDescription gameDescriptions[] = {
 		Common::DE_DEU,
 		Common::kPlatformDOS,
 		ADGF_NO_FLAGS,
-		GUIO0()
+		GUIO2(GAMEOPTION_TTS_OBJECTS, GAMEOPTION_TTS_SPEECH)
 	},
 
 	AD_TABLE_END_MARKER
@@ -90,21 +91,21 @@ const ADGameDescription gameDescriptions[] = {
 
 } // End of namespace Draci
 
-class DraciMetaEngineDetection : public AdvancedMetaEngineDetection {
+class DraciMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	DraciMetaEngineDetection() : AdvancedMetaEngineDetection(Draci::gameDescriptions, sizeof(ADGameDescription), draciGames) {
-	}
-
-	const char *getEngineId() const override {
-		return "draci";
+	DraciMetaEngineDetection() : AdvancedMetaEngineDetection(Draci::gameDescriptions, draciGames) {
 	}
 
 	const char *getName() const override {
-		return "Draci Historie";
+		return "draci";
+	}
+
+	const char *getEngineName() const override {
+		return "Dra\304\215\303\255 Historie";
 	}
 
 	const char *getOriginalCopyright() const override {
-		return "Draci Historie (C) 1995 NoSense";
+		return "Dra\304\215\303\255 Historie (C) 1995 NoSense";
 	}
 
 	const DebugChannelDef *getDebugChannels() const override {

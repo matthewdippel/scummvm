@@ -33,27 +33,20 @@ namespace Wintermute {
 
 //////////////////////////////////////////////////////////////////////////
 PartForce::PartForce(BaseGame *inGame) : BaseNamedObject(inGame) {
-	_pos = Vector2(0.0f, 0.0f);
-	_direction = Vector2(0.0f, 0.0f);
+	_pos = DXVector2(0.0f, 0.0f);
+	_direction = DXVector2(0.0f, 0.0f);
 	_type = FORCE_POINT;
 }
 
 
 //////////////////////////////////////////////////////////////////////////
-PartForce::~PartForce(void) {
+PartForce::~PartForce() {
 }
 
 
 //////////////////////////////////////////////////////////////////////////
 bool PartForce::persist(BasePersistenceManager *persistMgr) {
-	if (persistMgr->getIsSaving()) {
-		const char *name = getName();
-		persistMgr->transferConstChar(TMEMBER(name));
-	} else {
-		const char *name;
-		persistMgr->transferConstChar(TMEMBER(name));
-		setName(name);
-	}
+	persistMgr->transferCharPtr(TMEMBER(_name));
 	persistMgr->transferVector2(TMEMBER(_pos));
 	persistMgr->transferVector2(TMEMBER(_direction));
 	persistMgr->transferSint32(TMEMBER_INT(_type));

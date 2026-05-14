@@ -32,29 +32,24 @@ Follows original disclaimer
 */
 
 /*
- * Copyright (c) 2002 - 2008 Magnus Lind.
+ * Copyright (c) 2002 - 2023 Magnus Lind.
  *
- * This software is provided 'as-is', without any express or implied warranty.
- * In no event will the authors be held liable for any damages arising from
- * the use of this software.
  *
- * Permission is granted to anyone to use this software, alter it and re-
- * distribute it freely for any non-commercial, non-profit purpose subject to
- * the following restrictions:
+ * This software is provided 'as-is', without any express or implied
+ * warranty. In no event will the authors be held liable for any damages
+ * arising from the use of this software.
  *
- *   1. The origin of this software must not be misrepresented; you must not
- *   claim that you wrote the original software. If you use this software in a
- *   product, an acknowledgment in the product documentation would be
- *   appreciated but is not required.
+ * Permission is granted to anyone to use this software for any purpose,
+ * including commercial applications, and to alter it and redistribute it
+ * freely, subject to the following restrictions:
  *
- *   2. Altered source versions must be plainly marked as such, and must not
- *   be misrepresented as being the original software.
- *
- *   3. This notice may not be removed or altered from any distribution.
- *
- *   4. The names of this software and/or it's copyright holders may not be
- *   used to endorse or promote products derived from this software without
- *   specific prior written permission.
+ * 1. The origin of this software must not be misrepresented; you must not
+ * claim that you wrote the original software. If you use this software
+ * in a product, an acknowledgment in the product documentation would be
+ * appreciated but is not required.
+ * 2. Altered source versions must be plainly marked as such, and must not be
+ * misrepresented as being the original software.
+ * 3. This notice may not be removed or altered from any source distribution.
  *
  */
 
@@ -102,7 +97,25 @@ int isBasicRun2(int pc) {
 		return 0;
 }
 
-int unp64(uint8_t *compressed, size_t length, uint8_t *destinationBuffer, size_t *finalLength, char *settings[], int numSettings) {
+int unp64(byte *compressed, size_t length, byte *destinationBuffer, size_t *finalLength, const char *switches) {
+
+	char settings[4][64];
+	int numSettings = 0;
+
+	if (switches != NULL) {
+		char string[100];
+		size_t string_length = strlen(switches);
+		if (string_length > 0 && string_length < 100) {
+			snprintf(string, sizeof string, "%s", switches);
+			char *setting = strtok(string, " ");
+			while (setting != NULL && numSettings < 4) {
+				snprintf(settings[numSettings], sizeof settings[numSettings], "%s", setting);
+				numSettings++;
+				setting = strtok(NULL, " ");
+			}
+		}
+	}
+
 	CpuCtx r[1];
 	LoadInfo info[1];
 	char name[260] = {0}, forcedname[260] = {0};
@@ -140,7 +153,6 @@ int unp64(uint8_t *compressed, size_t length, uint8_t *destinationBuffer, size_t
 						 0xA7, 0xA7, 0x79, 0xA6, 0x9C, 0xE3};
 
 	int iterMax = ITERMAX;
-	//int copyRoms[2][2] = {{0xa000, 0}, {0xe000, 0}};
 	int p;
 
 	memset(&_G(_unp), 0, sizeof(_G(_unp)));
@@ -178,7 +190,7 @@ int unp64(uint8_t *compressed, size_t length, uint8_t *destinationBuffer, size_t
 
 	if ((_G(_unp)._recurs == 0) && (numSettings > 0)) {
 		while (p < numSettings) {
-			if (settings && settings[p][0] == '-') {
+			if (settings[p][0] == '-') {
 				switch (settings[p][1]) {
 				case '-':
 					p = numSettings;
@@ -451,7 +463,7 @@ int unp64(uint8_t *compressed, size_t length, uint8_t *destinationBuffer, size_t
 				if (_G(_unp)._mon1st == 0) {
 					_G(_unp)._strMem = p;
 				}
-				_G(_unp)._mon1st = _G(_unp)._strMem;
+				_G(_unp)._mon1st = (unsigned int)_G(_unp)._strMem;
 				_G(_unp)._strMem = (p < _G(_unp)._strMem ? p : _G(_unp)._strMem);
 			}
 		}
@@ -466,8 +478,6 @@ int unp64(uint8_t *compressed, size_t length, uint8_t *destinationBuffer, size_t
 			return 0;
 
 		if ((mem[r->_pc] == 0x40) && (_G(_unp)._rtiFrc == 1)) {
-			if (nextInst(r) == 1)
-				return 0;
 			_G(_unp)._retAdr = r->_pc;
 			_G(_unp)._rtAFrc = 1;
 			if (_G(_unp)._retAdr < _G(_unp)._strMem)
@@ -514,9 +524,9 @@ int unp64(uint8_t *compressed, size_t length, uint8_t *destinationBuffer, size_t
 	}
 
 	if (_G(_unp)._fEndAf && _G(_unp)._monEnd) {
-		_G(_unp)._endAdC = mem[_G(_unp)._fEndAf] | mem[_G(_unp)._fEndAf + 1] << 8;
+		_G(_unp)._endAdC = (unsigned int)(mem[_G(_unp)._fEndAf] | mem[_G(_unp)._fEndAf + 1] << 8);
 		if ((int)_G(_unp)._endAdC > _G(_unp)._endAdr)
-			_G(_unp)._endAdr = _G(_unp)._endAdC;
+			_G(_unp)._endAdr = (int)_G(_unp)._endAdC;
 
 		_G(_unp)._endAdC = 0;
 		_G(_unp)._fEndAf = 0;
@@ -587,11 +597,15 @@ int unp64(uint8_t *compressed, size_t length, uint8_t *destinationBuffer, size_t
 	}
 
 	if (*forcedname) {
-		strcpy(name, forcedname);
+		Common::sprintf_s(name, sizeof name, "%s", forcedname);
 	} else {
-		if (strlen(name) > 248) /* dirty hack in case name is REALLY long */
+		size_t ln = strlen(name);
+		if (ln > 248) {/* dirty hack in case name is REALLY long */
 			name[248] = 0;
-		sprintf(name + strlen(name), ".%04x%s", r->_pc, ((_G(_unp)._wrMemF | _G(_unp)._lfMemF) ? ".clean" : ""));
+			ln = 248;
+		}
+
+		Common::sprintf_s(name + ln, sizeof(name) - ln, ".%04x%s", r->_pc, ((_G(_unp)._wrMemF | _G(_unp)._lfMemF) ? ".clean" : ""));
 	}
 
 	/*  endadr is set to a ZP location? then use it as a pointer
@@ -705,8 +719,8 @@ int unp64(uint8_t *compressed, size_t length, uint8_t *destinationBuffer, size_t
 	mem[_G(_unp)._strMem - 2] = _G(_unp)._strMem & 0xff;
 	mem[_G(_unp)._strMem - 1] = _G(_unp)._strMem >> 8;
 
-	memcpy(destinationBuffer, mem + (_G(_unp)._strMem - 2), _G(_unp)._endAdr - _G(_unp)._strMem + 2);
-	*finalLength = _G(_unp)._endAdr - _G(_unp)._strMem + 2;
+	memcpy(destinationBuffer, mem + (_G(_unp)._strMem - 2), (size_t)(_G(_unp)._endAdr - _G(_unp)._strMem + 2));
+	*finalLength = (size_t)(_G(_unp)._endAdr - _G(_unp)._strMem + 2);
 
 	if (_G(_unp)._recurs) {
 		if (++_G(_unp)._recurs > RECUMAX)

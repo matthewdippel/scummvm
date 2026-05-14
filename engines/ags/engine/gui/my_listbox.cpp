@@ -19,19 +19,18 @@
  *
  */
 
-//include <string.h>
+#include "ags/engine/gui/my_listbox.h"
 #include "ags/shared/ac/common.h"
 #include "ags/engine/ac/game_setup.h"
 #include "ags/shared/ac/keycode.h"
 #include "ags/shared/font/fonts.h"
 #include "ags/shared/gfx/bitmap.h"
 #include "ags/engine/gui/gui_dialog.h"
-#include "ags/engine/gui/gui_dialog_internal_defs.h"
-#include "ags/engine/gui/my_listbox.h"
+#include "ags/engine/gui/gui_dialog_defines.h"
 
 namespace AGS3 {
 
-using AGS::Shared::Bitmap;
+using namespace AGS::Shared;
 
 MyListBox::MyListBox(int xx, int yy, int wii, int hii) {
 	x = xx;
@@ -104,9 +103,9 @@ void MyListBox::draw(Bitmap *ds) {
 
 int MyListBox::pressedon(int mousex, int mousey) {
 	if (mousex > x + wid - ARROWWIDTH) {
-		if ((mousey - y < hit / 2) & (topitem > 0))
+		if ((mousey - y < hit / 2) && (topitem > 0))
 			topitem--;
-		else if ((mousey - y > hit / 2) &(topitem + numonscreen < items))
+		else if ((mousey - y > hit / 2) && (topitem + numonscreen < items))
 			topitem++;
 
 	} else {
@@ -116,9 +115,7 @@ int MyListBox::pressedon(int mousex, int mousey) {
 
 	}
 
-	//    ags_domouse(DOMOUSE_DISABLE);
 	draw(get_gui_screen());
-	//  ags_domouse(DOMOUSE_ENABLE);
 	_G(smcode) = CM_SELCHANGE;
 	return 0;
 }
@@ -126,15 +123,16 @@ int MyListBox::pressedon(int mousex, int mousey) {
 void MyListBox::additem(char *texx) {
 	if (items >= MAXLISTITEM)
 		quit("!CSCIUSER16: Too many items added to listbox");
-	itemnames[items] = (char *)malloc(strlen(texx) + 1);
-	strcpy(itemnames[items], texx);
+	size_t ln = strlen(texx) + 1;
+	itemnames[items] = (char *)malloc(ln);
+	Common::strcpy_s(itemnames[items], ln, texx);
 	items++;
 	needredraw = 1;
 }
 
 int MyListBox::processmessage(int mcode, int wParam, NumberPtr lParam) {
 	if (mcode == CLB_ADDITEM) {
-		additem((char *)lParam._ptr);
+		additem((char *)lParam.ptr());
 	} else if (mcode == CLB_CLEAR)
 		clearlist();
 	else if (mcode == CLB_GETCURSEL)
@@ -148,14 +146,15 @@ int MyListBox::processmessage(int mcode, int wParam, NumberPtr lParam) {
 		if (topitem + numonscreen <= selected)
 			topitem = (selected + 1) - numonscreen;
 	} else if (mcode == CLB_GETTEXT)
-		strcpy((char *)lParam._ptr, itemnames[wParam]);
+		Common::strcpy_s((char *)lParam.ptr(), 260, itemnames[wParam]);
 	else if (mcode == CLB_SETTEXT) {
 		if (wParam < items)
 			free(itemnames[wParam]);
 
-		char *newstri = (char *)lParam._ptr;
-		itemnames[wParam] = (char *)malloc(strlen(newstri) + 2);
-		strcpy(itemnames[wParam], newstri);
+		char *newstri = (char *)lParam.ptr();
+		size_t ln = strlen(newstri) + 2;
+		itemnames[wParam] = (char *)malloc(ln);
+		Common::strcpy_s(itemnames[wParam], ln, newstri);
 
 	} else if (mcode == CTB_KEYPRESS) {
 		if ((wParam == eAGSKeyCodeDownArrow) && (selected < items - 1))
@@ -176,7 +175,7 @@ int MyListBox::processmessage(int mcode, int wParam, NumberPtr lParam) {
 		if (selected >= items)
 			selected = items - 1;
 
-		if ((selected < topitem) & (selected >= 0))
+		if ((selected < topitem) && (selected >= 0))
 			topitem = selected;
 
 		if (topitem + numonscreen <= selected)

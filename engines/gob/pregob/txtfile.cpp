@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/stream.h"
@@ -72,11 +78,11 @@ bool TXTFile::draw(Surface &surface, int16 &left, int16 &top, int16 &right, int1
 	resizeBuffer(right - left + 1, bottom - top + 1);
 	saveScreen(surface, left, top, right, bottom);
 
-	for (LineArray::const_iterator l = _lines.begin(); l != _lines.end(); ++l) {
-		if (l->font >= fontCount)
+	for (const auto &line : _lines) {
+		if (line.font >= fontCount)
 			continue;
 
-		fonts[l->font]->drawString(l->text, l->x, l->y, (color < 0) ? l->color : color, 0, true, surface);
+		fonts[line.font]->drawString(line.text, line.x, line.y, (color < 0) ? line.color : color, 0, true, surface);
 	}
 
 	return true;

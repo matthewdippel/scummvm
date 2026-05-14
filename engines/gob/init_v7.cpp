@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #include "common/fs.h"
@@ -33,10 +39,39 @@ Init_v7::~Init_v7() {
 }
 
 void Init_v7::initGame() {
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 
 	// Add the environment directory
 	SearchMan.addSubDirectoryMatching(gameDataDir, "envir");
+
+	// Add the application list directory
+	SearchMan.addSubDirectoryMatching(gameDataDir, "applis");
+
+	// Add the "ADIBODEM" directory sometimes found in demos
+	SearchMan.addSubDirectoryMatching(gameDataDir, "adibodem");
+
+	// Add additional applications directories (e.g. "Read/Count 4-5 years").
+	// We rely on the presence of an "intro_ap.itk" to determinate whether a subdirectory contains an application.
+	Common::FSList subdirs;
+	gameDataDir.getChildren(subdirs, Common::FSNode::kListDirectoriesOnly);
+	for (const Common::FSNode &subdirNode : subdirs) {
+		Common::FSDirectory subdir(subdirNode);
+		if (_vm->getGameType() == kGameTypeAdibou2 && subdir.hasFile("intro_ap.stk")) {
+			debugC(1, kDebugFileIO, "Found Adibou application subdirectory \"%s\", adding it to the search path", subdir.getFSNode().getName().c_str());
+			SearchMan.addSubDirectoryMatching(gameDataDir, subdir.getFSNode().getName(), 0, 4, true);
+		} else if (_vm->getGameType() == kGameTypeAdi4) {
+			// Look for any "DESC*.ADI" file
+			Common::FSList fileNodes;
+			subdirNode.getChildren(fileNodes, Common::FSNode::kListFilesOnly);
+			for (const Common::FSNode &fileNode : fileNodes) {
+				if (fileNode.getName().hasPrefixIgnoreCase("DESC") && fileNode.getName().hasSuffixIgnoreCase(".ADI")) {
+					debugC(1, kDebugFileIO, "Found Adi 4 application subdirectory \"%s\", adding it to the search path", subdir.getFSNode().getName().c_str());
+					SearchMan.addSubDirectoryMatching(gameDataDir, subdir.getFSNode().getName(), 0, 4, true);
+					break;
+				}
+			}
+		}
+	}
 
 	Init::initGame();
 }

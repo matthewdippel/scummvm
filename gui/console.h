@@ -68,10 +68,11 @@ public:
 
 protected:
 	enum {
-		kBufferSize   = 32768,
 		kCharsPerLine = 128,
+		kBufferSize   = kCharsPerLine * 1024,
 
-		kHistorySize  = 20
+		kHistorySize  = 20,
+		kDraggingTime = 10
 	};
 
 	const Graphics::Font *_font;
@@ -91,6 +92,7 @@ protected:
 
 	bool   _caretVisible;
 	uint32 _caretTime;
+	uint32 _selectionTime;
 
 	enum SlideMode {
 		kNoSlideMode,
@@ -117,9 +119,6 @@ protected:
 	int _historyIndex;
 	int _historyLine;
 
-	void loadHistory();
-	void saveHistory();
-
 	float _widthPercent, _heightPercent;
 
 	int _leftPadding;
@@ -129,21 +128,34 @@ protected:
 
 	void slideUpAndClose();
 
+	Common::String _prompt;
+
+	bool _isDragging;
+
+	int _selBegin;
+	int _selEnd;
+
+	int _scrollDirection;
+
 public:
 	ConsoleDialog(float widthPercent, float heightPercent);
 	virtual ~ConsoleDialog();
 
 	void open() override;
 	void close() override;
-	void drawDialog(DrawLayer layerToDraw) override;
+	void drawDialog(DrawLayer layerToDraw, bool resetClipping = true) override;
 
 	void handleTickle() override;
 	void reflowLayout() override;
 	void handleMouseWheel(int x, int y, int direction) override;
 	void handleKeyDown(Common::KeyState state) override;
 	void handleCommand(CommandSender *sender, uint32 cmd, uint32 data) override;
+	void handleOtherEvent(const Common::Event &evt) override;
+	void handleMouseDown(int x, int y, int button, int clickCount) override;
+	void handleMouseMoved(int x, int y, int button) override;
+	void handleMouseUp(int x, int y, int button, int clickCount) override;
 
-	int printFormat(int dummy, const char *format, ...) GCC_PRINTF(3, 4);
+	int printFormat(int dummy, MSVC_PRINTF const char *format, ...) GCC_PRINTF(3, 4);
 	int vprintFormat(int dummy, const char *format, va_list argptr);
 
 	void printChar(int c);
@@ -160,6 +172,10 @@ public:
 	int getCharsPerLine() {
 		return _pageWidth;
 	}
+
+	void setPrompt(Common::String prompt);
+	void resetPrompt();
+	void clearBuffer();
 
 protected:
 	inline char &buffer(int idx) {
@@ -189,8 +205,15 @@ protected:
 	void killLastWord();
 
 	// History
+	void loadHistory();
+	void saveHistory();
 	void addToHistory(const Common::String &str);
 	void historyScroll(int direction);
+
+	/**
+	 * Returns whether sel was modified
+	 */
+	bool clampSelection(int &sel);
 };
 
 } // End of namespace GUI

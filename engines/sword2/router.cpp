@@ -159,13 +159,13 @@ void Router::freeRouteMem() {
 	uint8 slotNo = returnSlotNo(_vm->_logic->readVar(ID));
 
 	free(_routeSlots[slotNo]);
-	_routeSlots[slotNo] = NULL;
+	_routeSlots[slotNo] = nullptr;
 }
 
 void Router::freeAllRouteMem() {
 	for (int i = 0; i < TOTAL_ROUTE_SLOTS; i++) {
 		free(_routeSlots[i]);
-		_routeSlots[i] = NULL;
+		_routeSlots[i] = nullptr;
 	}
 }
 
@@ -338,7 +338,7 @@ int32 Router::getRoute() {
 			extractRoute();
 
 			// route.X,route.Y and route.Dir now hold all the
-			// route infomation with the target dir or route
+			// route information with the target dir or route
 			// continuation
 		}
 	}
@@ -349,7 +349,7 @@ int32 Router::getRoute() {
 // THE SLIDY PATH ROUTINES
 
 int32 Router::smoothestPath() {
-	// This is the second big part of the route finder and the the only
+	// This is the second big part of the route finder and the only
 	// bit that tries to be clever (the other bits are clever).
 	//
 	// This part of the autorouter creates a list of modules from a set of

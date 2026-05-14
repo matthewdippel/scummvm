@@ -19,10 +19,12 @@
  *
  */
 
+#include "ags/globals.h"
 #include "ags/engine/script/executing_script.h"
 #include "ags/engine/debugging/debug_log.h"
 #include "ags/engine/debugging/debugger.h"
 #include "ags/engine/script/script.h"
+#include "ags/shared/ac/game_version.h"
 
 namespace AGS3 {
 
@@ -34,6 +36,25 @@ QueuedScript::QueuedScript()
 int ExecutingScript::queue_action(PostScriptAction act, int data, const char *aname) {
 	if (numPostScriptActions >= MAX_QUEUED_ACTIONS)
 		quitprintf("!%s: Cannot queue action, post-script queue full", aname);
+
+	// A strange behavior in pre-2.7.0 games allowed to call NewRoom right after
+	// RestartGame, cancelling RestartGame. Probably an unintended effect.
+	// We try to emulate this here, by simply removing all ePSARestartGame.
+	if ((_G(loaded_game_file_version) < kGameVersion_270) && (act == ePSANewRoom)) {
+		for (int i = 0; i < numPostScriptActions; i++) {
+			if (postScriptActions[i] == ePSARestartGame) {
+				debug("Removing spurious RestartGame event! index = %d numPostScriptActions = %d", i, numPostScriptActions);
+				for (int j = i; j < numPostScriptActions; j++) {
+					postScriptActions[j] = postScriptActions[j + 1];
+					postScriptActionData[j] = postScriptActionData[j + 1];
+					postScriptActionNames[j] = postScriptActionNames[j + 1];
+					postScriptActionPositions[j] = postScriptActionPositions[j + 1];
+				}
+				i--; // make sure to remove multiple ePSARestartGame
+				numPostScriptActions--;
+			}
+		}
+	}
 
 	if (numPostScriptActions > 0) {
 		// if something that will terminate the room has already
@@ -76,22 +97,6 @@ void ExecutingScript::run_another(const char *namm, ScriptInstType scinst, size_
 	script.ParamCount = param_count;
 	for (size_t p = 0; p < MAX_QUEUED_PARAMS && p < param_count; ++p)
 		script.Params[p] = params[p];
-}
-
-void ExecutingScript::init() {
-	inst = nullptr;
-	forked = 0;
-	numanother = 0;
-	numPostScriptActions = 0;
-
-	memset(postScriptActions, 0, sizeof(postScriptActions));
-	memset(postScriptActionNames, 0, sizeof(postScriptActionNames));
-	memset(postScriptSaveSlotDescription, 0, sizeof(postScriptSaveSlotDescription));
-	memset(postScriptActionData, 0, sizeof(postScriptActionData));
-}
-
-ExecutingScript::ExecutingScript() {
-	init();
 }
 
 } // namespace AGS3

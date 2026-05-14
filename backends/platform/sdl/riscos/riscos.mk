@@ -18,12 +18,14 @@ ifdef MAKERUN
 	$(MAKERUN) $(APP_NAME)/scummvm,ff8 ${srcdir}/dists/riscos/!Run,feb $(APP_NAME)/!Run,feb
 else
 	cp ${srcdir}/dists/riscos/!Run,feb $(APP_NAME)/!Run,feb
-	sed -i -e "s/WIMPSLOT/WimpSlot -min `du -k $(APP_NAME)/scummvm,ff8 | cut -f1`K/g" $(APP_NAME)/!Run,feb
+	sed -i -e "s/WIMPSLOT/WimpSlot -min $$(($$(du -k $(EXECUTABLE) | cut -f1) + 32))K/g" $(APP_NAME)/!Run,feb
 endif
 ifeq ($(APP_NAME),$(BASE_APP_NAME))
 	cp ${srcdir}/dists/riscos/!Boot,feb $(APP_NAME)/!Boot,feb
 	cp ${srcdir}/dists/riscos/!Sprites,ff9 $(APP_NAME)/!Sprites,ff9
 	cp ${srcdir}/dists/riscos/!Sprites11,ff9 $(APP_NAME)/!Sprites11,ff9
+	cp ${srcdir}/dists/riscos/!SpritesA1,ff9 $(APP_NAME)/!SpritesA1,ff9
+	cp ${srcdir}/dists/riscos/!SpritesA2,ff9 $(APP_NAME)/!SpritesA2,ff9
 else
 	cp ${srcdir}/dists/riscos/$(APP_NAME)/!Boot,feb $(APP_NAME)/!Boot,feb
 	cp ${srcdir}/dists/riscos/$(APP_NAME)/!Sprites,ff9 $(APP_NAME)/!Sprites,ff9

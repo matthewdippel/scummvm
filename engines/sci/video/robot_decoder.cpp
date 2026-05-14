@@ -27,8 +27,7 @@
 #include "common/platform.h"         // for Platform::kPlatformMacintosh
 #include "common/rational.h"         // for operator*, Rational
 #include "common/str.h"              // for String
-#include "common/stream.h"           // for SeekableReadStream
-#include "common/substream.h"        // for SeekableSubReadStreamEndian
+#include "common/stream.h"           // for SeekableReadStream, SeekableReadStreamEndianWrapper
 #include "common/textconsole.h"      // for error, warning
 #include "common/types.h"            // for Flag::NO, Flag::YES
 #include "sci/engine/seg_manager.h"  // for SegManager
@@ -47,6 +46,10 @@ extern void deDPCM16Mono(int16 *out, const byte *in, const uint32 numBytes, int1
 RobotAudioStream::RobotAudioStream(const int32 bufferSize) :
 	_loopBuffer((byte *)malloc(bufferSize)),
 	_loopBufferSize(bufferSize),
+	_readHead(0),
+	_readHeadAbs(0),
+	_maxWriteAbs(0),
+	_writeHeadAbs(0),
 	_decompressionBuffer(nullptr),
 	_decompressionBufferSize(0),
 	_decompressionBufferPosition(-1),
@@ -362,19 +365,20 @@ RobotDecoder::~RobotDecoder() {
 #pragma mark RobotDecoder - Initialization
 
 void RobotDecoder::initStream(const GuiResourceId robotId) {
-	const Common::String fileName = Common::String::format("%d.rbt", robotId);
+	const Common::Path fileName(Common::String::format("%d.rbt", robotId));
 	Common::SeekableReadStream *stream = SearchMan.createReadStreamForMember(fileName);
 	_fileOffset = 0;
 
 	if (stream == nullptr) {
-		error("Unable to open robot file %s", fileName.c_str());
+		error("Unable to open robot file %s", fileName.toString().c_str());
 	}
 
 	_robotId = robotId;
 
 	const uint16 id = stream->readUint16LE();
+	// TODO: id 0x3d for PQ:SWAT demo?
 	if (id != 0x16) {
-		error("Invalid robot file %s", fileName.c_str());
+		error("Invalid robot file %s", fileName.toString().c_str());
 	}
 
 	// Determine the robot file's endianness by examining the version field.
@@ -385,10 +389,10 @@ void RobotDecoder::initStream(const GuiResourceId robotId) {
 	const uint16 version = stream->readUint16BE();
 	const bool bigEndian = (0 < version && version <= 0x00ff);
 
-	_stream = new Common::SeekableSubReadStreamEndian(stream, 0, stream->size(), bigEndian, DisposeAfterUse::YES);
+	_stream = new Common::SeekableReadStreamEndianWrapper(stream, bigEndian, DisposeAfterUse::YES);
 	_stream->seek(2, SEEK_SET);
 	if (_stream->readUint32BE() != MKTAG('S', 'O', 'L', 0)) {
-		error("Resource %s is not Robot type!", fileName.c_str());
+		error("Resource %s is not Robot type!", fileName.toString().c_str());
 	}
 }
 
@@ -1282,9 +1286,7 @@ void RobotDecoder::frameNowVisible() {
 		_audioList.submitDriverMax();
 	}
 
-	if (_previousFrameNo != _currentFrameNo) {
-		_previousFrameNo = _currentFrameNo;
-	}
+	_previousFrameNo = _currentFrameNo;
 
 	if (!_syncFrame && _hasAudio && getTickCount() >= _checkAudioSyncTime) {
 		RobotAudioStream::StreamState status;

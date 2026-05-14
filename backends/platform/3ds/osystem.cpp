@@ -26,7 +26,6 @@
 #include <3ds.h>
 #include "osystem.h"
 
-#include "backends/platform/3ds/config.h"
 #include "backends/mutex/3ds/3ds-mutex.h"
 #include "backends/saves/default/default-saves.h"
 #include "backends/timer/default/default-timer.h"
@@ -78,14 +77,19 @@ OSystem_3DS::OSystem_3DS():
 	_magY(0),
 	_magWidth(400),
 	_magHeight(240),
-	_gameTextureDirty(false),
 	_filteringEnabled(true),
 	_overlayVisible(false),
+	_overlayInGUI(false),
 	_screenChangeId(0),
 	_magnifyMode(MODE_MAGOFF),
 	exiting(false),
 	sleeping(false),
-	_logger(0)
+	_logger(0),
+	_showCursor(true),
+	_snapToBorder(true),
+	_stretchToFit(false),
+	_screen(kScreenBoth),
+	_blitFunc(nullptr)
 {
 	chdir("sdmc:/");
 
@@ -138,24 +142,39 @@ void OSystem_3DS::initBackend() {
 			_logger->open(logFile);
 	}
 
-	loadConfig();
+	updateBacklight();
+	updateConfig();
 	ConfMan.registerDefault("fullscreen", true);
 	ConfMan.registerDefault("aspect_ratio", true);
 	ConfMan.registerDefault("filtering", true);
 	if (!ConfMan.hasKey("vkeybd_pack_name")) {
 		ConfMan.set("vkeybd_pack_name", "vkeybd_small");
 	}
-	if (!ConfMan.hasKey("gui_theme")) {
-		ConfMan.set("gui_theme", "builtin");
-	}
 
+	_eventManager = new DefaultEventManager(this);
 	_timerManager = new DefaultTimerManager();
 	_savefileManager = new DefaultSaveFileManager("sdmc:/3ds/scummvm/saves/");
 
 	init3DSGraphics();
 	initAudio();
-	EventsBaseBackend::initBackend();
+	BaseBackend::initBackend();
 	initEvents();
+}
+
+void OSystem_3DS::updateBacklight() {
+	// Turn off the backlight of any screen not used
+	if (R_SUCCEEDED(gspLcdInit())) {
+		if (_screen == kScreenTop) {
+			GSPLCD_PowerOnBacklight(GSPLCD_SCREEN_TOP);
+			GSPLCD_PowerOffBacklight(GSPLCD_SCREEN_BOTTOM);
+		} else if (_screen == kScreenBottom) {
+			GSPLCD_PowerOnBacklight(GSPLCD_SCREEN_BOTTOM);
+			GSPLCD_PowerOffBacklight(GSPLCD_SCREEN_TOP);
+		} else {
+			GSPLCD_PowerOnBacklight(GSPLCD_SCREEN_BOTH);
+		}
+		gspLcdExit();
+	}
 }
 
 void OSystem_3DS::updateConfig() {
@@ -166,16 +185,19 @@ void OSystem_3DS::updateConfig() {
 	}
 }
 
-Common::String OSystem_3DS::getDefaultConfigFileName() {
+Common::Path OSystem_3DS::getDefaultConfigFileName() {
 	return "sdmc:/3ds/scummvm/scummvm.ini";
 }
 
-Common::String OSystem_3DS::getDefaultLogFileName() {
+Common::Path OSystem_3DS::getDefaultLogFileName() {
 	return "sdmc:/3ds/scummvm/scummvm.log";
 }
 
 void OSystem_3DS::addSysArchivesToSearchSet(Common::SearchSet &s, int priority) {
 	s.add("RomFS", new Common::FSDirectory(DATA_PATH"/"), priority);
+	// Add the current dir as a very last resort (cf. bug #3984).
+	// TODO: check if it's really needed
+	s.addDirectory(".", ".", priority - 1);
 }
 
 uint32 OSystem_3DS::getMillis(bool skipRecord) {
@@ -239,16 +261,16 @@ Common::WriteStream *OSystem_3DS::createLogFile() {
 	// of a failure, we know that no log file is open.
 	_logFilePath.clear();
 
-	Common::String logFile;
+	Common::Path logFile;
 	if (ConfMan.hasKey("logfile"))
-		logFile = ConfMan.get("logfile");
+		logFile = ConfMan.getPath("logfile");
 	else
 		logFile = getDefaultLogFileName();
 	if (logFile.empty())
 		return nullptr;
 
 	Common::FSNode file(logFile);
-	Common::WriteStream *stream = file.createWriteStream();
+	Common::WriteStream *stream = file.createWriteStream(false);
 	if (stream)
 		_logFilePath = logFile;
 	return stream;

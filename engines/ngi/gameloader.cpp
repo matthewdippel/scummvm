@@ -549,7 +549,7 @@ PicAniInfoList GameLoader::savePicAniInfos(Scene *sc, int flag1, int flag2) {
 		}
 	}
 
-	debugC(4, kDebugBehavior | kDebugAnimation, "savePicAniInfos: Stored %d infos", res.size());
+	debugC(4, kDebugBehavior, "savePicAniInfos: Stored %d infos", res.size());
 
 	return res;
 }
@@ -643,12 +643,6 @@ bool PreloadItems::load(MfcArchive &file) {
 	}
 
 	return true;
-}
-
-const char *getSavegameFile(int saveGameIdx) {
-	static char buffer[20];
-	sprintf(buffer, "fullpipe.s%02d", saveGameIdx);
-	return buffer;
 }
 
 void GameLoader::restoreDefPicAniInfos() {

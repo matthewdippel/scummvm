@@ -22,7 +22,6 @@
 #ifndef DIRECTOR_LINGO_LINGO_CODEGEN_H
 #define DIRECTOR_LINGO_LINGO_CODEGEN_H
 
-#include "director/types.h"
 #include "director/lingo/lingo.h"
 #include "director/lingo/lingo-ast.h"
 
@@ -33,9 +32,9 @@ public:
 	LingoCompiler();
 	virtual ~LingoCompiler() {}
 
-	ScriptContext *compileAnonymous(const Common::U32String &code);
-	ScriptContext *compileLingo(const Common::U32String &code, LingoArchive *archive, ScriptType type, CastMemberID id, const Common::String &scriptName, bool anonyomous = false);
-	ScriptContext *compileLingoV4(Common::SeekableReadStreamEndian &stream, LingoArchive *archive, const Common::String &archName, uint16 version);
+	ScriptContext *compileAnonymous(const Common::U32String &code, uint32 preprocFlags = 0);
+	ScriptContext *compileLingo(const Common::U32String &code, LingoArchive *archive, ScriptType type, CastMemberID id, const Common::String &scriptName, bool anonyomous = false, uint32 preprocFlags = kLPPNone);
+	ScriptContext *compileLingoV4(Common::SeekableReadStreamEndian &stream, uint16 lctxIndex, LingoArchive *archive, const Common::String &archName, uint16 version);
 
 	int code1(inst code) { _currentAssembly->push_back(code); return _currentAssembly->size() - 1; }
 	int code2(inst code_1, inst code_2) { int o = code1(code_1); code1(code_2); return o; }
@@ -56,7 +55,8 @@ public:
 
 	LingoArchive *_assemblyArchive;
 	ScriptContext *_assemblyContext;
-	Node *_assemblyAST;
+	Common::SharedPtr<Node> _assemblyAST;
+	int32 _assemblyId;
 	ScriptData *_currentAssembly;
 	bool _indef;
 	uint _linenumber;
@@ -91,6 +91,7 @@ public:
 	virtual bool visitNextRepeatNode(NextRepeatNode *node);
 	virtual bool visitExitRepeatNode(ExitRepeatNode *node);
 	virtual bool visitExitNode(ExitNode *node);
+	virtual bool visitReturnNode(ReturnNode *node);
 	virtual bool visitTellNode(TellNode *node);
 	virtual bool visitWhenNode(WhenNode *node);
 	virtual bool visitDeleteNode(DeleteNode *node);
@@ -128,7 +129,8 @@ private:
 
 public:
 	// lingo-preprocessor.cpp
-	Common::U32String codePreprocessor(const Common::U32String &code, LingoArchive *archive, ScriptType type, CastMemberID id, bool simple = false);
+	Common::U32String codePreprocessor(const Common::U32String &code, LingoArchive *archive, ScriptType type, CastMemberID id, uint32 flags);
+	MethodHash prescanMethods(const Common::U32String &code);
 
 	// lingo-patcher.cpp
 	Common::U32String patchLingoCode(const Common::U32String &line, LingoArchive *archive, ScriptType type, CastMemberID id, int linenumber);

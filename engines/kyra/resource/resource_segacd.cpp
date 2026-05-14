@@ -35,7 +35,7 @@ SegaCDResource::~SegaCDResource() {
 	unloadContainer();
 }
 
-bool SegaCDResource::loadContainer(const Common::String &filename, uint32 offset, uint32 size) {
+bool SegaCDResource::loadContainer(const Common::Path &filename, uint32 offset, uint32 size) {
 	if (_curFile.equals(filename) && _curOffset == offset && _curSize == size)
 		return true;
 
@@ -43,7 +43,7 @@ bool SegaCDResource::loadContainer(const Common::String &filename, uint32 offset
 
 	_str = _res->createEndianAwareReadStream(filename);
 	if (!_str) {
-		error("SegaCDResource: File '%s' not found.", filename.c_str());
+		error("SegaCDResource: File '%s' not found.", filename.toString().c_str());
 		return false;
 	}
 
@@ -108,7 +108,7 @@ Common::SeekableReadStreamEndian *SegaCDResource::resStreamEndian(int resID) {
 	if (!str)
 		return 0;
 
-	return new EndianAwareStreamWrapper(str, _str->isBE(), true);
+	return new Common::SeekableReadStreamEndianWrapper(str, _str->isBE(), DisposeAfterUse::YES);
 }
 
 Common::SeekableReadStream *SegaCDResource::resStream(int resID) {

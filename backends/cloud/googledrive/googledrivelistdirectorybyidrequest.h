@@ -23,9 +23,9 @@
 #define BACKENDS_CLOUD_GOOGLEDRIVE_GOOGLEDRIVELISTDIRECTORYBYIDREQUEST_H
 
 #include "backends/cloud/storage.h"
-#include "backends/networking/curl/request.h"
+#include "backends/networking/http/request.h"
 #include "common/callback.h"
-#include "backends/networking/curl/curljsonrequest.h"
+#include "backends/networking/http/httpjsonrequest.h"
 
 namespace Cloud {
 namespace GoogleDrive {
@@ -43,17 +43,17 @@ class GoogleDriveListDirectoryByIdRequest: public Networking::Request {
 	Common::String _date;
 
 	void start();
-	void makeRequest(Common::String pageToken);
-	void responseCallback(Networking::JsonResponse response);
-	void errorCallback(Networking::ErrorResponse error);
+	void makeRequest(const Common::String &pageToken);
+	void responseCallback(const Networking::JsonResponse &response);
+	void errorCallback(const Networking::ErrorResponse &error);
 	void finishListing(Common::Array<StorageFile> &files);
 public:
-	GoogleDriveListDirectoryByIdRequest(GoogleDriveStorage *storage, Common::String id, Storage::ListDirectoryCallback cb, Networking::ErrorCallback ecb);
-	virtual ~GoogleDriveListDirectoryByIdRequest();
+	GoogleDriveListDirectoryByIdRequest(GoogleDriveStorage *storage, const Common::String &id, Storage::ListDirectoryCallback cb, Networking::ErrorCallback ecb);
+	~GoogleDriveListDirectoryByIdRequest() override;
 
-	virtual void handle();
-	virtual void restart();
-	virtual Common::String date() const;
+	void handle() override;
+	void restart() override;
+	Common::String date() const override;
 };
 
 } // End of namespace GoogleDrive

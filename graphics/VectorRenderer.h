@@ -50,7 +50,8 @@ typedef void (VectorRenderer::*DrawingFunctionCallback)(const Common::Rect &, co
 
 struct DrawStep {
 	DrawingFunctionCallback drawingCall; /**< Pointer to drawing function */
-	Graphics::ManagedSurface *blitSrc;
+	Common::SharedPtr<Graphics::ManagedSurface> blitSrc;
+	Graphics::AlphaType alphaType;
 
 	struct Color {
 		uint8 r, g, b;
@@ -92,11 +93,13 @@ struct DrawStep {
 
 	uint32 scale; /**< scale of all the coordinates in FIXED POINT with 16 bits mantissa */
 
+	uint32 shadowIntensity; /**< interval for drawing shadows in FIXED POINT with 16 bits mantissa */
+
 	GUI::ThemeEngine::AutoScaleMode autoscale; /**< scale alphaimage if present */
 
 	DrawStep() {
 		drawingCall = nullptr;
-		blitSrc = nullptr;
+		alphaType = Graphics::ALPHA_OPAQUE;
 		// fgColor, bgColor, gradColor1, gradColor2, bevelColor initialized by Color default constructor
 		autoWidth = autoHeight = false;
 		x = y = w = h = 0;
@@ -107,6 +110,7 @@ struct DrawStep {
 		shadowFillMode = 0;
 		extraData = 0;
 		scale = 0;
+		shadowIntensity = 1 << 16;
 		autoscale = GUI::ThemeEngine::kAutoScaleNone;
 	}
 };
@@ -376,6 +380,18 @@ public:
 	}
 
 	/**
+	 * Sets the pixel interval for drawing shadows
+	 * 
+	 * @param shadowIntensity interval for drawing shadows
+	 */
+	virtual void setShadowIntensity(uint32 shadowIntensity) {
+		if (shadowIntensity > 0)
+			_shadowIntensity = shadowIntensity;
+		else
+			warning("setShadowIntensity(): zero intensity");
+	}
+
+	/**
 	 * Sets the clipping rectangle to be used by draw calls.
 	 *
 	 * Draw calls are restricted to pixels that are inside of the clipping
@@ -457,7 +473,7 @@ public:
 	void drawCallback_BITMAP(const Common::Rect &area, const DrawStep &step) {
 		uint16 x, y, w, h;
 		stepGetPositions(step, area, x, y, w, h);
-		blitKeyBitmap(step.blitSrc, Common::Point(x, y), true);
+		blitManagedSurface(step.blitSrc.get(), Common::Point(x, y), step.alphaType);
 	}
 
 	void drawCallback_CROSS(const Common::Rect &area, const DrawStep &step) {
@@ -508,7 +524,7 @@ public:
 	 */
 	virtual void blitSurface(const Graphics::ManagedSurface *source, const Common::Rect &r) = 0;
 
-	virtual void blitKeyBitmap(const Graphics::ManagedSurface *source, const Common::Point &p, bool themeTrans) = 0;
+	virtual void blitManagedSurface(const Graphics::ManagedSurface *source, const Common::Point &p, Graphics::AlphaType alphaType) = 0;
 
 	/**
 	 * Draws a string into the screen. Wrapper for the Graphics::Font string drawing
@@ -544,6 +560,7 @@ protected:
 	uint32 _dynamicData; /**< Dynamic data from the GUI Theme that modifies the drawing of the current shape */
 
 	int _gradientFactor; /**< Multiplication factor of the active gradient */
+	uint32 _shadowIntensity; /**< Intensity of the shadow */
 };
 /** @} */
 } // End of namespace Graphics

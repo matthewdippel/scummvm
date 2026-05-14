@@ -33,13 +33,15 @@ enum DirectorGameGID {
 };
 
 struct DirectorGameDescription {
+	AD_GAME_DESCRIPTION_HELPERS(desc);
+
 	ADGameDescription desc;
 
 	DirectorGameGID gameGID;
 	uint16 version;
 };
 
-extern const char *directoryGlobs[];
+extern const char *const directoryGlobs[];
 
 } // End of namespace Director
 

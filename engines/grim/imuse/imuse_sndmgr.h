@@ -47,7 +47,7 @@ public:
 private:
 	struct Region {
 		int32 offset;       // offset of region
-		int32 length;       // lenght of region
+		int32 length;       // length of region
 	};
 
 	struct Jump {
@@ -110,7 +110,7 @@ public:
 	int getJumpHookId(SoundDesc *sound, int number);
 	int getJumpFade(SoundDesc *sound, int number);
 
-	int32 getDataFromRegion(SoundDesc *sound, int region, byte **buf, int32 offset, int32 size);
+	int32 getDataFromRegion(SoundDesc *sound, int region, byte **buf, int32 offset, int32 size, int32 *flags);
 };
 
 } // end of namespace Grim

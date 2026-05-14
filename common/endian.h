@@ -486,7 +486,7 @@
 	#define CONSTANT_LE_64(a) SWAP_CONSTANT_64(a)
 	#define CONSTANT_BE_64(a) ((uint64)(a))
 
-// if the unaligned load and the byteswap take alot instructions its better to directly read and invert
+// if the unaligned load and the byteswap take a lot of instructions its better to directly read and invert
 #	if defined(SCUMM_NEED_ALIGNMENT) && !defined(__mips__)
 
 	inline uint16 READ_LE_UINT16(const void *ptr) {
@@ -588,7 +588,7 @@ union SwapFloat {
 	uint32 u32;
 };
 
-STATIC_ASSERT(sizeof(float) == sizeof(uint32), Unexpected_size_of_float);
+static_assert(sizeof(float) == sizeof(uint32), "Unexpected size of float");
 
 inline float READ_LE_FLOAT32(const void *ptr) {
 	SwapFloat swap;
@@ -640,7 +640,7 @@ union SwapDouble {
 };
 #endif
 
-STATIC_ASSERT(sizeof(double) == sizeof(uint64) || sizeof(double) == sizeof(uint32), Unexpected_size_of_double);
+static_assert(sizeof(double) == sizeof(uint64) || sizeof(double) == sizeof(uint32), "Unexpected size of double");
 
 template<size_t n> inline double READ_DOUBLE(const SwapDouble& sw);
 template<size_t n> inline void WRITE_DOUBLE(SwapDouble &sw, double d);

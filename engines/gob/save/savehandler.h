@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_SAVE_SAVEHANDLER_H
@@ -119,6 +125,9 @@ public:
 	/** Saves (parts of) the file. */
 	virtual bool save(int16 dataVar, int32 size, int32 offset) = 0;
 
+	virtual bool loadToRaw(byte *ptr, int32 size, int32 offset);
+	virtual bool saveFromRaw(const byte *ptr, int32 size, int32 offset);
+
 	/** Deletes the file. */
 	virtual bool deleteFile();
 
@@ -135,11 +144,14 @@ public:
 	~TempSpriteHandler() override;
 
 	int32 getSize() override;
-	bool load(int16 dataVar, int32 size, int32 offset) override;
-	bool save(int16 dataVar, int32 size, int32 offset) override;
+	bool load(int16 dataVar, int32 index_as_size, int32 offset) override;
+	bool save(int16 dataVar, int32 index_as_size, int32 offset) override;
+
+	bool loadToRaw(byte *ptr, int32 size, int32 offset) override;
+	bool saveFromRaw(const byte *ptr, int32 size, int32 offset) override;
 
 	bool create(uint32 width, uint32 height, bool trueColor);
-	bool createFromSprite(int16 dataVar, int32 size, int32 offset);
+	bool createFromSprite(int32 index_as_size, int32 offset);
 
 protected:
 	SavePartSprite *_sprite;
@@ -153,7 +165,7 @@ protected:
 	/** Determine whether the palette should be used too. */
 	static bool usesPalette(int32 size);
 
-	SurfacePtr createSprite(int16 dataVar, int32 size, int32 offset);
+	SurfacePtr createSprite(int32 index_as_size, int32 offset);
 };
 
 /** A handler for notes. */
@@ -187,6 +199,8 @@ public:
 	int32 getSize() override;
 	bool load(int16 dataVar, int32 size, int32 offset) override;
 	bool save(int16 dataVar, int32 size, int32 offset) override;
+	bool loadToRaw(byte *ptr, int32 size, int32 offset) override;
+	bool saveFromRaw(const byte *ptr, int32 size, int32 offset) override;
 
 	bool deleteFile() override;
 

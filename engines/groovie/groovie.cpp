@@ -37,7 +37,7 @@
 #include "common/events.h"
 #include "common/file.h"
 #include "common/macresman.h"
-#include "common/stuffit.h"
+#include "common/compression/stuffit.h"
 #include "common/textconsole.h"
 
 #include "backends/audiocd/audiocd.h"
@@ -56,7 +56,7 @@ GroovieEngine::GroovieEngine(OSystem *syst, const GroovieGameDescription *gd) :
 	_spookyMode(false) {
 
 	// Adding the default directories
-	const Common::FSNode gameDataDir(ConfMan.get("path"));
+	const Common::FSNode gameDataDir(ConfMan.getPath("path"));
 	SearchMan.addSubDirectoryMatching(gameDataDir, "groovie");
 	SearchMan.addSubDirectoryMatching(gameDataDir, "media");
 	SearchMan.addSubDirectoryMatching(gameDataDir, "system");
@@ -82,7 +82,7 @@ Common::Error GroovieEngine::run() {
 	if (_gameDescription->version == kGroovieT11H && getPlatform() == Common::kPlatformMacintosh) {
 		// Load the Mac installer with the lowest priority (in case the user has installed
 		// the game and has the MIDI folder present; faster to just load them)
-		Common::Archive *archive = Common::createStuffItArchive("The 11th Hour Installer");
+		Common::Archive *archive = Common::createStuffItArchive("The 11th Hour Installer", true);
 
 		if (archive)
 			SearchMan.add("The 11th Hour Installer", archive);
@@ -266,6 +266,9 @@ Common::Error GroovieEngine::run() {
 		Common::Event ev;
 		while (_eventMan->pollEvent(ev)) {
 			switch (ev.type) {
+			case Common::EVENT_CUSTOM_ENGINE_ACTION_START:
+				_script->setAction(ev.customType);
+				break;
 			case Common::EVENT_KEYDOWN:
 				// Send the event to the scripts
 				_script->setKbdChar(ev.kbd.ascii);
@@ -397,7 +400,7 @@ void GroovieEngine::syncSoundSettings() {
 		mute ? 0 : ConfMan.getInt("speech_volume"));
 }
 
-bool GroovieEngine::canLoadGameStateCurrently() {
+bool GroovieEngine::canLoadGameStateCurrently(Common::U32String *msg) {
 	// TODO: verify the engine has been initialized
 	if (isDemo())
 		return false;
@@ -407,7 +410,7 @@ bool GroovieEngine::canLoadGameStateCurrently() {
 		return false;
 }
 
-bool GroovieEngine::canSaveGameStateCurrently() {
+bool GroovieEngine::canSaveGameStateCurrently(Common::U32String *msg) {
 	// TODO: verify the engine has been initialized
 	if (isDemo())
 		return false;

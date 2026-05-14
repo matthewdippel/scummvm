@@ -17,6 +17,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, MojoTouch has
+ * non-exclusively licensed this code on March 23th, 2024, to be used in
+ * closed-source products.
+ * Therefore, any contributions (commits) to it will also be dual-licensed.
+ *
  */
 
 #ifndef VIDEO_SMK_PLAYER_H
@@ -26,6 +33,7 @@
 #include "common/bitstream.h"
 #include "common/rational.h"
 #include "common/rect.h"
+#include "graphics/palette.h"
 #include "graphics/pixelformat.h"
 #include "graphics/surface.h"
 #include "video/video_decoder.h"
@@ -43,15 +51,21 @@ namespace Video {
 
 class BigHuffmanTree;
 
+// Because the maximum number of bits read from a bitstream is 16, and the data is 8-bit, the container only
+// needs to hold up to 23 bits at any given time. As such, we use a bitstream with a 32-bit container to
+// avoid the overhead of 64-bit maths on systems that don't support it natively.
+typedef Common::BitStreamImpl<Common::BitStreamMemoryStream, uint32, 8, false, false> SmackerBitStream;
+
 /**
  * Decoder for Smacker v2/v4 videos.
  *
- * Based on http://wiki.multimedia.cx/index.php?title=Smacker
+ * Based on https://wiki.multimedia.cx/index.php?title=Smacker
  * and the FFmpeg Smacker decoder (libavcodec/smacker.c), revision 16143
  * https://git.ffmpeg.org/gitweb/ffmpeg.git/commit/40a19c443430de520d86bbd644033c8e2ca87e9b
  *
  * Video decoder used in engines:
  *  - agos
+ *  - bagel
  *  - saga
  *  - scumm (he)
  *  - sword1
@@ -67,7 +81,7 @@ public:
 
 	virtual bool loadStream(Common::SeekableReadStream *stream);
 	void close();
-	void forceSeekToFrame(uint frame);
+	const Graphics::Surface *forceSeekToFrame(uint frame);
 	bool rewind();
 
 	Common::Rational getFrameRate() const;
@@ -97,12 +111,12 @@ protected:
 		int getCurFrame() const { return _curFrame; }
 		int getFrameCount() const { return _frameCount; }
 		const Graphics::Surface *decodeNextFrame() { return _surface; }
-		const byte *getPalette() const { _dirtyPalette = false; return _palette; }
+		const byte *getPalette() const { _dirtyPalette = false; return _palette.data(); }
 		bool hasDirtyPalette() const { return _dirtyPalette; }
 
-		void readTrees(Common::BitStreamMemory8LSB &bs, uint32 mMapSize, uint32 mClrSize, uint32 fullSize, uint32 typeSize);
+		void readTrees(SmackerBitStream &bs, uint32 mMapSize, uint32 mClrSize, uint32 fullSize, uint32 typeSize);
 		void increaseCurFrame() { _curFrame++; }
-		void decodeFrame(Common::BitStreamMemory8LSB &bs);
+		void decodeFrame(SmackerBitStream &bs);
 		void unpackPalette(Common::SeekableReadStream *stream);
 
 		Common::Rational getFrameRate() const { return _frameRate; }
@@ -116,7 +130,7 @@ protected:
 		Common::Rational _frameRate;
 		uint32 _flags, _version;
 
-		byte _palette[3 * 256];
+		Graphics::Palette _palette;
 		mutable bool _dirtyPalette;
 
 		int _curFrame;

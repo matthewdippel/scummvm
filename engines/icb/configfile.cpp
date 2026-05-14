@@ -26,25 +26,26 @@
 
 #include "engines/icb/configfile.h"
 
+#include "common/path.h"
 #include "common/textconsole.h"
-#include "common/ini-file.h"
+#include "common/formats/ini-file.h"
 
 namespace ICB {
 
 ConfigFile::ConfigFile() {}
 
-void ConfigFile::readFile(const Common::String &filename) {
+void ConfigFile::readFile(const char *filename) {
 	Common::INIFile file;
-	if (!file.loadFromFile(filename)) {
-		error("Opening file '%s' failed'", filename.c_str());
+	if (!file.loadFromFile(Common::Path(filename, '/'))) {
+		error("Opening file '%s' failed'", filename);
 		return;
 	}
 
 	Common::INIFile::SectionList sections = file.getSections();
-	for (Common::INIFile::SectionList::const_iterator i = sections.begin(); i != sections.end(); i++) {
-		Common::INIFile::SectionKeyList kList = i->getKeys();
-		for (Common::INIFile::SectionKeyList::const_iterator j = kList.begin(); j != kList.end(); j++) {
-			_dataSet[i->name][j->key] = j->value;
+	for (auto &i : sections) {
+		Common::INIFile::SectionKeyList kList = i.getKeys();
+		for (auto &j : kList) {
+			_dataSet[i.name][j.key] = j.value;
 		}
 	}
 }

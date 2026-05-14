@@ -1,3 +1,4 @@
+%top{
 /* ScummVM - Graphic Adventure Engine
  *
  * ScummVM is the legal property of its developers, whose names
@@ -19,16 +20,16 @@
  *
  */
 
-%option noyywrap
-%option noinput
-%option never-interactive
-
-%option outfile="engines/private/lexer.cpp"
-%option prefix="PRIVATE_"
-
-%{
 #define YY_NO_UNISTD_H
-#define FORBIDDEN_SYMBOL_ALLOW_ALL
+#define FORBIDDEN_SYMBOL_EXCEPTION_FILE
+#define FORBIDDEN_SYMBOL_EXCEPTION_fprintf
+#define FORBIDDEN_SYMBOL_EXCEPTION_fwrite
+#define FORBIDDEN_SYMBOL_EXCEPTION_fread
+#define FORBIDDEN_SYMBOL_EXCEPTION_stdin
+#define FORBIDDEN_SYMBOL_EXCEPTION_stdout
+#define FORBIDDEN_SYMBOL_EXCEPTION_stderr
+#define FORBIDDEN_SYMBOL_EXCEPTION_exit
+#define FORBIDDEN_SYMBOL_EXCEPTION_getc
 
 #include "private/private.h"
 #include "private/grammar.h"
@@ -38,7 +39,15 @@ using namespace Private;
 using namespace Gen;
 using namespace Settings;
 
-%}
+}
+
+%option noyywrap
+%option noinput
+%option nounput
+%option never-interactive
+
+%option outfile="engines/private/lexer.cpp"
+%option prefix="PRIVATE_"
 
 %%
 \/\/.*				    /* ignoring the comment */
@@ -49,6 +58,9 @@ using namespace Settings;
 debug				    return DEBUGTOK;
 define				    return DEFINETOK;
 setting				    return SETTINGTOK;
+EmitCodeOff				return EMITCODEOFFTOK;
+EmitCodeOn				return EMITCODEONTOK;
+ResetIDCounter			return RESETIDTOK;
 if					    return IFTOK;
 else				    return ELSETOK;
 goto					return GOTOTOK;
@@ -57,9 +69,9 @@ FALSE			        return FALSETOK;
 TRUE					return TRUETOK;
 NULL					return NULLTOK;
 Random			        return RANDOMTOK;
-[A-Za-z_][A-Za-z_0-9]*  PRIVATE_lval.s = scumm_strdup(PRIVATE_text); return NAME;
+[A-Za-z_][A-Za-z_0-9]*  PRIVATE_lval.s = g_private->maps.string(PRIVATE_text); return NAME;
 [\-]?[0-9]+		        PRIVATE_lval.sym = g_private->maps.constant(NUM, atoi(PRIVATE_text), NULL); return NUM;
-\"[^\"\r\n]*\"	        PRIVATE_lval.sym = g_private->maps.constant(STRING, 0, scumm_strdup(PRIVATE_text)); return STRING;
+\"[^\"\r\n]*\"	        PRIVATE_lval.sym = g_private->maps.constant(STRING, 0, PRIVATE_text); return STRING;
 [\r|\n]+				/* ignore return */;
 [ \t]+		            /* ignore whitespace */;
 .				        return *yytext;
@@ -75,6 +87,7 @@ int parse(const char *code) {
 	yy_switch_to_buffer(bp);
 	PRIVATE_parse();
 	yy_delete_buffer(bp);
+	yylex_destroy();
 	return 0;
 }
 

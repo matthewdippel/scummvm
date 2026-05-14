@@ -64,7 +64,7 @@ void AudioPlayer::stopAllAudio() {
  * sciAudio is an external .NET library for playing MP3 files in fanmade games.
  * It runs in the background, and obtains sound commands from the
  * currently running game via text files (called "conductor files").
- * For further info, check: http://sciprogramming.com/community/index.php?topic=634.0
+ * For further info, check: https://sciprogramming.com/community/index.php?topic=634.0
  */
 void AudioPlayer::handleFanmadeSciAudio(reg_t sciAudioObject, SegManager *segMan) {
 	// TODO: This is a bare bones implementation. Only the play/playx and stop commands
@@ -150,7 +150,7 @@ void AudioPlayer::handleFanmadeSciAudio(reg_t sciAudioObject, SegManager *segMan
 			if (fileName[i] == '\\')
 				fileName.setChar('/', i);
 		}
-		sciAudioFile->open("sciAudio/" + fileName);
+		sciAudioFile->open(Common::Path("sciAudio/" + fileName, '/'));
 
 		Audio::RewindableAudioStream *audioStream = nullptr;
 
@@ -305,7 +305,7 @@ static void deDPCM8(byte *soundBuf, Common::SeekableReadStream &audioStream, uin
 }
 
 // Sierra SOL audio file reader
-// Check here for more info: http://wiki.multimedia.cx/index.php?title=Sierra_Audio
+// Check here for more info: https://wiki.multimedia.cx/index.php?title=Sierra_Audio
 static bool readSOLHeader(Common::SeekableReadStream *audioStream, int headerSize, uint32 &size, uint16 &audioRate, byte &audioFlags, uint32 resSize) {
 	if (headerSize != 7 && headerSize != 11 && headerSize != 12) {
 		warning("SOL audio header of size %i not supported", headerSize);
@@ -399,30 +399,27 @@ Audio::RewindableAudioStream *AudioPlayer::getAudioStream(uint32 number, uint32 
 	uint32 audioCompressionType = audioRes->getAudioCompressionType();
 
 	if (audioCompressionType) {
-#if (defined(USE_MAD) || defined(USE_VORBIS) || defined(USE_FLAC))
 		// Compressed audio made by our tool
 		switch (audioCompressionType) {
-		case MKTAG('M','P','3',' '):
 #ifdef USE_MAD
+		case MKTAG('M','P','3',' '):
 			audioSeekStream = Audio::makeMP3Stream(memoryStream, DisposeAfterUse::YES);
-#endif
 			break;
-		case MKTAG('O','G','G',' '):
+#endif
 #ifdef USE_VORBIS
+		case MKTAG('O','G','G',' '):
 			audioSeekStream = Audio::makeVorbisStream(memoryStream, DisposeAfterUse::YES);
-#endif
 			break;
-		case MKTAG('F','L','A','C'):
+#endif
 #ifdef USE_FLAC
+		case MKTAG('F','L','A','C'):
 			audioSeekStream = Audio::makeFLACStream(memoryStream, DisposeAfterUse::YES);
-#endif
 			break;
+#endif
 		default:
+			error("Compressed audio file encountered, but no decoder compiled in for: '%s'", tag2str(audioCompressionType));
 			break;
 		}
-#else
-		error("Compressed audio file encountered, but no appropriate decoder is compiled in");
-#endif
 	} else {
 		// Original source file
 		if (audioRes->size() > 6 &&
@@ -448,7 +445,7 @@ Audio::RewindableAudioStream *AudioPlayer::getAudioStream(uint32 number, uint32 
 			if (!ret)
 				error("Failed to load WAV from stream");
 
-			*sampleLen = (waveFlags & Audio::FLAG_16BITS ? waveSize >> 1 : waveSize) * 60 / waveRate;
+			*sampleLen = ((waveFlags & Audio::FLAG_16BITS) ? (waveSize >> 1) : waveSize) * 60 / waveRate;
 
 			memoryStream->seek(0, SEEK_SET);
 			audioStream = Audio::makeWAVStream(memoryStream, DisposeAfterUse::YES);

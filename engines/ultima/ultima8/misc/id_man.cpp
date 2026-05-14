@@ -19,8 +19,10 @@
  *
  */
 
-#include "ultima/ultima8/misc/pent_include.h"
 #include "ultima/ultima8/misc/id_man.h"
+
+#include "common/stream.h"
+#include "ultima/ultima8/misc/debugger.h"
 
 namespace Ultima {
 namespace Ultima8 {
@@ -102,8 +104,8 @@ void idMan::expand() {
 	_ids.resize(_end + 1);
 
 #if 0
-	perr << "Expanding idMan from (" << _begin << "-" << old_end << ") to ("
-	     << _begin << "-" << _end << ")" << Std::endl;
+	debug(1, "Expanding idMan from (%u-%u) to (%u-%u)",
+		_begin, old_end, _begin, _end);
 #endif
 
 	// insert the new free IDs at the start

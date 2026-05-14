@@ -62,10 +62,10 @@ res_man *rs_font = nullptr;   // pointer to which res_man to use for font data
 
 // global test only
 res_man *global_text_resman = nullptr;
-_linked_data_file *global_text;
+LinkedDataFile *global_text;
 
 // route-manager service object
-// doesnt depend on session specific extrernal data so we make it global service
+// doesn't depend on session specific external data so we make it global service
 // gets reset by the session constructor
 // the service exists to facilitate and coordinate the movement of non player characters - the player object has its own stuff
 //_route_manager        router;

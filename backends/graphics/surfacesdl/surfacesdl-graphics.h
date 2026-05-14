@@ -44,18 +44,6 @@ enum {
 };
 
 
-class AspectRatio {
-	int _kw, _kh;
-public:
-	AspectRatio() { _kw = _kh = 0; }
-	AspectRatio(int w, int h);
-
-	bool isAuto() const { return (_kw | _kh) == 0; }
-
-	int kw() const { return _kw; }
-	int kh() const { return _kh; }
-};
-
 /**
  * SDL graphics manager
  */
@@ -100,18 +88,24 @@ protected:
 	// PaletteManager API
 	void setPalette(const byte *colors, uint start, uint num) override;
 	void grabPalette(byte *colors, uint start, uint num) const override;
+	virtual void initGraphicsSurface();
 
 	/**
 	 * Convert from the SDL pixel format to Graphics::PixelFormat
 	 * @param in    The SDL pixel format to convert
 	 * @param out   A pixel format to be written to
 	 */
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+	Graphics::PixelFormat convertSDLPixelFormat(SDL_PixelFormat in) const;
+#else
 	Graphics::PixelFormat convertSDLPixelFormat(SDL_PixelFormat *in) const;
+#endif
 public:
 	void copyRectToScreen(const void *buf, int pitch, int x, int y, int w, int h) override;
 	Graphics::Surface *lockScreen() override;
 	void unlockScreen() override;
 	void fillScreen(uint32 col) override;
+	void fillScreen(const Common::Rect &r, uint32 col) override;
 	void updateScreen() override;
 	void setFocusRectangle(const Common::Rect& rect) override;
 	void clearFocusRectangle() override;
@@ -123,7 +117,8 @@ public:
 	int16 getOverlayHeight() const override { return _videoMode.overlayHeight; }
 	int16 getOverlayWidth() const override { return _videoMode.overlayWidth; }
 
-	void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale = false, const Graphics::PixelFormat *format = NULL) override;
+	void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale = false, const Graphics::PixelFormat *format = NULL, const byte *mask = NULL) override;
+	void setMouseCursor(const void *buf, uint w, uint h, int hotspotX, int hotspotY, uint32 keycolor, bool dontScale, const Graphics::PixelFormat *format, const byte *mask, bool disableKeyColor);
 	void setCursorPalette(const byte *colors, uint start, uint num) override;
 
 #ifdef USE_OSD
@@ -137,6 +132,11 @@ public:
 	// SdlGraphicsManager interface
 	void notifyVideoExpose() override;
 	void notifyResize(const int width, const int height) override;
+
+#if defined(USE_IMGUI) && (defined(USE_IMGUI_SDLRENDERER2) || defined(USE_IMGUI_SDLRENDERER3))
+	void *getImGuiTexture(const Graphics::Surface &image, const byte *palette, int palCount) override;
+	void freeImGuiTexture(void *texture) override;
+#endif
 
 protected:
 #ifdef USE_OSD
@@ -165,6 +165,20 @@ protected:
 	void drawOSD();
 #endif
 
+	class AspectRatio {
+		int _kw, _kh;
+	public:
+		AspectRatio() { _kw = _kh = 0; }
+		AspectRatio(int w, int h);
+
+		bool isAuto() const { return (_kw | _kh) == 0; }
+
+		int kw() const { return _kw; }
+		int kh() const { return _kh; }
+	};
+
+	static AspectRatio getDesiredAspectRatio();
+
 	bool gameNeedsAspectRatioCorrection() const override {
 		return _videoMode.aspectRatioCorrection;
 	}
@@ -191,7 +205,6 @@ protected:
 	int SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int ncolors);
 	int SDL_SetAlpha(SDL_Surface *surface, Uint32 flag, Uint8 alpha);
 	int SDL_SetColorKey(SDL_Surface *surface, Uint32 flag, Uint32 key);
-	bool _vsync;
 #endif
 
 	/** Unseen game screen */
@@ -216,6 +229,7 @@ protected:
 	SDL_Surface *_overlayscreen;
 	bool _useOldSrc;
 	Graphics::PixelFormat _overlayFormat;
+	bool _isDoubleBuf, _isHwPalette;
 
 	enum {
 		kTransactionNone = 0,
@@ -231,9 +245,7 @@ protected:
 		bool needTextureUpdate;
 		bool needDisplayResize;
 #endif
-#ifdef USE_RGB_COLOR
 		bool formatChanged;
-#endif
 
 		TransactionDetails() {
 			sizeChanged = false;
@@ -244,9 +256,7 @@ protected:
 			needTextureUpdate = false;
 			needDisplayResize = false;
 #endif
-#ifdef USE_RGB_COLOR
 			formatChanged = false;
-#endif
 		}
 	};
 	TransactionDetails _transactionDetails;
@@ -259,9 +269,11 @@ protected:
 		AspectRatio desiredAspectRatio;
 		bool filtering;
 
+		int mode;
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 		int stretchMode;
 #endif
+		bool vsync;
 
 		uint scalerIndex;
 		int scaleFactor;
@@ -269,9 +281,7 @@ protected:
 		int screenWidth, screenHeight;
 		int overlayWidth, overlayHeight;
 		int hardwareWidth, hardwareHeight;
-#ifdef USE_RGB_COLOR
 		Graphics::PixelFormat format;
-#endif
 
 		VideoState() {
 			setup = false;
@@ -280,9 +290,11 @@ protected:
 			// desiredAspectRatio set to (0, 0) by AspectRatio constructor
 			filtering = false;
 
+			mode = GFX_SURFACESDL;
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 			stretchMode = 0;
 #endif
+			vsync = false;
 
 			scalerIndex = 0;
 			scaleFactor = 0;
@@ -293,9 +305,7 @@ protected:
 			overlayHeight = 0;
 			hardwareWidth = 0;
 			hardwareHeight = 0;
-#ifdef USE_RGB_COLOR
 			// format set to 0 values by Graphics::PixelFormat constructor
-#endif
 		}
 	};
 	VideoState _videoMode, _oldVideoMode;
@@ -324,7 +334,7 @@ protected:
 
 	const PluginList &_scalerPlugins;
 	ScalerPluginObject *_scalerPlugin;
-	Scaler *_scaler;
+	Scaler *_scaler, *_mouseScaler;
 	uint _maxExtraPixels;
 	uint _extraPixels;
 
@@ -339,8 +349,14 @@ protected:
 	};
 
 	// Dirty rect management
-	SDL_Rect _dirtyRectList[NUM_DIRTY_RECT];
+	// When double-buffering we need to redraw both updates from
+	// current frame and previous frame. For convenience we copy
+	// them here before traversing the list.
+	SDL_Rect _dirtyRectList[2 * NUM_DIRTY_RECT];
 	int _numDirtyRects;
+
+	SDL_Rect _prevDirtyRectList[NUM_DIRTY_RECT];
+	int _numPrevDirtyRects;
 
 	struct MousePos {
 		// The size and hotspot of the original cursor image.
@@ -363,21 +379,15 @@ protected:
 			{ }
 	};
 
-	byte *_mouseData;
-	SDL_Rect _mouseBackup;
+	SDL_Rect _mouseLastRect, _mouseNextRect;
 	MousePos _mouseCurState;
-#ifdef USE_RGB_COLOR
 	uint32 _mouseKeyColor;
-#else
-	byte _mouseKeyColor;
-#endif
+	bool _disableMouseKeyColor;
+	byte _mappedMouseKeyColor;
 	bool _cursorDontScale;
 	bool _cursorPaletteDisabled;
 	SDL_Surface *_mouseOrigSurface;
 	SDL_Surface *_mouseSurface;
-	enum {
-		kMouseColorKey = 1
-	};
 
 	// Shake mode
 	// This is always set to 0 when building with SDL2.
@@ -387,6 +397,9 @@ protected:
 	// Palette data
 	SDL_Color *_currentPalette;
 	uint _paletteDirtyStart, _paletteDirtyEnd;
+
+	SDL_Color *_overlayPalette;
+	bool _isInOverlayPalette;
 
 	// Cursor palette data
 	SDL_Color *_cursorPalette;
@@ -403,13 +416,14 @@ protected:
 	Common::Rect _focusRect;
 #endif
 
-	virtual void addDirtyRect(int x, int y, int w, int h, bool realCoordinates = false);
+	virtual void addDirtyRect(int x, int y, int w, int h, bool inOverlay, bool realCoordinates = false);
 
 	virtual void drawMouse();
 	virtual void undrawMouse();
 	virtual void blitCursor();
 
 	virtual void internUpdateScreen();
+	virtual void updateScreen(SDL_Rect *dirtyRectList, int actualDirtyRects);
 
 	virtual bool loadGFXMode();
 	virtual void unloadGFXMode();
@@ -417,9 +431,14 @@ protected:
 
 	virtual void setAspectRatioCorrection(bool enable);
 	void setFilteringMode(bool enable);
+	void setVSync(bool enable);
 
-	bool saveScreenshot(const Common::String &filename) const override;
+	bool saveScreenshot(const Common::Path &filename) const override;
 	virtual void setGraphicsModeIntern();
+	virtual void getDefaultResolution(uint &w, uint &h);
+
+	// In SurfaceSDL mode we never render in 3D and can always switch the fullscreen state
+	bool canSwitchFullscreen() const override { return true; }
 
 private:
 	void setFullscreenMode(bool enable);
@@ -458,6 +477,8 @@ private:
 	 * can be triggered.
 	 */
 	bool _needRestoreAfterOverlay;
+	bool _prevForceRedraw;
+	bool _prevCursorNeedsRedraw;
 };
 
 #endif

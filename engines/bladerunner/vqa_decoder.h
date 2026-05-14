@@ -64,6 +64,7 @@ public:
 	~VQADecoder();
 
 	bool loadStream(Common::SeekableReadStream *s);
+	void close();
 
 	void readFrame(int frame, uint readFlags = kVQAReadAll);
 
@@ -80,10 +81,12 @@ public:
 	uint16 offsetX() const { return _header.offsetX; }
 	uint16 offsetY() const { return _header.offsetY; }
 
+	void overrideOffsetXY(uint16 offX, uint16 offY);
+
 	bool   hasAudio() const { return _header.channels != 0; }
 	uint16 frequency() const { return _header.freq; }
 
-	bool getLoopBeginAndEndFrame(int loop, int *begin, int *end);
+	bool getLoopBeginAndEndFrame(int loopId, int *begin, int *end);
 	int  getLoopIdFromFrame(int frame);
 
 	void allocatePaletteVQPTable(const uint32 numOfPalettes);
@@ -133,7 +136,14 @@ public:
 
 		LoopInfo() : loopCount(0), loops(nullptr), flags(0) {}
 		~LoopInfo() {
+			close();
+		}
+
+		void close() {
 			delete[] loops;
+			loops = nullptr;
+			loopCount = 0;
+			flags = 0;
 		}
 	};
 
@@ -197,6 +207,8 @@ public:
 		uint16 getHeight() const;
 
 		int getFrameCount() const;
+
+		void overrideOffsetXY(uint16 offX, uint16 offY);
 
 		void decodeVideoFrame(Graphics::Surface *surface, bool forceDraw);
 		void decodeZBuffer(ZBuffer *zbuffer);

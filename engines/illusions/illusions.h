@@ -41,6 +41,18 @@
 
 namespace Illusions {
 
+enum ILLUSIONSAction {
+	kActionNone,
+	kActionCursorUp,
+	kActionCursorDown,
+	kActionCursorLeft,
+	kActionCursorRight,
+	kActionInventory,
+	kActionAbort,
+	kActionSkip,
+	kActionCheatMode
+};
+
 char *debugW2I(uint16 *wstr);
 void swapBytesInWideString(byte * wstr);
 
@@ -221,8 +233,8 @@ public:
 
 	bool _isSaveAllowed;
 
-	bool canLoadGameStateCurrently() override { return _isSaveAllowed; }
-	bool canSaveGameStateCurrently() override { return _isSaveAllowed; }
+	bool canLoadGameStateCurrently(Common::U32String *msg = nullptr) override { return _isSaveAllowed; }
+	bool canSaveGameStateCurrently(Common::U32String *msg = nullptr) override { return _isSaveAllowed; }
 	Common::Error loadGameState(int slot) override;
 	Common::Error saveGameState(int slot, const Common::String &desc, bool isAutosave = false) override;
 	Common::Error removeGameState(int slot);

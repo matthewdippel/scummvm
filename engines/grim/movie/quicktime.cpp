@@ -39,12 +39,11 @@ QuickTimePlayer::QuickTimePlayer() : MoviePlayer() {
 bool QuickTimePlayer::loadFile(const Common::String &filename) {
 	_fname = filename;
 
-	Common::SeekableReadStream *stream = SearchMan.createReadStreamForMember(_fname);
+	Common::SeekableReadStream *stream = SearchMan.createReadStreamForMember(Common::Path(_fname));
 	if (!stream)
 		return false;
 
 	_videoDecoder->loadStream(stream);
-	_videoDecoder->start();
 
 	return true;
 }

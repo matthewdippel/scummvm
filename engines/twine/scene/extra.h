@@ -55,8 +55,8 @@ enum ExtraType {
 	MAGIC_BALL_KEY = 1 << 9,  // 0x0200
 	TIME_IN = 1 << 10,        // 0x0400
 	ONE_FRAME = 1 << 11,      // 0x0800
-	EXPLOSION = 1 << 12,      // 0x1000
-	WAIT_NO_COL = 1 << 13,    // 0x2000
+	EXPLOSION = 1 << 12,      // 0x1000 EXTRA_EXPLO
+	WAIT_NO_COL = 1 << 13,    // 0x2000 EXTRA_WAIT_NO_COL
 	WAIT_SOME_TIME = 1 << 14, // 0x4000
 	COMPUTE_TRAJ = 1 << 15    // 0x8000 used in dotemu enhanced to render the magic ball trajectories
 };
@@ -67,7 +67,7 @@ struct ExtraListStruct {
 	IVec3 lastPos;
 	IVec3 destPos;
 
-	ActorMoveStruct trackActorMove;
+	RealValue trackActorMove;
 
 	uint16 type = 0; /**< ExtraType bitmask */
 	int16 angle = 0; // weight
@@ -88,17 +88,17 @@ class Extra {
 private:
 	TwinEEngine *_engine;
 
-	void throwExtra(ExtraListStruct *extra, int32 xAngle, int32 yAngle, int32 x, int32 extraAngle);
+	void initFly(ExtraListStruct *extra, int32 xAngle, int32 yAngle, int32 x, int32 extraAngle);
 	void bounceExtra(ExtraListStruct *extra, int32 x, int32 y, int32 z);
-	int32 findExtraKey() const;
-	int32 addExtraAimingAtKey(int32 actorIdx, int32 x, int32 y, int32 z, int32 spriteIdx, int32 extraIdx);
-	void drawSpecialShape(const ExtraShape &shapeTable, int32 x, int32 y, int32 color, int32 angle, int32 size, Common::Rect &renderRect);
+	int32 searchBonusKey() const;
+	int32 extraSearchKey(int32 actorIdx, int32 x, int32 y, int32 z, int32 spriteIdx, int32 extraIdx);
+	void aff2DShape(const ExtraShape &shapeTable, int32 x, int32 y, int32 color, int32 angle, int32 zoom, Common::Rect &renderRect);
 
 public:
 	Extra(TwinEEngine *engine);
 	ExtraListStruct _extraList[EXTRA_MAX_ENTRIES];
 
-	int32 addExtra(int32 actorIdx, int32 x, int32 y, int32 z, int32 spriteIdx, int32 targetActor, int32 maxSpeed, int32 strengthOfHit);
+	int32 extraSearch(int32 actorIdx, int32 x, int32 y, int32 z, int32 spriteIdx, int32 targetActor, int32 maxSpeed, int32 strengthOfHit);
 
 	/**
 	 * Add extra explosion
@@ -108,12 +108,12 @@ public:
 	 */
 	int32 addExtraExplode(int32 x, int32 y, int32 z);
 
-	inline int32 addExtraExplode(const IVec3 &pos) {
+	inline int32 extraExplo(const IVec3 &pos) {
 		return addExtraExplode(pos.x, pos.y, pos.z);
 	}
 
 	/** Reset all used extras */
-	void resetExtras();
+	void clearExtra();
 
 	int32 initSpecial(int32 x, int32 y, int32 z, ExtraSpecialType type);
 	int32 addExtraBonus(int32 x, int32 y, int32 z, int32 xAngle, int32 yAngle, int32 type, int32 bonusAmount);
@@ -122,16 +122,16 @@ public:
 		return addExtraBonus(pos.x, pos.y, pos.z, xAngle, yAngle, type, bonusAmount);
 	}
 
-	int32 addExtraThrow(int32 actorIdx, int32 x, int32 y, int32 z, int32 spriteIdx, int32 xAngle, int32 yAngle, int32 xRotPoint, int32 extraAngle, int32 strengthOfHit);
+	int32 throwExtra(int32 actorIdx, int32 x, int32 y, int32 z, int32 spriteIdx, int32 xAngle, int32 yAngle, int32 xRotPoint, int32 extraAngle, int32 strengthOfHit);
 	int32 addExtraAiming(int32 actorIdx, int32 x, int32 y, int32 z, int32 spriteIdx, int32 targetActorIdx, int32 finalAngle, int32 strengthOfHit);
 	void addExtraThrowMagicball(int32 x, int32 y, int32 z, int32 xAngle, int32 yAngle, int32 xRotPoint, int32 extraAngle);
 
-	void drawExtraSpecial(int32 extraIdx, int32 x, int32 y, Common::Rect &renderRect);
+	void affSpecial(int32 extraIdx, int32 x, int32 y, Common::Rect &renderRect);
 
 	int getBonusSprite(BonusParameter bonusParameter) const;
 
 	/** Process extras */
-	void processExtras();
+	void gereExtras();
 };
 
 } // namespace TwinE

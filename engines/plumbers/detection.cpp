@@ -57,7 +57,7 @@ static const ADGameDescription gameDescriptions[] = {
 		AD_ENTRY1s("launchme", "d3ab77d1a8a2289422a0f51e7aa91821", 143300),
 		Common::EN_ANY,
 		Common::kPlatform3DO,
-		ADGF_UNSTABLE,
+		ADGF_NO_FLAGS,
 		GUIO1(GUIO_NOMIDI)
 	},
 
@@ -66,16 +66,16 @@ static const ADGameDescription gameDescriptions[] = {
 
 } // End of namespace Plumbers
 
-class PlumbersMetaEngineDetection : public AdvancedMetaEngineDetection {
+class PlumbersMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	PlumbersMetaEngineDetection() : AdvancedMetaEngineDetection(Plumbers::gameDescriptions, sizeof(ADGameDescription), plumbersGames) {
-	}
-
-	const char *getEngineId() const override {
-		return "plumbers";
+	PlumbersMetaEngineDetection() : AdvancedMetaEngineDetection(Plumbers::gameDescriptions, plumbersGames) {
 	}
 
 	const char *getName() const override {
+		return "plumbers";
+	}
+
+	const char *getEngineName() const override {
 		return "Plumbers Don't Wear Ties";
 	}
 

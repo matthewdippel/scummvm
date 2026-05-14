@@ -22,6 +22,8 @@
 #ifndef NANCY_INPUT_H
 #define NANCY_INPUT_H
 
+#include "engines/nancy/commontypes.h"
+
 #include "common/rect.h"
 #include "common/keyboard.h"
 
@@ -38,20 +40,22 @@ class State;
 
 struct NancyInput {
 	enum InputType : uint16 {
-		kLeftMouseButtonDown    = 1 << 0,
-		kLeftMouseButtonHeld    = 1 << 1,
-		kLeftMouseButtonUp      = 1 << 2,
-		kRightMouseButtonDown   = 1 << 3,
-		kRightMouseButtonHeld   = 1 << 4,
-		kRightMouseButtonUp     = 1 << 5,
-		kMoveUp                 = 1 << 6,
-		kMoveDown               = 1 << 7,
-		kMoveLeft               = 1 << 8,
-		kMoveRight              = 1 << 9,
-		kMoveFastModifier       = 1 << 10,
+		kLeftMouseButtonDown	= 1 << 0,
+		kLeftMouseButtonHeld	= 1 << 1,
+		kLeftMouseButtonUp		= 1 << 2,
+		kRightMouseButtonDown	= 1 << 3,
+		kRightMouseButtonHeld	= 1 << 4,
+		kRightMouseButtonUp		= 1 << 5,
+		kMoveUp					= 1 << 6,
+		kMoveDown				= 1 << 7,
+		kMoveLeft				= 1 << 8,
+		kMoveRight				= 1 << 9,
+		kMoveFastModifier		= 1 << 10,
+		kOpenMainMenu			= 1 << 11,
+		kRaycastMap				= 1 << 12,
 
-		kLeftMouseButton        = kLeftMouseButtonDown | kLeftMouseButtonHeld | kLeftMouseButtonUp,
-		kRightMouseButton       = kRightMouseButtonDown | kRightMouseButtonHeld | kRightMouseButtonUp
+		kLeftMouseButton		= kLeftMouseButtonDown | kLeftMouseButtonHeld | kLeftMouseButtonUp,
+		kRightMouseButton		= kRightMouseButtonDown | kRightMouseButtonHeld | kRightMouseButtonUp
 	};
 
 	Common::Point mousePos;
@@ -64,29 +68,20 @@ struct NancyInput {
 // This class handles collecting events and translating them to a NancyInput object,
 // which can then be pulled by interested classes through getInput()
 class InputManager {
-	friend class NancyConsole;
-
-enum NancyAction {
-	kNancyActionMoveUp,
-	kNancyActionMoveDown,
-	kNancyActionMoveLeft,
-	kNancyActionMoveRight,
-	kNancyActionMoveFast,
-	kNancyActionLeftClick,
-	kNancyActionRightClick,
-	kNancyActionFastConvoToggle,
-	kNancyActionEndConvoToggle,
-	kNancyActionReloadSave,
-	kNancyActionRequestMainMenu,
-	kNancyActionRequestSaveLoad,
-	kNancyActionRequestSetupMenu,
-	kNancyActionRequestCredits,
-	kNancyActionRequestMap,
-	kNancyActionRequestCheatMenu,
-	kNancyActionRequestEventMenu
-};
 
 public:
+	enum NancyAction {
+		kNancyActionMoveUp,
+		kNancyActionMoveDown,
+		kNancyActionMoveLeft,
+		kNancyActionMoveRight,
+		kNancyActionMoveFast,
+		kNancyActionLeftClick,
+		kNancyActionRightClick,
+		kNancyActionOpenMainMenu,
+		kNancyActionShowRaycastMap
+	};
+
 	InputManager() :
 		_inputs(0),
 		_mouseEnabled(true),
@@ -97,8 +92,12 @@ public:
 	NancyInput getInput() const;
 	void forceCleanInput();
 	void setMouseInputEnabled(bool enabled) { _mouseEnabled = enabled; }
+	void setKeymapEnabled(Common::String keymapName, bool enabled);
+	void setVKEnabled(bool enabled);
 
-	static void initKeymaps(Common::KeymapArray &keymaps);
+	static void initKeymaps(Common::KeymapArray &keymaps, const char *target);
+
+	static const char *_mazeKeymapID;
 
 private:
 	uint16 _inputs;

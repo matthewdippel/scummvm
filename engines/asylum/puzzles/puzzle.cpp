@@ -58,9 +58,6 @@ bool Puzzle::handleEvent(const AsylumEvent &evt) {
 	case EVENT_ASYLUM_UPDATE:
 		return update(evt);
 
-	case Common::EVENT_KEYDOWN:
-		return key(evt);
-
 	case Common::EVENT_LBUTTONDOWN:
 		return mouseLeftDown(evt);
 
@@ -68,10 +65,8 @@ bool Puzzle::handleEvent(const AsylumEvent &evt) {
 		return mouseLeftUp(evt);
 
 	case Common::EVENT_RBUTTONDOWN:
-		return mouseRightDown(evt);
-
-	case Common::EVENT_RBUTTONUP:
-		return mouseRightUp(evt);
+	case Common::EVENT_CUSTOM_ENGINE_ACTION_START:
+		return exitPuzzle();
 	}
 
 	return false;
@@ -102,19 +97,6 @@ bool Puzzle::update(const AsylumEvent &evt) {
 	}
 
 	return true;
-}
-
-bool Puzzle::keyExit(const AsylumEvent &evt) {
-	_vm->switchEventHandler(getScene());
-
-	return true;
-}
-
-
-void Puzzle::exitPuzzle() {
-	getScreen()->clear();
-
-	_vm->switchEventHandler(getScene());
 }
 
 //////////////////////////////////////////////////////////////////////////

@@ -330,11 +330,17 @@ void AIScriptOfficerGrayford::ClickedByPlayer() {
 		Actor_Set_Goal_Number(kActorOfficerGrayford, kGoalOfficerGrayfordStopAndTalk1);
 		Actor_Face_Actor(kActorMcCoy, kActorOfficerGrayford, true);
 		Actor_Face_Actor(kActorOfficerGrayford, kActorMcCoy, true);
+		// TODO: Bug in the original? Both branches are identical
+		// The code is indeed like this in the original
+		// The duplication might indicated intend of different quotes by McCoy
+		// based on the coin flip, just like the other cases that use "coin flip"/
+#if 0
 		if (Random_Query(1, 2) == 1) {
 			Actor_Says(kActorMcCoy, 5075, 14); // Hey, pal.
 		} else {
-			Actor_Says(kActorMcCoy, 5075, 14); // Hey, pal. TODO  bug in the original? Matches the above statement
-		}
+#endif
+			Actor_Says(kActorMcCoy, 5075, 14); // Hey, pal.
+		//}
 		Actor_Set_Goal_Number(kActorOfficerGrayford, kGoalOfficerGrayfordWalksInPS03c);
 		break;
 
@@ -1297,6 +1303,7 @@ bool AIScriptOfficerGrayford::UpdateAnimation(int *animation, int *frame) {
 	default:
 		// Dummy placeholder, kModelAnimationZubenWalking (399) is a Zuben animation
 		*animation = kModelAnimationZubenWalking;
+		debugC(6, kDebugAnimation, "AIScriptOfficerGrayford::UpdateAnimation() - Current _animationState (%d) is a placeholder", _animationState);
 		break;
 	}
 	*frame = _animationFrame;
@@ -1632,6 +1639,9 @@ bool AIScriptOfficerGrayford::ChangeAnimationMode(int mode) {
 		_animationFrame = 0;
 		break;
 
+	default:
+		debugC(6, kDebugAnimation, "AIScriptOfficerGrayford::ChangeAnimationMode(%d) - Target mode is not supported", mode);
+		break;
 	}
 
 	return true;

@@ -30,16 +30,23 @@
 #pragma GCC diagnostic ignored "-Wnarrowing"
 #endif
 
+#ifdef _MSC_VER
+#pragma warning(disable:4838) // Narrowing conversion
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "create_lure_dat.h"
+#include "common/ptr.h"
 
 using namespace Common;
 
 File outputFile, lureExe;
 Common::Language language;
 uint16 dataSegment;
+
+bool generateRussianDat = false;
 
 #define NUM_BYTES_VALIDATE 1024
 #define ENGLISH_FILE_CHECKSUM 0xFD70
@@ -62,7 +69,7 @@ int actionIndex = 0;
 uint16 talkOffsets[MAX_TALK_LISTS];
 int talkOffsetIndex = 0;
 
-#define NUM_LANGUAGES 5
+#define NUM_LANGUAGES 6
 struct AnimListRecord {
 	uint16 languages[NUM_LANGUAGES];
 };
@@ -129,7 +136,8 @@ void add_anim_record(uint16 offset) {
 		else if (language == FR_FRA) index = 2;
 		else if (language == DE_DEU) index = 3;
 		else if (language == ES_ESP) index = 4;
-		else if (language != EN_ANY && language != EN_USA)
+		// Russian language is a hack on top of English
+		else if (language != EN_ANY && language != EN_USA && language != RU_RUS)
 			errorExit("add_anim_record: Unknown language");
 
 		AnimListRecord *p = &animDataList[0];
@@ -160,7 +168,8 @@ void read_basic_palette(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) segmentStart = 0xC517;
 	else if (language == ES_ESP) segmentStart = 0xC177;
 	else if (language == EN_USA) segmentStart = 0xC387;
-	else if (language != EN_ANY) errorExit("read_basic_palette: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_basic_palette: Unknown language");
 
 	lureExe.seek(segmentStart);
 	data = (byte *) malloc(totalSize);
@@ -189,7 +198,8 @@ void read_dialog_data(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) segmentStart = 0x1e230;
 	else if (language == ES_ESP) segmentStart = 0x1de60;
 	else if (language == EN_USA) segmentStart = 0x1df90;
-	else if (language != EN_ANY) errorExit("read_dialog_data: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_dialog_data: Unknown language");
 
 	totalSize = DIALOG_SIZE;
 	lureExe.seek(segmentStart);
@@ -204,7 +214,8 @@ void read_talk_dialog_data(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) segmentStart = 0x1e380;
 	else if (language == ES_ESP) segmentStart = 0x1dfb0;
 	else if (language == EN_USA) segmentStart = 0x1e0e0;
-	else if (language != EN_ANY) errorExit("read_talk_dialog_data: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_talk_dialog_data: Unknown language");
 
 	totalSize = TALK_DIALOG_SIZE;
 	lureExe.seek(segmentStart);
@@ -226,7 +237,8 @@ void read_room_data(byte *&data, uint16 &totalSize)  {
 	uint16 dataStart = 0xbf40;
 	uint16 walkAreaOffset = 0x2eb1;
 	switch (language) {
-		case EN_ANY:
+	case EN_ANY:
+	case RU_RUS:
 		break;
 	case IT_ITA:
 		dataStart = 0xc000;
@@ -284,7 +296,7 @@ void read_room_data(byte *&data, uint16 &totalSize)  {
 			offset += sizeof(RoomResourceOutput);
 
 			// Copy over room exits
-			for (int foo = 0; ; ++foo) {
+			while (true) {
 				RoomResourceExit1 *p = (RoomResourceExit1 *) (data + offset);
 				lureExe.read(p, sizeof(RoomResourceExit1));
 				if (FROM_LE_16(p->xs) == 0xffff) break;
@@ -387,6 +399,13 @@ uint16 spanishTickProcOffsets[] = {
 	0xffff
 };
 
+uint16 russianTickProcOffsets[] = {
+	0x41BD, 0x4f82, 0x5e44, 0x625e, 0x6571, 0x7207, 0x7c14, 0x7c24, 0x7efa, 0x7f02,
+	0x7F37, 0x7f3a, 0x7f54, 0x7f69, 0x7fa1, 0x8009, 0x80c6, 0x813f, 0x8180, 0x81b3,
+	0x81f3, 0x820e, 0x8241, 0x82a0, 0x85ce, 0x862d, 0x865A, 0x86FA, 0x86FF, 0x871E,
+	0x873D, 0x8742, 0x8747, 0x87B3, 0x87EC, 0x882A, 0x8ABD, 0x982D, 0x98B6,
+	0xffff
+};
 
 uint16 englishOffsets[4] = {0x5d98, 0x5eb8, 0x623e, 0x63b1};
 uint16 italianOffsets[4] = {0x5e58, 0x5f78, 0x62fe, 0x6471};
@@ -394,6 +413,7 @@ uint16 frenchOffsets[4]  = {0x5e78, 0x5f98, 0x631e, 0x6491};
 uint16 germanOffsets[4]  = {0x5ea8, 0x5fc8, 0x634e, 0x64c1};
 uint16 spanishOffsets[4] = {0x5e78, 0x5f98, 0x631e, 0x6491};
 uint16 konamiOffsets[4] = {0x5d98, 0x5eb8, 0x623e, 0x63b1};
+uint16 russianOffsets[4] = {0x5d98, 0x5eb8, 0x623e, 0x63b1};
 
 uint16 englishLoadOffsets[] = {0x3afe, 0x41BD, 0x7167, 0x7172, 0x8617, 0x88ac, 0};
 uint16 konamiLoadOffsets[] =  {0x3de4, 0x44A3, 0x744D, 0x7458, 0x88fd, 0x8B92, 0};
@@ -401,6 +421,7 @@ uint16 italianLoadOffsets[] = {0x3b46, 0x4205, 0x71af, 0x71ba, 0x8675, 0x890a, 0
 uint16 frenchLoadOffsets[]  = {0x3ebc, 0x457B, 0x755b, 0x7566, 0x8a18, 0x8ca8, 0};
 uint16 germanLoadOffsets[]  = {0x3e84, 0x4543, 0x74f1, 0x74fc, 0x8a75, 0x8d05, 0};
 uint16 spanishLoadOffsets[] = {0x3b88, 0x4247, 0x71f1, 0x71fc, 0x86db, 0x8970, 0};
+uint16 russianLoadOffsets[] = {0x3afe, 0x41BD, 0x7167, 0x7172, 0x8617, 0x88ac, 0};
 
 void read_hotspot_data(byte *&data, uint16 &totalSize)  {
 	uint16 startId[4] = {0x3e8, 0x408, 0x2710, 0x7530};
@@ -422,6 +443,7 @@ void read_hotspot_data(byte *&data, uint16 &totalSize)  {
 	uint16 walkToOffset = 0xBC4B;
 	switch (language) {
 	case EN_ANY:
+	case RU_RUS:
 		break;
 	case IT_ITA:
 		offsets = &italianOffsets[0];
@@ -689,7 +711,8 @@ void read_room_exits(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) dataStart = 0x2f8f;
 	else if (language == ES_ESP) dataStart = 0x2f7b;
 	else if (language == EN_USA) dataStart = 0x2F61;
-	else if (language != EN_ANY) errorExit("read_room_exits: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_room_exits: Unknown language");
 
 	lureExe.seek(dataSegment + dataStart);
 	for (roomCtr = 0; roomCtr < NUM_ROOM_EXITS; ++roomCtr)
@@ -763,7 +786,8 @@ void read_room_exit_joins(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) dataStart = 0xcf40;
 	else if (language == ES_ESP) dataStart = 0xcf10;
 	else if (language == EN_USA) dataStart = 0xce30;
-	else if (language != EN_ANY) errorExit("read_room_exit_joins: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_room_exit_joins: Unknown language");
 
 	lureExe.seek(dataSegment + dataStart);
 
@@ -871,13 +895,13 @@ void read_anim_data(byte *&data, uint16 &totalSize) {
 
 		if (includeAnim[ctr]) {
 			// Loop to get movement records
-			uint16 *inDirs[4] = {&inRec.leftOffset, &inRec.rightOffset,
+			UnalignedPtr<uint16> inDirs[4] = {&inRec.leftOffset, &inRec.rightOffset,
 				&inRec.upOffset, &inRec.downOffset};
-			uint16 *outDirs[4] = {&rec->leftOffset, &rec->rightOffset,
+			UnalignedPtr<uint16> outDirs[4] = {&rec->leftOffset, &rec->rightOffset,
 				&rec->upOffset, &rec->downOffset};
 
 			for (dirCtr=0; dirCtr<4; ++dirCtr) {
-				offset = READ_LE_UINT16(inDirs[dirCtr]);
+				offset = FROM_LE_16(inDirs[dirCtr].load());
 
 				if (offset == 0) {
 					startOffset = 0;
@@ -902,7 +926,7 @@ void read_anim_data(byte *&data, uint16 &totalSize) {
 					moveOffset += 2;
 				}
 
-				WRITE_LE_UINT16(outDirs[dirCtr], startOffset);
+				outDirs[dirCtr].store(TO_LE_16(startOffset));
 			}
 		}
 	}
@@ -918,7 +942,8 @@ void read_script_data(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) segmentOffset = 0x1e480;
 	else if (language == ES_ESP) segmentOffset = 0x1e0b0;
 	else if (language == EN_USA) segmentOffset = 0x1e1e0;
-	else if (language != EN_ANY) errorExit("read_script_data: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_script_data: Unknown language");
 	lureExe.seek(segmentOffset);
 
 	totalSize = SCRIPT_SEGMENT_SIZE;
@@ -933,7 +958,8 @@ void read_script2_data(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) segmentOffset = 0x1a1f0;
 	else if (language == ES_ESP) segmentOffset = 0x19e20;
 	else if (language == EN_USA) segmentOffset = 0x19f50;
-	else if (language != EN_ANY) errorExit("read_script2_data: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_script2_data: Unknown language");
 	lureExe.seek(segmentOffset);
 
 	totalSize = SCRIPT2_SEGMENT_SIZE;
@@ -948,7 +974,8 @@ void read_hotspot_script_offsets(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) dataStart = 0x58f0;
 	else if (language == ES_ESP) dataStart = 0x58c0;
 	else if (language == EN_USA) dataStart = 0x57e0;
-	else if (language != EN_ANY) errorExit("read_hotspot_script_offsets: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_hotspot_script_offsets: Unknown language");
 
 	lureExe.seek(dataSegment + dataStart);
 	totalSize = HOTSPOT_SCRIPT_SIZE;
@@ -963,7 +990,8 @@ void read_messages_segment(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) segmentOffset = 0x210E0;
 	else if (language == ES_ESP) segmentOffset = 0x20d10;
 	else if (language == EN_USA) segmentOffset = 0x20e40;
-	else if (language != EN_ANY) errorExit("read_messages_segment: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_messages_segment: Unknown language");
 
 	lureExe.seek(segmentOffset);
 	totalSize = MESSAGES_SEGMENT_SIZE;
@@ -1026,7 +1054,8 @@ void read_talk_headers(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) dataStart = 0x515c;
 	else if (language == ES_ESP) dataStart = 0x512c;
 	else if (language == EN_USA) dataStart = 0x505c;
-	else if (language != EN_ANY) errorExit("read_talk_headers: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_talk_headers: Unknown language");
 
 	lureExe.seek(dataSegment + dataStart);
 	lureExe.read(&entries[0], sizeof(TalkEntry) * TALK_NUM_ENTRIES);
@@ -1109,6 +1138,7 @@ uint16 italianGiveTalkIds[7] = {0xD01E, 0xCFD4, 0xD050, 0xD06A, 0xD090, 0xD0B6, 
 uint16 frenchGiveTalkIds[7]  = {0xD03E, 0xCFF4, 0xD070, 0xD08A, 0xD0B0, 0xD0D6, 0xf0f0};
 uint16 germanGiveTalkIds[7]  = {0xD06E, 0xD024, 0xD0A0, 0xD0BA, 0xD0E0, 0xD106, 0xf120};
 uint16 spanishGiveTalkIds[7] = {0xD03E, 0xCFF4, 0xD070, 0xD08A, 0xD0B0, 0xD0D6, 0xf0f0};
+uint16 russianGiveTalkIds[7] = {0xCF5E, 0xCF14, 0xCF90, 0xCFAA, 0xCFD0, 0xCFF6, 0xf010};
 
 void read_talk_data(byte *&data, uint16 &totalSize) {
 	uint16 responseOffset;
@@ -1121,7 +1151,8 @@ void read_talk_data(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) giveTalkIds = &germanGiveTalkIds[0];
 	else if (language == ES_ESP) giveTalkIds = &spanishGiveTalkIds[0];
 	else if (language == EN_USA) giveTalkIds = &konamiGiveTalkIds[0];
-	else if (language != EN_ANY) errorExit("read_talk_data: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_talk_data: Unknown language");
 
 	data = (byte *) malloc(MAX_DATA_SIZE);
 	uint16 *v = (uint16 *) data;
@@ -1240,7 +1271,8 @@ void read_room_pathfinding_data(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) dataStart = 0x995A;
 	else if (language == ES_ESP) dataStart = 0x992A;
 	else if (language == EN_USA) dataStart = 0x984a;
-	else if (language != EN_ANY) errorExit("read_room_pathfinding_data: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_room_pathfinding_data: Unknown language");
 	lureExe.seek(dataSegment + dataStart);
 
 	totalSize = PATHFIND_SIZE;
@@ -1301,7 +1333,8 @@ void read_room_exit_hotspots_data(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) dataStart = 0x2e85;
 	else if (language == ES_ESP) dataStart = 0x2e71;
 	else if (language == EN_USA) dataStart = 0x2e57;
-	else if (language != EN_ANY) errorExit("read_room_exit_hotspots_data: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("read_room_exit_hotspots_data: Unknown language");
 	lureExe.seek(dataSegment + dataStart);
 
 	lureExe.read(rec, sizeof(RoomExitIndexedHotspotResource));
@@ -1322,7 +1355,8 @@ void save_fight_segment(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) fightSegment = 0x1c980;
 	else if (language == ES_ESP) fightSegment = 0x1c5b0;
 	else if (language == EN_USA) fightSegment = 0x1c6E0;
-	else if (language != EN_ANY) errorExit("save_fight_segment: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("save_fight_segment: Unknown language");
 	lureExe.seek(fightSegment);
 
 	totalSize = FIGHT_SEGMENT_SIZE;
@@ -1395,6 +1429,24 @@ const char *spanishTextStrings[NUM_TEXT_ENTRIES] = {
 	"el ", "la ", "los ", "las ", "este ", "esta ", "estos ", "estas ", nullptr, nullptr
 };
 
+const char *russianTextStrings[NUM_TEXT_ENTRIES] = {
+//   взять			   нажать	 потянуть	 использовать	 открыть	закрыть	   запереть	   отпереть	   применить 
+	"dpznm", nullptr, "yf;fnm", "gjnzyenm", "bcgjkmpjdfnm", "jnrhsnm", "pfrhsnm", "pfgthtnm", "jngthtnm", "ghbvtybnm",
+//   отдать	   поговорить с	   приказать	купить	  осмотреться	 осмотреть	  заглянуть в	 попросить
+	"jnlfnm", "gjujdjhbnm c", "ghbrfpfnm", "regbnm", "jcvjnhtnmcz", "jcvjnhtnm", "pfukzyenm d", "gjghjcbnm", nullptr,
+//	 выпить	   мои карманы	  идти к	вернуться	 подкупить	  изучить
+	"dsgbnm", "vjb rfhvfys", "blnb r", "dthyenmcz", "gjlregbnm", "bpexbnm",
+//	 Авторы	   Новая Игра    Сохранить	  Восстановить	  Выход	   Текст "-"
+	"Fdnjhs", "Yjdfz buhf", "Cj[hfybnm", "Djccnfyjdbnm", "Ds[jl", "Ntrcn \x7F-\x7F",
+//	 Текст "+"			Звук вкл.	 Звук выкл.	   (ничего нет)     >			>
+	"Ntrcn \x7F+\x7F", "Pder drk/", "Pder dsrk/", "(ybxtuj ytn)", " * ", "_", " * ",
+//	 затем	  все	 Оставишь город скорлам?			  (Д)а, надоели они все.		   (Н)ет, только не сейчас.
+	"pfntv", "dct", "Jcnfdbim ujhjl crjhkfv~              (L)f< yfljtkb jyb dct/           (Y)tn< njkmrj yt ctqxfc/",
+//	 У тебя с собой		ничего нет	  У тебя	 грот	 грота(ов)
+	"E nt?z c cj?jq", " ybxtuj ytn", "E nt?z ", "uhjn", "uhjnf(jd)",
+	nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr
+};
+
 void save_text_strings(byte *&data, uint16 &totalSize) {
 	int index;
 
@@ -1403,6 +1455,7 @@ void save_text_strings(byte *&data, uint16 &totalSize) {
 	else if (language == FR_FRA) textStrings = &frenchTextStrings[0];
 	else if (language == DE_DEU) textStrings = &germanTextStrings[0];
 	else if (language == ES_ESP) textStrings = &spanishTextStrings[0];
+	else if (language == RU_RUS) textStrings = &russianTextStrings[0];
 	else if (language != EN_ANY && language != EN_USA)
 		errorExit("save_text_strings: Unknown language");
 
@@ -1435,7 +1488,7 @@ void save_sound_desc_data(byte *&data, uint16 &totalSize) {
 	else if (language == FR_FRA) dataStart = 0x5751;
 	else if (language == DE_DEU) dataStart = 0x5781;
 	else if (language == ES_ESP) dataStart = 0x5751;
-	else if (language != EN_ANY && language != EN_USA)
+	else if (language != EN_ANY && language != EN_USA && language != RU_RUS)
 		errorExit("save_sound_desc_data: Unknown language");
 	lureExe.seek(dataSegment + dataStart);
 
@@ -1463,27 +1516,27 @@ const DecoderEntry englishDecoders[] = {
 	{"110010", 'g'}, {"110011", '\0'}, {"110100", 'w'}, {"110101", 'c'},
 	{"110110", 'f'}, {"1101110", '.'}, {"1101111", 'm'}, {"111000", 'p'},
 	{"111001", 'b'}, {"1110100", ','}, {"1110101", 'k'}, {"1110110", '\''},
-	{"11101110", 'I'}, {"11101111", 'v'}, {"1111000", '!'}, {"1111001", '\xb4'},
-	{"11110100", 'T'}, {"11110101", '\xb5'}, {"11110110", '?'}, {"111101110", '\xb2'},
-	{"111101111", '\xb3'}, {"11111000", 'W'}, {"111110010", 'H'}, {"111110011", 'A'},
-	{"111110100", '\xb1'}, {"111110101", 'S'}, {"111110110", 'Y'}, {"1111101110", 'G'},
+	{"11101110", 'I'}, {"11101111", 'v'}, {"1111000", '!'}, {"1111001", 0xb4},
+	{"11110100", 'T'}, {"11110101", 0xb5}, {"11110110", '?'}, {"111101110", 0xb2},
+	{"111101111", 0xb3}, {"11111000", 'W'}, {"111110010", 'H'}, {"111110011", 'A'},
+	{"111110100", 0xb1}, {"111110101", 'S'}, {"111110110", 'Y'}, {"1111101110", 'G'},
 	{"11111011110", 'M'}, {"11111011111", 'N'}, {"111111000", 'O'}, {"1111110010", 'E'},
 	{"1111110011", 'L'}, {"1111110100", '-'}, {"1111110101", 'R'}, {"1111110110", 'B'},
-	{"11111101110", 'D'}, {"11111101111", '\xa6'}, {"1111111000", 'C'},
-	{"11111110010", 'x'}, {"11111110011", 'j'}, {"1111111010", '\xac'},
-	{"11111110110", '\xa3'}, {"111111101110", 'P'}, {"111111101111", 'U'},
-	{"11111111000", 'q'}, {"11111111001", '\xad'}, {"111111110100", 'F'},
-	{"111111110101", '1'}, {"111111110110", '\xaf'}, {"1111111101110", ';'},
-	{"1111111101111", 'z'}, {"111111111000", '\xa5'}, {"1111111110010", '2'},
-	{"1111111110011", '\xb0'}, {"111111111010", 'K'}, {"1111111110110", '%'},
-	{"11111111101110", '\xa2'}, {"11111111101111", '5'}, {"1111111111000", ':'},
+	{"11111101110", 'D'}, {"11111101111", 0xa6}, {"1111111000", 'C'},
+	{"11111110010", 'x'}, {"11111110011", 'j'}, {"1111111010", 0xac},
+	{"11111110110", 0xa3}, {"111111101110", 'P'}, {"111111101111", 'U'},
+	{"11111111000", 'q'}, {"11111111001", 0xad}, {"111111110100", 'F'},
+	{"111111110101", '1'}, {"111111110110", 0xaf}, {"1111111101110", ';'},
+	{"1111111101111", 'z'}, {"111111111000", 0xa5}, {"1111111110010", '2'},
+	{"1111111110011", 0xb0}, {"111111111010", 'K'}, {"1111111110110", '%'},
+	{"11111111101110", 0xa2}, {"11111111101111", '5'}, {"1111111111000", ':'},
 	{"1111111111001", 'J'}, {"1111111111010", 'V'}, {"11111111110110", '6'},
-	{"11111111110111", '3'}, {"1111111111100", '\xab'}, {"11111111111010", '\xae'},
+	{"11111111110111", '3'}, {"1111111111100", 0xab}, {"11111111111010", 0xae},
 	{"111111111110110", '0'}, {"111111111110111", '4'}, {"11111111111100", '7'},
 	{"111111111111010", '9'}, {"111111111111011", '"'}, {"111111111111100", '8'},
-	{"111111111111101", '\xa7'}, {"1111111111111100", '/'}, {"1111111111111101", 'Q'},
-	{"11111111111111100", '\xa8'}, {"11111111111111101", '('}, {"111111111111111100", ')'},
-	{"111111111111111101", '\x99'}, {"11111111111111111", '\xa9'},
+	{"111111111111101", 0xa7}, {"1111111111111100", '/'}, {"1111111111111101", 'Q'},
+	{"11111111111111100", 0xa8}, {"11111111111111101", '('}, {"111111111111111100", ')'},
+	{"111111111111111101", 0x99}, {"11111111111111111", 0xa9},
 	{nullptr, '\0'}
 };
 
@@ -1495,199 +1548,234 @@ const DecoderEntry konamiDecoders[] = {
 	{ "11000", 'u' }, { "110010", 'w' }, { "1100110", 'c' },
 	{ "1100111", 'f' }, { "110100", '.' }, { "110101", 'y' },
 	{ "110110", 'p' }, { "1101110", 'b' }, { "1101111", ',' },
-	{ "111000", '\xA1' }, { "1110010", 'k' }, { "1110011", '\'' },
-	{ "1110100", 'I' }, { "1110101", 'v' }, { "1110110", '\xA4' },
-	{ "11101110", '!' }, { "11101111", '\xB0' }, { "1111000", '\xB8' },
-	{ "11110010", '?' }, { "111100110", '\xA2' }, { "111100111", '\xAA' },
+	{ "111000", 0xA1 }, { "1110010", 'k' }, { "1110011", '\'' },
+	{ "1110100", 'I' }, { "1110101", 'v' }, { "1110110", 0xA4 },
+	{ "11101110", '!' }, { "11101111", 0xB0 }, { "1111000", 0xB8 },
+	{ "11110010", '?' }, { "111100110", 0xA2 }, { "111100111", 0xAA },
 	{ "11110100", 'W' }, { "111101010", 'A' }, { "111101011", 'H' },
-	{ "111101100", 'T' }, { "111101101", '\xF2' }, { "111101110", '\xA3' },
-	{ "1111011110", 'G' }, { "11110111110", 'S' }, { "11110111111", '\xC5' },
+	{ "111101100", 'T' }, { "111101101", 0xF2 }, { "111101110", 0xA3 },
+	{ "1111011110", 'G' }, { "11110111110", 'S' }, { "11110111111", 0xC5 },
 	{ "111110000", 'Y' }, { "111110001", 'M' }, { "111110010", 'N' },
 	{ "1111100110", 'O' }, { "1111100111", 'L' }, { "111110100", 'E' },
-	{ "1111101010", '-' }, { "11111010110", '\xEF' }, { "11111010111", 'R' },
-	{ "1111101100", 'B' }, { "1111101101", 'D' }, { "1111101110", '\xC8' },
-	{ "11111011110", 'C' }, { "11111011111", 'x' }, { "1111110000", '\xA7' },
-	{ "1111110001", '\xE6' }, { "1111110010", 'j' }, { "11111100110", '\xAF' },
-	{ "11111100111", '\xBE' }, { "1111110100", '\xE0' }, { "11111101010", '\xC7' },
-	{ "11111101011", '\xB1' }, { "1111110110", '\xC9' }, { "11111101110", '\x50' },
-	{ "111111011110", 'U' }, { "111111011111", '\xBD' }, { "1111111000", 'q' },
-	{ "11111110010", '\xBC' }, { "111111100110", '\xDC' }, { "111111100111", '\xE9' },
-	{ "11111110100", 'F' }, { "111111101010", 'z' }, { "111111101011", '\xDB' },
-	{ "11111110110", '\xA0' }, { "111111101110", '\xC2' }, { "1111111011110", '\xC4' },
-	{ "1111111011111", '1' }, { "11111111000", '\xCD' }, { "111111110010", '\xBA' },
-	{ "1111111100110", '\xEE' }, { "1111111100111", ';' }, { "111111110100", '2' },
-	{ "1111111101010", '\xD9' }, { "1111111101011", 'K' }, { "1111111101100", '\xC3' },
-	{ "1111111101101", '%' }, { "1111111101110", '5' }, { "1111111101111", '\xE8' },
+	{ "1111101010", '-' }, { "11111010110", 0xEF }, { "11111010111", 'R' },
+	{ "1111101100", 'B' }, { "1111101101", 'D' }, { "1111101110", 0xC8 },
+	{ "11111011110", 'C' }, { "11111011111", 'x' }, { "1111110000", 0xA7 },
+	{ "1111110001", 0xE6 }, { "1111110010", 'j' }, { "11111100110", 0xAF },
+	{ "11111100111", 0xBE }, { "1111110100", 0xE0 }, { "11111101010", 0xC7 },
+	{ "11111101011", 0xB1 }, { "1111110110", 0xC9 }, { "11111101110", 0x50 },
+	{ "111111011110", 'U' }, { "111111011111", 0xBD }, { "1111111000", 'q' },
+	{ "11111110010", 0xBC }, { "111111100110", 0xDC }, { "111111100111", 0xE9 },
+	{ "11111110100", 'F' }, { "111111101010", 'z' }, { "111111101011", 0xDB },
+	{ "11111110110", 0xA0 }, { "111111101110", 0xC2 }, { "1111111011110", 0xC4 },
+	{ "1111111011111", '1' }, { "11111111000", 0xCD }, { "111111110010", 0xBA },
+	{ "1111111100110", 0xEE }, { "1111111100111", ';' }, { "111111110100", '2' },
+	{ "1111111101010", 0xD9 }, { "1111111101011", 'K' }, { "1111111101100", 0xC3 },
+	{ "1111111101101", '%' }, { "1111111101110", '5' }, { "1111111101111", 0xE8 },
 	{ "111111111000", '6' }, { "1111111110010", ':' }, { "1111111110011", 'J' },
-	{ "1111111110100", 'V' }, { "1111111110101", '\xA6' }, { "1111111110110", '\xB7' },
-	{ "11111111101110", '\xD0' }, { "11111111101111", '\xAE' }, { "1111111111000", '\xE3' },
-	{ "1111111111001", '3' }, { "1111111111010", '\xC0' }, { "11111111110110", '0' },
+	{ "1111111110100", 'V' }, { "1111111110101", 0xA6 }, { "1111111110110", 0xB7 },
+	{ "11111111101110", 0xD0 }, { "11111111101111", 0xAE }, { "1111111111000", 0xE3 },
+	{ "1111111111001", '3' }, { "1111111111010", 0xC0 }, { "11111111110110", '0' },
 	{ "111111111101110", '4' }, { "111111111101111", '9' }, { "11111111111000", '7' },
-	{ "11111111111001", '8' }, { "11111111111010", '\xD8' }, { "111111111110110", '\xE4' },
-	{ "111111111110111", '\xED' }, { "111111111111000", '\xAC' }, { "111111111111001", '"' },
-	{ "111111111111010", '/' }, { "111111111111011", '\xD5' }, { "111111111111100", '\xEA' },
-	{ "111111111111101", '\xEB' }, { "1111111111111100", 'Q' }, { "1111111111111101", '\xA5' },
-	{ "11111111111111100", '\x99' }, { "111111111111111010", '(' }, { "111111111111111011", ')' },
-	{ "111111111111111100", '\xB2' }, { "111111111111111101", '\xDA' },
-	{ "11111111111111111", '\xEC' },
+	{ "11111111111001", '8' }, { "11111111111010", 0xD8 }, { "111111111110110", 0xE4 },
+	{ "111111111110111", 0xED }, { "111111111111000", 0xAC }, { "111111111111001", '"' },
+	{ "111111111111010", '/' }, { "111111111111011", 0xD5 }, { "111111111111100", 0xEA },
+	{ "111111111111101", 0xEB }, { "1111111111111100", 'Q' }, { "1111111111111101", 0xA5 },
+	{ "11111111111111100", 0x99 }, { "111111111111111010", '(' }, { "111111111111111011", ')' },
+	{ "111111111111111100", 0xB2 }, { "111111111111111101", 0xDA },
+	{ "11111111111111111", 0xEC },
 	{ nullptr, '\0' }
 };
 
 const DecoderEntry italianDecoders[] = {
-	{"00", ' '}, {"010", (char) 0x69},	{"0110", (char) 0x6F}, {"01110", (char) 0x61}, {"01111", (char) 0x65},
-	{"1000", (char) 0x72}, {"1001", (char) 0x6E}, {"1010", (char) 0x74}, {"10110", (char) 0x73}, {"101110", (char) 0x6C},
-	{"101111", (char) 0x63}, {"11000", (char) 0x75}, {"110010", (char) 0x70}, {"110011", (char) 0x64}, {"110100", 0},
-	{"110101", (char) 0x6D}, {"110110", (char) 0x67}, {"1101110", (char) 0x2E}, {"1101111", (char) 0x76},
-	{"111000", (char) 0x68}, {"1110010", (char) 0x2C}, {"1110011", (char) 0x62}, {"1110100", (char) 0x66},
-	{"1110101", (char) 0x21}, {"1110110", (char) 0xB5}, {"11101110", (char) 0xB1}, {"111011110", (char) 0xB3},
-	{"111011111", (char) 0x7A}, {"1111000", (char) 0xB4}, {"11110010", (char) 0x27}, {"111100110", (char) 0x4E},
-	{"111100111", (char) 0x4C}, {"11110100", (char) 0x3F}, {"111101010", (char) 0x85}, {"111101011", (char) 0x53},
-	{"11110110", (char) 0x43}, {"111101110", (char) 0x4D}, {"1111011110", (char) 0xAC}, {"1111011111", (char) 0x49},
-	{"11111000", (char) 0x45}, {"111110010", (char) 0x41}, {"1111100110", (char) 0x54}, {"1111100111", (char) 0xB2},
-	{"111110100", (char) 0x71}, {"111110101", (char) 0x4F}, {"111110110", (char) 0x47}, {"1111101110", (char) 0xAB},
-	{"11111011110", (char) 0x50}, {"11111011111", (char) 0x44}, {"111111000", (char) 0x81},
-	{"1111110010", (char) 0x55}, {"11111100110", (char) 0xAE}, {"11111100111", (char) 0x52},
-	{"1111110100", (char) 0xA6}, {"1111110101", (char) 0x56}, {"1111110110", (char) 0xA8},
-	{"11111101110", (char) 0x42}, {"111111011110", (char) 0x51}, {"111111011111", (char) 0xB0},
-	{"1111111000", (char) 0x95}, {"11111110010", (char) 0x48}, {"11111110011", (char) 0x2D},
-	{"11111110100", (char) 0xA9}, {"11111110101", (char) 0x8A}, {"11111110110", (char) 0xA3},
-	{"111111101110", (char) 0x46}, {"111111101111", (char) 0xA7}, {"11111111000", (char) 0x8D},
-	{"11111111001", (char) 0x77}, {"11111111010", (char) 0x79}, {"111111110110", (char) 0x7F},
-	{"1111111101110", (char) 0x6B}, {"1111111101111", (char) 0x31}, {"111111111000", (char) 0x3B},
-	{"111111111001", (char) 0xA5}, {"111111111010", (char) 0x57}, {"1111111110110", (char) 0x32},
-	{"11111111101110", (char) 0xAF}, {"11111111101111", (char) 0x35}, {"1111111111000", (char) 0xA2},
-	{"1111111111001", (char) 0xAD}, {"1111111111010", (char) 0x25}, {"11111111110110", (char) 0x36},
-	{"11111111110111", (char) 0x3A}, {"1111111111100", (char) 0x5A}, {"11111111111010", (char) 0x33},
-	{"11111111111011", (char) 0x30}, {"11111111111100", (char) 0x34}, {"111111111111010", (char) 0x39},
-	{"111111111111011", (char) 0x37}, {"111111111111100", (char) 0x38}, {"111111111111101", (char) 0x2F},
-	{"1111111111111100", (char) 0x4B}, {"1111111111111101", (char) 0x22}, {"111111111111111000", (char) 0x09},
-	{"111111111111111001", (char) 0x28}, {"11111111111111101", (char) 0x29}, {"111111111111111100", (char) 0x4A},
-	{"111111111111111101", (char) 0x59}, {"11111111111111111", (char) 0x78},
+	{"00", ' '}, {"010", 0x69},	{"0110", 0x6F}, {"01110", 0x61}, {"01111", 0x65},
+	{"1000", 0x72}, {"1001", 0x6E}, {"1010", 0x74}, {"10110", 0x73}, {"101110", 0x6C},
+	{"101111", 0x63}, {"11000", 0x75}, {"110010", 0x70}, {"110011", 0x64}, {"110100", 0},
+	{"110101", 0x6D}, {"110110", 0x67}, {"1101110", 0x2E}, {"1101111", 0x76},
+	{"111000", 0x68}, {"1110010", 0x2C}, {"1110011", 0x62}, {"1110100", 0x66},
+	{"1110101", 0x21}, {"1110110", 0xB5}, {"11101110", 0xB1}, {"111011110", 0xB3},
+	{"111011111", 0x7A}, {"1111000", 0xB4}, {"11110010", 0x27}, {"111100110", 0x4E},
+	{"111100111", 0x4C}, {"11110100", 0x3F}, {"111101010", 0x85}, {"111101011", 0x53},
+	{"11110110", 0x43}, {"111101110", 0x4D}, {"1111011110", 0xAC}, {"1111011111", 0x49},
+	{"11111000", 0x45}, {"111110010", 0x41}, {"1111100110", 0x54}, {"1111100111", 0xB2},
+	{"111110100", 0x71}, {"111110101", 0x4F}, {"111110110", 0x47}, {"1111101110", 0xAB},
+	{"11111011110", 0x50}, {"11111011111", 0x44}, {"111111000", 0x81},
+	{"1111110010", 0x55}, {"11111100110", 0xAE}, {"11111100111", 0x52},
+	{"1111110100", 0xA6}, {"1111110101", 0x56}, {"1111110110", 0xA8},
+	{"11111101110", 0x42}, {"111111011110", 0x51}, {"111111011111", 0xB0},
+	{"1111111000", 0x95}, {"11111110010", 0x48}, {"11111110011", 0x2D},
+	{"11111110100", 0xA9}, {"11111110101", 0x8A}, {"11111110110", 0xA3},
+	{"111111101110", 0x46}, {"111111101111", 0xA7}, {"11111111000", 0x8D},
+	{"11111111001", 0x77}, {"11111111010", 0x79}, {"111111110110", 0x7F},
+	{"1111111101110", 0x6B}, {"1111111101111", 0x31}, {"111111111000", 0x3B},
+	{"111111111001", 0xA5}, {"111111111010", 0x57}, {"1111111110110", 0x32},
+	{"11111111101110", 0xAF}, {"11111111101111", 0x35}, {"1111111111000", 0xA2},
+	{"1111111111001", 0xAD}, {"1111111111010", 0x25}, {"11111111110110", 0x36},
+	{"11111111110111", 0x3A}, {"1111111111100", 0x5A}, {"11111111111010", 0x33},
+	{"11111111111011", 0x30}, {"11111111111100", 0x34}, {"111111111111010", 0x39},
+	{"111111111111011", 0x37}, {"111111111111100", 0x38}, {"111111111111101", 0x2F},
+	{"1111111111111100", 0x4B}, {"1111111111111101", 0x22}, {"111111111111111000", 0x09},
+	{"111111111111111001", 0x28}, {"11111111111111101", 0x29}, {"111111111111111100", 0x4A},
+	{"111111111111111101", 0x59}, {"11111111111111111", 0x78},
 	{nullptr, '\0'}
 };
 
 const DecoderEntry frenchDecoders[] = {
-	{"00", (char) 0x20}, {"0100", (char) 0x65}, {"0101", (char) 0x73}, {"0110", (char) 0x61}, {"01110", (char) 0x69},
-	{"011110", (char) 0x6E}, {"011111", (char) 0x72}, {"1000", (char) 0x6F}, {"10010", (char) 0x74},
-	{"100110", (char) 0x75}, {"100111", (char) 0x70}, {"10100", (char) 0x6C}, {"10101", (char) 0x6D},
-	{"101100", (char) 0x63}, {"101101", (char) 0x76}, {"101110", (char) 0x00}, {"1011110", (char) 0x2E},
-	{"1011111", (char) 0x7F}, {"110000", (char) 0xAA}, {"110001", (char) 0x27}, {"110010", (char) 0x64},
-	{"1100110", (char) 0xB8}, {"1100111", (char) 0x2C}, {"110100", (char) 0x62}, {"1101010", (char) 0x68},
-	{"11010110", (char) 0x66}, {"11010111", (char) 0xBE}, {"1101100", (char) 0x21}, {"1101101", (char) 0xB0},
-	{"1101110", (char) 0x67}, {"11011110", (char) 0xF2}, {"11011111", (char) 0xC5}, {"1110000", (char) 0xC0},
-	{"11100010", (char) 0x6A}, {"11100011", (char) 0xA5}, {"1110010", (char) 0xB1}, {"11100110", (char) 0x4C},
-	{"111001110", (char) 0x2D}, {"111001111", (char) 0x4A}, {"1110100", (char) 0xBD}, {"11101010", (char) 0x3F},
-	{"111010110", (char) 0x71}, {"111010111", (char) 0xB5}, {"11101100", (char) 0x81}, {"111011010", (char) 0x43},
-	{"111011011", (char) 0x45}, {"11101110", (char) 0x85}, {"111011110", (char) 0xC4}, {"1110111110", (char) 0x4D},
-	{"1110111111", (char) 0x79}, {"11110000", (char) 0xBC}, {"111100010", (char) 0xBA}, {"111100011", (char) 0xAF},
-	{"11110010", (char) 0x83}, {"111100110", (char) 0x53}, {"1111001110", (char) 0x56}, {"1111001111", (char) 0xA7},
-	{"11110100", (char) 0xA6}, {"111101010", (char) 0xB2}, {"1111010110", (char) 0xB7}, {"1111010111", (char) 0xD9},
-	{"111101100", (char) 0x41}, {"111101101", (char) 0xA3}, {"111101110", (char) 0x4E}, {"1111011110", (char) 0xB4},
-	{"11110111110", (char) 0x54}, {"11110111111", (char) 0x49}, {"111110000", (char) 0x4F}, {"111110001", (char) 0xBF},
-	{"111110010", (char) 0x47}, {"1111100110", (char) 0x50}, {"11111001110", (char) 0x7A}, {"11111001111", (char) 0x52},
-	{"111110100", (char) 0x44}, {"1111101010", (char) 0x55}, {"1111101011", (char) 0x51}, {"1111101100", (char) 0xE0},
-	{"1111101101", (char) 0xAC}, {"1111101110", (char) 0x78}, {"11111011110", (char) 0xC8}, {"11111011111", (char) 0x42},
-	{"1111110000", (char) 0xEE}, {"1111110001", (char) 0xC2}, {"1111110010", (char) 0x82}, {"11111100110", (char) 0x87},
-	{"11111100111", (char) 0x77}, {"1111110100", (char) 0xC7}, {"11111101010", (char) 0xEF}, {"11111101011", (char) 0x80},
-	{"1111110110", (char) 0xE4}, {"11111101110", (char) 0x89}, {"111111011110", (char) 0xE8}, {"111111011111", (char) 0xA9},
-	{"11111110000", (char) 0x46}, {"11111110001", (char) 0x48}, {"11111110010", (char) 0xDC},
-	{"111111100110", (char) 0xAE}, {"111111100111", (char) 0x88}, {"11111110100", (char) 0x6B},
-	{"111111101010", (char) 0x7E}, {"111111101011", (char) 0x31}, {"11111110110", (char) 0xC3},
-	{"111111101110", (char) 0xD8}, {"1111111011110", (char) 0x3B}, {"1111111011111", (char) 0xBB},
-	{"11111111000", (char) 0xCD}, {"111111110010", (char) 0x8A}, {"1111111100110", (char) 0xB3},
-	{"1111111100111", (char) 0x32}, {"111111110100", (char) 0xC1}, {"111111110101", (char) 0xD0},
-	{"111111110110", (char) 0x57}, {"1111111101110", (char) 0xB6}, {"1111111101111", (char) 0x25},
-	{"111111111000", (char) 0xA1}, {"1111111110010", (char) 0xDF}, {"1111111110011", (char) 0xEA},
-	{"111111111010", (char) 0x35}, {"1111111110110", (char) 0x3A}, {"11111111101110", (char) 0x36},
-	{"11111111101111", (char) 0x33}, {"1111111111000", (char) 0x39}, {"1111111111001", (char) 0xDB},
-	{"1111111111010", (char) 0xE6}, {"11111111110110", (char) 0x30}, {"111111111101110", (char) 0x22},
-	{"111111111101111", (char) 0x34}, {"11111111111000", (char) 0xE3}, {"11111111111001", (char) 0x37},
-	{"11111111111010", (char) 0x38}, {"111111111110110", (char) 0xD7}, {"111111111110111", (char) 0xCC},
-	{"11111111111100", (char) 0xD5}, {"111111111111010", (char) 0xE5}, {"1111111111110110", (char) 0x2F},
-	{"1111111111110111", (char) 0x4B}, {"111111111111100", (char) 0xE9}, {"1111111111111010", (char) 0x59},
-	{"1111111111111011", (char) 0x28}, {"1111111111111100", (char) 0x29}, {"1111111111111101", (char) 0x5A},
-	{"11111111111111100", (char) 0x86}, {"11111111111111101", (char) 0x58}, {"11111111111111110", (char) 0x84},
-	{"11111111111111111", (char) 0xA2},
+	{"00", 0x20}, {"0100", 0x65}, {"0101", 0x73}, {"0110", 0x61}, {"01110", 0x69},
+	{"011110", 0x6E}, {"011111", 0x72}, {"1000", 0x6F}, {"10010", 0x74},
+	{"100110", 0x75}, {"100111", 0x70}, {"10100", 0x6C}, {"10101", 0x6D},
+	{"101100", 0x63}, {"101101", 0x76}, {"101110", 0x00}, {"1011110", 0x2E},
+	{"1011111", 0x7F}, {"110000", 0xAA}, {"110001", 0x27}, {"110010", 0x64},
+	{"1100110", 0xB8}, {"1100111", 0x2C}, {"110100", 0x62}, {"1101010", 0x68},
+	{"11010110", 0x66}, {"11010111", 0xBE}, {"1101100", 0x21}, {"1101101", 0xB0},
+	{"1101110", 0x67}, {"11011110", 0xF2}, {"11011111", 0xC5}, {"1110000", 0xC0},
+	{"11100010", 0x6A}, {"11100011", 0xA5}, {"1110010", 0xB1}, {"11100110", 0x4C},
+	{"111001110", 0x2D}, {"111001111", 0x4A}, {"1110100", 0xBD}, {"11101010", 0x3F},
+	{"111010110", 0x71}, {"111010111", 0xB5}, {"11101100", 0x81}, {"111011010", 0x43},
+	{"111011011", 0x45}, {"11101110", 0x85}, {"111011110", 0xC4}, {"1110111110", 0x4D},
+	{"1110111111", 0x79}, {"11110000", 0xBC}, {"111100010", 0xBA}, {"111100011", 0xAF},
+	{"11110010", 0x83}, {"111100110", 0x53}, {"1111001110", 0x56}, {"1111001111", 0xA7},
+	{"11110100", 0xA6}, {"111101010", 0xB2}, {"1111010110", 0xB7}, {"1111010111", 0xD9},
+	{"111101100", 0x41}, {"111101101", 0xA3}, {"111101110", 0x4E}, {"1111011110", 0xB4},
+	{"11110111110", 0x54}, {"11110111111", 0x49}, {"111110000", 0x4F}, {"111110001", 0xBF},
+	{"111110010", 0x47}, {"1111100110", 0x50}, {"11111001110", 0x7A}, {"11111001111", 0x52},
+	{"111110100", 0x44}, {"1111101010", 0x55}, {"1111101011", 0x51}, {"1111101100", 0xE0},
+	{"1111101101", 0xAC}, {"1111101110", 0x78}, {"11111011110", 0xC8}, {"11111011111", 0x42},
+	{"1111110000", 0xEE}, {"1111110001", 0xC2}, {"1111110010", 0x82}, {"11111100110", 0x87},
+	{"11111100111", 0x77}, {"1111110100", 0xC7}, {"11111101010", 0xEF}, {"11111101011", 0x80},
+	{"1111110110", 0xE4}, {"11111101110", 0x89}, {"111111011110", 0xE8}, {"111111011111", 0xA9},
+	{"11111110000", 0x46}, {"11111110001", 0x48}, {"11111110010", 0xDC},
+	{"111111100110", 0xAE}, {"111111100111", 0x88}, {"11111110100", 0x6B},
+	{"111111101010", 0x7E}, {"111111101011", 0x31}, {"11111110110", 0xC3},
+	{"111111101110", 0xD8}, {"1111111011110", 0x3B}, {"1111111011111", 0xBB},
+	{"11111111000", 0xCD}, {"111111110010", 0x8A}, {"1111111100110", 0xB3},
+	{"1111111100111", 0x32}, {"111111110100", 0xC1}, {"111111110101", 0xD0},
+	{"111111110110", 0x57}, {"1111111101110", 0xB6}, {"1111111101111", 0x25},
+	{"111111111000", 0xA1}, {"1111111110010", 0xDF}, {"1111111110011", 0xEA},
+	{"111111111010", 0x35}, {"1111111110110", 0x3A}, {"11111111101110", 0x36},
+	{"11111111101111", 0x33}, {"1111111111000", 0x39}, {"1111111111001", 0xDB},
+	{"1111111111010", 0xE6}, {"11111111110110", 0x30}, {"111111111101110", 0x22},
+	{"111111111101111", 0x34}, {"11111111111000", 0xE3}, {"11111111111001", 0x37},
+	{"11111111111010", 0x38}, {"111111111110110", 0xD7}, {"111111111110111", 0xCC},
+	{"11111111111100", 0xD5}, {"111111111111010", 0xE5}, {"1111111111110110", 0x2F},
+	{"1111111111110111", 0x4B}, {"111111111111100", 0xE9}, {"1111111111111010", 0x59},
+	{"1111111111111011", 0x28}, {"1111111111111100", 0x29}, {"1111111111111101", 0x5A},
+	{"11111111111111100", 0x86}, {"11111111111111101", 0x58}, {"11111111111111110", 0x84},
+	{"11111111111111111", 0xA2},
 	{nullptr, '\0'}
 };
 
 const DecoderEntry germanDecoders[] = {
-	{"000", (char) 0x20}, {"001", (char) 0x65}, {"0100", (char) 0x6E}, {"0101", (char) 0x61}, {"0110", (char) 0x72},
-	{"01110", (char) 0x69}, {"011110", (char) 0x74}, {"011111", (char) 0x73}, {"10000", (char) 0x68},
-	{"10001", (char) 0x6C}, {"10010", (char) 0x75}, {"100110", (char) 0x6D}, {"100111", (char) 0xB0},
-	{"10100", (char) 0x67}, {"101010", (char) 0x00}, {"101011", (char) 0x62}, {"101100", (char) 0x63},
-	{"101101", (char) 0x2C}, {"101110", (char) 0x6F}, {"1011110", (char) 0xAA}, {"1011111", (char) 0x77},
-	{"110000", (char) 0x64}, {"110001", (char) 0x2E}, {"110010", (char) 0x6B}, {"1100110", (char) 0x66},
-	{"1100111", (char) 0xDB}, {"110100", (char) 0x21}, {"1101010", (char) 0x7A}, {"11010110", (char) 0xC5},
-	{"11010111", (char) 0x8C}, {"1101100", (char) 0x49}, {"11011010", (char) 0xCD}, {"11011011", (char) 0xCC},
-	{"1101110", (char) 0x53}, {"11011110", (char) 0x45}, {"110111110", (char) 0x57}, {"110111111", (char) 0x8D},
-	{"1110000", (char) 0xB8}, {"11100010", (char) 0x47}, {"11100011", (char) 0x76}, {"1110010", (char) 0x92},
-	{"11100110", (char) 0xED}, {"111001110", (char) 0x44}, {"111001111", (char) 0x4D}, {"1110100", (char) 0x70},
-	{"11101010", (char) 0x48}, {"111010110", (char) 0xD0}, {"111010111", (char) 0xDC}, {"11101100", (char) 0xE8},
-	{"11101101", (char) 0x3F}, {"11101110", (char) 0x41}, {"111011110", (char) 0xDD}, {"1110111110", (char) 0x8F},
-	{"1110111111", (char) 0xF2}, {"11110000", (char) 0x42}, {"11110001", (char) 0xEE}, {"11110010", (char) 0x46},
-	{"111100110", (char) 0x4E}, {"1111001110", (char) 0x4C}, {"1111001111", (char) 0xE9}, {"11110100", (char) 0xEF},
-	{"111101010", (char) 0x54}, {"111101011", (char) 0xEB}, {"111101100", (char) 0x4B}, {"111101101", (char) 0xD1},
-	{"111101110", (char) 0xD9}, {"1111011110", (char) 0xD8}, {"1111011111", (char) 0x52}, {"111110000", (char) 0xEC},
-	{"111110001", (char) 0xE4}, {"111110010", (char) 0xD7}, {"1111100110", (char) 0x55}, {"1111100111", (char) 0xEA},
-	{"111110100", (char) 0xDF}, {"1111101010", (char) 0xE6}, {"1111101011", (char) 0x5A}, {"111110110", (char) 0x56},
-	{"1111101110", (char) 0xD5}, {"11111011110", (char) 0xD6}, {"11111011111", (char) 0xE0}, {"111111000", (char) 0x6A},
-	{"1111110010", (char) 0xA3}, {"1111110011", (char) 0xB1}, {"1111110100", (char) 0x2D}, {"1111110101", (char) 0xC8},
-	{"1111110110", (char) 0x50}, {"11111101110", (char) 0xE7}, {"111111011110", (char) 0x27},
-	{"111111011111", (char) 0xD4}, {"1111111000", (char) 0xCE}, {"11111110010", (char) 0x4F},
-	{"11111110011", (char) 0x79}, {"1111111010", (char) 0xC9}, {"11111110110", (char) 0xAF},
-	{"111111101110", (char) 0x4A}, {"111111101111", (char) 0xC2}, {"11111111000", (char) 0xC7},
-	{"111111110010", (char) 0x31}, {"111111110011", (char) 0xDA}, {"111111110100", (char) 0xA1},
-	{"111111110101", (char) 0x32}, {"111111110110", (char) 0xC4}, {"1111111101110", (char) 0xB5},
-	{"11111111011110", (char) 0x91}, {"11111111011111", (char) 0xE5}, {"111111111000", (char) 0x25},
-	{"1111111110010", (char) 0x35}, {"1111111110011", (char) 0x3A}, {"1111111110100", (char) 0x43},
-	{"1111111110101", (char) 0xE3}, {"1111111110110", (char) 0x36}, {"11111111101110", (char) 0x78},
-	{"11111111101111", (char) 0x90}, {"1111111111000", (char) 0xE2}, {"11111111110010", (char) 0x33},
-	{"11111111110011", (char) 0x8E}, {"1111111111010", (char) 0xA7}, {"11111111110110", (char) 0x34},
-	{"111111111101110", (char) 0x39}, {"111111111101111", (char) 0x30}, {"11111111111000", (char) 0x37},
-	{"11111111111001", (char) 0x38}, {"11111111111010", (char) 0x71}, {"111111111110110", (char) 0xB7},
-	{"111111111110111", (char) 0xBA}, {"11111111111100", (char) 0xB2}, {"111111111111010", (char) 0x3B},
-	{"1111111111110110", (char) 0xAE}, {"1111111111110111", (char) 0x22}, {"111111111111100", (char) 0x2F},
-	{"1111111111111010", (char) 0x51}, {"1111111111111011", (char) 0xA2}, {"1111111111111100", (char) 0xC3},
-	{"11111111111111010", (char) 0xBC}, {"11111111111111011", (char) 0x28}, {"111111111111111000", (char) 0x29},
-	{"111111111111111001", (char) 0x59}, {"11111111111111101", (char) 0xBB}, {"11111111111111110", (char) 0xBD},
-	{"11111111111111111", (char) 0xC0},
+	{"000", 0x20}, {"001", 0x65}, {"0100", 0x6E}, {"0101", 0x61}, {"0110", 0x72},
+	{"01110", 0x69}, {"011110", 0x74}, {"011111", 0x73}, {"10000", 0x68},
+	{"10001", 0x6C}, {"10010", 0x75}, {"100110", 0x6D}, {"100111", 0xB0},
+	{"10100", 0x67}, {"101010", 0x00}, {"101011", 0x62}, {"101100", 0x63},
+	{"101101", 0x2C}, {"101110", 0x6F}, {"1011110", 0xAA}, {"1011111", 0x77},
+	{"110000", 0x64}, {"110001", 0x2E}, {"110010", 0x6B}, {"1100110", 0x66},
+	{"1100111", 0xDB}, {"110100", 0x21}, {"1101010", 0x7A}, {"11010110", 0xC5},
+	{"11010111", 0x8C}, {"1101100", 0x49}, {"11011010", 0xCD}, {"11011011", 0xCC},
+	{"1101110", 0x53}, {"11011110", 0x45}, {"110111110", 0x57}, {"110111111", 0x8D},
+	{"1110000", 0xB8}, {"11100010", 0x47}, {"11100011", 0x76}, {"1110010", 0x92},
+	{"11100110", 0xED}, {"111001110", 0x44}, {"111001111", 0x4D}, {"1110100", 0x70},
+	{"11101010", 0x48}, {"111010110", 0xD0}, {"111010111", 0xDC}, {"11101100", 0xE8},
+	{"11101101", 0x3F}, {"11101110", 0x41}, {"111011110", 0xDD}, {"1110111110", 0x8F},
+	{"1110111111", 0xF2}, {"11110000", 0x42}, {"11110001", 0xEE}, {"11110010", 0x46},
+	{"111100110", 0x4E}, {"1111001110", 0x4C}, {"1111001111", 0xE9}, {"11110100", 0xEF},
+	{"111101010", 0x54}, {"111101011", 0xEB}, {"111101100", 0x4B}, {"111101101", 0xD1},
+	{"111101110", 0xD9}, {"1111011110", 0xD8}, {"1111011111", 0x52}, {"111110000", 0xEC},
+	{"111110001", 0xE4}, {"111110010", 0xD7}, {"1111100110", 0x55}, {"1111100111", 0xEA},
+	{"111110100", 0xDF}, {"1111101010", 0xE6}, {"1111101011", 0x5A}, {"111110110", 0x56},
+	{"1111101110", 0xD5}, {"11111011110", 0xD6}, {"11111011111", 0xE0}, {"111111000", 0x6A},
+	{"1111110010", 0xA3}, {"1111110011", 0xB1}, {"1111110100", 0x2D}, {"1111110101", 0xC8},
+	{"1111110110", 0x50}, {"11111101110", 0xE7}, {"111111011110", 0x27},
+	{"111111011111", 0xD4}, {"1111111000", 0xCE}, {"11111110010", 0x4F},
+	{"11111110011", 0x79}, {"1111111010", 0xC9}, {"11111110110", 0xAF},
+	{"111111101110", 0x4A}, {"111111101111", 0xC2}, {"11111111000", 0xC7},
+	{"111111110010", 0x31}, {"111111110011", 0xDA}, {"111111110100", 0xA1},
+	{"111111110101", 0x32}, {"111111110110", 0xC4}, {"1111111101110", 0xB5},
+	{"11111111011110", 0x91}, {"11111111011111", 0xE5}, {"111111111000", 0x25},
+	{"1111111110010", 0x35}, {"1111111110011", 0x3A}, {"1111111110100", 0x43},
+	{"1111111110101", 0xE3}, {"1111111110110", 0x36}, {"11111111101110", 0x78},
+	{"11111111101111", 0x90}, {"1111111111000", 0xE2}, {"11111111110010", 0x33},
+	{"11111111110011", 0x8E}, {"1111111111010", 0xA7}, {"11111111110110", 0x34},
+	{"111111111101110", 0x39}, {"111111111101111", 0x30}, {"11111111111000", 0x37},
+	{"11111111111001", 0x38}, {"11111111111010", 0x71}, {"111111111110110", 0xB7},
+	{"111111111110111", 0xBA}, {"11111111111100", 0xB2}, {"111111111111010", 0x3B},
+	{"1111111111110110", 0xAE}, {"1111111111110111", 0x22}, {"111111111111100", 0x2F},
+	{"1111111111111010", 0x51}, {"1111111111111011", 0xA2}, {"1111111111111100", 0xC3},
+	{"11111111111111010", 0xBC}, {"11111111111111011", 0x28}, {"111111111111111000", 0x29},
+	{"111111111111111001", 0x59}, {"11111111111111101", 0xBB}, {"11111111111111110", 0xBD},
+	{"11111111111111111", 0xC0},
 	{nullptr, '\0'}
 };
 
 const DecoderEntry spanishDecoders[] = {
-	{"00", (char) 0x20}, {"010", (char) 0x61}, {"0110", (char) 0x6F}, {"01110", (char) 0x65},
-	{"01111", (char) 0x72}, {"1000", (char) 0x73}, {"1001", (char) 0x6E}, {"10100", (char) 0x69},
-	{"10101", (char) 0x75}, {"10110", (char) 0x63}, {"101110", (char) 0x74}, {"1011110", (char) 0x6C},
-	{"1011111", (char) 0x64}, {"11000", (char) 0x70}, {"110010", (char) 0x2E}, {"110011", (char) 0x6D},
-	{"110100", (char) 0x00}, {"110101", (char) 0xB3}, {"1101100", (char) 0x62}, {"1101101", (char) 0x2C},
-	{"1101110", (char) 0x68}, {"11011110", (char) 0x67}, {"11011111", (char) 0xB1}, {"1110000", (char) 0x76},
-	{"1110001", (char) 0xB5}, {"1110010", (char) 0x79}, {"11100110", (char) 0xAB}, {"11100111", (char) 0xB4},
-	{"1110100", (char) 0x97}, {"11101010", (char) 0xB2}, {"11101011", (char) 0x98}, {"11101100", (char) 0x45},
-	{"11101101", (char) 0x66}, {"11101110", (char) 0x95}, {"111011110", (char) 0x21}, {"111011111", (char) 0x6A},
-	{"11110000", (char) 0x4C}, {"11110001", (char) 0x4E}, {"11110010", (char) 0x7F}, {"111100110", (char) 0x96},
-	{"111100111", (char) 0x3F}, {"11110100", (char) 0xAC}, {"11110101", (char) 0x94}, {"11110110", (char) 0x7A},
-	{"111101110", (char) 0x41}, {"1111011110", (char) 0x53}, {"1111011111", (char) 0x71}, {"11111000", (char) 0x54},
-	{"111110010", (char) 0x93}, {"1111100110", (char) 0xAF}, {"1111100111", (char) 0x43}, {"111110100", (char) 0x50},
-	{"111110101", (char) 0x4D}, {"111110110", (char) 0x44}, {"1111101110", (char) 0xAE}, {"11111011110", (char) 0xAD},
-	{"11111011111", (char) 0xB0}, {"111111000", (char) 0x48}, {"1111110010", (char) 0x51}, {"1111110011", (char) 0x55},
-	{"1111110100", (char) 0x4F}, {"1111110101", (char) 0x47}, {"1111110110", (char) 0x99},
-	{"11111101110", (char) 0xA8}, {"11111101111", (char) 0x22}, {"1111111000", (char) 0xA9},
-	{"11111110010", (char) 0xA6}, {"11111110011", (char) 0x52}, {"1111111010", (char) 0x59},
-	{"11111110110", (char) 0xA3}, {"111111101110", (char) 0x78}, {"111111101111", (char) 0x56},
-	{"11111111000", (char) 0x77}, {"11111111001", (char) 0x42}, {"111111110100", (char) 0x6B},
-	{"111111110101", (char) 0x49}, {"111111110110", (char) 0x31}, {"1111111101110", (char) 0xAA},
-	{"1111111101111", (char) 0x2D}, {"111111111000", (char) 0x46}, {"111111111001", (char) 0xA5},
-	{"1111111110100", (char) 0x32}, {"1111111110101", (char) 0x3B}, {"1111111110110", (char) 0xA7},
-	{"11111111101110", (char) 0x35}, {"11111111101111", (char) 0x25}, {"1111111111000", (char) 0x3A},
-	{"1111111111001", (char) 0xA2}, {"1111111111010", (char) 0x57}, {"11111111110110", (char) 0x36},
-	{"11111111110111", (char) 0x33}, {"1111111111100", (char) 0x4A}, {"11111111111010", (char) 0x30},
-	{"11111111111011", (char) 0x34}, {"11111111111100", (char) 0x37}, {"111111111111010", (char) 0x39},
-	{"111111111111011", (char) 0x38}, {"111111111111100", (char) 0xA4}, {"111111111111101", (char) 0x2F},
-	{"1111111111111100", (char) 0x5A}, {"1111111111111101", (char) 0x8C}, {"11111111111111100", (char) 0x28},
-	{"11111111111111101", (char) 0x29}, {"11111111111111110", (char) 0x4B}, {"111111111111111110", (char) 0x58},
-	{"111111111111111111", (char) 0x91},
+	{"00", 0x20}, {"010", 0x61}, {"0110", 0x6F}, {"01110", 0x65},
+	{"01111", 0x72}, {"1000", 0x73}, {"1001", 0x6E}, {"10100", 0x69},
+	{"10101", 0x75}, {"10110", 0x63}, {"101110", 0x74}, {"1011110", 0x6C},
+	{"1011111", 0x64}, {"11000", 0x70}, {"110010", 0x2E}, {"110011", 0x6D},
+	{"110100", 0x00}, {"110101", 0xB3}, {"1101100", 0x62}, {"1101101", 0x2C},
+	{"1101110", 0x68}, {"11011110", 0x67}, {"11011111", 0xB1}, {"1110000", 0x76},
+	{"1110001", 0xB5}, {"1110010", 0x79}, {"11100110", 0xAB}, {"11100111", 0xB4},
+	{"1110100", 0x97}, {"11101010", 0xB2}, {"11101011", 0x98}, {"11101100", 0x45},
+	{"11101101", 0x66}, {"11101110", 0x95}, {"111011110", 0x21}, {"111011111", 0x6A},
+	{"11110000", 0x4C}, {"11110001", 0x4E}, {"11110010", 0x7F}, {"111100110", 0x96},
+	{"111100111", 0x3F}, {"11110100", 0xAC}, {"11110101", 0x94}, {"11110110", 0x7A},
+	{"111101110", 0x41}, {"1111011110", 0x53}, {"1111011111", 0x71}, {"11111000", 0x54},
+	{"111110010", 0x93}, {"1111100110", 0xAF}, {"1111100111", 0x43}, {"111110100", 0x50},
+	{"111110101", 0x4D}, {"111110110", 0x44}, {"1111101110", 0xAE}, {"11111011110", 0xAD},
+	{"11111011111", 0xB0}, {"111111000", 0x48}, {"1111110010", 0x51}, {"1111110011", 0x55},
+	{"1111110100", 0x4F}, {"1111110101", 0x47}, {"1111110110", 0x99},
+	{"11111101110", 0xA8}, {"11111101111", 0x22}, {"1111111000", 0xA9},
+	{"11111110010", 0xA6}, {"11111110011", 0x52}, {"1111111010", 0x59},
+	{"11111110110", 0xA3}, {"111111101110", 0x78}, {"111111101111", 0x56},
+	{"11111111000", 0x77}, {"11111111001", 0x42}, {"111111110100", 0x6B},
+	{"111111110101", 0x49}, {"111111110110", 0x31}, {"1111111101110", 0xAA},
+	{"1111111101111", 0x2D}, {"111111111000", 0x46}, {"111111111001", 0xA5},
+	{"1111111110100", 0x32}, {"1111111110101", 0x3B}, {"1111111110110", 0xA7},
+	{"11111111101110", 0x35}, {"11111111101111", 0x25}, {"1111111111000", 0x3A},
+	{"1111111111001", 0xA2}, {"1111111111010", 0x57}, {"11111111110110", 0x36},
+	{"11111111110111", 0x33}, {"1111111111100", 0x4A}, {"11111111111010", 0x30},
+	{"11111111111011", 0x34}, {"11111111111100", 0x37}, {"111111111111010", 0x39},
+	{"111111111111011", 0x38}, {"111111111111100", 0xA4}, {"111111111111101", 0x2F},
+	{"1111111111111100", 0x5A}, {"1111111111111101", 0x8C}, {"11111111111111100", 0x28},
+	{"11111111111111101", 0x29}, {"11111111111111110", 0x4B}, {"111111111111111110", 0x58},
+	{"111111111111111111", 0x91},
 	{nullptr, '\0'}
+};
+
+const DecoderEntry russianDecoders[] = {
+    {"00", ' '}, {"0100", 'e'}, {"01010", 'o'}, {"010110", 0x7e}, {"0101110", 0x7f},
+    {"0101111", 0x80}, {"0110", 't'}, {"01110", 'a'}, {"011110", 'n'}, {"0111110", 'Z'},
+    {"0111111", 0x81}, {"1000", 's'}, {"10010", 'i'}, {"100110", 'X'}, {"1001110", 0x5b},
+    {"1001111", 0x82}, {"10100", 'r'}, {"101010", 0x5d}, {"1010110", 0x83},
+    {"1010111", 0x84}, {"101100", 'h'}, {"1011010", 0x3c}, {"1011011", 0x85},
+    {"101110", 'u'}, {"1011110", 'l'}, {"1011111", 'd'}, {"110000", 'y'},
+    {"1100010", 0x3e}, {"1100011", 0x86}, {"110010", 'g'}, {"110011", 0x00},
+    {"110100", 'w'}, {"1101010", 'c'}, {"11010110", 0x7b}, {"11010111", 0x7d},
+    {"110110", 'f'}, {"1101110", '.'}, {"1101111", 'm'}, {"111000", 'p'}, {"1110010", 'b'},
+    {"1110011", 0x87}, {"1110100", ','}, {"1110101", 'k'}, {"1110110", 0x27},
+    {"11101110", 'I'}, {"11101111", 'v'}, {"1111000", '!'}, {"1111001", 0xb4},
+    {"11110100", 'T'}, {"11110101", 0xb5}, {"11110110", '?'}, {"111101110", 0xb2},
+    {"111101111", 0xb3}, {"11111000", 'W'}, {"111110010", 'H'}, {"111110011", 'A'},
+    {"111110100", 0xb1}, {"111110101", 'S'}, {"111110110", 'Y'}, {"1111101110", 'G'},
+    {"11111011110", 'M'}, {"11111011111", 'N'}, {"111111000", 'O'}, {"1111110010", 'E'},
+    {"1111110011", 'L'}, {"1111110100", 0x2d}, {"1111110101", 'R'},
+    {"1111110110", 'B'}, {"11111101110", 'D'}, {"11111101111", 0xa6},
+    {"1111111000", 'C'}, {"11111110010", 'x'}, {"11111110011", 'j'},
+    {"1111111010", 0xac}, {"11111110110", 0xa3}, {"111111101110", 'P'},
+    {"111111101111", 'U'}, {"11111111000", 'q'}, {"11111111001", 0xad},
+    {"111111110100", 'F'}, {"111111110101", '1'}, {"111111110110", 0xaf},
+    {"1111111101110", 0x3b}, {"1111111101111", 'z'}, {"111111111000", 0xa5},
+    {"1111111110010", '2'}, {"1111111110011", 0xb0}, {"111111111010", 'K'},
+    {"1111111110110", 0x25}, {"11111111101110", 0xa2}, {"11111111101111", '5'},
+    {"1111111111000", ':'}, {"1111111111001", 'J'}, {"1111111111010", 'V'},
+    {"11111111110110", '6'}, {"11111111110111", '3'}, {"1111111111100", 0xab},
+    {"11111111111010", 0xae}, {"111111111110110", '0'}, {"111111111110111", '4'},
+    {"11111111111100", '7'}, {"111111111111010", '9'}, {"111111111111011", 0x22},
+    {"111111111111100", '8'}, {"111111111111101", 0xa7}, {"1111111111111100", 0x2f},
+    {"1111111111111101", 'Q'}, {"11111111111111100", 0xa8}, {"11111111111111101", 0x28},
+    {"111111111111111100", 0x29}, {"111111111111111101", 0x99}, {"11111111111111111", 0xa9},
+    {nullptr, '\0'}
 };
 
 void save_string_decoder_data(byte *&data, uint16 &totalSize) {
@@ -1697,6 +1785,7 @@ void save_string_decoder_data(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) list = &germanDecoders[0];
 	else if (language == ES_ESP) list = &spanishDecoders[0];
 	else if (language == EN_USA) list = &konamiDecoders[0];
+	else if (language == RU_RUS) list = &russianDecoders[0];
 	else if (language != EN_ANY) errorExit("save_string_decoder_data: Unknown language");
 
 	totalSize = 1;
@@ -1728,7 +1817,8 @@ void save_audio_init_icon(byte *&data, uint16 &totalSize) {
 	else if (language == DE_DEU) dataStart = 0x132F0;
 	else if (language == ES_ESP) dataStart = 0x132C0;
 	else if (language == EN_USA) dataStart = 0x131e0;
-	else if (language != EN_ANY) errorExit("save_audio_init_icon: Unknown language");
+	else if (language != EN_ANY && language != RU_RUS)
+		errorExit("save_audio_init_icon: Unknown language");
 	lureExe.seek(dataSegment + dataStart);
 
 	totalSize = AUDIO_INIT_ICON_SIZE;
@@ -1903,8 +1993,8 @@ void createFile(const char *outFilename) {
 	FileEntry rec;
 	uint32 startOffset, numBytes;
 	uint32 outputStart;
-	uint16 resourceId;
-	uint16 resourceSize;
+	uint16 resourceId = 0;
+	uint16 resourceSize = 0;
 	byte *resourceData;
 	bool resourceFlag;
 	byte tempBuffer[32];
@@ -1939,6 +2029,9 @@ void createFile(const char *outFilename) {
 		break;
 	case EN_USA:
 		outputFile.writeByte(LANG_EN_USA);
+		break;
+	case RU_RUS:
+		outputFile.writeByte(LANG_RU_RUS);
 		break;
 	default:
 		printf("Unknown language encountered\n");
@@ -2011,9 +2104,15 @@ bool validate_executable() {
 		sumTotal += buffer[ctr];
 
 	if (sumTotal == ENGLISH_FILE_CHECKSUM) {
-		language = EN_ANY;
-		dataSegment = 0xAC50;
-		printf("Detected English version\n");
+		if (generateRussianDat) {
+			language = RU_RUS;
+			dataSegment = 0xAC50;
+			printf("Detected Russian version\n");
+		} else {
+			language = EN_ANY;
+			dataSegment = 0xAC50;
+			printf("Detected English version\n");
+		}
 	} else if (sumTotal == ITALIAN_FILE_CHECKSUM) {
 		language = IT_ITA;
 		dataSegment = 0xACB0;
@@ -2056,7 +2155,7 @@ int main(int argc, char *argv[]) {
 	const char /**inFilename,*/ *outFilename = nullptr;
 
 	if (argc == 1) {
-		printf("Format: %s output_filename [lureExecutable ..]\n", argv[0]);
+		printf("Format: %s output_filename [lureExecutable [--ru] ..]\n", argv[0]);
 		exit(0);
 	}
 
@@ -2066,6 +2165,13 @@ int main(int argc, char *argv[]) {
 		if (!lureExe.open(argv[argi]))
 			printf("Could not open file: %s\n", argv[argi]);
 		else {
+			generateRussianDat = false;
+
+			if (argi + 1 < argc && strcmp(argv[argi + 1], "--ru") == 0) {
+				generateRussianDat = true;
+				argi++;
+			}
+
 			if (validate_executable())
 				createFile(outFilename);
 			lureExe.close();

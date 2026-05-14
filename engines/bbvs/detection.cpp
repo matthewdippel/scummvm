@@ -25,7 +25,7 @@
 #include "bbvs/detection.h"
 
 static const PlainGameDescriptor bbvsGames[] = {
-	{ "bbvs", "Beavis and Butt-head in Virtual Stupidity" },
+	{ "bbvs", "Beavis and Butt-Head in Virtual Stupidity" },
 	{ nullptr, nullptr }
 };
 
@@ -92,19 +92,19 @@ static const char * const directoryGlobs[] = {
 	nullptr
 };
 
-class BbvsMetaEngineDetection : public AdvancedMetaEngineDetection {
+class BbvsMetaEngineDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
-	BbvsMetaEngineDetection() : AdvancedMetaEngineDetection(Bbvs::gameDescriptions, sizeof(ADGameDescription), bbvsGames) {
+	BbvsMetaEngineDetection() : AdvancedMetaEngineDetection(Bbvs::gameDescriptions, bbvsGames) {
 		_maxScanDepth = 3;
 		_directoryGlobs = directoryGlobs;
 	}
 
-	const char *getEngineId() const override {
+	const char *getName() const override {
 		return "bbvs";
 	}
 
-	const char *getName() const override {
-		return "MTV's Beavis and Butt-head in Virtual Stupidity";
+	const char *getEngineName() const override {
+		return "MTV's Beavis and Butt-Head in Virtual Stupidity";
 	}
 
 	const char *getOriginalCopyright() const override {

@@ -17,6 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
+ *
+ * This file is dual-licensed.
+ * In addition to the GPLv3 license mentioned above, this code is also
+ * licensed under LGPL 2.1. See LICENSES/COPYING.LGPL file for the
+ * full text of the license.
+ *
  */
 
 #ifndef GOB_DETECTION_H
@@ -52,9 +58,10 @@ enum GameType {
 	kGameTypeBabaYaga,
 	kGameTypeLittleRed,
 	kGameTypeOnceUponATime, // Need more inspection to see if Baba Yaga or Abracadabra
-	kGameTypeAJWorld,
-	kGameTypeCrousti,
-	kGameTypeDynastyWood
+	//kGameTypeAJWorld -> Deprecated, duplicated with kGameTypeAdibou1
+	kGameTypeCrousti = 24, // Explicit value needed to not invalidate save games after removing kGameTypeAJWorld
+	kGameTypeDynastyWood,
+	kGameTypeAdi1
 };
 
 enum Features {
@@ -66,18 +73,41 @@ enum Features {
 	kFeaturesBATDemo   = 1 << 4,
 	kFeatures640x480   = 1 << 5,
 	kFeatures800x600   = 1 << 6,
-	kFeaturesTrueColor = 1 << 7
+	kFeaturesTrueColor = 1 << 7,
+	kFeatures16Colors  = 1 << 8,
+	kFeatures640x400   = 1 << 9,
+};
+
+enum AdditionalGameFlags {
+	GF_ENABLE_ADIBOU2_FREE_BANANAS_WORKAROUND = 1 << 0,
+	GF_ENABLE_ADIBOU2_FLOWERS_INFINITE_LOOP_WORKAROUND = 1 << 1,
 };
 
 struct GOBGameDescription {
 	ADGameDescription desc;
 
-	GameType gameType;
 	int32 features;
 	const char *startStkBase;
 	const char *startTotBase;
 	uint32 demoIndex;
+
+	uint32 sizeBuffer() const {
+		uint32 ret = desc.sizeBuffer();
+		ret += ADDynamicDescription::strSizeBuffer(startStkBase);
+		ret += ADDynamicDescription::strSizeBuffer(startTotBase);
+		return ret;
+	}
+
+	void *toBuffer(void *buffer) {
+		buffer = desc.toBuffer(buffer);
+		buffer = ADDynamicDescription::strToBuffer(buffer, startStkBase);
+		buffer = ADDynamicDescription::strToBuffer(buffer, startTotBase);
+		return buffer;
+	}
 };
+
+#define GAMEOPTION_COPY_PROTECTION	GUIO_GAMEOPTIONS1
+#define GAMEOPTION_TTS				GUIO_GAMEOPTIONS2
 
 } // End of namespace Gob
 

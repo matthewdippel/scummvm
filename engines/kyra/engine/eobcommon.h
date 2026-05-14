@@ -69,7 +69,7 @@ struct EoBRect8 {
 };
 
 struct EoBChargenButtonDef {
-	uint8 x;
+	uint16 x;
 	uint8 y;
 	uint8 w;
 	uint8 h;
@@ -116,6 +116,7 @@ struct EoBCharacter {
 	uint8 food;
 	uint8 level[3];
 	uint32 experience[3];
+	int16 hitPointsDividend;
 	const uint8 *faceShape;
 	const uint8 *nameShape;
 
@@ -135,6 +136,7 @@ struct EoBCharacter {
 };
 
 struct EoBItem {
+	EoBItem() : nameUnid(0), nameId(0), flags(0), icon(0), type(0), pos(0), block(-1), next(0), prev(0), level(0), value(0) {}
 	uint8 nameUnid;
 	uint8 nameId;
 	uint8 flags;
@@ -397,7 +399,11 @@ protected:
 
 	// Characters
 	int getDexterityArmorClassModifier(int dexterity);
-	int generateCharacterHitpointsByLevel(int charIndex, int levelIndex);
+	int rollHitDie(int charIndex, int levelIndex);
+	bool shouldRollHitDieAtCurrentLevel(int charIndex, int levelIndex);
+	uint8 getStaticHitPointBonus(int charIndex, int levelIndex);
+	int generateCharacterHitpointsByLevel(int charIndex, int levelIndex, int hitDieRoll);
+	int incrCharacterHitPointsDividendByLevel(int charIndex, int levelIndex, int hitDieRoll);
 	int getClassAndConstHitpointsModifier(int cclass, int constitution);
 	int getCharacterClassType(int cclass, int levelIndex);
 	int getModifiedHpLimits(int hpModifier, int constModifier, int level, bool mode);
@@ -476,7 +482,7 @@ protected:
 	bool checkInventoryForRings(int charIndex, int itemValue);
 	void eatItemInHand(int charIndex);
 
-	bool launchObject(int charIndex, Item item, uint16 startBlock, int startPos, int dir, int type);
+	bool launchObject(int charIndex, Item item, uint16 startBlock, int startPos, int dir, int type, Item projectileWeapon = kItemNone);
 	void launchMagicObject(int charIndex, int type, uint16 startBlock, int startPos, int dir);
 	bool updateObjectFlight(EoBFlyingObject *fo, int block, int pos);
 	bool updateFlyingObjectHitTest(EoBFlyingObject *fo, int block, int pos);
@@ -485,8 +491,10 @@ protected:
 	void checkFlyingObjects();
 
 	void reloadWeaponSlot(int charIndex, int slotIndex, int itemType, int arrowOrDagger);
+	bool isThrownWeaponItemType(int itemType);
+	void reloadWeaponSlotEnhanced(int charIndex, int slotIndex);
 
-	EoBItem *_items;
+	Common::Array<EoBItem> _items;
 	uint16 _numItems;
 	EoBItemType *_itemTypes;
 	char **_itemNames;
@@ -834,12 +842,21 @@ protected:
 	Screen::FontId _invFont1;
 	Screen::FontId _invFont2;
 	Screen::FontId _invFont3;
+	Screen::FontId _invFont4;
+	Screen::FontId _invFont5;
+	Screen::FontId _invFont6;
 	Screen::FontId _conFont;
+	Screen::FontId _titleFont;
+	Screen::FontId _bookFont;
+	Screen::FontId _hpStatFont;
 	const uint8 **_compassShapes;
 	uint8 _charExchangeSwap;
 	uint8 *_swapShape;
 	bool _configHpBarGraphs;
 	bool _configMouseBtSwap;
+	bool _configADDRuleEnhancements;
+	bool _configEnhancedReload;
+	bool _configNPCPatch;
 
 	Graphics::Surface _thumbNail;
 
@@ -850,7 +867,7 @@ protected:
 	void drawSequenceBitmap(const char *file, int destRect, int x1, int y1, int flags);
 	int runDialogue(int dialogueTextId, int numStr, int loopButtonId, ...);
 
-	char _dialogueLastBitmap[13];
+	Common::String _dialogueLastBitmap;
 	int _moveCounter;
 
 	const char *const *_chargenStatStrings;
@@ -912,7 +929,7 @@ protected:
 	virtual void seq_segaPausePlayer(bool pause) {}
 	bool checkPassword();
 
-	Common::String convertAsciiToSjis(Common::String str);
+	Common::String makeTwoByteString(const Common::String &str);
 
 	virtual int resurrectionSelectDialogue() = 0;
 	virtual void useHorn(int charIndex, int weaponSlot) {}
@@ -942,8 +959,8 @@ protected:
 	virtual void makeNameShapes(int charId = -1) {}
 	virtual void makeFaceShapes(int charId = -1);
 	// Default parameters will import all present original save files and push them to the top of the save dialog.
-	bool importOriginalSaveFile(int destSlot, const char *sourceFile = 0);
-	Common::String readOriginalSaveFile(Common::String &file);
+	bool importOriginalSaveFile(int destSlot, const Common::Path &sourceFile = Common::Path());
+	Common::String readOriginalSaveFile(const Common::Path &file);
 	bool saveAsOriginalSaveFile(int slot = -1);
 
 	void *generateMonsterTempData(LevelTempData *tmp) override;
@@ -976,16 +993,21 @@ protected:
 	void useSlotWeapon(int charIndex, int slotIndex, Item item);
 	int closeDistanceAttack(int charIndex, Item item);
 	int thrownAttack(int charIndex, int slotIndex, Item item);
+	int normalizeProjectileWeaponType(int itemType);
 	int projectileWeaponAttack(int charIndex, Item item);
 	virtual void playStrikeAnimation(uint8 pos, Item itm) {}
 
 	void inflictMonsterDamage(EoBMonsterInPlay *m, int damage, bool giveExperience);
-	void calcAndInflictMonsterDamage(EoBMonsterInPlay *m, int times, int pips, int offs, int flags, int savingThrowType, int savingThrowEffect);
-	void calcAndInflictCharacterDamage(int charIndex, int times, int itemOrPips, int useStrModifierOrBase, int flags, int savingThrowType, int savingThrowEffect);
-	int calcCharacterDamage(int charIndex, int times, int itemOrPips, int useStrModifierOrBase, int flags, int savingThrowType, int damageType);
+	void calcAndInflictMonsterDamage(EoBMonsterInPlay *m, int times, int pips, int offs, int flags, int savingThrowType, int savingThrowEffect, Item projectileWeapon = kItemNone);
+	void calcAndInflictCharacterDamage(int charIndex, int times, int itemOrPips, int useStrModifierOrBase, int flags, int savingThrowType, int savingThrowEffect, Item projectileWeapon = kItemNone);
+	int calcCharacterDamage(int charIndex, int times, int itemOrPips, int useStrModifierOrBase, int flags, int savingThrowType, int damageType, Item projectileWeapon = kItemNone);
 	void inflictCharacterDamage(int charIndex, int damage);
 
-	bool characterAttackHitTest(int charIndex, int monsterIndex, int item, int attackType);
+	bool isElf(int charIndex);
+	bool isBow(Item projectileWeapon);
+	bool isSword(Item item);
+
+	bool characterAttackHitTest(int charIndex, int monsterIndex, int item, int attackType, Item projectileWeapon = kItemNone);
 	bool monsterAttackHitTest(EoBMonsterInPlay *m, int charIndex);
 	bool flyingObjectMonsterHit(EoBFlyingObject *fo, int monsterIndex);
 	bool flyingObjectPartyHit(EoBFlyingObject *fo);
@@ -994,8 +1016,8 @@ protected:
 	void monsterSpellCast(EoBMonsterInPlay *m, int type);
 	void statusAttack(int charIndex, int attackStatusFlags, const char *attackStatusString, int savingThrowType, uint32 effectDuration, int restoreEvent, int noRefresh);
 
-	int calcMonsterDamage(EoBMonsterInPlay *m, int times, int pips, int offs, int flags, int savingThrowType, int savingThrowEffect);
-	int calcDamageModifers(int charIndex, EoBMonsterInPlay *m, int item, int itemType, int useStrModifier);
+	int calcMonsterDamage(EoBMonsterInPlay *m, int times, int pips, int offs, int flags, int savingThrowType, int savingThrowEffect, Item projectileWeapon = kItemNone);
+	int calcDamageModifers(int charIndex, EoBMonsterInPlay *m, int item, int itemType, int useStrModifier, Item projectileWeapon);
 	bool trySavingThrow(void *target, int hpModifier, int level, int type, int race);
 	bool specialAttackSavingThrow(int charIndex, int type);
 	int getSaveThrowModifier(int hpModifier, int level, int type);
@@ -1262,12 +1284,12 @@ protected:
 
 	// sound
 	void snd_playSong(int id, bool loop = true);
-	void snd_playLevelScore();
+	virtual void snd_playLevelScore() = 0;
 	void snd_playSoundEffect(int id, int volume = 0xFF) override;
 	void snd_stopSound();
 	void snd_fadeOut(int del = 160);
 	virtual void snd_loadAmigaSounds(int level, int sub) = 0;
-	virtual void snd_updateLevelScore() {}
+	virtual void snd_updateLevelScore() = 0;
 
 	const char **_amigaSoundMap;
 	const char *const *_amigaLevelSoundList1;
@@ -1277,6 +1299,10 @@ protected:
 
 	// keymap
 	static const char *const kKeymapName;
+
+private:
+	void printStringIntern_statsPage(const char *str, int x, int y, int col);
+	void printStringIntern_spellBook(const char *str, int x, int y, int col1, int col2);
 };
 
 } // End of namespace Kyra
