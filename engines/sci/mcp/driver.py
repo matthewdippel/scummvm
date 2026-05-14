@@ -309,6 +309,7 @@ class McpDriver:
         forward_stderr: bool = True,
         stderr_log: Optional[str] = None,
         random_seed: Optional[int] = 1,
+        start_paused: bool = False,
         startup_timeout: float = 5.0,
     ):
         argv = [scummvm_path, "--mcp"]
@@ -361,6 +362,7 @@ class McpDriver:
         # play_script() wrapper so _handle_notification can look up source
         # metadata (file/line) for the action being reported on.
         self._active_actions: Optional[list[dict]] = None
+        self._start_paused = start_paused
 
     # ── Low-level transport ────────────────────────────────────────────────
 
@@ -641,6 +643,11 @@ class McpDriver:
 
     def __enter__(self) -> "McpDriver":
         self.initialize()
+        if self._start_paused:
+            try:
+                self.pause()
+            except McpError as e:
+                sys.stderr.write(f"warning: start_paused requested but pause failed: {e}\n")
         return self
 
     def __exit__(self, *args) -> None:
@@ -653,7 +660,7 @@ class McpDriver:
 def cmd_smoke(args: argparse.Namespace) -> int:
     print(f"Starting: {' '.join(map(shlex.quote, [args.scummvm, '--mcp', args.target]))}")
     t0 = time.time()
-    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose, random_seed=args.seed) as d:
+    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose, random_seed=args.seed, start_paused=args.paused) as d:
         print(f"  initialize     OK ({(time.time()-t0)*1000:.0f}ms)")
         tools = d.list_tools()
         names = [t["name"] for t in tools]
@@ -820,7 +827,7 @@ def cmd_smoke(args: argparse.Namespace) -> int:
 
 
 def cmd_screenshot(args: argparse.Namespace) -> int:
-    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose, random_seed=args.seed) as d:
+    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose, random_seed=args.seed, start_paused=args.paused) as d:
         if args.pause:
             d.pause()
         if args.delay > 0:
@@ -1094,6 +1101,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
     print(f"scummvm stderr → {log_path}  (run `tail -f {log_path}` in another terminal)")
     seed_desc = f"pinned to {args.seed}" if args.seed != 0 else "time-based (not pinned)"
     print(f"SCI random seed: {seed_desc}")
+    print(f"engine on entry: {'paused' if args.paused else 'running'}")
     print()
     print("Interactive shell. Anything not recognized below is treated as a tool name.")
     print("  list                              — show registered tools")
@@ -1123,7 +1131,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
     # Set when `play` halts at a breakpoint or is cancelled; cleared when
     # `resume` runs to completion. Holds {actions, cursor, path}.
     paused_play: Optional[dict] = None
-    with McpDriver(args.scummvm, args.target, forward_stderr=False, stderr_log=log_path, random_seed=args.seed) as d:
+    with McpDriver(args.scummvm, args.target, forward_stderr=False, stderr_log=log_path, random_seed=args.seed, start_paused=args.paused) as d:
         while True:
             try:
                 line = input("mcp> ").strip()
@@ -1278,7 +1286,7 @@ def _safe_write_history() -> None:
 
 def cmd_raw(args: argparse.Namespace) -> int:
     payload = json.loads(args.json)
-    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose, random_seed=args.seed) as d:
+    with McpDriver(args.scummvm, args.target, forward_stderr=args.verbose, random_seed=args.seed, start_paused=args.paused) as d:
         with d._lock:
             assert d.proc.stdin and d.proc.stdout
             d.proc.stdin.write((json.dumps(payload) + "\n").encode("utf-8"))
@@ -1293,6 +1301,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     p.add_argument("--target", default="Shivers", help="game target id (default: Shivers)")
     p.add_argument("-v", "--verbose", action="store_true", help="forward scummvm stderr")
     p.add_argument("--seed", type=int, default=1, help="SCI random seed (default: 1; set to 0 to use scummvm's time-based seed)")
+    p.add_argument("--paused", action="store_true", help="pause the engine right after initialize (useful to start_record from a known frame)")
 
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("smoke", help="run the basic protocol smoke test").set_defaults(func=cmd_smoke)
