@@ -74,7 +74,7 @@ def _parse_kwargs(parts: list[str]) -> dict:
     return result
 
 
-def parse_script(text: str) -> list[dict]:
+def parse_script(text: str, base_dir: Optional[str] = None, _include_stack: Optional[list[str]] = None) -> list[dict]:
     """Parse a TAS script (one command per line) into an actions list.
 
     Recognized commands:
@@ -82,14 +82,21 @@ def parse_script(text: str) -> list[dict]:
         mouse_down X Y [button]  — press only (start of a hold/drag)
         mouse_up X Y [button]    — release only (end of a hold/drag)
         wait N                   — wait N in-game frames
+        include PATH             — splice another script in at this point
 
     Button is left, right, or middle; defaults to left.
 
+    `include` resolves PATH relative to `base_dir` (or absolute, or `~`-prefixed).
+    Callers that load from a file should use `parse_script_file(path)`, which
+    sets base_dir from the file's directory automatically. Includes are
+    recursive; cycles raise ValueError.
+
     Lines starting with `#` and inline `# comment` tails are stripped. Blank
-    lines are ignored. Raises ValueError on malformed input, with the offending
-    line number.
+    lines are ignored. Raises ValueError on malformed input (with line number)
+    or include resolution errors.
     """
     actions: list[dict] = []
+    stack = list(_include_stack or [])
     for lineno, raw in enumerate(text.splitlines(), 1):
         # Strip inline comments
         if "#" in raw:
@@ -98,7 +105,25 @@ def parse_script(text: str) -> list[dict]:
         if not parts:
             continue
         op = parts[0]
-        if op in ("click", "mouse_down", "mouse_up"):
+        if op == "include":
+            if len(parts) != 2:
+                raise ValueError(f"line {lineno}: include expects 'include <path>'")
+            target = os.path.expanduser(parts[1])
+            if not os.path.isabs(target):
+                if base_dir is None:
+                    raise ValueError(f"line {lineno}: relative include {parts[1]!r} requires a base directory; load via parse_script_file()")
+                target = os.path.join(base_dir, target)
+            target = os.path.normpath(target)
+            if target in stack:
+                chain = " → ".join(stack + [target])
+                raise ValueError(f"line {lineno}: circular include: {chain}")
+            try:
+                with open(target, "r") as f:
+                    sub_text = f.read()
+            except OSError as e:
+                raise ValueError(f"line {lineno}: include {target!r}: {e}")
+            actions.extend(parse_script(sub_text, base_dir=os.path.dirname(target), _include_stack=stack + [target]))
+        elif op in ("click", "mouse_down", "mouse_up"):
             if len(parts) not in (3, 4):
                 raise ValueError(f"line {lineno}: {op} expects '{op} X Y [button]'")
             try:
@@ -123,6 +148,17 @@ def parse_script(text: str) -> list[dict]:
         else:
             raise ValueError(f"line {lineno}: unknown command {op!r}")
     return actions
+
+
+def parse_script_file(path: str) -> list[dict]:
+    """Load and parse a TAS script from disk, with includes resolved relative to it.
+
+    Convenience wrapper around parse_script() that sets base_dir to the script's
+    directory and seeds the include cycle-detection stack with the file itself.
+    """
+    abspath = os.path.abspath(os.path.expanduser(path))
+    with open(abspath, "r") as f:
+        return parse_script(f.read(), base_dir=os.path.dirname(abspath), _include_stack=[abspath])
 
 
 def format_recording(events: list[dict]) -> str:
@@ -789,8 +825,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
                         continue
                     path = os.path.expanduser(tokens[1])
                     try:
-                        with open(path, "r") as f:
-                            actions = parse_script(f.read())
+                        actions = parse_script_file(path)
                     except (OSError, ValueError) as e:
                         print(f"play: {e}")
                         continue
