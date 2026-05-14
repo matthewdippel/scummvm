@@ -1098,6 +1098,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
     print("Interactive shell. Anything not recognized below is treated as a tool name.")
     print("  list                              — show registered tools")
     print("  snapshot [name]                   — pause+snapshot+unpause; auto-names if no arg")
+    print("  restore [name]                    — pause+restore_snapshot+unpause; most recent if no arg")
     print("  play <file>                       — play a TAS script (click/wait commands); halts at `breakpoint`")
     print("  resume                            — continue a play halted at a breakpoint or cancelled")
     print("  play_slow <file>                  — step through a TAS script with savepoints/rewind")
@@ -1146,6 +1147,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
                 if cmd in ("help", "?"):
                     print("  list                              — show registered tools")
                     print("  snapshot [name]                   — pause+snapshot+unpause (auto-names if no arg)")
+                    print("  restore [name]                    — pause+restore_snapshot+unpause (most recent if no arg)")
                     print("  play <file>                       — play a TAS script (click/wait commands); halts at `breakpoint`")
                     print("  resume                            — continue a play halted at a breakpoint or cancelled")
                     print("  play_slow <file>                  — step through a TAS script with savepoints/rewind")
@@ -1168,6 +1170,20 @@ def cmd_shell(args: argparse.Namespace) -> int:
                     info = d.snapshot(name)
                     d.unpause()
                     print(f"snapshot {name} OK ({info.get('bytes', '?')} bytes)")
+                elif cmd == "restore":
+                    if len(tokens) >= 2 and "=" not in tokens[1]:
+                        name = tokens[1]
+                    else:
+                        # Auto-pick the most recently created snapshot per the server's clock.
+                        snaps = d.list_snapshots()
+                        if not snaps:
+                            print("restore: no snapshots available")
+                            continue
+                        name = max(snaps, key=lambda s: s.get("created_ms", 0))["name"]
+                    d.pause()
+                    msg = d.restore_snapshot(name)
+                    d.unpause()
+                    print(f"restore {name} OK ({msg})")
                 elif cmd == "play":
                     if len(tokens) != 2:
                         print("usage: play <file>")
