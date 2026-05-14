@@ -811,6 +811,194 @@ def cmd_screenshot(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_play_slow_loop(d: McpDriver, actions: list[dict], path: str) -> None:
+    """Inner REPL: step through a TAS script one action at a time.
+
+    The engine is paused throughout (each `next` briefly resumes for one
+    action then re-pauses via play_script's preserved-pause behavior).
+    Savepoints capture (engine snapshot + script cursor) so the user can
+    branch experiments. `n N` (or `nN`) advances multiple actions at
+    once as a single play_script batch — engine plays at native speed
+    for that batch. `edit` / `reload` re-read the script from disk.
+    """
+    print(f"play_slow: {path} ({len(actions)} actions). Engine paused throughout.")
+    print("commands: (n)ext / Enter, (s)ave [name], (r)estore [name], (l)ist,")
+    print("          (e)dit / reload, (q)uit, (?)help")
+
+    cursor = 0
+    # savepoint name -> (mcp snapshot name, cursor at save)
+    savepoints: dict[str, tuple[str, int]] = {}
+    save_counter = 0
+
+    try:
+        d.pause()
+    except McpError as e:
+        print(f"play_slow: pause failed: {e}")
+        return
+
+    # Each step is a play_script that would emit a progress notification;
+    # play_slow already shows the cursor explicitly, so suppress.
+    prev_suppress = d._suppress_progress
+    d._suppress_progress = True
+
+    def show_current() -> None:
+        if cursor >= len(actions):
+            print(f"  [{cursor}/{len(actions)}] (end of script)")
+            return
+        a = actions[cursor]
+        print(f"  [{cursor+1}/{len(actions)}] {render_action(a)}{_source_suffix(a)}")
+
+    show_current()
+    while True:
+        try:
+            raw = input("play_slow> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+
+        parts = raw.split(None, 1)
+        op = parts[0].lower() if parts else "n"
+        arg = parts[1] if len(parts) > 1 else None
+
+        if op in ("q", "quit", "exit"):
+            break
+        if op in ("?", "help", "h"):
+            print("  n / next / <Enter>  — execute the current action")
+            print("  n <N> / nN          — execute the next N actions (e.g. `n10`)")
+            print("  s [name]            — snapshot here (auto-name if omitted)")
+            print("  r [name]            — restore a savepoint (most recent if no name)")
+            print("  l / list            — list savepoints")
+            print("  e / edit            — open the script in $EDITOR, reload on exit")
+            print("  reload              — re-parse the script from disk")
+            print("  q / quit            — leave play_slow (engine stays paused)")
+            continue
+
+        # Parse `n`, `n10`, `n 10`, `next`, `next 10`, empty (= 1).
+        count = None
+        if op == "" or op in ("n", "next"):
+            if arg is None:
+                count = 1
+            else:
+                try:
+                    count = int(arg)
+                except ValueError:
+                    print(f"  n expects an integer count; got {arg!r}")
+                    continue
+        elif op.startswith("n") and op[1:].isdigit():
+            count = int(op[1:])
+
+        if count is not None:
+            if cursor >= len(actions):
+                print("  (at end of script — restore a savepoint or quit)")
+                continue
+            if count <= 0:
+                print(f"  count must be > 0; got {count}")
+                continue
+            end = min(cursor + count, len(actions))
+            batch = actions[cursor:end]
+            for i, a in enumerate(batch):
+                print(f"  [{cursor+i+1}/{len(actions)}] {render_action(a)}{_source_suffix(a)}")
+            try:
+                info = d.play_script(batch)
+                played = info.get("actions_played", len(batch))
+                cursor += played
+                if info.get("cancelled"):
+                    print(f"  CANCELLED after {played}/{len(batch)} actions in this batch")
+                else:
+                    try:
+                        room = d.get_room()
+                        print(f"  → room {room}")
+                    except McpError:
+                        pass  # get_room not critical
+            except McpError as e:
+                print(f"  play_script error: {e}")
+            show_current()
+            continue
+
+        elif op in ("s", "save", "snapshot"):
+            if arg:
+                name = arg
+            else:
+                save_counter += 1
+                name = f"sp{save_counter}"
+            snap_name = f"slow_{name}"
+            try:
+                info = d.snapshot(snap_name)
+                savepoints[name] = (snap_name, cursor)
+                print(f"  saved '{name}' at cursor {cursor} ({info.get('bytes', '?')} bytes)")
+            except McpError as e:
+                print(f"  snapshot error: {e}")
+
+        elif op in ("r", "restore", "rewind"):
+            if arg:
+                name = arg
+            else:
+                if not savepoints:
+                    print("  no savepoints")
+                    continue
+                name = next(reversed(savepoints))  # most recent
+            if name not in savepoints:
+                print(f"  unknown savepoint '{name}'")
+                continue
+            snap_name, saved_cursor = savepoints[name]
+            try:
+                d.restore_snapshot(snap_name)
+                cursor = saved_cursor
+                print(f"  restored '{name}' (cursor → {cursor})")
+                show_current()
+            except McpError as e:
+                print(f"  restore error: {e}")
+
+        elif op in ("l", "list", "ls"):
+            if not savepoints:
+                print("  (no savepoints)")
+            else:
+                for n, (sn, c) in savepoints.items():
+                    marker = " ←" if c == cursor else ""
+                    print(f"  {n:16s} cursor={c}  snapshot={sn}{marker}")
+
+        elif op in ("e", "edit"):
+            editor = os.environ.get("EDITOR", "vi")
+            try:
+                rc = subprocess.call([editor, path])
+            except OSError as e:
+                print(f"  failed to launch {editor!r}: {e}")
+                continue
+            if rc != 0:
+                print(f"  {editor} exited with {rc}; not reloading")
+                continue
+            try:
+                new_actions = parse_script_file(path)
+            except (OSError, ValueError) as e:
+                print(f"  reload failed (script unchanged in memory): {e}")
+                continue
+            old_len = len(actions)
+            actions[:] = new_actions
+            if cursor > len(actions):
+                cursor = len(actions)
+            print(f"  reloaded: {old_len} → {len(actions)} actions; cursor at {cursor}")
+            show_current()
+
+        elif op in ("reload",):
+            try:
+                new_actions = parse_script_file(path)
+            except (OSError, ValueError) as e:
+                print(f"  reload failed (script unchanged in memory): {e}")
+                continue
+            old_len = len(actions)
+            actions[:] = new_actions
+            if cursor > len(actions):
+                cursor = len(actions)
+            print(f"  reloaded: {old_len} → {len(actions)} actions; cursor at {cursor}")
+            show_current()
+
+        else:
+            print(f"  unknown command {op!r}; try 'help'")
+
+    d._suppress_progress = prev_suppress
+    print(f"exited play_slow at action {cursor}/{len(actions)}; engine paused.")
+
+
 def cmd_shell(args: argparse.Namespace) -> int:
     log_path = os.path.expanduser(args.log)
     print(f"scummvm stderr → {log_path}  (run `tail -f {log_path}` in another terminal)")
@@ -821,6 +1009,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
     print("  list                              — show registered tools")
     print("  snapshot [name]                   — pause+snapshot+unpause; auto-names if no arg")
     print("  play <file>                       — play a TAS script (click/wait commands)")
+    print("  play_slow <file>                  — step through a TAS script with savepoints/rewind")
     print("  start_record                      — begin recording clicks")
     print("  end_record <file>                 — stop recording and write a TAS script")
     print("  raw <json>                        — send a raw JSON-RPC request")
@@ -864,6 +1053,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
                     print("  list                              — show registered tools")
                     print("  snapshot [name]                   — pause+snapshot+unpause (auto-names if no arg)")
                     print("  play <file>                       — play a TAS script (click/wait commands)")
+                    print("  play_slow <file>                  — step through a TAS script with savepoints/rewind")
                     print("  start_record                      — begin recording clicks")
                     print("  end_record <file>                 — stop recording and write a TAS script")
                     print("  raw <json>                        — send a raw JSON-RPC request")
@@ -897,6 +1087,17 @@ def cmd_shell(args: argparse.Namespace) -> int:
                     info = d.play_script(actions)
                     status = "CANCELLED" if info.get("cancelled") else "OK"
                     print(f"  → {status} ({info['actions_played']} actions, {info['frames']} frames)")
+                elif cmd == "play_slow":
+                    if len(tokens) != 2:
+                        print("usage: play_slow <file>")
+                        continue
+                    path = os.path.expanduser(tokens[1])
+                    try:
+                        actions = parse_script_file(path)
+                    except (OSError, ValueError) as e:
+                        print(f"play_slow: {e}")
+                        continue
+                    cmd_play_slow_loop(d, actions, path)
                 elif cmd == "start_record":
                     d.start_record()
                     print("recording — interact with the game window, then `end_record <file>`")
