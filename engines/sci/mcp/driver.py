@@ -83,6 +83,7 @@ def parse_script(text: str, base_dir: Optional[str] = None, _include_stack: Opti
         mouse_up X Y [button]    — release only (end of a hold/drag)
         wait N                   — wait N in-game frames
         include PATH             — splice another script in at this point
+        breakpoint [NAME]        — pause + snapshot; halt playback (resume manually)
 
     Button is left, right, or middle; defaults to left.
 
@@ -141,6 +142,13 @@ def parse_script(text: str, base_dir: Optional[str] = None, _include_stack: Opti
                 raise ValueError(f"line {lineno}: unknown button {button!r}")
             actions.append({"type": op, "x": x, "y": y, "button": button,
                             "source": {"file": src_file, "line": lineno}})
+        elif op == "breakpoint":
+            # Optional name as the second token; quoted multi-word names not supported.
+            name = parts[1] if len(parts) >= 2 else None
+            if len(parts) > 2:
+                raise ValueError(f"line {lineno}: breakpoint takes at most one name token")
+            actions.append({"type": "breakpoint", "name": name,
+                            "source": {"file": src_file, "line": lineno}})
         elif op == "wait":
             if len(parts) != 2:
                 raise ValueError(f"line {lineno}: wait expects 'wait N'")
@@ -161,9 +169,22 @@ def render_action(a: dict) -> str:
     """Format a parsed action as it would appear in a script file."""
     if a["type"] == "wait":
         return f"wait {a['frames']}"
+    if a["type"] == "breakpoint":
+        name = a.get("name")
+        return f"breakpoint {name}" if name else "breakpoint"
     btn = a.get("button", "left")
     suffix = "" if btn == "left" else f" {btn}"
     return f"{a['type']} {a['x']} {a['y']}{suffix}"
+
+
+def _breakpoint_snapshot_name(bp: dict) -> str:
+    """Resolve a breakpoint action to a snapshot name. Uses explicit `name` if
+    given, else builds `bp_<file-basename>_<line>` for stability across runs."""
+    if bp.get("name"):
+        return bp["name"]
+    src = bp.get("source", {}) or {}
+    base, _ = os.path.splitext(os.path.basename(src.get("file", "")))
+    return f"bp_{base or 'inline'}_{src.get('line', '?')}"
 
 
 def _source_suffix(a: dict) -> str:
@@ -811,6 +832,53 @@ def cmd_screenshot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_from_cursor(d: "McpDriver", actions: list[dict], cursor: int, path: str) -> Optional[int]:
+    """Play actions[cursor:] until completion, cancellation, or the first breakpoint.
+
+    Returns:
+        new cursor (int) if playback halted (breakpoint hit, or cancelled) —
+            REPL can resume from there.
+        None if the script ran to completion.
+
+    Prints progress, breakpoint banners, and final status to stdout. Engine
+    pause state at return: paused if we halted at a breakpoint (snapshot was
+    taken with engine paused); otherwise whatever play_script left it as
+    (which preserves the pre-call pause state).
+    """
+    total = len(actions)
+    remaining = actions[cursor:]
+    bp_offset = next((i for i, a in enumerate(remaining) if a.get("type") == "breakpoint"), None)
+    segment = remaining if bp_offset is None else remaining[:bp_offset]
+
+    info = None
+    if segment:
+        info = d.play_script(segment)
+        played = info.get("actions_played", 0)
+        cursor += played
+        if info.get("cancelled"):
+            print(f"  → CANCELLED ({played} actions, {info['frames']} frames; `resume` continues from [{cursor+1}/{total}])")
+            return cursor
+
+    if bp_offset is not None:
+        bp_action = remaining[bp_offset]
+        bp_name = _breakpoint_snapshot_name(bp_action)
+        d.pause()
+        try:
+            snap_info = d.snapshot(bp_name)
+            print(f"  ● BREAKPOINT [{cursor+1}/{total}] {render_action(bp_action)}{_source_suffix(bp_action)}")
+            print(f"    → snapshot '{bp_name}' ({snap_info.get('bytes', '?')} bytes); engine paused; `resume` to continue")
+        except McpError as e:
+            print(f"  breakpoint snapshot failed: {e}")
+        cursor += 1  # past the breakpoint marker
+        return cursor
+
+    if info:
+        print(f"  → OK ({info['actions_played']} actions, {info['frames']} frames)")
+    else:
+        print(f"  → OK (0 actions)")
+    return None
+
+
 def cmd_play_slow_loop(d: McpDriver, actions: list[dict], path: str) -> None:
     """Inner REPL: step through a TAS script one action at a time.
 
@@ -896,22 +964,44 @@ def cmd_play_slow_loop(d: McpDriver, actions: list[dict], path: str) -> None:
                 continue
             end = min(cursor + count, len(actions))
             batch = actions[cursor:end]
-            for i, a in enumerate(batch):
+            # Halt at the first breakpoint within this batch (if any).
+            bp_offset = next((i for i, a in enumerate(batch) if a.get("type") == "breakpoint"), None)
+            if bp_offset is None:
+                play_segment = batch
+                bp_action = None
+                preview = batch
+            else:
+                play_segment = batch[:bp_offset]
+                bp_action = batch[bp_offset]
+                preview = batch[:bp_offset + 1]
+            for i, a in enumerate(preview):
                 print(f"  [{cursor+i+1}/{len(actions)}] {render_action(a)}{_source_suffix(a)}")
+            if play_segment:
+                try:
+                    info = d.play_script(play_segment)
+                    played = info.get("actions_played", len(play_segment))
+                    cursor += played
+                    if info.get("cancelled"):
+                        print(f"  CANCELLED after {played}/{len(play_segment)} actions in this batch")
+                        show_current()
+                        continue
+                except McpError as e:
+                    print(f"  play_script error: {e}")
+                    show_current()
+                    continue
+            if bp_action is not None:
+                bp_name = _breakpoint_snapshot_name(bp_action)
+                try:
+                    snap = d.snapshot(bp_name)
+                    print(f"  ● snapshot '{bp_name}' ({snap.get('bytes', '?')} bytes); halted")
+                except McpError as e:
+                    print(f"  breakpoint snapshot failed: {e}")
+                cursor += 1  # advance past the breakpoint marker
             try:
-                info = d.play_script(batch)
-                played = info.get("actions_played", len(batch))
-                cursor += played
-                if info.get("cancelled"):
-                    print(f"  CANCELLED after {played}/{len(batch)} actions in this batch")
-                else:
-                    try:
-                        room = d.get_room()
-                        print(f"  → room {room}")
-                    except McpError:
-                        pass  # get_room not critical
-            except McpError as e:
-                print(f"  play_script error: {e}")
+                room = d.get_room()
+                print(f"  → room {room}")
+            except McpError:
+                pass  # get_room not critical
             show_current()
             continue
 
@@ -1008,7 +1098,8 @@ def cmd_shell(args: argparse.Namespace) -> int:
     print("Interactive shell. Anything not recognized below is treated as a tool name.")
     print("  list                              — show registered tools")
     print("  snapshot [name]                   — pause+snapshot+unpause; auto-names if no arg")
-    print("  play <file>                       — play a TAS script (click/wait commands)")
+    print("  play <file>                       — play a TAS script (click/wait commands); halts at `breakpoint`")
+    print("  resume                            — continue a play halted at a breakpoint or cancelled")
     print("  play_slow <file>                  — step through a TAS script with savepoints/rewind")
     print("  start_record                      — begin recording clicks")
     print("  end_record <file>                 — stop recording and write a TAS script")
@@ -1028,6 +1119,9 @@ def cmd_shell(args: argparse.Namespace) -> int:
     atexit.register(lambda: _safe_write_history())
 
     snap_counter = 0
+    # Set when `play` halts at a breakpoint or is cancelled; cleared when
+    # `resume` runs to completion. Holds {actions, cursor, path}.
+    paused_play: Optional[dict] = None
     with McpDriver(args.scummvm, args.target, forward_stderr=False, stderr_log=log_path, random_seed=args.seed) as d:
         while True:
             try:
@@ -1052,7 +1146,8 @@ def cmd_shell(args: argparse.Namespace) -> int:
                 if cmd in ("help", "?"):
                     print("  list                              — show registered tools")
                     print("  snapshot [name]                   — pause+snapshot+unpause (auto-names if no arg)")
-                    print("  play <file>                       — play a TAS script (click/wait commands)")
+                    print("  play <file>                       — play a TAS script (click/wait commands); halts at `breakpoint`")
+                    print("  resume                            — continue a play halted at a breakpoint or cancelled")
                     print("  play_slow <file>                  — step through a TAS script with savepoints/rewind")
                     print("  start_record                      — begin recording clicks")
                     print("  end_record <file>                 — stop recording and write a TAS script")
@@ -1084,9 +1179,24 @@ def cmd_shell(args: argparse.Namespace) -> int:
                         print(f"play: {e}")
                         continue
                     print(f"play {path} ({len(actions)} actions):")
-                    info = d.play_script(actions)
-                    status = "CANCELLED" if info.get("cancelled") else "OK"
-                    print(f"  → {status} ({info['actions_played']} actions, {info['frames']} frames)")
+                    new_cursor = _run_from_cursor(d, actions, 0, path)
+                    if new_cursor is not None:
+                        paused_play = {"actions": actions, "cursor": new_cursor, "path": path}
+                    else:
+                        paused_play = None
+                elif cmd == "resume":
+                    if paused_play is None:
+                        print("resume: no paused play to resume")
+                        continue
+                    actions = paused_play["actions"]
+                    cursor = paused_play["cursor"]
+                    path = paused_play["path"]
+                    print(f"resume {path} from [{cursor+1}/{len(actions)}]:")
+                    new_cursor = _run_from_cursor(d, actions, cursor, path)
+                    if new_cursor is not None:
+                        paused_play = {"actions": actions, "cursor": new_cursor, "path": path}
+                    else:
+                        paused_play = None
                 elif cmd == "play_slow":
                     if len(tokens) != 2:
                         print("usage: play_slow <file>")
